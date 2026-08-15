@@ -9,3 +9,7 @@ The extraction is staged so the existing client-management system remains usable
 5. **Cutover:** rehearse an idempotent migration against synthetic data, shadow-read production, verify counts and hashes, freeze legacy writes briefly, migrate, and retain a rollback window.
 
 No production data belongs in this repository. Migration tooling must be dry-run by default, owner-scoped, idempotent, provenance-aware, and independently verifiable before any production application is authorized.
+
+See the [legacy migration plan](legacy-migration-plan.md) and [private file
+storage plan](file-storage-plan.md) for the implementation and cutover safety
+contracts.

@@ -12,9 +12,12 @@ The first foundation slice establishes:
 - tenant-isolated client companies, projects, and tasks;
 - a permissioned client portal that excludes internal-only work;
 - configurable OAuth 2.0 identity-provider authentication with PKCE;
+- a Stripe SDK boundary with signature verification and redacted configuration health checks;
 - an explicit extraction and integration boundary.
 
-See [the architecture](docs/architecture.md) and [the extraction plan](docs/extraction-plan.md).
+See [the architecture](docs/architecture.md), [the extraction plan](docs/extraction-plan.md),
+[the private file storage plan](docs/file-storage-plan.md), and
+[the legacy migration plan](docs/legacy-migration-plan.md).
 
 ## Local development
 
