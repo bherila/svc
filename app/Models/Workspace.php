@@ -39,4 +39,10 @@ class Workspace extends Model
     {
         return $this->hasMany(ClientCompany::class);
     }
+
+    /** @return HasMany<PaymentReconciliation, $this> */
+    public function paymentReconciliations(): HasMany
+    {
+        return $this->hasMany(PaymentReconciliation::class);
+    }
 }
