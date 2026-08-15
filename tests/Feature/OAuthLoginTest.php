@@ -15,12 +15,16 @@ class OAuthLoginTest extends TestCase
     {
         parent::setUp();
 
-        config(['services.identity_provider' => [
-            'name' => 'test-provider',
+        config(['bherila-auth.oauth_client' => [
+            'provider' => 'test-provider',
             'base_url' => 'https://identity.example.test',
             'client_id' => 'svc-client',
             'client_secret' => 'secret',
             'redirect_uri' => 'https://svc.example.test/oauth/callback',
+            'scope' => 'identity:read',
+            'authorize_path' => '/oauth/authorize',
+            'token_path' => '/oauth/token',
+            'identity_path' => '/api/oauth/user',
         ]]);
     }
 
