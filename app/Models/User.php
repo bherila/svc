@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -21,8 +22,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+#[Fillable(['name', 'email', 'password', 'oauth_provider', 'oauth_subject'])]
+#[Hidden(['password', 'remember_token', 'oauth_provider', 'oauth_subject'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -39,5 +40,17 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /** @return BelongsToMany<Workspace, $this> */
+    public function workspaces(): BelongsToMany
+    {
+        return $this->belongsToMany(Workspace::class, 'workspace_memberships')->withPivot('role')->withTimestamps();
+    }
+
+    /** @return BelongsToMany<ClientCompany, $this> */
+    public function clientCompanies(): BelongsToMany
+    {
+        return $this->belongsToMany(ClientCompany::class, 'client_company_memberships')->withPivot('role')->withTimestamps();
     }
 }
