@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,12 +13,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property string $status
  * @property CarbonImmutable|null $valid_until
+ * @property CarbonImmutable|null $sent_at
+ * @property CarbonImmutable|null $accepted_at
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'title', 'summary',
     'terms', 'currency', 'is_visible_to_client', 'valid_until', 'status', 'sent_at', 'accepted_at', 'declined_at',
     'expired_at', 'accepted_by_user_id', 'acceptance_signer_name', 'acceptance_signer_title',
 ])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'accepted_by_user_id'])]
 class ClientProposal extends Model
 {
     use HasPublicId;
@@ -100,7 +104,10 @@ class ClientProposal extends Model
             [$whole, $fraction] = array_pad(explode('.', $quantity, 2), 2, '');
             $thousandths = ((int) $whole * 1000) + (int) str_pad(substr($fraction, 0, 3), 3, '0');
 
-            return intdiv(($item->unit_amount * $thousandths) + 500, 1000);
+            $wholeAmount = intdiv($thousandths, 1000) * $item->unit_amount;
+            $fractionProduct = ($thousandths % 1000) * $item->unit_amount;
+
+            return $wholeAmount + intdiv($fractionProduct + 500, 1000);
         });
     }
 }

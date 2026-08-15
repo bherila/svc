@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $completed_at
  */
 #[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at'])]
+#[Hidden(['id', 'workspace_id', 'client_project_id'])]
 class ClientTask extends Model
 {
     use HasPublicId;

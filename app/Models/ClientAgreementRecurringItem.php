@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'public_id', 'workspace_id', 'client_agreement_id', 'description', 'cadence', 'anchor_month', 'anchor_day',
     'effective_on', 'expires_on', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
 ])]
+#[Hidden(['id', 'workspace_id', 'client_agreement_id'])]
 class ClientAgreementRecurringItem extends Model
 {
     use HasPublicId;

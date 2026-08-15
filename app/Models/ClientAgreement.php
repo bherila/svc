@@ -3,17 +3,25 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property CarbonImmutable|null $starts_on
+ * @property CarbonImmutable|null $ends_on
+ * @property CarbonImmutable|null $signed_at
+ */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
     'starts_on', 'ends_on', 'agreement_text', 'is_visible_to_client', 'currency', 'hourly_rate_amount',
     'retainer_amount', 'retainer_minutes', 'billing_cadence', 'rollover_policy', 'activated_at', 'signed_at',
     'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
 ])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
 class ClientAgreement extends Model
 {
     use HasPublicId;

@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['public_id', 'workspace_id', 'client_proposal_id', 'description', 'quantity', 'unit_amount', 'cadence', 'sort_order'])]
+#[Hidden(['id', 'workspace_id', 'client_proposal_id'])]
 class ClientProposalItem extends Model
 {
     use HasPublicId;

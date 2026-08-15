@@ -6,13 +6,20 @@ The application will cover clients, projects, agreements, time, invoices, paymen
 
 ## Current status
 
-The first foundation slice establishes:
+The current alpha establishes:
 
 - organization workspaces and role-bearing memberships;
 - tenant-isolated client companies, projects, and tasks;
 - a permissioned client portal that excludes internal-only work;
 - configurable OAuth 2.0 identity-provider authentication with PKCE;
 - a Stripe SDK boundary with signature verification and redacted configuration health checks;
+- engagement operations for proposals, acceptance, agreements, recurring billing,
+  time entries, invoices, payments, PDFs, and authenticated client views;
+- private tenant-scoped attachments with staged promotion, digest verification,
+  repair tooling, and guarded web1-to-x-data mirroring;
+- dry-run-first legacy migration and verification commands with explicit public-UUID
+  identity bindings, redacted inventories, idempotent provenance ledgers, and
+  source-change detection;
 - an explicit extraction and integration boundary.
 
 See [the architecture](docs/architecture.md), [the extraction plan](docs/extraction-plan.md),
@@ -31,6 +38,19 @@ composer dev
 ```
 
 The generated SQLite database and `.env` are local-only. Do not import production data into this checkout.
+
+The integrated workspace screen is available at
+`/workspaces/{workspace-public-id}/operations`. Legacy migration is inert until
+an allowlisted read-only source is configured:
+
+```bash
+php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --format=json
+php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
+php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
+```
+
+The first command is a no-write inventory. Apply runs that report skips or
+failures exit nonzero, and verification never prints source row values.
 
 ## Deployment
 

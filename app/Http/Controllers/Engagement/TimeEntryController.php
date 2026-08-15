@@ -30,7 +30,7 @@ class TimeEntryController extends EngagementController
 
             return $this->respond(
                 $request,
-                ['data' => $entry->load(['clientCompany', 'project', 'user'])],
+                ['data' => $entry],
                 'svc.engagement.time-entries.store',
                 'Time entry logged.',
                 201,

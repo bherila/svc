@@ -48,7 +48,7 @@ class InvoiceController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['data' => $invoice], 201)
-            : redirect()->route('svc.billing.invoices.show', [$workspace, $invoice]);
+            : redirect()->back()->with('status', 'Invoice drafted.');
     }
 
     public function show(Request $request, Workspace $workspace, ClientInvoice $clientInvoice): JsonResponse|View
@@ -87,7 +87,7 @@ class InvoiceController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['data' => $payment->load('invoice')], 201)
-            : redirect()->route('svc.billing.invoices.show', [$workspace, $clientInvoice]);
+            : redirect()->back()->with('status', 'Payment recorded.');
     }
 
     public function stripePaymentIntent(CreateStripePaymentIntentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, StripePaymentIntentService $service): JsonResponse
@@ -119,7 +119,7 @@ class InvoiceController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['data' => $delivery], 202)
-            : redirect()->route('svc.billing.invoices.show', [$workspace, $clientInvoice]);
+            : redirect()->back()->with('status', 'Invoice delivery queued.');
     }
 
     public function pdf(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceDocumentService $documents): Response
@@ -162,6 +162,6 @@ class InvoiceController extends Controller
     {
         return $request->expectsJson()
             ? response()->json(['data' => $invoice])
-            : redirect()->route('svc.billing.invoices.show', [$invoice->workspace, $invoice])->with('status', $message);
+            : redirect()->back()->with('status', $message);
     }
 }

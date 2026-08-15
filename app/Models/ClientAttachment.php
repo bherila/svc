@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
@@ -39,6 +40,7 @@ use LogicException;
     'available_at',
     'deleted_at',
 ])]
+#[Hidden(['id', 'workspace_id', 'object_key', 'staged_object_key', 'uploader_id'])]
 class ClientAttachment extends Model
 {
     use HasPublicId;

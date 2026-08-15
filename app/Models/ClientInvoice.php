@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property CarbonImmutable|null $issue_date
  * @property CarbonImmutable|null $due_date
+ * @property CarbonImmutable|null $service_period_start
+ * @property CarbonImmutable|null $service_period_end
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',

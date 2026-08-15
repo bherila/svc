@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property CarbonImmutable $next_run_on
  * @property array<int, array<string, mixed>> $line_template
+ * @property string $cadence
+ * @property bool $is_active
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'cadence', 'anchor_month',

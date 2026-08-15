@@ -37,7 +37,7 @@ class BillingScheduleController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['data' => $schedule], 201)
-            : redirect()->route('svc.billing.schedules.show', [$workspace, $schedule]);
+            : redirect()->back()->with('status', 'Billing schedule created.');
     }
 
     public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service): JsonResponse|RedirectResponse
@@ -48,7 +48,7 @@ class BillingScheduleController extends Controller
 
         return request()->expectsJson()
             ? response()->json(['data' => $invoices])
-            : redirect()->route('svc.billing.schedules.show', [$workspace, $schedule]);
+            : redirect()->back()->with('status', 'Due invoices generated.');
     }
 
     public function show(Workspace $workspace, ClientBillingSchedule $schedule): View
