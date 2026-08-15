@@ -36,10 +36,13 @@ class ClientCompany extends Model
         return $this->belongsTo(Workspace::class);
     }
 
-    /** @return BelongsToMany<User, $this> */
+    /** @return BelongsToMany<User, $this, ClientCompanyMembership, 'pivot'> */
     public function portalUsers(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'client_company_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(User::class, 'client_company_memberships')
+            ->using(ClientCompanyMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 
     /** @return HasMany<ClientProject, $this> */

@@ -44,15 +44,21 @@ class User extends Authenticatable
         ];
     }
 
-    /** @return BelongsToMany<Workspace, $this> */
+    /** @return BelongsToMany<Workspace, $this, WorkspaceMembership, 'pivot'> */
     public function workspaces(): BelongsToMany
     {
-        return $this->belongsToMany(Workspace::class, 'workspace_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(Workspace::class, 'workspace_memberships')
+            ->using(WorkspaceMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 
-    /** @return BelongsToMany<ClientCompany, $this> */
+    /** @return BelongsToMany<ClientCompany, $this, ClientCompanyMembership, 'pivot'> */
     public function clientCompanies(): BelongsToMany
     {
-        return $this->belongsToMany(ClientCompany::class, 'client_company_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(ClientCompany::class, 'client_company_memberships')
+            ->using(ClientCompanyMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 }
