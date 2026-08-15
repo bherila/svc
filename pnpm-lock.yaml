@@ -9,19 +9,19 @@ importers:
   .:
     dependencies:
       '@inertiajs/react':
-        specifier: ^3.0.0
+        specifier: ^3.6.1
         version: 3.6.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@inertiajs/vite':
-        specifier: ^3.0.0
+        specifier: ^3.6.1
         version: 3.6.1(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0))
       '@tailwindcss/vite':
-        specifier: ^4.1.11
+        specifier: ^4.3.3
         version: 4.3.3(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0))
       '@types/react':
-        specifier: ^19.2.0
+        specifier: ^19.2.18
         version: 19.2.18
       '@types/react-dom':
-        specifier: ^19.2.0
+        specifier: ^19.2.4
         version: 19.2.4(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^5.2.0
@@ -30,87 +30,87 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       concurrently:
-        specifier: ^10.0.3
+        specifier: ^10.0.4
         version: 10.0.4
       globals:
-        specifier: ^15.14.0
+        specifier: ^15.15.0
         version: 15.15.0
       laravel-vite-plugin:
-        specifier: ^3.1
+        specifier: ^3.2.0
         version: 3.2.0(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0))
       react:
-        specifier: ^19.2.0
+        specifier: ^19.2.8
         version: 19.2.8
       react-dom:
-        specifier: ^19.2.0
+        specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
       tailwind-merge:
-        specifier: ^3.0.1
+        specifier: ^3.6.0
         version: 3.6.0
       tailwindcss:
-        specifier: ^4.0.0
+        specifier: ^4.3.3
         version: 4.3.3
       typescript:
-        specifier: ^5.7.2
+        specifier: ^5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.0.0
+        specifier: ^8.2.1
         version: 8.2.1(@types/node@22.20.1)(jiti@2.7.0)
     devDependencies:
       '@eslint/js':
-        specifier: ^9.19.0
+        specifier: ^9.39.5
         version: 9.39.5
       '@laravel/vite-plugin-wayfinder':
-        specifier: ^0.1.3
+        specifier: ^0.1.7
         version: 0.1.7
       '@stylistic/eslint-plugin':
         specifier: ^5.10.0
         version: 5.10.0(eslint@9.39.5(jiti@2.7.0))
       '@types/node':
-        specifier: ^22.13.5
+        specifier: ^22.20.1
         version: 22.20.1
       babel-plugin-react-compiler:
         specifier: ^1.0.0
         version: 1.0.0
       eslint:
-        specifier: ^9.17.0
+        specifier: ^9.39.5
         version: 9.39.5(jiti@2.7.0)
       eslint-config-prettier:
-        specifier: ^10.0.1
+        specifier: ^10.1.8
         version: 10.1.8(eslint@9.39.5(jiti@2.7.0))
       eslint-import-resolver-typescript:
-        specifier: ^4.4.4
+        specifier: ^4.4.5
         version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-import:
         specifier: ^2.32.0
         version: 2.32.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-react:
-        specifier: ^7.37.3
+        specifier: ^7.37.5
         version: 7.37.5(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-react-hooks:
-        specifier: ^7.0.0
+        specifier: ^7.1.1
         version: 7.1.1(eslint@9.39.5(jiti@2.7.0))
       prettier:
-        specifier: ^3.4.2
+        specifier: ^3.9.6
         version: 3.9.6
       prettier-plugin-tailwindcss:
-        specifier: ^0.6.11
+        specifier: ^0.6.14
         version: 0.6.14(prettier@3.9.6)
       typescript-eslint:
-        specifier: ^8.23.0
+        specifier: ^8.67.0
         version: 8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
     optionalDependencies:
       '@laravel/multiplex':
-        specifier: ^0.4.1
+        specifier: ^0.4.2
         version: 0.4.2(@types/react@19.2.18)
       '@rollup/rollup-linux-x64-gnu':
         specifier: 4.9.5
         version: 4.9.5
       '@tailwindcss/oxide-linux-x64-gnu':
-        specifier: ^4.0.1
+        specifier: ^4.3.3
         version: 4.3.3
       lightningcss-linux-x64-gnu:
-        specifier: ^1.29.1
+        specifier: ^1.33.0
         version: 1.33.0
 
 packages:
@@ -313,12 +313,12 @@ packages:
   '@laravel/vite-plugin-wayfinder@0.1.7':
     resolution: {integrity: sha512-yZYIr1iwuCQ7LFI+GsJk9vacw1HWMp3ZlDlW0pdfz3zXyKeu4US7oH79KmQQ031L0cYaSyaUMo/Ha1D4BosKqw==}
 
-  '@napi-rs/wasm-runtime@1.2.2':
-    resolution: {integrity: sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw==}
+  '@napi-rs/wasm-runtime@1.2.3':
+    resolution: {integrity: sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
     peerDependencies:
-      '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.3
-      '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.3
+      '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
+      '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
 
   '@oxc-project/types@0.144.0':
     resolution: {integrity: sha512-nuhZIOLuI6TFQ32I/WnUx+SCPY7SdSKwgnFHydAuoS1+Z4BRcaP+RRJmGzl9lw+0OFF7UmaESf7KQRXaNLHypg==}
@@ -2577,7 +2577,7 @@ snapshots:
 
   '@laravel/vite-plugin-wayfinder@0.1.7': {}
 
-  '@napi-rs/wasm-runtime@1.2.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
+  '@napi-rs/wasm-runtime@1.2.3(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
@@ -2908,7 +2908,7 @@ snapshots:
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
-      '@napi-rs/wasm-runtime': 1.2.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
+      '@napi-rs/wasm-runtime': 1.2.3(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
     optional: true
 
   '@unrs/resolver-binding-win32-arm64-msvc@1.12.2':
