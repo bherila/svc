@@ -28,6 +28,7 @@ type Workspace = {
     id: string;
     name: string;
     role: string;
+    operations_url: string;
     clients: Client[];
 };
 
@@ -231,13 +232,21 @@ export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
                             key={workspace.id}
                             className="rounded-3xl bg-white p-6 shadow-sm sm:p-8"
                         >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-4">
                                 <h2 className="text-2xl font-semibold">
                                     {workspace.name}
                                 </h2>
-                                <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800">
-                                    {workspace.role}
-                                </span>
+                                <div className="flex items-center gap-3">
+                                    <Link
+                                        href={workspace.operations_url}
+                                        className="text-sm font-semibold text-cyan-700"
+                                    >
+                                        Time, proposals &amp; billing
+                                    </Link>
+                                    <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800">
+                                        {workspace.role}
+                                    </span>
+                                </div>
                             </div>
                             <div className="mt-6 space-y-5">
                                 {workspace.clients.map((client) => (

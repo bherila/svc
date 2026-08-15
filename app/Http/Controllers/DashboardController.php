@@ -61,6 +61,7 @@ class DashboardController extends Controller
                 'id' => $workspace->public_id,
                 'name' => $workspace->name,
                 'role' => is_string($role) ? $role : 'member',
+                'operations_url' => route('workspaces.operations', $workspace),
                 'clients' => $clientPayload,
             ];
         }

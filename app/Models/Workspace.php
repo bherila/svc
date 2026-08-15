@@ -25,10 +25,13 @@ class Workspace extends Model
         return $this->hasMany(WorkspaceMembership::class);
     }
 
-    /** @return BelongsToMany<User, $this> */
+    /** @return BelongsToMany<User, $this, WorkspaceMembership, 'pivot'> */
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'workspace_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(User::class, 'workspace_memberships')
+            ->using(WorkspaceMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 
     /** @return HasMany<ClientCompany, $this> */

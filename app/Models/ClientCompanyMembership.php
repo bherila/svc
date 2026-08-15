@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 
 /**
  * @property int $id
@@ -12,9 +14,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $user_id
  * @property string $role
  */
-#[Fillable(['client_company_id', 'user_id', 'role'])]
-class ClientCompanyMembership extends Model
+#[Fillable(['public_id', 'client_company_id', 'user_id', 'role'])]
+#[Hidden(['id', 'client_company_id', 'user_id'])]
+class ClientCompanyMembership extends Pivot
 {
+    use HasPublicId;
+
+    public $incrementing = true;
+
+    protected $table = 'client_company_memberships';
+
     /** @return BelongsTo<ClientCompany, $this> */
     public function clientCompany(): BelongsTo
     {

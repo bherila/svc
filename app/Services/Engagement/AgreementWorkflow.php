@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Services\Engagement;
+
+use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
+use App\Models\ClientProject;
+use App\Models\ClientProposal;
+use App\Models\User;
+use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
+
+class AgreementWorkflow
+{
+    /** @param array<string, mixed> $attributes */
+    public function create(
+        Workspace $workspace,
+        ClientCompany $company,
+        ?ClientProject $project,
+        ?ClientProposal $sourceProposal,
+        array $attributes,
+    ): ClientAgreement {
+        if ($company->workspace_id !== $workspace->id) {
+            throw new EngagementException('The client company does not belong to this workspace.');
+        }
+
+        if ($project !== null && ($project->workspace_id !== $workspace->id || $project->client_company_id !== $company->id)) {
+            throw new EngagementException('The client project does not belong to this client company and workspace.');
+        }
+
+        if ($sourceProposal !== null && ($sourceProposal->workspace_id !== $workspace->id || $sourceProposal->client_company_id !== $company->id)) {
+            throw new EngagementException('The source proposal does not belong to this client company and workspace.');
+        }
+
+        return ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project?->id,
+            'source_proposal_id' => $sourceProposal?->id,
+            'title' => $attributes['title'],
+            'status' => 'draft',
+            'starts_on' => $attributes['starts_on'] ?? null,
+            'ends_on' => $attributes['ends_on'] ?? null,
+            'agreement_text' => $attributes['agreement_text'] ?? null,
+            'is_visible_to_client' => $attributes['is_visible_to_client'] ?? false,
+            'billing_cadence' => $attributes['billing_cadence'] ?? 'one_time',
+            'currency' => strtoupper($attributes['currency']),
+            'hourly_rate_amount' => $attributes['hourly_rate_amount'] ?? null,
+            'retainer_amount' => $attributes['retainer_amount'] ?? null,
+            'retainer_minutes' => $attributes['retainer_minutes'] ?? null,
+        ]);
+    }
+
+    public function activate(ClientAgreement $agreement): ClientAgreement
+    {
+        return DB::transaction(function () use ($agreement): ClientAgreement {
+            $locked = ClientAgreement::query()->lockForUpdate()->findOrFail($agreement->id);
+
+            if ($locked->status === 'active') {
+                return $locked;
+            }
+
+            if ($locked->status !== 'draft' && $locked->status !== 'paused') {
+                throw new EngagementException('Only draft or paused agreements can be activated.');
+            }
+
+            $locked->forceFill([
+                'status' => 'active',
+                'activated_at' => $locked->activated_at ?? now(),
+            ])->save();
+
+            return $locked;
+        });
+    }
+
+    public function sign(ClientAgreement $agreement, ?User $signingUser, string $signerName, ?string $signerTitle): ClientAgreement
+    {
+        return DB::transaction(function () use ($agreement, $signingUser, $signerName, $signerTitle): ClientAgreement {
+            $locked = ClientAgreement::query()->lockForUpdate()->findOrFail($agreement->id);
+
+            if ($locked->signed_at !== null) {
+                return $locked;
+            }
+
+            if ($locked->status !== 'active') {
+                throw new EngagementException('Only active agreements can be signed.');
+            }
+
+            $locked->forceFill([
+                'signed_at' => now(),
+                'signed_by_user_id' => $signingUser?->id,
+                'signer_name' => $signerName,
+                'signer_title' => $signerTitle,
+            ])->save();
+
+            return $locked;
+        });
+    }
+}

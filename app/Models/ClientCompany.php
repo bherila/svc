@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $is_active
  */
 #[Fillable(['workspace_id', 'name', 'slug', 'billing_email', 'is_active'])]
+#[Hidden(['id', 'workspace_id'])]
 class ClientCompany extends Model
 {
     use HasPublicId;
@@ -34,10 +36,13 @@ class ClientCompany extends Model
         return $this->belongsTo(Workspace::class);
     }
 
-    /** @return BelongsToMany<User, $this> */
+    /** @return BelongsToMany<User, $this, ClientCompanyMembership, 'pivot'> */
     public function portalUsers(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'client_company_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(User::class, 'client_company_memberships')
+            ->using(ClientCompanyMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 
     /** @return HasMany<ClientProject, $this> */

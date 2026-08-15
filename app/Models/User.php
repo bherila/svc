@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Concerns\HasPublicId;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,6 +15,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property string $public_id
  * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at
@@ -22,12 +24,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'oauth_provider', 'oauth_subject'])]
-#[Hidden(['password', 'remember_token', 'oauth_provider', 'oauth_subject'])]
+#[Fillable(['public_id', 'name', 'email', 'password', 'oauth_provider', 'oauth_subject'])]
+#[Hidden(['id', 'password', 'remember_token', 'oauth_provider', 'oauth_subject'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, HasPublicId, Notifiable;
 
     /**
      * Get the attributes that should be cast.
@@ -42,15 +44,21 @@ class User extends Authenticatable
         ];
     }
 
-    /** @return BelongsToMany<Workspace, $this> */
+    /** @return BelongsToMany<Workspace, $this, WorkspaceMembership, 'pivot'> */
     public function workspaces(): BelongsToMany
     {
-        return $this->belongsToMany(Workspace::class, 'workspace_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(Workspace::class, 'workspace_memberships')
+            ->using(WorkspaceMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 
-    /** @return BelongsToMany<ClientCompany, $this> */
+    /** @return BelongsToMany<ClientCompany, $this, ClientCompanyMembership, 'pivot'> */
     public function clientCompanies(): BelongsToMany
     {
-        return $this->belongsToMany(ClientCompany::class, 'client_company_memberships')->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(ClientCompany::class, 'client_company_memberships')
+            ->using(ClientCompanyMembership::class)
+            ->withPivot(['public_id', 'role'])
+            ->withTimestamps();
     }
 }
