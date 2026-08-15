@@ -48,6 +48,7 @@ php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id>
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
 php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
 php artisan svc:migrate:legacy:rehearse --format=json
+php artisan svc:migrate:legacy:inventory --source=legacy --format=json
 ```
 
 The first command is a no-write inventory. Apply runs that report skips or
@@ -55,6 +56,10 @@ failures exit nonzero, and verification never prints source row values. The
 rehearsal command runs only in local or test environments, uses generated
 synthetic SQLite databases instead of the configured application database,
 applies twice, verifies idempotency, and removes its artifacts.
+
+The source-only inventory command is the production-readiness path: it never
+resolves a destination workspace or connection, and reports only aggregate
+counts, ranges, orphan/duplicate totals, high-water marks, and fingerprints.
 
 ## Deployment
 
