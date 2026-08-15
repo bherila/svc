@@ -90,7 +90,7 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(['workspace_id', 'idempotency_key'], 'payment_idempotency_unique');
             $table->unique(['provider', 'provider_payment_identifier'], 'provider_payment_unique');
-            $table->index(['workspace_id', 'client_invoice_id', 'status']);
+            $table->index(['workspace_id', 'client_invoice_id', 'status'], 'cip_workspace_invoice_status_idx');
         });
 
         Schema::create('client_billing_schedules', function (Blueprint $table): void {
@@ -108,7 +108,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->json('line_template');
             $table->timestamps();
-            $table->index(['workspace_id', 'is_active', 'next_run_on']);
+            $table->index(['workspace_id', 'is_active', 'next_run_on'], 'cbs_workspace_active_next_run_idx');
             $table->unique(['workspace_id', 'client_agreement_id'], 'billing_schedule_agreement_unique');
         });
 
@@ -126,7 +126,7 @@ return new class extends Migration
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('failed_at')->nullable();
             $table->timestamps();
-            $table->index(['workspace_id', 'client_invoice_id', 'status']);
+            $table->index(['workspace_id', 'client_invoice_id', 'status'], 'cied_workspace_invoice_status_idx');
         });
 
         Schema::create('client_stripe_customers', function (Blueprint $table): void {
@@ -155,7 +155,7 @@ return new class extends Migration
             $table->boolean('is_default')->default(false);
             $table->json('metadata')->nullable();
             $table->timestamps();
-            $table->index(['workspace_id', 'client_company_id']);
+            $table->index(['workspace_id', 'client_company_id'], 'cspm_workspace_company_idx');
         });
 
         Schema::create('client_stripe_events', function (Blueprint $table): void {
