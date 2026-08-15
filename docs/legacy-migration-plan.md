@@ -50,6 +50,9 @@ The implemented foundation includes:
 - `svc:migrate:legacy:rehearse [--format=json]`, which creates isolated
   synthetic source and destination SQLite databases, applies the importer twice,
   verifies stable counts and fingerprints, and removes both databases;
+- `svc:migrate:legacy:inventory --source=legacy [--format=json]`, which reads an
+  explicitly allowlisted source without resolving any destination connection or
+  workspace and emits only redacted aggregate evidence;
 - parent-ordered entity importers with idempotency and provenance tests;
 - a redacted inventory report and machine-readable verification summary;
 - high-water-mark and failed-row ledgers;
