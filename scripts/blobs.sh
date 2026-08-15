@@ -46,7 +46,10 @@ case "$MODE" in
         mkdir -p "$LOCAL_PATH"
         chmod 700 "$LOCAL_PATH"
         info "pull  ${REMOTE}/  ->  ${LOCAL_PATH}/   $([ "$APPLY" -eq 1 ] && echo '(APPLY)' || echo '(dry-run)')"
-        rsync "${RSYNC_OPTS[@]}" --delete "${REMOTE}/" "${LOCAL_PATH}/"
+        rsync "${RSYNC_OPTS[@]}" --delete --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= "${REMOTE}/" "${LOCAL_PATH}/"
+        # Archive mode also copies the source root's permissions. Reassert the
+        # private local root after rsync so an otherwise-empty mirror stays 0700.
+        chmod 700 "$LOCAL_PATH"
         ;;
     push)
         [ -d "$LOCAL_PATH" ] || die "local mirror does not exist: $LOCAL_PATH — run 'pull' first"
