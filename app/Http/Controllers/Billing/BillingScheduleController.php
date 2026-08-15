@@ -9,6 +9,7 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
+use App\Services\WorkspaceAuthorization;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -17,10 +18,10 @@ use Illuminate\Support\Facades\Gate;
 
 class BillingScheduleController extends Controller
 {
-    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany): JsonResponse|RedirectResponse
+    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany, WorkspaceAuthorization $authorization): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientCompany->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
         $data = $request->validated();
         $agreement = ClientAgreement::query()
             ->where('public_id', $data['client_agreement'])
@@ -40,10 +41,10 @@ class BillingScheduleController extends Controller
             : redirect()->back()->with('status', 'Billing schedule created.');
     }
 
-    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service): JsonResponse|RedirectResponse
+    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service, WorkspaceAuthorization $authorization): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        abort_unless($schedule->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $schedule);
         $invoices = $service->generateDue($schedule, CarbonImmutable::today());
 
         return request()->expectsJson()
@@ -51,10 +52,10 @@ class BillingScheduleController extends Controller
             : redirect()->back()->with('status', 'Due invoices generated.');
     }
 
-    public function show(Workspace $workspace, ClientBillingSchedule $schedule): View
+    public function show(Workspace $workspace, ClientBillingSchedule $schedule, WorkspaceAuthorization $authorization): View
     {
         Gate::authorize('view', $workspace);
-        abort_unless($schedule->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $schedule);
 
         return view('invoices.schedule', compact('workspace', 'schedule'));
     }

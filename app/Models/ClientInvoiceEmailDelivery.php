@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,9 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'provider_message_reference', 'error_summary', 'queued_at', 'sent_at', 'failed_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_invoice_id', 'provider_message_reference', 'error_summary'])]
-class ClientInvoiceEmailDelivery extends Model
+class ClientInvoiceEmailDelivery extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,9 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'effective_on', 'expires_on', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_agreement_id'])]
-class ClientAgreementRecurringItem extends Model
+class ClientAgreementRecurringItem extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

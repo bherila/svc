@@ -2,6 +2,7 @@
 
 namespace App\Services\Files;
 
+use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
@@ -32,7 +33,7 @@ final class AttachmentRecordResolver
         return array_keys(self::RECORD_CLASSES);
     }
 
-    public function resolve(Workspace $workspace, string $recordType, string $recordPublicId): Model
+    public function resolve(Workspace $workspace, string $recordType, string $recordPublicId): Model&WorkspaceOwned
     {
         $recordClass = self::RECORD_CLASSES[$recordType] ?? null;
 

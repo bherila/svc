@@ -5,25 +5,26 @@ namespace App\Services\Engagement;
 use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
+use Illuminate\Support\Facades\Gate;
 
 class EngagementAuthorization
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     public function isWorkspaceMember(User $user, Workspace $workspace): bool
     {
-        return $workspace->memberships()->where('user_id', $user->id)->exists();
+        return Gate::forUser($user)->allows('view', $workspace);
     }
 
     public function canManage(User $user, Workspace $workspace): bool
     {
-        return $workspace->memberships()
-            ->where('user_id', $user->id)
-            ->whereIn('role', ['owner', 'admin'])
-            ->exists();
+        return Gate::forUser($user)->allows('manage', $workspace);
     }
 
     public function canViewCompany(User $user, Workspace $workspace, ClientCompany $company): bool
     {
-        if ($company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             return false;
         }
 
@@ -38,7 +39,7 @@ class EngagementAuthorization
      */
     public function canActAsClient(User $user, Workspace $workspace, ClientCompany $company): bool
     {
-        if ($company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             return false;
         }
 
@@ -59,7 +60,7 @@ class EngagementAuthorization
 
     public function assertCompany(Workspace $workspace, ClientCompany $company): void
     {
-        if ($company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             throw new EngagementException('The client company does not belong to this workspace.');
         }
     }

@@ -7,9 +7,12 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 
 class TimeEntryWorkflow
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     /** @param array<string, mixed> $attributes */
     public function create(
         Workspace $workspace,
@@ -20,11 +23,12 @@ class TimeEntryWorkflow
     ): ClientTimeEntry {
         $company = $project->clientCompany;
 
-        if ($project->workspace_id !== $workspace->id || $company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $project)
+            || ! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             throw new EngagementException('The client project does not belong to this workspace.');
         }
 
-        if ($task !== null && ($task->workspace_id !== $workspace->id || $task->client_project_id !== $project->id)) {
+        if ($task !== null && (! $this->workspaceAuthorization->isOwnedBy($workspace, $task) || $task->client_project_id !== $project->id)) {
             throw new EngagementException('The client task does not belong to this project and workspace.');
         }
 

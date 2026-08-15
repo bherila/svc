@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreClientProjectRequest;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 
@@ -14,9 +15,10 @@ class ClientProjectController extends Controller
         StoreClientProjectRequest $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
+        WorkspaceAuthorization $authorization,
     ): RedirectResponse {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientCompany->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
 
         $clientCompany->projects()->create([
             'workspace_id' => $workspace->id,

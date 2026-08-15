@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -14,6 +15,7 @@ final class StripePaymentIntentService
     public function __construct(
         private readonly StripeGateway $gateway,
         private readonly InvoiceLifecycleService $invoices,
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
     ) {}
 
     /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
@@ -22,7 +24,7 @@ final class StripePaymentIntentService
         if (trim($idempotencyKey) === '') {
             throw new DomainException('A Stripe idempotency key is required.');
         }
-        if ($workspace !== null && $invoice->workspace_id !== $workspace->id) {
+        if ($workspace !== null && ! $this->workspaceAuthorization->isOwnedBy($workspace, $invoice)) {
             throw new DomainException('Invoice does not belong to this workspace.');
         }
 

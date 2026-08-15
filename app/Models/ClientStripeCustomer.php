@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -11,9 +13,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata'])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata'])]
-class ClientStripeCustomer extends Model
+class ClientStripeCustomer extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

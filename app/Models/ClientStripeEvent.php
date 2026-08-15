@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,9 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'status', 'error_summary', 'processed_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'stripe_event_id', 'object_id', 'payload_hash', 'error_summary'])]
-class ClientStripeEvent extends Model
+class ClientStripeEvent extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

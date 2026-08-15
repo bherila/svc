@@ -5,15 +5,18 @@ namespace App\Services\Billing;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
 final class InvoiceEmailService
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     /** @param list<string> $recipients */
     public function queue(ClientInvoice $invoice, array $recipients, ?Workspace $workspace = null): ClientInvoiceEmailDelivery
     {
-        if ($workspace !== null && $invoice->workspace_id !== $workspace->id) {
+        if ($workspace !== null && ! $this->workspaceAuthorization->isOwnedBy($workspace, $invoice)) {
             throw new DomainException('Invoice does not belong to this workspace.');
         }
         if (! in_array($invoice->status, ['issued', 'partially_paid'], true)) {

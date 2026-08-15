@@ -14,6 +14,7 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -25,6 +26,8 @@ use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     public function index(Request $request, Workspace $workspace): JsonResponse|View
     {
         $this->authorizeWorkspaceView($request, $workspace);
@@ -43,7 +46,7 @@ class InvoiceController extends Controller
     public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientCompany->workspace_id === $workspace->id, 404);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
         $invoice = $service->createDraft($workspace, $clientCompany, $request->validated(), $request->validated('lines'));
 
         return $request->expectsJson()
@@ -62,7 +65,7 @@ class InvoiceController extends Controller
     public function issue(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientInvoice->workspace_id === $workspace->id, 404);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
         $invoice = $service->issue($clientInvoice, $workspace);
 
         return $this->mutationResponse($request, $invoice, 'Invoice issued.');
@@ -113,7 +116,7 @@ class InvoiceController extends Controller
     public function send(SendInvoiceRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceEmailService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientInvoice->workspace_id === $workspace->id, 404);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
         $recipients = $request->validated('recipients') ?? array_filter([$clientInvoice->clientCompany->billing_email]);
         $delivery = $service->queue($clientInvoice, $recipients, $workspace);
 
@@ -146,7 +149,7 @@ class InvoiceController extends Controller
 
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
     {
-        abort_unless($invoice->workspace_id === $workspace->id, 404);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
         if (Gate::forUser($request->user())->allows('view', $workspace)) {
             return;
         }

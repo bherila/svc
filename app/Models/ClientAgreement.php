@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -22,9 +24,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
-class ClientAgreement extends Model
+class ClientAgreement extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

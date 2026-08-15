@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -22,9 +24,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'expired_at', 'accepted_by_user_id', 'acceptance_signer_name', 'acceptance_signer_title',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'accepted_by_user_id'])]
-class ClientProposal extends Model
+class ClientProposal extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected static function booted(): void
     {

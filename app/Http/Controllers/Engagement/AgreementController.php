@@ -8,10 +8,11 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
-use App\Services\Engagement\EngagementAuthorization;
 use App\Services\Engagement\EngagementException;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Gate;
 
 class AgreementController extends EngagementController
 {
@@ -19,13 +20,13 @@ class AgreementController extends EngagementController
         StoreAgreementRequest $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
-        EngagementAuthorization $authorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
         abort_if($user === null, 401);
-        abort_unless($authorization->canManage($user, $workspace), 403);
-        abort_unless($clientCompany->workspace_id === $workspace->id, 404);
+        Gate::forUser($user)->authorize('manage', $workspace);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
         try {
             $agreement = $workflow->create($workspace, $clientCompany, null, null, $request->validated());
@@ -45,14 +46,14 @@ class AgreementController extends EngagementController
     public function activate(
         Workspace $workspace,
         ClientAgreement $clientAgreement,
-        EngagementAuthorization $authorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $request = request();
         $user = $request->user();
         abort_if($user === null, 401);
-        abort_unless($authorization->canManage($user, $workspace), 403);
-        abort_unless($clientAgreement->workspace_id === $workspace->id, 404);
+        Gate::forUser($user)->authorize('manage', $workspace);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
         try {
             return $this->respond(
@@ -70,13 +71,13 @@ class AgreementController extends EngagementController
         SignAgreementRequest $request,
         Workspace $workspace,
         ClientAgreement $clientAgreement,
-        EngagementAuthorization $authorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
         abort_if($user === null, 401);
-        abort_unless($authorization->canManage($user, $workspace), 403);
-        abort_unless($clientAgreement->workspace_id === $workspace->id, 404);
+        Gate::forUser($user)->authorize('manage', $workspace);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
         try {
             return $this->respond(

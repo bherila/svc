@@ -2,9 +2,11 @@
 
 namespace App\Services\Files;
 
+use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAttachment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -18,6 +20,8 @@ use Throwable;
 
 final class AttachmentStorageService
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     private const MAX_BYTES = 52428800;
 
     private const STAGED_PREFIX = '_staged';
@@ -29,8 +33,9 @@ final class AttachmentStorageService
      * promotion deliberately leaves the staged row for the repair command,
      * because the storage driver may have completed only part of a move.
      */
-    public function store(Workspace $workspace, Model $record, UploadedFile $file, User $uploader): ClientAttachment
+    public function store(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader): ClientAttachment
     {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
         $metadata = $this->stage($workspace, $record, $file);
 
         try {
