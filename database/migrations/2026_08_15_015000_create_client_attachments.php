@@ -26,7 +26,7 @@ return new class extends Migration
             $table->timestamp('deleted_at')->nullable();
             $table->timestamps();
 
-            $table->index(['workspace_id', 'record_type', 'record_public_id']);
+            $table->index(['workspace_id', 'record_type', 'record_public_id'], 'ca_workspace_record_idx');
             $table->index(['lifecycle_state', 'created_at']);
         });
     }

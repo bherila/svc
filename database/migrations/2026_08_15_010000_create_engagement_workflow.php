@@ -132,8 +132,8 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['workspace_id', 'client_agreement_id']);
-            $table->index(['client_agreement_id', 'is_active']);
+            $table->index(['workspace_id', 'client_agreement_id'], 'cari_workspace_agreement_idx');
+            $table->index(['client_agreement_id', 'is_active'], 'cari_agreement_active_idx');
         });
     }
 

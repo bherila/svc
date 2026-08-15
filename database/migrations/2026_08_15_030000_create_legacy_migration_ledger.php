@@ -23,7 +23,7 @@ return new class extends Migration
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
             $table->index(['workspace_id', 'created_at']);
-            $table->index(['source_connection', 'source_identity_hash']);
+            $table->index(['source_connection', 'source_identity_hash'], 'lmr_source_identity_idx');
         });
 
         Schema::create('legacy_migration_items', function (Blueprint $table): void {
@@ -52,7 +52,7 @@ return new class extends Migration
             $table->string('source_fingerprint', 64);
             $table->timestamps();
             $table->unique(['legacy_migration_run_id', 'legacy_migration_item_id'], 'legacy_run_item_unique');
-            $table->index(['legacy_migration_run_id', 'observed_status']);
+            $table->index(['legacy_migration_run_id', 'observed_status'], 'lmri_run_observed_status_idx');
         });
 
         Schema::create('legacy_migration_failures', function (Blueprint $table): void {
@@ -66,7 +66,7 @@ return new class extends Migration
             $table->json('redacted_context')->nullable();
             $table->string('failure_fingerprint', 64);
             $table->timestamps();
-            $table->index(['legacy_migration_run_id', 'reason_code']);
+            $table->index(['legacy_migration_run_id', 'reason_code'], 'lmf_run_reason_idx');
             $table->unique(['legacy_migration_run_id', 'source_table', 'source_key_hash', 'reason_code'], 'legacy_failure_identity_unique');
         });
     }
