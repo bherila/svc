@@ -33,7 +33,8 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('REMOTE_HOST="ssh-bwh-php"', $script);
         $this->assertStringContainsString('REMOTE_PATH="svc-laravel/storage/app/private"', $script);
         $this->assertStringContainsString('rsync "${RSYNC_OPTS[@]}" --delete --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= "${REMOTE}/" "${LOCAL_PATH}/"', $script);
-        $this->assertStringContainsString('chmod 700 "$LOCAL_PATH"', $script);
+        $this->assertStringContainsString('find "$LOCAL_PATH" -type d -exec chmod 700 {} +', $script);
+        $this->assertStringContainsString('find "$LOCAL_PATH" -type f -exec chmod 600 {} +', $script);
         $this->assertStringNotContainsString('rsync "${RSYNC_OPTS[@]}" --delete "${LOCAL_PATH}/" "${REMOTE}/"', $script);
     }
 }
