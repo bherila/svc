@@ -20,8 +20,15 @@ const SKIP_EXTENSIONS = new Set([
   '.eot', '.ttf', '.woff', '.woff2',
 ])
 const FORBIDDEN_EXTENSIONS = new Set([
-  '.db', '.ofx', '.qbo', '.qfx', '.sqlite', '.sqlite3', '.zip',
+  '.bak', '.csv', '.db', '.doc', '.docx', '.dump', '.eml', '.mbox',
+  '.ndjson', '.ofx', '.pdf', '.qbo', '.qfx', '.sql', '.sqlite', '.sqlite3',
+  '.tsv', '.xls', '.xlsx', '.zip',
 ])
+const FORBIDDEN_PATHS = [
+  /^(?:backups?|billing-data|client-data|data|dumps?|exports?|production-data)\//i,
+  /^database\/(?:backups?|dumps?)\//i,
+  /^storage\/app\/(?:private|uploads?)\/(?!\.gitignore$)/i,
+]
 
 const RULES = [
   {
@@ -35,6 +42,22 @@ const RULES = [
   {
     name: 'bank-account-label',
     pattern: /\b(?:bank|routing|account)[ _-]?(?:number|no|id)\b[^A-Za-z0-9]{0,4}[A-Z0-9]{6,17}\b/gi,
+  },
+  {
+    name: 'tax-identifier',
+    pattern: /\b(?:ein|tax(?:payer)?[ _-]?id(?:entification)?(?:[ _-]?(?:number|no))?)\b[^A-Za-z0-9]{0,6}\d{2}-\d{7}\b/gi,
+  },
+  {
+    name: 'stripe-live-credential',
+    pattern: /\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b/g,
+  },
+  {
+    name: 'stripe-webhook-secret',
+    pattern: /\bwhsec_[A-Za-z0-9]{16,}\b/g,
+  },
+  {
+    name: 'payment-processor-record-id',
+    pattern: /\b(?:acct|ch|cus|in|pi|pm|seti|src|sub|txn)_[A-Za-z0-9]{14,}\b/g,
   },
   {
     name: 'non-test-email',
@@ -56,7 +79,10 @@ const findings = []
 for (const file of files) {
   const extension = path.extname(file).toLowerCase()
 
-  if (FORBIDDEN_EXTENSIONS.has(extension)) {
+  if (
+    FORBIDDEN_EXTENSIONS.has(extension)
+    || FORBIDDEN_PATHS.some((pattern) => pattern.test(file))
+  ) {
     findings.push({ file, line: 0, rule: 'private-data-file' })
     continue
   }

@@ -3,7 +3,6 @@
     "name": "bherila/svc",
     "description": "Client-service business operations platform.",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
     "keywords": [
         "laravel",
         "framework"
@@ -63,6 +62,7 @@
             "pnpm run lint:check",
             "pnpm run format:check",
             "pnpm run types:check",
+            "pnpm run scan-sensitive:test",
             "pnpm run scan-sensitive",
             "@test"
         ],

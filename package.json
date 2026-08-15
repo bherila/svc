@@ -1,6 +1,5 @@
 {
     "name": "@bherila/svc",
-    "private": true,
     "packageManager": "pnpm@11.5.0",
     "$schema": "https://www.schemastore.org/package.json",
     "private": true,
@@ -11,9 +10,11 @@
         "dev": "vite",
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
+        "hooks:install": "git config core.hooksPath .githooks",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
         "scan-sensitive": "node scripts/scan-sensitive.mjs",
+        "scan-sensitive:test": "node scripts/test-sensitive-scan.mjs",
         "types:check": "tsc --noEmit"
     },
     "devDependencies": {
