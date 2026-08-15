@@ -1,4 +1,7 @@
 {
+    "name": "@bherila/svc",
+    "private": true,
+    "packageManager": "pnpm@11.5.0",
     "$schema": "https://www.schemastore.org/package.json",
     "private": true,
     "type": "module",
@@ -10,6 +13,7 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
+        "scan-sensitive": "node scripts/scan-sensitive.mjs",
         "types:check": "tsc --noEmit"
     },
     "devDependencies": {
