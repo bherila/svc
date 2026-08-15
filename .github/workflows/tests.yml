@@ -5,9 +5,14 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: svc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ci:
@@ -41,3 +46,108 @@ jobs:
 
       - name: Run CI Checks
         run: composer ci:check
+
+      - name: Upload frontend build artifact
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: frontend-build
+          path: public/build/
+          retention-days: 2
+
+  deploy:
+    name: Deploy empty alpha to web1
+    needs: ci
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
+    environment: web1
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install production Composer dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Download frontend build artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: frontend-build
+          path: public/build/
+
+      - name: Append cPanel PHP handler to .htaccess
+        run: cat htaccess-append.txt >> public/.htaccess
+
+      - name: Set up pinned SSH credentials
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ecdsa
+          chmod 600 ~/.ssh/id_ecdsa
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # The destination is intentionally hard-coded. This cPanel account also hosts
+      # bwh-php, PHR, and Games; an interpolated or broad --delete target is unsafe.
+      # svc-blobs is authoritative production data and must survive every code deploy.
+      - name: Deploy application with guarded rsync
+        run: |
+          rsync -av --delete \
+            --exclude='.env' \
+            --exclude='svc-blobs' \
+            -e "ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes" \
+            app \
+            bootstrap \
+            config \
+            database \
+            public \
+            resources \
+            routes \
+            storage \
+            vendor \
+            artisan \
+            composer.json \
+            composer.lock \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/svc-laravel/
+
+      - name: Install private configuration and migrate schema
+        run: |
+          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "set -eu; \
+             test -f ~/.config/svc/deployment.env; \
+             test -f ~/.config/svc/database.env; \
+             install -m 600 ~/.config/svc/deployment.env ~/svc-laravel/.env; \
+             install -m 600 ~/.config/svc/database.env ~/svc-laravel/.db-credentials; \
+             install -d -m 700 ~/svc-laravel/storage/app/private/svc-blobs; \
+             cd ~/svc-laravel; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan migrate --force; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:storage:status --write --format=json; \
+             stripe_exit=0; \
+             stripe_status=\$(/opt/cpanel/ea-php85/root/usr/bin/php artisan svc:stripe:status --format=json) || stripe_exit=\$?; \
+             test \"\$stripe_exit\" -eq 0 -o \"\$stripe_exit\" -eq 1; \
+             printf '%s\\n' \"\$stripe_status\""
+
+      - name: Verify public health and OAuth redirect
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 20 \
+            https://svc.bherila.net/up > /dev/null
+          redirect_url="$(curl --fail --silent --show-error --max-time 20 \
+            --output /dev/null --write-out '%{redirect_url}' \
+            https://svc.bherila.net/oauth/redirect)"
+          case "$redirect_url" in
+            https://bherila.net/oauth/authorize?*) ;;
+            *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
+          esac

@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // Private SVC documents. This root is mirrored from authoritative web1
+        // storage into ~/proj/x-data/svc and must remain excluded from deploy rsync.
+        'svc_files' => [
+            'driver' => 'local',
+            'root' => env('SVC_FILESYSTEM_ROOT') ?: storage_path('app/private/svc-blobs'),
+            'serve' => false,
+            'throw' => true,
+            'report' => true,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
