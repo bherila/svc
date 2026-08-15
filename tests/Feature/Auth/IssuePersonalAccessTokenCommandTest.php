@@ -87,4 +87,31 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
         $this->assertSame(2, $exitCode);
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
+
+    public function test_named_tokens_can_be_revoked_without_exposing_secret_or_email(): void
+    {
+        $user = User::factory()->create(['email' => 'revoke-owner@synthetic.test']);
+        $first = $user->createToken('Finance integration', ['finance.read'], now()->addDay());
+        $second = $user->createToken('Finance integration', ['finance.read'], now()->addDay());
+
+        $ambiguous = Artisan::call('svc:auth:revoke-token', [
+            'user_public_id' => $user->public_id,
+            'name' => 'Finance integration',
+        ]);
+        $this->assertSame(1, $ambiguous);
+        $this->assertDatabaseCount('personal_access_tokens', 2);
+
+        $revoked = Artisan::call('svc:auth:revoke-token', [
+            'user_public_id' => $user->public_id,
+            'name' => 'Finance integration',
+            '--all' => true,
+        ]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $revoked);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertStringNotContainsString($first->plainTextToken, $output);
+        $this->assertStringNotContainsString($second->plainTextToken, $output);
+        $this->assertStringNotContainsString($user->email, $output);
+    }
 }

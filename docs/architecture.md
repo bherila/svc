@@ -17,7 +17,10 @@ Tenant isolation is enforced at authorization and query boundaries rather than t
 - **Identity:** OAuth 2.0 authorization code flow with PKCE. The initial deployment uses the Bherila identity provider, but domain records only know local users.
 - **Files:** private object storage behind a storage service; no OneDrive or Bherila path assumptions in models.
 - **Payments:** Stripe is an optional adapter. Manual payments remain a first-class domain capability.
-- **Finance reconciliation:** optional references to external transaction UUIDs, never foreign keys into another application's database.
+- **Finance reconciliation:** workspace-scoped allocation records reference external
+  transaction UUIDs, never foreign keys into another application's database. The
+  versioned API uses expiring, hashed Sanctum tokens with explicit abilities;
+  token access never overrides workspace policy.
 - **Mail and documents:** generated messages and documents use provider-neutral Laravel contracts.
 
 ## Public identifiers

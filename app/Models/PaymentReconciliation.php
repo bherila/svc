@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * An allocation linking one external finance transaction to one SVC payment.
  * The same external transaction may therefore have multiple allocations.
+ *
+ * @property CarbonImmutable|null $reconciled_on
  */
 #[Fillable([
     'workspace_id', 'client_invoice_payment_id', 'external_system_slug', 'external_transaction_uuid',

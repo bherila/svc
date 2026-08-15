@@ -97,3 +97,10 @@ pnpm db-snapshot verify
 
 There is deliberately no push or restore subcommand. Snapshot files, checksums,
 and manifests are private data and must never be added to this public repository.
+
+## Finance reconciliation API
+
+SVC exposes a narrow, versioned bearer-token API for listing invoice payments and
+linking them to transaction UUIDs owned by an external finance system. Tokens are
+expiring, stored only as hashes, and require explicit `finance.read` or
+`finance.reconcile` abilities. See [the API contract](docs/finance-api.md).

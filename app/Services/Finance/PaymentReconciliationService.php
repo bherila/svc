@@ -127,6 +127,37 @@ final class PaymentReconciliationService
         $this->workspaceAuthorization->assertOwnedBy($workspace, $reconciliation);
     }
 
+    public function deactivate(
+        Workspace $workspace,
+        ClientInvoicePayment $payment,
+        string $systemSlug,
+        string $transactionUuid,
+    ): PaymentReconciliation {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $payment);
+        $systemSlug = $this->systemSlug($systemSlug);
+        $transactionUuid = $this->transactionUuid($transactionUuid);
+
+        return DB::transaction(function () use ($workspace, $payment, $systemSlug, $transactionUuid): PaymentReconciliation {
+            $lockedPayment = ClientInvoicePayment::query()
+                ->whereKey($payment->id)
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $reconciliation = PaymentReconciliation::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_invoice_payment_id', $lockedPayment->id)
+                ->where('external_system_slug', $systemSlug)
+                ->where('external_transaction_uuid', $transactionUuid)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $reconciliation->forceFill(['is_active' => false])->save();
+
+            return $reconciliation->fresh();
+        });
+    }
+
     private function assertCreatorBelongsToWorkspace(Workspace $workspace, User $creator): void
     {
         if (! $workspace->memberships()->where('user_id', $creator->id)->exists()) {
