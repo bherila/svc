@@ -80,3 +80,20 @@ pnpm blobs verify
 
 `push` exists only for restore-after-loss, refuses an empty mirror, and never deletes
 remote files unless both `--prune` and interactive confirmation are supplied.
+
+## Database snapshots
+
+Before any real tenant or invoice rows are entered, pull-only database snapshots
+must be enabled and verified. The guarded command exports a consistent snapshot
+on web1, verifies its gzip stream and SHA-256 digest, and stores it under
+`~/proj/x-data/svc-database/` for restic coverage. This is deliberately separate
+from `~/proj/x-data/svc/`, whose contents are managed by the private-file mirror:
+
+```bash
+pnpm db-snapshot pull            # dry-run; no writes
+pnpm db-snapshot pull --apply    # web1 -> x-data only
+pnpm db-snapshot verify
+```
+
+There is deliberately no push or restore subcommand. Snapshot files, checksums,
+and manifests are private data and must never be added to this public repository.
