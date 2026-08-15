@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'currency', 'received_on',
@@ -29,5 +30,17 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(ClientInvoice::class, 'client_invoice_id');
+    }
+
+    /** @return BelongsTo<Workspace, $this> */
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
+    }
+
+    /** @return HasMany<PaymentReconciliation, $this> */
+    public function reconciliations(): HasMany
+    {
+        return $this->hasMany(PaymentReconciliation::class, 'client_invoice_payment_id');
     }
 }

@@ -209,6 +209,9 @@ final class InvoiceLifecycleService
                     throw new DomainException('Successful payments cannot exceed the invoice total.');
                 }
             }
+            if ($status === 'refunded') {
+                $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
+            }
             $lockedPayment->forceFill([
                 'status' => $status,
                 'refunded_amount' => $status === 'refunded'
@@ -236,6 +239,7 @@ final class InvoiceLifecycleService
             if ($amount < 0 || $amount > $lockedPayment->amount) {
                 throw new DomainException('Refunded amount must be between zero and the payment amount.');
             }
+            $this->assertReconciliationCapacity($lockedPayment, $amount);
 
             $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
             $lockedPayment->forceFill([
@@ -316,5 +320,17 @@ final class InvoiceLifecycleService
         }
 
         throw new DomainException('sort_order must be a non-negative integer.');
+    }
+
+    private function assertReconciliationCapacity(ClientInvoicePayment $payment, int $refundedAmount): void
+    {
+        $activeAllocated = (int) $payment->reconciliations()
+            ->where('is_active', true)
+            ->sum('allocated_amount');
+        $netAmount = max(0, $payment->amount - $refundedAmount);
+
+        if ($activeAllocated > $netAmount) {
+            throw new DomainException('Refunding this payment would exceed its active finance reconciliation allocations.');
+        }
     }
 }
