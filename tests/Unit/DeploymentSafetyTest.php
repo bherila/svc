@@ -49,6 +49,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('REMOTE_PROJECT_PATH="svc-laravel"', $script);
         $this->assertStringContainsString('LOCAL_DIRECTORY="${DB_SNAPSHOT_DIR:-$X_DATA/${PROJECT}-database}"', $script);
         $this->assertStringNotContainsString('$X_DATA/$PROJECT/database', $script);
+        $this->assertStringContainsString('database snapshots must stay outside the rsync-managed', $script);
         $this->assertStringContainsString('--single-transaction', $script);
         $this->assertStringContainsString('--quick', $script);
         $this->assertStringContainsString('--no-tablespaces', $script);

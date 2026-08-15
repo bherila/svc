@@ -30,6 +30,12 @@ sha256_file() {
     fi
 }
 
+case "$LOCAL_DIRECTORY/" in
+    "$X_DATA/$PROJECT/"*)
+        die "database snapshots must stay outside the rsync-managed $X_DATA/$PROJECT tree"
+        ;;
+esac
+
 verify_snapshot() {
     local snapshot_path="$1"
     local checksum_path="${snapshot_path}.sha256"
