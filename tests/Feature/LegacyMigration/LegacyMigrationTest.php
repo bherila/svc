@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PDO;
 use Tests\TestCase;
 
@@ -246,6 +247,78 @@ class LegacyMigrationTest extends TestCase
             'observed_status' => 'failed',
         ]);
         $this->assertFalse(app(LegacyMigrationService::class)->verify($second['run_public_id'])['ok']);
+    }
+
+    public function test_verify_disambiguates_repeated_attachment_target_types_by_source_table(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $run = LegacyMigrationRun::create([
+            'workspace_id' => $workspace->getKey(),
+            'source_connection' => 'synthetic',
+            'source_identity_hash' => hash('sha256', 'synthetic-attachments'),
+            'mode' => 'apply',
+            'status' => 'completed',
+            'source_high_water_marks' => [],
+            'counts' => [],
+            'fingerprints' => [],
+        ]);
+        $attachmentTables = [
+            'files_for_client_companies',
+            'files_for_projects',
+            'files_for_tasks',
+            'files_for_agreements',
+        ];
+
+        foreach ($attachmentTables as $index => $sourceTable) {
+            Schema::create($sourceTable, function ($table): void {
+                $table->uuid('public_id')->primary();
+            });
+            $publicId = sprintf('00000000-0000-4000-8000-%012d', $index + 1);
+            DB::table($sourceTable)->insert(['public_id' => $publicId]);
+            $item = LegacyMigrationItem::create([
+                'legacy_migration_run_id' => $run->getKey(),
+                'source_connection' => 'synthetic',
+                'source_identity_hash' => $run->source_identity_hash,
+                'source_table' => $sourceTable,
+                'source_key' => (string) ($index + 1),
+                'target_type' => 'attachment',
+                'target_public_id' => $publicId,
+                'source_fingerprint' => hash('sha256', $sourceTable),
+                'status' => 'imported',
+            ]);
+            DB::table('legacy_migration_run_items')->insert([
+                'legacy_migration_run_id' => $run->getKey(),
+                'legacy_migration_item_id' => $item->getKey(),
+                'observed_status' => 'imported',
+                'source_fingerprint' => $item->source_fingerprint,
+            ]);
+        }
+
+        $verification = app(LegacyMigrationService::class)->verify($run->public_id);
+
+        $this->assertTrue($verification['ok']);
+        $this->assertSame(0, $verification['missing_target_count']);
+    }
+
+    public function test_apply_preloads_ledger_items_once_per_source_table(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        for ($id = 100; $id < 120; $id++) {
+            $pdo->exec("INSERT INTO client_tasks (id, project_id, name, description, completed_at, created_at, updated_at) VALUES ({$id}, 13, 'Synthetic task {$id}', NULL, NULL, '2026-01-05', '2026-01-06')");
+        }
+
+        DB::enableQueryLog();
+        app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+        $ledgerReads = collect(DB::getQueryLog())
+            ->filter(fn (array $query): bool => str_contains(strtolower((string) $query['query']), 'from "legacy_migration_items"'))
+            ->count();
+        DB::disableQueryLog();
+
+        $this->assertSame(6, $ledgerReads, 'The five source-table preloads plus invoice reconciliation should be the only ledger reads.');
+        $this->assertSame(21, $this->countForWorkspace('client_tasks', $workspace));
     }
 
     private function createSource(): void

@@ -13,13 +13,40 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
 
+/**
+ * @phpstan-type MigrationCounts array{
+ *     source_rows: int,
+ *     planned: int,
+ *     imported: int,
+ *     skipped: int,
+ *     planned_copy: int,
+ *     planned_reference: int,
+ *     failed: int,
+ *     idempotent: int,
+ *     failure_reasons: array<string, int>
+ * }
+ * @phpstan-type QueryCache array{
+ *     parent_ids: array<array-key, string|null>,
+ *     internal_ids: array<array-key, int|null>,
+ *     stripe_customer_ids: array<array-key, int|null>,
+ *     related_exists: array<array-key, bool>,
+ *     target_exists: array<array-key, bool>,
+ *     table_exists: array<array-key, bool>,
+ *     table_columns: array<array-key, list<string>>
+ * }
+ */
 final class LegacyMigrationService
 {
+    /** @var QueryCache */
+    private array $activeQueryCache;
+
     public function __construct(
         private readonly SourceGuard $sourceGuard,
         private readonly ImporterRegistry $registry,
         private readonly InventoryService $inventory,
-    ) {}
+    ) {
+        $this->activeQueryCache = $this->newQueryCache();
+    }
 
     /** @return array<string, mixed> */
     public function run(string $sourceName, string $workspaceIdentifier, bool $apply = false): array
@@ -38,7 +65,12 @@ final class LegacyMigrationService
         }
 
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
+        /** @var MigrationCounts $counts */
         $counts = $this->emptyCounts($inventory);
+        $queryCache = $this->newQueryCache();
+        $this->activeQueryCache = &$queryCache;
+        /** @var array<string, LegacyMigrationItem> $ledgerItems */
+        $ledgerItems = [];
 
         try {
             foreach ($specs as $spec) {
@@ -47,16 +79,16 @@ final class LegacyMigrationService
                     continue;
                 }
 
-                $this->importSpec($sourceConnection, $spec, $run, $destinationName, $counts);
+                $this->importSpec($sourceConnection, $spec, $run, $destinationName, $counts, $queryCache, $ledgerItems);
             }
 
             $this->reconcileImportedInvoices($run, $destinationName);
 
             $run->forceFill([
                 'counts' => $counts,
-                'status' => ($counts['failed'] ?? 0) > 0
+                'status' => $counts['failed'] > 0
                     ? 'completed_with_failures'
-                    : (($counts['skipped'] ?? 0) > 0 ? 'completed_with_skips' : 'completed'),
+                    : ($counts['skipped'] > 0 ? 'completed_with_skips' : 'completed'),
                 'completed_at' => now(),
             ])->save();
         } catch (Throwable) {
@@ -95,12 +127,28 @@ final class LegacyMigrationService
             ->groupBy('observed_status')->pluck('aggregate', 'observed_status')
             ->map(fn ($value): int => (int) $value)->all();
         $itemIds = (clone $observations)->pluck('legacy_migration_item_id');
-        $items = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery()->whereIn('id', $itemIds);
+        $items = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery()->whereIn('id', $itemIds)
+            ->where('status', 'imported')
+            ->get(['source_table', 'target_type', 'target_public_id']);
+        $targetIdsByTable = [];
+        $tableExists = [];
         $missingTargets = 0;
-        foreach ($items->where('status', 'imported')->get(['target_type', 'target_public_id']) as $item) {
-            $table = $this->targetTableForType((string) $item->target_type);
-            if ($table === null || ! Schema::connection($destinationName)->hasTable($table) || ! DB::connection($destinationName)->table($table)->where('public_id', $item->target_public_id)->exists()) {
+        foreach ($items as $item) {
+            $table = $this->targetTableForType((string) $item->target_type, (string) $item->source_table);
+            if ($table === null || ! ($tableExists[$table] ??= Schema::connection($destinationName)->hasTable($table)) || ! is_string($item->target_public_id) || $item->target_public_id === '') {
                 $missingTargets++;
+
+                continue;
+            }
+            $targetIdsByTable[$table][] = $item->target_public_id;
+        }
+        foreach ($targetIdsByTable as $table => $targetIds) {
+            $existingIds = DB::connection($destinationName)->table($table)->whereIn('public_id', array_values(array_unique($targetIds)))->pluck('public_id')->map(fn ($id): string => (string) $id)->all();
+            $existingIds = array_fill_keys($existingIds, true);
+            foreach ($targetIds as $targetId) {
+                if (! isset($existingIds[$targetId])) {
+                    $missingTargets++;
+                }
             }
         }
 
@@ -124,12 +172,18 @@ final class LegacyMigrationService
     /**
      * @param  array<string, mixed>  $spec
      * @param  array<string, mixed>  $counts
+     * @param  QueryCache  $queryCache
+     * @param  array<string, LegacyMigrationItem>  $ledgerItems
      */
-    private function importSpec(ConnectionInterface $source, array $spec, LegacyMigrationRun $run, string $destinationName, array &$counts): void
+    private function importSpec(ConnectionInterface $source, array $spec, LegacyMigrationRun $run, string $destinationName, array &$counts, array &$queryCache, array &$ledgerItems): void
     {
         $table = (string) $spec['source_table'];
         $keyColumn = (string) $spec['source_key'];
         $cursor = $source->table($table)->orderBy($keyColumn)->cursor();
+        $itemsForTable = $this->loadLedgerItems($run, $table, $destinationName);
+        foreach ($itemsForTable as $sourceKey => $item) {
+            $ledgerItems[$this->ledgerItemKey($table, (string) $sourceKey)] = $item;
+        }
 
         foreach ($cursor as $rawRow) {
             $row = (array) $rawRow;
@@ -143,12 +197,8 @@ final class LegacyMigrationService
             $fingerprint = Fingerprint::row($row);
 
             try {
-                DB::connection($destinationName)->transaction(function () use ($row, $sourceKey, $fingerprint, $spec, $run, $destinationName, &$counts): void {
-                    $itemQuery = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery();
-                    $item = $itemQuery->where('source_identity_hash', $run->source_identity_hash)
-                        ->where('source_table', $spec['source_table'])
-                        ->where('source_key', $sourceKey)
-                        ->first();
+                DB::connection($destinationName)->transaction(function () use ($row, $sourceKey, $fingerprint, $spec, $run, $destinationName, &$counts, &$queryCache, &$ledgerItems, &$itemsForTable, $table): void {
+                    $item = $itemsForTable[$sourceKey] ?? null;
 
                     if ($item && $item->source_fingerprint !== $fingerprint) {
                         $this->recordRunItem($run, $item, 'failed', $fingerprint, $destinationName);
@@ -165,7 +215,7 @@ final class LegacyMigrationService
                         return;
                     }
 
-                    $result = $this->importRow($row, $spec, $run, $item, $destinationName);
+                    $result = $this->importRow($row, $spec, $run, $item, $destinationName, $queryCache, $ledgerItems);
                     $item = $item ?: new LegacyMigrationItem;
                     $item->setConnection($destinationName);
                     $item->forceFill([
@@ -180,6 +230,8 @@ final class LegacyMigrationService
                         'status' => $result['status'],
                         'reason_code' => $result['reason_code'] ?? null,
                     ])->save();
+                    $itemsForTable[$sourceKey] = $item;
+                    $ledgerItems[$this->ledgerItemKey($table, $sourceKey)] = $item;
                     $this->recordRunItem($run, $item, $result['status'], $fingerprint, $destinationName);
 
                     $counts[$result['status']]++;
@@ -192,7 +244,7 @@ final class LegacyMigrationService
                     }
                 });
             } catch (Throwable) {
-                DB::connection($destinationName)->transaction(function () use ($row, $sourceKey, $fingerprint, $spec, $run, $destinationName): void {
+                DB::connection($destinationName)->transaction(function () use ($row, $sourceKey, $fingerprint, $spec, $run, $destinationName, &$ledgerItems, &$itemsForTable, $table): void {
                     $item = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery()->firstOrCreate(
                         [
                             'source_identity_hash' => $run->source_identity_hash,
@@ -216,6 +268,8 @@ final class LegacyMigrationService
                             'reason_code' => 'row_transaction_failed',
                         ])->save();
                     }
+                    $itemsForTable[$sourceKey] = $item;
+                    $ledgerItems[$this->ledgerItemKey($table, $sourceKey)] = $item;
                     $this->recordRunItem($run, $item, 'failed', $fingerprint, $destinationName);
                     $this->recordFailure($run, $item, $spec, $sourceKey, $fingerprint, 'row_transaction_failed', $row, $destinationName);
                 });
@@ -228,9 +282,11 @@ final class LegacyMigrationService
     /**
      * @param  array<string, mixed>  $row
      * @param  array<string, mixed>  $spec
+     * @param  QueryCache  $queryCache
+     * @param  array<string, LegacyMigrationItem>  $ledgerItems
      * @return array{status: string, target_public_id?: string, reason_code?: string}
      */
-    private function importRow(array $row, array $spec, LegacyMigrationRun $run, ?LegacyMigrationItem $item, string $destinationName): array
+    private function importRow(array $row, array $spec, LegacyMigrationRun $run, ?LegacyMigrationItem $item, string $destinationName, array &$queryCache, array $ledgerItems): array
     {
         $action = $spec['action'];
         if ($action === 'planned_copy') {
@@ -240,10 +296,10 @@ final class LegacyMigrationService
             return ['status' => 'planned_reference', 'reason_code' => 'stripe_reference_deferred'];
         }
         if ($action === 'bind_user') {
-            return $this->bindUser($row, $destinationName);
+            return $this->bindUser($row, $destinationName, $queryCache);
         }
 
-        if (! Schema::connection($destinationName)->hasTable($spec['target_table'])) {
+        if (! $this->destinationTableExists($destinationName, (string) $spec['target_table'], $queryCache)) {
             return ['status' => 'skipped', 'reason_code' => 'destination_table_missing'];
         }
 
@@ -258,21 +314,27 @@ final class LegacyMigrationService
 
                 continue;
             }
-            $parentIds[$parent['source_table']] = $this->resolveParentId($run->source_identity_hash, $parent['source_table'], (string) $value, $destinationName);
+            $parentIds[$parent['source_table']] = $this->resolveParentId($parent['source_table'], (string) $value, $ledgerItems, $queryCache);
             if ($parentIds[$parent['source_table']] === null && $parent['required']) {
                 return ['status' => 'skipped', 'reason_code' => 'missing_parent'];
             }
         }
 
         $publicId = $item?->target_public_id ?: (string) Str::uuid();
-        $attributes = $this->attributes($row, $spec['target_type'], $run->workspace_id, $parentIds, $publicId, $destinationName, $run->source_identity_hash);
+        $attributes = $this->attributes($row, $spec['target_type'], $run->workspace_id, $parentIds, $publicId, $destinationName, $run->source_identity_hash, $queryCache, $ledgerItems);
         if ($spec['target_type'] === 'stripe_payment_method') {
             $companyId = $this->internalId($destinationName, 'client_companies', $parentIds['client_companies'] ?? null);
-            if ($companyId === null || ! DB::connection($destinationName)->table('client_stripe_customers')->where('client_company_id', $companyId)->exists()) {
+            $stripeCustomerKey = (string) ($companyId ?? 'none');
+            $hasStripeCustomer = $queryCache['related_exists'][$stripeCustomerKey] ?? null;
+            if ($hasStripeCustomer === null && $companyId !== null) {
+                $hasStripeCustomer = DB::connection($destinationName)->table('client_stripe_customers')->where('client_company_id', $companyId)->exists();
+                $queryCache['related_exists'][$stripeCustomerKey] = $hasStripeCustomer;
+            }
+            if ($companyId === null || $hasStripeCustomer !== true) {
                 return ['status' => 'skipped', 'reason_code' => 'missing_parent'];
             }
         }
-        $columns = Schema::connection($destinationName)->getColumnListing($spec['target_table']);
+        $columns = $this->destinationColumns($destinationName, (string) $spec['target_table'], $queryCache);
         if (! in_array('public_id', $columns, true)) {
             return ['status' => 'skipped', 'reason_code' => 'destination_public_id_missing'];
         }
@@ -297,9 +359,10 @@ final class LegacyMigrationService
 
     /**
      * @param  array<string, mixed>  $row
+     * @param  QueryCache  $queryCache
      * @return array{status: string, target_public_id?: string, reason_code?: string}
      */
-    private function bindUser(array $row, string $destinationName): array
+    private function bindUser(array $row, string $destinationName, array &$queryCache): array
     {
         $legacyId = (string) ($row['id'] ?? '');
         $bindings = Config::get('legacy-migration.user_bindings', []);
@@ -318,11 +381,17 @@ final class LegacyMigrationService
             return ['status' => 'skipped', 'reason_code' => 'user_binding_required'];
         }
 
-        $columns = Schema::connection($destinationName)->getColumnListing('users');
+        $columns = $this->destinationColumns($destinationName, 'users', $queryCache);
         if (! in_array('public_id', $columns, true)) {
             return ['status' => 'skipped', 'reason_code' => 'user_public_id_column_missing'];
         }
-        if (! DB::connection($destinationName)->table('users')->where('public_id', $publicId)->exists()) {
+        $userKey = 'users'."\0".$publicId;
+        $userExists = $queryCache['target_exists'][$userKey] ?? null;
+        if ($userExists === null) {
+            $userExists = DB::connection($destinationName)->table('users')->where('public_id', $publicId)->exists();
+            $queryCache['target_exists'][$userKey] = $userExists;
+        }
+        if ($userExists !== true) {
             return ['status' => 'skipped', 'reason_code' => 'user_binding_not_found'];
         }
 
@@ -331,10 +400,12 @@ final class LegacyMigrationService
 
     /**
      * @param  array<string, mixed>  $row
-     * @param  array<string, mixed>  $parents
+     * @param  array<string, string|null>  $parents
+     * @param  QueryCache  $queryCache
+     * @param  array<string, LegacyMigrationItem>  $ledgerItems
      * @return array<string, mixed>
      */
-    private function attributes(array $row, string $type, int $workspaceId, array $parents, string $publicId, string $destinationName, string $sourceIdentityHash): array
+    private function attributes(array $row, string $type, int $workspaceId, array $parents, string $publicId, string $destinationName, string $sourceIdentityHash, array &$queryCache, array $ledgerItems): array
     {
         $company = $parents['client_companies'] ?? null;
         $project = $parents['client_projects'] ?? null;
@@ -357,9 +428,9 @@ final class LegacyMigrationService
             'project' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'name' => $row['name'] ?? 'Legacy project', 'description' => $row['description'] ?? null, 'status' => 'active', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false)],
             'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'Legacy task', 'description' => $row['description'] ?? null, 'status' => ($row['completed_at'] ?? null) ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => $row['completed_at'] ?? null],
             'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => $row['date_worked'] ?? null, 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft'],
-            'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'Legacy proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => $row['accepted_at'] ?? null, 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId($sourceIdentityHash, 'users', (string) ($row['accepted_by_user_id'] ?? ''), $destinationName)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null],
+            'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'Legacy proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => $row['accepted_at'] ?? null, 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['accepted_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null],
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'Legacy proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
-            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'Legacy agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId($sourceIdentityHash, 'users', (string) ($row['client_company_signed_user_id'] ?? ''), $destinationName)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null],
+            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'Legacy agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null],
             'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'Legacy recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => $row['start_date'] ?? null, 'expires_on' => $row['end_date'] ?? null, 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
             'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $row['invoice_number'] ?? 'LEGACY-'.($row['client_invoice_id'] ?? $row['id'] ?? 'unknown'), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft'],
             'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'Legacy invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0)],
@@ -371,39 +442,126 @@ final class LegacyMigrationService
         };
     }
 
-    private function resolveParentId(string $sourceIdentityHash, string $sourceTable, string $sourceKey, string $destinationName): ?string
+    /**
+     * @param  array<string, LegacyMigrationItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     */
+    private function resolveParentId(string $sourceTable, string $sourceKey, array $ledgerItems, array &$queryCache): ?string
     {
         if ($sourceKey === '') {
             return null;
         }
 
-        $item = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery()
-            ->where('source_identity_hash', $sourceIdentityHash)->where('source_table', $sourceTable)->where('source_key', $sourceKey)->where('status', 'imported')->first();
+        $cacheKey = $this->ledgerItemKey($sourceTable, $sourceKey);
+        if (array_key_exists($cacheKey, $queryCache['parent_ids'])) {
+            return $queryCache['parent_ids'][$cacheKey];
+        }
+        $item = $ledgerItems[$cacheKey] ?? null;
+        $targetPublicId = $item?->status === 'imported' ? $item->target_public_id : null;
+        $queryCache['parent_ids'][$cacheKey] = $targetPublicId;
 
-        return $item?->target_public_id;
+        return $targetPublicId;
     }
 
     private function internalId(string $destinationName, string $table, ?string $publicId): ?int
     {
-        if ($publicId === null || $publicId === '' || ! Schema::connection($destinationName)->hasTable($table)) {
+        $cacheKey = $table."\0".($publicId ?? '');
+        if (array_key_exists($cacheKey, $this->activeQueryCache['internal_ids'])) {
+            return $this->activeQueryCache['internal_ids'][$cacheKey];
+        }
+        if ($publicId === null || $publicId === '' || ! $this->destinationTableExists($destinationName, $table, $this->activeQueryCache)) {
+            $this->activeQueryCache['internal_ids'][$cacheKey] = null;
+
             return null;
         }
 
         $value = DB::connection($destinationName)->table($table)->where('public_id', $publicId)->value('id');
+        $this->activeQueryCache['internal_ids'][$cacheKey] = $value === null ? null : (int) $value;
 
-        return $value === null ? null : (int) $value;
+        return $this->activeQueryCache['internal_ids'][$cacheKey];
     }
 
     private function stripeCustomerInternalId(string $destinationName, ?string $companyPublicId): ?int
     {
         $companyId = $this->internalId($destinationName, 'client_companies', $companyPublicId);
-        if ($companyId === null || ! Schema::connection($destinationName)->hasTable('client_stripe_customers')) {
+        if ($companyId === null || ! $this->destinationTableExists($destinationName, 'client_stripe_customers', $this->activeQueryCache)) {
             return null;
         }
 
+        $cacheKey = (string) $companyId;
+        if (array_key_exists($cacheKey, $this->activeQueryCache['stripe_customer_ids'])) {
+            return $this->activeQueryCache['stripe_customer_ids'][$cacheKey];
+        }
         $value = DB::connection($destinationName)->table('client_stripe_customers')->where('client_company_id', $companyId)->value('id');
+        $this->activeQueryCache['stripe_customer_ids'][$cacheKey] = $value === null ? null : (int) $value;
 
-        return $value === null ? null : (int) $value;
+        return $this->activeQueryCache['stripe_customer_ids'][$cacheKey];
+    }
+
+    /**
+     * @return QueryCache
+     */
+    private function newQueryCache(): array
+    {
+        return [
+            'parent_ids' => [],
+            'internal_ids' => [],
+            'stripe_customer_ids' => [],
+            'related_exists' => [],
+            'target_exists' => [],
+            'table_exists' => [],
+            'table_columns' => [],
+        ];
+    }
+
+    /**
+     * @return array<string, LegacyMigrationItem>
+     */
+    private function loadLedgerItems(LegacyMigrationRun $run, string $sourceTable, string $destinationName): array
+    {
+        $items = [];
+        $query = (new LegacyMigrationItem)->setConnection($destinationName)->newQuery()
+            ->where('source_identity_hash', $run->source_identity_hash)
+            ->where('source_table', $sourceTable);
+
+        foreach ($query->cursor() as $item) {
+            $items[(string) $item->source_key] = $item;
+        }
+
+        return $items;
+    }
+
+    /** @param  QueryCache  $queryCache */
+    private function destinationTableExists(string $destinationName, string $table, array &$queryCache): bool
+    {
+        if (! array_key_exists($table, $queryCache['table_exists'])) {
+            $queryCache['table_exists'][$table] = Schema::connection($destinationName)->hasTable($table);
+        }
+
+        return $queryCache['table_exists'][$table] === true;
+    }
+
+    /**
+     * @param  QueryCache  $queryCache
+     * @return list<string>
+     */
+    private function destinationColumns(string $destinationName, string $table, array &$queryCache): array
+    {
+        if (! array_key_exists($table, $queryCache['table_columns'])) {
+            $queryCache['table_columns'][$table] = $this->destinationTableExists($destinationName, $table, $queryCache)
+                ? Schema::connection($destinationName)->getColumnListing($table)
+                : [];
+        }
+
+        /** @var list<string> $columns */
+        $columns = $queryCache['table_columns'][$table];
+
+        return $columns;
+    }
+
+    private function ledgerItemKey(string $sourceTable, string $sourceKey): string
+    {
+        return $sourceTable."\0".$sourceKey;
     }
 
     private function recordRunItem(LegacyMigrationRun $run, LegacyMigrationItem $item, string $status, string $fingerprint, string $destinationName): void
@@ -565,7 +723,7 @@ final class LegacyMigrationService
 
     /**
      * @param  array<string, array<string, mixed>>  $inventory
-     * @return array<string, mixed>
+     * @return MigrationCounts
      */
     private function emptyCounts(array $inventory): array
     {
@@ -582,15 +740,22 @@ final class LegacyMigrationService
         ];
     }
 
-    private function targetTableForType(string $type): ?string
+    private function targetTableForType(string $type, ?string $sourceTable = null): ?string
     {
+        $matches = [];
         foreach ($this->registry->all() as $spec) {
-            if ($spec['target_type'] === $type) {
-                return $spec['target_table'];
+            if ($spec['target_type'] !== $type) {
+                continue;
             }
+            if ($sourceTable !== null && $spec['source_table'] !== $sourceTable) {
+                continue;
+            }
+            $matches[] = $spec['target_table'];
         }
 
-        return null;
+        $matches = array_values(array_unique($matches));
+
+        return count($matches) === 1 ? (string) $matches[0] : null;
     }
 
     private function safeSlug(string $value, string $sourceKey): string
