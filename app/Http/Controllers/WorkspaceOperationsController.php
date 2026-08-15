@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
+use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
@@ -19,16 +20,99 @@ class WorkspaceOperationsController extends Controller
     {
         Gate::authorize('view', $workspace);
 
-        $workspace->load([
-            'clientCompanies' => fn ($query) => $query->orderBy('name'),
-            'clientCompanies.projects' => fn ($query) => $query->orderBy('name'),
-        ]);
+        $companies = $workspace->clientCompanies()
+            ->with(['projects' => fn ($query) => $query->orderBy('name')])
+            ->orderBy('name')
+            ->get();
+        $companyIds = $companies->pluck('id')->all();
+        $projectIds = $companies
+            ->flatMap(fn (ClientCompany $company): array => $company->projects->modelKeys())
+            ->all();
 
-        $attachments = ClientAttachment::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
-            ->get()
-            ->groupBy(fn (ClientAttachment $attachment): string => $attachment->record_type.':'.$attachment->record_public_id);
+        $timeEntriesByProject = $projectIds === []
+            ? collect()
+            : ClientTimeEntry::query()
+                ->fromSub(
+                    ClientTimeEntry::query()
+                        ->select('client_time_entries.*')
+                        ->selectRaw(
+                            'ROW_NUMBER() OVER (PARTITION BY client_project_id ORDER BY worked_on DESC, id DESC) AS operation_row_number',
+                        )
+                        ->where('workspace_id', $workspace->id)
+                        ->whereIn('client_project_id', $projectIds),
+                    'ranked_time_entries',
+                )
+                ->where('operation_row_number', '<=', 25)
+                ->orderByDesc('worked_on')
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('client_project_id');
+
+        $proposals = $companyIds === []
+            ? collect()
+            : ClientProposal::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_company_id', $companyIds)
+                ->with('items')
+                ->latest('id')
+                ->get();
+        $proposalsByCompany = $proposals->groupBy('client_company_id');
+
+        $agreements = $companyIds === []
+            ? collect()
+            : ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_company_id', $companyIds)
+                ->latest('id')
+                ->get();
+        $agreementsByCompany = $agreements->groupBy('client_company_id');
+
+        $schedules = $companyIds === []
+            ? collect()
+            : ClientBillingSchedule::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_company_id', $companyIds)
+                ->with('agreement')
+                ->latest('id')
+                ->get();
+        $schedulesByCompany = $schedules->groupBy('client_company_id');
+
+        $invoices = $companyIds === []
+            ? collect()
+            : ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_company_id', $companyIds)
+                ->latest('id')
+                ->get();
+        $invoicesByCompany = $invoices->groupBy('client_company_id');
+
+        $attachmentRecordIds = [
+            'proposal' => $proposals->pluck('public_id')->all(),
+            'agreement' => $agreements->pluck('public_id')->all(),
+            'invoice' => $invoices->pluck('public_id')->all(),
+        ];
+        $attachments = collect();
+
+        if (collect($attachmentRecordIds)->contains(fn (array $recordIds): bool => $recordIds !== [])) {
+            $attachments = ClientAttachment::query()
+                ->select(['public_id', 'record_type', 'record_public_id', 'original_filename', 'media_type', 'bytes'])
+                ->where('workspace_id', $workspace->id)
+                ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
+                ->where(function ($query) use ($attachmentRecordIds): void {
+                    $query
+                        ->where(fn ($query) => $query
+                            ->where('record_type', 'proposal')
+                            ->whereIn('record_public_id', $attachmentRecordIds['proposal']))
+                        ->orWhere(fn ($query) => $query
+                            ->where('record_type', 'agreement')
+                            ->whereIn('record_public_id', $attachmentRecordIds['agreement']))
+                        ->orWhere(fn ($query) => $query
+                            ->where('record_type', 'invoice')
+                            ->whereIn('record_public_id', $attachmentRecordIds['invoice']));
+                })
+                ->get()
+                ->groupBy(fn (ClientAttachment $attachment): string => $attachment->record_type.':'.$attachment->record_public_id);
+        }
         $attachmentPayload = fn (string $type, string $recordPublicId): array => ($attachments->get($type.':'.$recordPublicId) ?? collect())
             ->map(fn (ClientAttachment $attachment): array => [
                 'id' => $attachment->public_id,
@@ -40,20 +124,14 @@ class WorkspaceOperationsController extends Controller
 
         $clients = [];
 
-        foreach ($workspace->clientCompanies as $company) {
+        foreach ($companies as $company) {
             $projects = [];
 
             foreach ($company->projects as $project) {
                 $projects[] = [
                     'id' => $project->public_id,
                     'name' => $project->name,
-                    'time_entries' => ClientTimeEntry::query()
-                        ->where('workspace_id', $workspace->id)
-                        ->where('client_project_id', $project->id)
-                        ->latest('worked_on')
-                        ->latest('id')
-                        ->limit(25)
-                        ->get()
+                    'time_entries' => ($timeEntriesByProject->get($project->id) ?? collect())
                         ->map(fn (ClientTimeEntry $entry): array => [
                             'id' => $entry->public_id,
                             'worked_on' => $entry->worked_on->toDateString(),
@@ -71,12 +149,7 @@ class WorkspaceOperationsController extends Controller
                 'id' => $company->public_id,
                 'name' => $company->name,
                 'projects' => $projects,
-                'proposals' => ClientProposal::query()
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $company->id)
-                    ->with('items')
-                    ->latest('id')
-                    ->get()
+                'proposals' => ($proposalsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientProposal $proposal): array => [
                         'id' => $proposal->public_id,
                         'title' => $proposal->title,
@@ -86,11 +159,7 @@ class WorkspaceOperationsController extends Controller
                         'attachments' => $attachmentPayload('proposal', $proposal->public_id),
                     ])
                     ->all(),
-                'agreements' => ClientAgreement::query()
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $company->id)
-                    ->latest('id')
-                    ->get()
+                'agreements' => ($agreementsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientAgreement $agreement): array => [
                         'id' => $agreement->public_id,
                         'title' => $agreement->title,
@@ -99,12 +168,7 @@ class WorkspaceOperationsController extends Controller
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
                     ])
                     ->all(),
-                'billing_schedules' => ClientBillingSchedule::query()
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $company->id)
-                    ->with('agreement')
-                    ->latest('id')
-                    ->get()
+                'billing_schedules' => ($schedulesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientBillingSchedule $schedule): array => [
                         'id' => $schedule->public_id,
                         'agreement_id' => $schedule->agreement->public_id,
@@ -113,11 +177,7 @@ class WorkspaceOperationsController extends Controller
                         'is_active' => $schedule->is_active,
                     ])
                     ->all(),
-                'invoices' => ClientInvoice::query()
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $company->id)
-                    ->latest('id')
-                    ->get()
+                'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
                         'id' => $invoice->public_id,
                         'invoice_number' => $invoice->invoice_number,

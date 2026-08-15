@@ -3,14 +3,17 @@
 namespace Tests\Feature;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -113,6 +116,95 @@ class WorkspaceOperationsTest extends TestCase
         ]);
 
         $this->actingAs($outsider)->get($operationsPath)->assertForbidden();
+    }
+
+    public function test_operations_queries_are_bounded_and_attachments_are_record_scoped(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Query Scope', 'slug' => 'synthetic-query-scope']);
+        $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+
+        foreach (range(1, 4) as $companyNumber) {
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => "Synthetic Client {$companyNumber}",
+                'slug' => "synthetic-client-{$companyNumber}",
+            ]);
+            $project = ClientProject::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'name' => "Synthetic Project {$companyNumber}",
+                'status' => 'active',
+            ]);
+            $proposal = ClientProposal::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'title' => "Synthetic Proposal {$companyNumber}",
+                'currency' => 'USD',
+                'status' => 'draft',
+            ]);
+
+            foreach (range(1, 26) as $entryNumber) {
+                ClientTimeEntry::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id,
+                    'client_project_id' => $project->id,
+                    'user_id' => $manager->id,
+                    'worked_on' => '2026-01-'.str_pad((string) $entryNumber, 2, '0', STR_PAD_LEFT),
+                    'minutes' => $entryNumber,
+                    'description' => "Synthetic time entry {$companyNumber}-{$entryNumber}",
+                    'is_billable' => true,
+                    'is_deferred' => false,
+                    'status' => 'draft',
+                ]);
+            }
+
+            ClientAttachment::query()->create([
+                'workspace_id' => $workspace->id,
+                'record_type' => 'proposal',
+                'record_public_id' => $proposal->public_id,
+                'object_key' => "synthetic/query-scope/proposal-{$companyNumber}.txt",
+                'original_filename' => "synthetic-proposal-{$companyNumber}.txt",
+                'media_type' => 'text/plain',
+                'bytes' => 32,
+                'sha256' => hash('sha256', "synthetic-proposal-{$companyNumber}"),
+                'uploader_id' => $manager->id,
+                'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+                'available_at' => now(),
+            ]);
+            ClientAttachment::query()->create([
+                'workspace_id' => $workspace->id,
+                'record_type' => 'company',
+                'record_public_id' => $company->public_id,
+                'object_key' => "synthetic/query-scope/company-{$companyNumber}.txt",
+                'original_filename' => "synthetic-company-{$companyNumber}.txt",
+                'media_type' => 'text/plain',
+                'bytes' => 32,
+                'sha256' => hash('sha256', "synthetic-company-{$companyNumber}"),
+                'uploader_id' => $manager->id,
+                'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+                'available_at' => now(),
+            ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->actingAs($manager)->get("/workspaces/{$workspace->public_id}/operations");
+
+        $response->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('workspace.clients', 4)
+            ->has('workspace.clients.0.projects.0.time_entries', 25)
+            ->has('workspace.clients.0.proposals.0.attachments', 1));
+
+        $queries = DB::getQueryLog();
+        $this->assertLessThanOrEqual(12, count($queries));
+
+        $attachmentQueries = collect($queries)->filter(
+            fn (array $query): bool => str_contains($query['query'], 'client_attachments'),
+        );
+        $this->assertCount(1, $attachmentQueries);
+        $this->assertNotContains('company', $attachmentQueries->first()['bindings']);
     }
 
     public function test_identity_models_expose_public_ids_without_serializing_internal_keys(): void
