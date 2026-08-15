@@ -47,10 +47,14 @@ an allowlisted read-only source is configured:
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --format=json
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
 php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
+php artisan svc:migrate:legacy:rehearse --format=json
 ```
 
 The first command is a no-write inventory. Apply runs that report skips or
-failures exit nonzero, and verification never prints source row values.
+failures exit nonzero, and verification never prints source row values. The
+rehearsal command runs only in local or test environments, uses generated
+synthetic SQLite databases instead of the configured application database,
+applies twice, verifies idempotency, and removes its artifacts.
 
 ## Deployment
 

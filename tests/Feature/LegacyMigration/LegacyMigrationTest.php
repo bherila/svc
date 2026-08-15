@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\LegacyMigration\LegacyMigrationService;
 use App\Services\LegacyMigration\SourceConfigurationException;
+use App\Services\LegacyMigration\SyntheticLegacySource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
@@ -31,7 +32,7 @@ class LegacyMigrationTest extends TestCase
             'read_only' => true,
             'config' => ['driver' => 'sqlite', 'database' => $this->sourcePath, 'prefix' => ''],
         ]);
-        $this->createSource();
+        app(SyntheticLegacySource::class)->create($this->sourcePath);
     }
 
     protected function tearDown(): void
@@ -91,17 +92,45 @@ class LegacyMigrationTest extends TestCase
         }
     }
 
+    public function test_synthetic_source_refuses_memory_database(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('not :memory:');
+
+        app(SyntheticLegacySource::class)->create(':memory:');
+    }
+
+    public function test_synthetic_source_refuses_existing_non_empty_database(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'svc-legacy-non-empty-');
+
+        try {
+            $pdo = new PDO('sqlite:'.$path);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->exec('CREATE TABLE existing_synthetic_data (id INTEGER PRIMARY KEY)');
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('existing non-empty database');
+
+            app(SyntheticLegacySource::class)->create($path);
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+
     public function test_missing_parent_is_counted_without_private_output(): void
     {
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec("INSERT INTO client_projects (id, client_company_id, name, description) VALUES (99, 404, 'Private Project Name', 'Private description')");
+        $pdo->exec("INSERT INTO client_projects (id, client_company_id, name, description) VALUES (99, 404, 'Synthetic Orphan Project Example', 'Synthetic orphan project description')");
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
 
         $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
 
         $this->assertGreaterThanOrEqual(1, $summary['counts']['failure_reasons']['missing_parent']);
-        $this->assertStringNotContainsString('Private Project Name', json_encode($summary));
-        $this->assertStringNotContainsString('Private description', json_encode($summary));
+        $this->assertStringNotContainsString('Synthetic Orphan Project Example', json_encode($summary));
+        $this->assertStringNotContainsString('Synthetic orphan project description', json_encode($summary));
     }
 
     public function test_json_output_is_redacted_and_fingerprints_are_stable(): void
@@ -114,14 +143,14 @@ class LegacyMigrationTest extends TestCase
         Artisan::call('svc:migrate:legacy', ['--source' => 'legacy', '--workspace' => $workspace->slug, '--format' => 'json']);
         $output = Artisan::output();
         $this->assertStringContainsString('"redacted":true', $output);
-        $this->assertStringNotContainsString('Alice Example', $output);
-        $this->assertStringNotContainsString('alice@example.test', $output);
-        $this->assertStringNotContainsString('Private description', $output);
+        $this->assertStringNotContainsString('Synthetic User Example', $output);
+        $this->assertStringNotContainsString('synthetic.user@example.test', $output);
+        $this->assertStringNotContainsString('Synthetic project description', $output);
     }
 
     public function test_email_alone_never_binds_or_imports_a_legacy_user(): void
     {
-        $existing = User::factory()->create(['name' => 'Existing SVC User', 'email' => 'alice@example.test']);
+        $existing = User::factory()->create(['name' => 'Existing SVC User', 'email' => 'synthetic.user@example.test']);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
 
         $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
@@ -131,7 +160,7 @@ class LegacyMigrationTest extends TestCase
         $this->assertSame(1, $summary['counts']['failure_reasons']['user_binding_required']);
         $this->assertSame(1, $summary['counts']['failure_reasons']['missing_parent']);
         $this->assertDatabaseMissing('legacy_migration_items', ['source_table' => 'users', 'status' => 'imported']);
-        $this->assertSame('alice@example.test', $existing->fresh()->email);
+        $this->assertSame('synthetic.user@example.test', $existing->fresh()->email);
     }
 
     public function test_imported_payments_reconcile_invoice_balance(): void
@@ -234,7 +263,7 @@ class LegacyMigrationTest extends TestCase
         $originalFingerprint = $item->source_fingerprint;
 
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec("UPDATE client_companies SET company_name = 'Changed private value' WHERE id = 11");
+        $pdo->exec("UPDATE client_companies SET company_name = 'Changed synthetic value' WHERE id = 11");
         $second = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
 
         $this->assertSame('completed', $first['status']);
@@ -319,22 +348,6 @@ class LegacyMigrationTest extends TestCase
 
         $this->assertSame(6, $ledgerReads, 'The five source-table preloads plus invoice reconciliation should be the only ledger reads.');
         $this->assertSame(21, $this->countForWorkspace('client_tasks', $workspace));
-    }
-
-    private function createSource(): void
-    {
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, created_at TEXT, updated_at TEXT)');
-        $pdo->exec('CREATE TABLE client_companies (id INTEGER PRIMARY KEY, company_name TEXT, slug TEXT, billing_email TEXT, is_active INTEGER, created_at TEXT, updated_at TEXT)');
-        $pdo->exec('CREATE TABLE client_company_user (id INTEGER PRIMARY KEY, client_company_id INTEGER, user_id INTEGER, role TEXT)');
-        $pdo->exec('CREATE TABLE client_projects (id INTEGER PRIMARY KEY, client_company_id INTEGER, name TEXT, description TEXT, created_at TEXT, updated_at TEXT)');
-        $pdo->exec('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, description TEXT, completed_at TEXT, created_at TEXT, updated_at TEXT)');
-        $pdo->exec("INSERT INTO users VALUES (7, 'Alice Example', 'alice@example.test', '2026-01-01', '2026-01-02')");
-        $pdo->exec("INSERT INTO client_companies VALUES (11, 'Example Business', 'example-business', 'billing@example.test', 1, '2026-01-01', '2026-01-02')");
-        $pdo->exec("INSERT INTO client_company_user VALUES (12, 11, 7, 'client')");
-        $pdo->exec("INSERT INTO client_projects VALUES (13, 11, 'Private Project Name', 'Private description', '2026-01-03', '2026-01-04')");
-        $pdo->exec("INSERT INTO client_tasks VALUES (14, 13, 'Private Task Name', 'Private task description', NULL, '2026-01-05', '2026-01-06')");
     }
 
     private function countForWorkspace(string $table, Workspace $workspace): int
