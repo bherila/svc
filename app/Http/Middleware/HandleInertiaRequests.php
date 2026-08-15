@@ -42,7 +42,7 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $user === null ? null : [
-                    'id' => $user->id,
+                    'id' => $user->public_id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'email_verified_at' => $user->email_verified_at?->toIso8601String(),

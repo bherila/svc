@@ -44,10 +44,19 @@ that legacy integer IDs can be reused.
 
 ## Required migration tooling
 
-The implementation slice should add:
+The implemented foundation includes:
 
 - `svc:migrate:legacy --source=legacy --workspace=... [--apply]`;
-- per-entity importers with idempotency and provenance tests;
+- parent-ordered entity importers with idempotency and provenance tests;
 - a redacted inventory report and machine-readable verification summary;
 - high-water-mark and failed-row ledgers;
-- attachment copy/verify commands that never delete source files.
+- planned attachment-copy ledger entries that never delete source files.
+
+Attachments and provider-owned Stripe references are deliberately ledgered as
+planned work rather than copied by the row importer. The private attachment
+mirror and repair commands remain separate so a database migration cannot delete
+or overwrite source objects.
+
+Identity mapping must be supplied as JSON maps from legacy identifiers (or
+trusted provider-and-subject pairs) to existing SVC public UUIDs. Email addresses
+are never accepted as identity proof.
