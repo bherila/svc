@@ -107,6 +107,19 @@ class FinanceReconciliationApiTest extends TestCase
         $this->assertDatabaseCount('payment_reconciliations', 0);
     }
 
+    public function test_overlong_external_system_identifier_is_a_validation_error(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Identifier validation');
+        $token = $owner->createToken('writer', ['finance.reconcile'], now()->addHour())->plainTextToken;
+
+        $this->withToken($token)->putJson(
+            $this->reconciliationPath($workspace, $payment, str_repeat('a', 81), (string) Str::uuid()),
+            ['allocated_amount' => 100, 'currency' => 'USD'],
+        )->assertUnprocessable()->assertJsonValidationErrors('external_system_slug');
+
+        $this->assertDatabaseCount('payment_reconciliations', 0);
+    }
+
     public function test_expired_bearer_token_is_rejected(): void
     {
         [$owner, $workspace] = $this->payment('Expired API');

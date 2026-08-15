@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 
 class PaymentReconciliationController extends Controller
 {
@@ -33,7 +34,7 @@ class PaymentReconciliationController extends Controller
 
         $reconciliation = $this->reconciliations->upsert($workspace, $clientInvoicePayment, $user, [
             ...$request->validated(),
-            'external_system_slug' => $externalSystemSlug,
+            'external_system_slug' => $this->validatedSystemSlug($externalSystemSlug),
             'external_transaction_uuid' => $externalTransactionUuid,
         ]);
 
@@ -52,8 +53,18 @@ class PaymentReconciliationController extends Controller
         return new PaymentReconciliationResource($this->reconciliations->deactivate(
             $workspace,
             $clientInvoicePayment,
-            $externalSystemSlug,
+            $this->validatedSystemSlug($externalSystemSlug),
             $externalTransactionUuid,
         ));
+    }
+
+    private function validatedSystemSlug(string $value): string
+    {
+        $validated = Validator::make(
+            ['external_system_slug' => $value],
+            ['external_system_slug' => ['required', 'string', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/']],
+        )->validate();
+
+        return $validated['external_system_slug'];
     }
 }
