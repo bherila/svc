@@ -43,7 +43,7 @@
         "@vitejs/plugin-react": "^5.2.0",
         "clsx": "^2.1.1",
         "concurrently": "^10.0.4",
-        "globals": "^15.15.0",
+        "globals": "^17.10.0",
         "laravel-vite-plugin": "^3.2.0",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",

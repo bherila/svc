@@ -33,8 +33,8 @@ importers:
         specifier: ^10.0.4
         version: 10.0.4
       globals:
-        specifier: ^15.15.0
-        version: 15.15.0
+        specifier: ^17.10.0
+        version: 17.10.0
       laravel-vite-plugin:
         specifier: ^3.2.0
         version: 3.2.0(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0))
@@ -1263,8 +1263,8 @@ packages:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
     engines: {node: '>=18'}
 
-  globals@15.15.0:
-    resolution: {integrity: sha512-7ACyT3wmyp3I61S4fG682L0VA2RGD9otkqGJIwNUMF1SWUombIIk+af1unuDYgMm082aHYwD+mzJvv9Iu8dsgg==}
+  globals@17.10.0:
+    resolution: {integrity: sha512-V0kztuWST2k8A/VbxAY8+L+7+Rgo3fyA24IHRLrZp7HOzJjV0gHSaZUjK9lpP/IrBSNite2tZ1prhRkinRu1CA==}
     engines: {node: '>=18'}
 
   globalthis@1.0.4:
@@ -3603,7 +3603,7 @@ snapshots:
 
   globals@14.0.0: {}
 
-  globals@15.15.0: {}
+  globals@17.10.0: {}
 
   globalthis@1.0.4:
     dependencies:
