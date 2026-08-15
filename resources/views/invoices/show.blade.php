@@ -36,6 +36,7 @@
     <tr><td>Paid</td><td class="right">{{ number_format($invoice->paid_amount / 100, 2) }}</td></tr>
     <tr><td>Balance</td><td class="right">{{ number_format($invoice->balance_amount / 100, 2) }}</td></tr>
 </table>
-@if ($invoice->notes)<p><strong>Notes:</strong> {{ $invoice->notes }}</p>@endif
+{{-- Never render $invoice->notes here: it is internal-only (#[Hidden] on the model,
+     suppressed on every JSON path) and this template is served to portal clients. --}}
 </body>
 </html>

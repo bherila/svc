@@ -356,10 +356,10 @@ final class LegacyMigrationService
             'company_membership' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'user_id' => $this->internalId($destinationName, 'users', $user), 'role' => $row['role'] ?? 'client'],
             'project' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'name' => $row['name'] ?? 'Legacy project', 'description' => $row['description'] ?? null, 'status' => 'active', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false)],
             'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'Legacy task', 'description' => $row['description'] ?? null, 'status' => ($row['completed_at'] ?? null) ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => $row['completed_at'] ?? null],
-            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => $row['date_worked'] ?? null, 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => self::minorUnits($row['subcontractor_hourly_rate'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft'],
+            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => $row['date_worked'] ?? null, 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft'],
             'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'Legacy proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => $row['accepted_at'] ?? null, 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId($sourceIdentityHash, 'users', (string) ($row['accepted_by_user_id'] ?? ''), $destinationName)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null],
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'Legacy proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
-            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'Legacy agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::minorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::minorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId($sourceIdentityHash, 'users', (string) ($row['client_company_signed_user_id'] ?? ''), $destinationName)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null],
+            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'Legacy agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId($sourceIdentityHash, 'users', (string) ($row['client_company_signed_user_id'] ?? ''), $destinationName)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null],
             'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'Legacy recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => $row['start_date'] ?? null, 'expires_on' => $row['end_date'] ?? null, 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
             'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $row['invoice_number'] ?? 'LEGACY-'.($row['client_invoice_id'] ?? $row['id'] ?? 'unknown'), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft'],
             'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'Legacy invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0)],
@@ -440,23 +440,31 @@ final class LegacyMigrationService
                 continue;
             }
 
-            $paid = (int) DB::connection($destinationName)->table('client_invoice_payments')
+            $paidFromPayments = (int) DB::connection($destinationName)->table('client_invoice_payments')
                 ->where('workspace_id', $run->workspace_id)
                 ->where('client_invoice_id', $invoice->id)
                 ->where('status', 'succeeded')
                 ->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as total')
                 ->value('total');
             $total = max(0, (int) $invoice->total_amount);
-            $paid = min($total, max(0, $paid));
+            // Monotonic: the imported paid_amount (derived from the legacy status)
+            // is a floor. Zero migrated payment rows means the payments did not
+            // migrate or the invoice was settled offline — never evidence that a
+            // paid invoice is collectible again.
+            $paid = min($total, max((int) $invoice->paid_amount, max(0, $paidFromPayments)));
             $status = $paid >= $total && $total > 0
                 ? 'paid'
-                : ($paid > 0 ? 'partially_paid' : ($invoice->status === 'draft' ? 'draft' : 'issued'));
+                : ($paid > 0 ? 'partially_paid' : $invoice->status);
+
+            if ($paid === (int) $invoice->paid_amount && $status === $invoice->status) {
+                continue;
+            }
 
             DB::connection($destinationName)->table('client_invoices')->where('id', $invoice->id)->update([
                 'status' => $status,
                 'paid_amount' => $paid,
                 'balance_amount' => $total - $paid,
-                'is_visible_to_client' => $status !== 'draft',
+                'is_visible_to_client' => $status !== 'draft' ? true : (bool) $invoice->is_visible_to_client,
                 'updated_at' => now(),
             ]);
         }
@@ -599,14 +607,33 @@ final class LegacyMigrationService
         };
     }
 
+    /**
+     * NULL/'' means "not configured" for nullable money columns; mapping it to 0
+     * would turn an unset rate into a legitimate-looking $0.00.
+     */
+    private static function nullableMinorUnits(mixed $value): ?int
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return null;
+        }
+
+        return self::minorUnits($value);
+    }
+
     private static function minorUnits(mixed $value): int
     {
         if ($value === null || $value === '') {
             return 0;
         }
-        $text = trim((string) $value);
+        $text = str_replace([',', '$', ' '], '', trim((string) $value));
         $negative = str_starts_with($text, '-');
         $text = ltrim($text, '+-');
+        if (preg_match('/^\d+(\.\d+)?$/', $text) !== 1) {
+            // Fail the row loudly: silently mis-parsing a money string (e.g. a
+            // stray currency code) would corrupt receivables while verify() —
+            // which only checks row existence — still reports ok.
+            throw new \InvalidArgumentException('Unparseable legacy money value.');
+        }
         [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '');
         $fraction = str_pad(substr($fraction, 0, 3), 3, '0');
         $cents = ((int) $whole * 100) + (int) substr($fraction, 0, 2) + ((int) $fraction[2] >= 5 ? 1 : 0);

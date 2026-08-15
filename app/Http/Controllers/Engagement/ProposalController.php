@@ -83,7 +83,7 @@ class ProposalController extends EngagementController
                 && $clientProposal->is_visible_to_client,
             404,
         );
-        abort_unless($authorization->canViewCompany($user, $workspace, $clientCompany), 403);
+        abort_unless($authorization->canActAsClient($user, $workspace, $clientCompany), 403);
 
         try {
             $proposal = $workflow->accept(

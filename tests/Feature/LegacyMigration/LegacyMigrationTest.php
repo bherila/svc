@@ -158,6 +158,71 @@ class LegacyMigrationTest extends TestCase
         ]);
     }
 
+    public function test_paid_legacy_invoice_without_migrated_payments_stays_paid(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (31, 11, NULL, 'SYN-31', 'paid', '2025-06-10', '2025-07-10', '500.00', 'USD', NULL)");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertDatabaseHas('client_invoices', [
+            'workspace_id' => $workspace->getKey(),
+            'invoice_number' => 'SYN-31',
+            'status' => 'paid',
+            'paid_amount' => 50000,
+            'balance_amount' => 0,
+        ]);
+    }
+
+    public function test_unset_legacy_rates_import_as_null_and_cost_never_lands_in_the_billing_rate(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, proposal_id INTEGER, title TEXT, active_date TEXT, termination_date TEXT, agreement_text TEXT, is_visible_to_client INTEGER, currency TEXT, hourly_rate TEXT, monthly_retainer_fee TEXT, retainer_fee TEXT, monthly_retainer_hours TEXT, retainer_hours TEXT, billing_cadence TEXT, client_company_signed_date TEXT, client_company_signed_user_id INTEGER, client_company_signed_name TEXT, client_company_signed_title TEXT)');
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, NULL, 'Synthetic Agreement', '2026-01-01', NULL, NULL, 1, 'USD', NULL, NULL, NULL, NULL, NULL, 'monthly', NULL, NULL, NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, client_company_id INTEGER, project_id INTEGER, task_id INTEGER, user_id INTEGER, date_worked TEXT, minutes_worked INTEGER, name TEXT, is_billable INTEGER, is_deferred_billing INTEGER, subcontractor_hourly_rate TEXT, currency TEXT, approval_status TEXT)');
+        $pdo->exec("INSERT INTO client_time_entries VALUES (51, 11, 13, NULL, 7, '2026-02-01', 60, 'Synthetic work', 1, 0, '75.00', 'USD', 'approved')");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertDatabaseHas('client_agreements', [
+            'workspace_id' => $workspace->getKey(),
+            'title' => 'Synthetic Agreement',
+            'hourly_rate_amount' => null,
+            'retainer_amount' => null,
+        ]);
+        $this->assertDatabaseHas('client_time_entries', [
+            'workspace_id' => $workspace->getKey(),
+            'description' => 'Synthetic work',
+            'billing_rate_amount' => null,
+            'subcontractor_cost_amount' => 7500,
+        ]);
+    }
+
+    public function test_unparseable_legacy_money_fails_the_row_instead_of_corrupting_it(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (61, 11, NULL, 'SYN-61', 'issued', '2026-01-10', '2026-02-10', '1,234.56 USD', 'USD', NULL)");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+
+        $this->assertSame('completed_with_failures', $summary['status']);
+        $this->assertDatabaseMissing('client_invoices', ['invoice_number' => 'SYN-61']);
+        $this->assertSame(1, (int) ($summary['counts']['failure_reasons']['row_transaction_failed'] ?? 0));
+    }
+
     public function test_source_change_is_audited_without_overwriting_the_canonical_item(): void
     {
         $user = User::factory()->create();

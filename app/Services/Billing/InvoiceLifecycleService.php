@@ -104,6 +104,11 @@ final class InvoiceLifecycleService
                 throw new DomainException('A paid invoice cannot be voided.');
             }
 
+            $hasPendingPayments = $locked->payments()->where('status', 'pending')->exists();
+            if ($hasPendingPayments) {
+                throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
+            }
+
             $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'balance_amount' => 0])->save();
 
             return $locked->fresh(['lines', 'clientCompany']);
@@ -189,6 +194,9 @@ final class InvoiceLifecycleService
             }
             $lockedPayment = $query->firstOrFail();
             $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
+            if ($status === 'succeeded' && $invoice->status === 'void') {
+                throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
+            }
             if ($status === 'succeeded') {
                 $otherPaid = (int) $invoice->payments()
                     ->where('id', '!=', $lockedPayment->id)

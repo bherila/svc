@@ -93,6 +93,66 @@ class StripeWebhookTest extends TestCase
         $this->assertDatabaseCount('client_stripe_events', 1);
     }
 
+    public function test_failed_event_persists_a_failure_record_and_is_not_retried_into_the_same_error(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-WEBHOOK-MISMATCH', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_billing',
+        ], $workspace);
+
+        $mismatch = json_encode([
+            'id' => 'evt_synthetic_mismatch', 'object' => 'event', 'type' => 'payment_intent.succeeded',
+            'data' => ['object' => ['id' => 'pi_synthetic_billing', 'amount' => 900, 'amount_received' => 900, 'currency' => 'usd', 'metadata' => []]],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->webhookPost($mismatch, $this->signature($mismatch))->assertStatus(409);
+        $this->assertDatabaseHas('client_stripe_events', [
+            'stripe_event_id' => 'evt_synthetic_mismatch',
+            'status' => 'failed',
+            'error_summary' => 'Stripe payment does not match the pending invoice payment.',
+        ]);
+
+        $this->webhookPost($mismatch, $this->signature($mismatch))->assertOk()->assertJsonPath('duplicate', true);
+        $this->assertDatabaseCount('client_stripe_events', 1);
+        $this->assertSame('issued', $invoice->fresh()->status);
+        $this->assertSame(0, $invoice->fresh()->paid_amount);
+    }
+
+    public function test_payment_succeeding_against_a_void_invoice_is_recorded_as_a_failed_event_not_absorbed(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-WEBHOOK-VOID', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_billing',
+        ], $workspace);
+        // Voiding through the service is now blocked while payments are pending, so
+        // simulate the race where the invoice was voided out-of-band anyway.
+        $invoice->forceFill(['status' => 'void', 'voided_at' => now(), 'balance_amount' => 0])->save();
+
+        $payload = $this->payload($invoice->public_id);
+        $this->webhookPost($payload, $this->signature($payload))->assertStatus(409);
+
+        $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_synthetic_billing', 'status' => 'failed']);
+        $fresh = $invoice->fresh();
+        $this->assertSame('void', $fresh->status);
+        $this->assertSame(0, $fresh->paid_amount);
+        $this->assertDatabaseHas('client_invoice_payments', [
+            'provider_payment_identifier' => 'pi_synthetic_billing',
+            'status' => 'pending',
+        ]);
+    }
+
     private function payload(?string $invoicePublicId = null): string
     {
         return json_encode(['id' => 'evt_synthetic_billing', 'object' => 'event', 'type' => 'payment_intent.succeeded', 'data' => ['object' => ['id' => 'pi_synthetic_billing', 'amount' => 1000, 'amount_received' => 1000, 'currency' => 'usd', 'metadata' => ['invoice_public_id' => $invoicePublicId ?? 'missing']]]], JSON_THROW_ON_ERROR);

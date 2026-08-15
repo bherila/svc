@@ -31,6 +31,21 @@ class EngagementAuthorization
             || $company->portalUsers()->whereKey($user->id)->exists();
     }
 
+    /**
+     * Acceptance signs on the client's behalf, so it is reserved for the client's
+     * own portal users — or owner/admin staff recording an offline acceptance.
+     * A plain workspace member must not be able to mint a signed agreement.
+     */
+    public function canActAsClient(User $user, Workspace $workspace, ClientCompany $company): bool
+    {
+        if ($company->workspace_id !== $workspace->id) {
+            return false;
+        }
+
+        return $company->portalUsers()->whereKey($user->id)->exists()
+            || $this->canManage($user, $workspace);
+    }
+
     public function assertWorkspace(Workspace $workspace, User $user, bool $manage = false): void
     {
         $allowed = $manage

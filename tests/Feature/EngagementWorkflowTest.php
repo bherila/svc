@@ -143,6 +143,38 @@ class EngagementWorkflowTest extends TestCase
     }
 
     /** @return array{0: Workspace, 1: ClientCompany} */
+    public function test_plain_workspace_member_cannot_accept_a_proposal_on_the_clients_behalf(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        $member = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/proposals", [
+            'title' => 'Synthetic member-gate plan',
+            'currency' => 'USD',
+            'is_visible_to_client' => true,
+            'items' => [['description' => 'Support', 'quantity' => '1.000', 'unit_amount' => 10000, 'cadence' => 'monthly', 'sort_order' => 0]],
+        ])->assertCreated();
+        $proposal = ClientProposal::query()->sole();
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")->assertOk();
+
+        $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
+        $this->actingAs($member)->postJson($acceptPath, [
+            'signer_name' => 'Forged Signer',
+        ])->assertForbidden();
+        $this->assertSame('sent', $proposal->fresh()->status);
+        $this->assertSame(0, ClientAgreement::query()->count());
+
+        // Owner/admin staff may still record an offline acceptance; the client's
+        // own portal user path is pinned by the acceptance test above.
+        $this->actingAs($owner)->postJson($acceptPath, [
+            'signer_name' => 'Recorded Offline Signer',
+        ])->assertOk();
+        $this->assertSame('accepted', $proposal->fresh()->status);
+    }
+
     private function clientFor(User $owner, ?User $clientUser = null): array
     {
         $workspace = Workspace::query()->create(['name' => 'Synthetic Engagement Workspace', 'slug' => 'synthetic-engagement-workspace-'.uniqid()]);

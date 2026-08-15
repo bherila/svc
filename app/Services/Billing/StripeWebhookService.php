@@ -15,30 +15,54 @@ final class StripeWebhookService
 
     public function process(Event $event, string $payload): bool
     {
-        return DB::transaction(function () use ($event, $payload): bool {
-            $data = $event->toArray();
-            $object = is_array($data['data']['object'] ?? null) ? $data['data']['object'] : [];
-            $payloadHash = hash('sha256', $payload);
-            $inserted = DB::table('client_stripe_events')->insertOrIgnore([
-                'public_id' => (string) Str::uuid(),
-                'stripe_event_id' => (string) $event->id,
-                'event_type' => (string) $event->type,
-                'object_id' => isset($object['id']) ? (string) $object['id'] : null,
-                'payload_hash' => $payloadHash,
-                'status' => 'received',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $ledger = ClientStripeEvent::query()->where('stripe_event_id', $event->id)->firstOrFail();
-            if ($inserted === 0) {
-                if (! hash_equals($ledger->payload_hash, $payloadHash)
-                    || $ledger->event_type !== (string) $event->type) {
-                    throw new \DomainException('A Stripe event ID was replayed with different contents.');
-                }
+        $data = $event->toArray();
+        $object = is_array($data['data']['object'] ?? null) ? $data['data']['object'] : [];
+        $payloadHash = hash('sha256', $payload);
 
-                return false;
-            }
+        // The idempotency-ledger row must commit independently of business handling:
+        // if it shared the business transaction, a domain failure would roll the row
+        // back, leave no queryable failure record, and make Stripe retry the same
+        // deterministic failure indefinitely.
+        DB::table('client_stripe_events')->insertOrIgnore([
+            'public_id' => (string) Str::uuid(),
+            'stripe_event_id' => (string) $event->id,
+            'event_type' => (string) $event->type,
+            'object_id' => isset($object['id']) ? (string) $object['id'] : null,
+            'payload_hash' => $payloadHash,
+            'status' => 'received',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $ledger = ClientStripeEvent::query()->where('stripe_event_id', $event->id)->firstOrFail();
+        if (! hash_equals($ledger->payload_hash, $payloadHash)
+            || $ledger->event_type !== (string) $event->type) {
+            throw new \DomainException('A Stripe event ID was replayed with different contents.');
+        }
+        if (in_array($ledger->status, ['processed', 'failed'], true)) {
+            // Processed events are benign replays; failed events were already recorded
+            // and need operator intervention, not a retry of the same deterministic
+            // failure. A 'received' row from an interrupted attempt falls through and
+            // is processed again.
+            return false;
+        }
 
+        try {
+            return $this->handle($event, $object, $ledger);
+        } catch (\DomainException $exception) {
+            $ledger->forceFill([
+                'status' => 'failed',
+                'error_summary' => mb_substr($exception->getMessage(), 0, 1000),
+                'processed_at' => now(),
+            ])->save();
+
+            throw $exception;
+        }
+    }
+
+    /** @param array<string, mixed> $object */
+    private function handle(Event $event, array $object, ClientStripeEvent $ledger): bool
+    {
+        return DB::transaction(function () use ($event, $object, $ledger): bool {
             $payment = $this->findPayment($object);
             $status = match ((string) $event->type) {
                 'payment_intent.succeeded' => 'succeeded',

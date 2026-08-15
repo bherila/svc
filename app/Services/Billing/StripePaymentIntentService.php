@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 
 final class StripePaymentIntentService
 {
@@ -24,6 +25,17 @@ final class StripePaymentIntentService
         if ($workspace !== null && $invoice->workspace_id !== $workspace->id) {
             throw new DomainException('Invoice does not belong to this workspace.');
         }
+
+        return DB::transaction(function () use ($invoice, $workspace, $paymentMethodId, $idempotencyKey): array {
+            $invoice = ClientInvoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            return $this->createLocked($invoice, $workspace, $paymentMethodId, $idempotencyKey);
+        });
+    }
+
+    /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
+    private function createLocked(ClientInvoice $invoice, ?Workspace $workspace, ?string $paymentMethodId, string $idempotencyKey): array
+    {
         if (! in_array($invoice->status, ['issued', 'partially_paid'], true)) {
             throw new DomainException('Stripe payment intents require an issued invoice with a balance.');
         }
@@ -43,8 +55,20 @@ final class StripePaymentIntentService
             ];
         }
 
+        // Pending intents reserve balance: without this, two concurrent requests with
+        // distinct client-supplied idempotency keys each mint a full-balance intent
+        // and the customer is charged twice.
+        $reservedPending = (int) $invoice->payments()
+            ->where('status', 'pending')
+            ->get(['amount', 'refunded_amount'])
+            ->sum(fn (ClientInvoicePayment $payment): int => max(0, $payment->amount - $payment->refunded_amount));
+        $chargeAmount = $invoice->balance_amount - $reservedPending;
+        if ($chargeAmount <= 0) {
+            throw new DomainException('A pending payment already reserves the remaining invoice balance.');
+        }
+
         $params = [
-            'amount' => $invoice->balance_amount,
+            'amount' => $chargeAmount,
             'currency' => strtolower($invoice->currency),
             'description' => 'Invoice '.$invoice->invoice_number,
             'metadata' => [
@@ -71,7 +95,7 @@ final class StripePaymentIntentService
         }
 
         $payment = $this->invoices->applyPayment($invoice, [
-            'amount' => $invoice->balance_amount,
+            'amount' => $chargeAmount,
             'currency' => $invoice->currency,
             'received_on' => now()->toDateString(),
             'method' => 'stripe',

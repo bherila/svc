@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\StripePaymentIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -199,6 +200,91 @@ class BillingWorkflowTest extends TestCase
     }
 
     /** @return array{0:User,1:Workspace,2:ClientCompany} */
+    public function test_pending_stripe_intent_reserves_the_balance_against_a_second_intent(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+        $service->issue($invoice, $workspace);
+        $service->applyPayment($invoice, [
+            'amount' => 10000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_first_tab',
+            'idempotency_key' => 'first-tab-key',
+        ], $workspace);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('A pending payment already reserves the remaining invoice balance.');
+        app(StripePaymentIntentService::class)
+            ->create($invoice->fresh(), $workspace, null, 'second-tab-key');
+    }
+
+    public function test_void_is_blocked_while_payments_are_pending(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+        $service->issue($invoice, $workspace);
+        $service->applyPayment($invoice, [
+            'amount' => 10000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_pending_void',
+        ], $workspace);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('Cancel or resolve pending payments before voiding this invoice.');
+        $service->void($invoice, $workspace);
+    }
+
+    public function test_marking_a_payment_succeeded_on_a_void_invoice_is_refused(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+        $service->issue($invoice, $workspace);
+        $payment = $service->applyPayment($invoice, [
+            'amount' => 10000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_void_race',
+        ], $workspace);
+        $invoice->forceFill(['status' => 'void', 'voided_at' => now(), 'balance_amount' => 0])->save();
+
+        try {
+            $service->setPaymentStatus($payment, 'succeeded', $workspace);
+            $this->fail('Expected DomainException for a payment succeeding against a void invoice.');
+        } catch (\DomainException $exception) {
+            $this->assertStringContainsString('void invoice', $exception->getMessage());
+        }
+        $fresh = $invoice->fresh();
+        $this->assertSame('void', $fresh->status);
+        $this->assertSame(0, $fresh->paid_amount);
+    }
+
+    public function test_over_balance_payment_surfaces_as_a_422_not_a_500(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+        $service->issue($invoice, $workspace);
+
+        $this->actingAs($owner)
+            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+                'amount' => 99999, 'currency' => 'USD', 'method' => 'ach', 'status' => 'succeeded',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Payment cannot exceed the invoice balance.');
+    }
+
+    public function test_invoice_document_never_renders_internal_notes(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant();
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            ...$this->invoiceData(), 'notes' => 'Internal synthetic note',
+        ], [$this->line()]);
+        $service->issue($invoice, $workspace);
+
+        $html = view('invoices.show', ['invoice' => $invoice->fresh(['lines', 'clientCompany'])])->render();
+        $this->assertStringNotContainsString('Internal synthetic note', $html);
+    }
+
     private function tenant(string $name = 'Synthetic Workspace'): array
     {
         $owner = User::factory()->create(['email' => strtolower(str_replace(' ', '-', $name)).'@synthetic.test']);
