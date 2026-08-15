@@ -73,6 +73,17 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - successful non-refunded payments determine invoice paid and balance amounts;
   transitions are idempotent
 
+`payment_reconciliations`
+
+- allocation belongs directly to a workspace and invoice payment
+- external system slug plus external transaction UUID identify the finance-side
+  record without creating a cross-database foreign key
+- allocated amount and currency allow one finance transaction to cover multiple
+  payments and one payment to use multiple finance transactions
+- active allocations cannot exceed a successful payment amount net of refunds;
+  later refunds enforce the same invariant
+- deactivation preserves reconciliation history instead of deleting it
+
 `client_billing_schedules`
 
 - provider-neutral recurring invoice definition tied to an agreement
@@ -114,4 +125,3 @@ the configured source connection must be explicitly marked read-only, and the
 command must refuse the destination connection as its source. Output contains
 counts, keys only when safe, and hashes; it never prints names, email addresses,
 descriptions, notes, invoice contents, or file paths.
-

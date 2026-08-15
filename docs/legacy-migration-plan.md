@@ -47,6 +47,9 @@ that legacy integer IDs can be reused.
 The implemented foundation includes:
 
 - `svc:migrate:legacy --source=legacy --workspace=... [--apply]`;
+- `svc:migrate:legacy:rehearse [--format=json]`, which creates isolated
+  synthetic source and destination SQLite databases, applies the importer twice,
+  verifies stable counts and fingerprints, and removes both databases;
 - parent-ordered entity importers with idempotency and provenance tests;
 - a redacted inventory report and machine-readable verification summary;
 - high-water-mark and failed-row ledgers;
@@ -60,3 +63,8 @@ or overwrite source objects.
 Identity mapping must be supplied as JSON maps from legacy identifiers (or
 trusted provider-and-subject pairs) to existing SVC public UUIDs. Email addresses
 are never accepted as identity proof.
+
+The rehearsal command refuses every environment except `local` and `testing`.
+It accepts no database path or source override, never uses the configured default
+database, and cannot be used for production cutover. Production inventory,
+shadow reads, write freeze, and cutover remain separately authorized operations.

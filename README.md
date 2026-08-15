@@ -47,10 +47,14 @@ an allowlisted read-only source is configured:
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --format=json
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
 php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
+php artisan svc:migrate:legacy:rehearse --format=json
 ```
 
 The first command is a no-write inventory. Apply runs that report skips or
-failures exit nonzero, and verification never prints source row values.
+failures exit nonzero, and verification never prints source row values. The
+rehearsal command runs only in local or test environments, uses generated
+synthetic SQLite databases instead of the configured application database,
+applies twice, verifies idempotency, and removes its artifacts.
 
 ## Deployment
 
@@ -97,3 +101,10 @@ pnpm db-snapshot verify
 
 There is deliberately no push or restore subcommand. Snapshot files, checksums,
 and manifests are private data and must never be added to this public repository.
+
+## Finance reconciliation API
+
+SVC exposes a narrow, versioned bearer-token API for listing invoice payments and
+linking them to transaction UUIDs owned by an external finance system. Tokens are
+expiring, stored only as hashes, and require explicit `finance.read` or
+`finance.reconcile` abilities. See [the API contract](docs/finance-api.md).
