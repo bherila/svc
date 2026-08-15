@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -41,9 +43,9 @@ use LogicException;
     'deleted_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'object_key', 'staged_object_key', 'uploader_id'])]
-class ClientAttachment extends Model
+class ClientAttachment extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     public const STATE_STAGED = 'staged';
 

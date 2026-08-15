@@ -6,13 +6,15 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Carbon\CarbonImmutable;
 use DomainException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 final class InvoiceLifecycleService
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     /**
      * @param  array<string, mixed>  $attributes
      * @param  list<array<string, mixed>>  $lines
@@ -269,9 +271,7 @@ final class InvoiceLifecycleService
 
     public function assertTenant(Workspace $workspace, ClientInvoice $invoice): void
     {
-        if ($invoice->workspace_id !== $workspace->id) {
-            throw (new ModelNotFoundException)->setModel(ClientInvoice::class, [$invoice->id]);
-        }
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
     }
 
     /** @param array<string, mixed> $line */
@@ -294,9 +294,7 @@ final class InvoiceLifecycleService
 
     private function assertCompanyTenant(Workspace $workspace, ClientCompany $company): void
     {
-        if ($company->workspace_id !== $workspace->id) {
-            throw (new ModelNotFoundException)->setModel(ClientCompany::class, [$company->id]);
-        }
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $company);
     }
 
     private function requiredString(mixed $value, string $name): string

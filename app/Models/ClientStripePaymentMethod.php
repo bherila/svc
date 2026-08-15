@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,9 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'type', 'brand', 'last4', 'exp_month', 'exp_year', 'is_default', 'metadata',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_stripe_customer_id', 'stripe_payment_method_id', 'metadata'])]
-class ClientStripePaymentMethod extends Model
+class ClientStripePaymentMethod extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

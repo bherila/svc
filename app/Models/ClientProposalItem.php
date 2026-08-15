@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -10,9 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['public_id', 'workspace_id', 'client_proposal_id', 'description', 'quantity', 'unit_amount', 'cadence', 'sort_order'])]
 #[Hidden(['id', 'workspace_id', 'client_proposal_id'])]
-class ClientProposalItem extends Model
+class ClientProposalItem extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected static function booted(): void
     {

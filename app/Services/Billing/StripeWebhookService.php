@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeEvent;
+use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Stripe\Event;
@@ -119,10 +120,19 @@ final class StripeWebhookService
     {
         $metadata = is_array($object['metadata'] ?? null) ? $object['metadata'] : [];
         $invoiceId = $metadata['invoice_public_id'] ?? null;
-        if (! is_string($invoiceId) || $invoiceId === '') {
+        $workspaceId = $metadata['workspace_public_id'] ?? null;
+        if (! is_string($invoiceId) || $invoiceId === ''
+            || ! is_string($workspaceId) || $workspaceId === '') {
             return;
         }
-        $invoice = ClientInvoice::query()->where('public_id', $invoiceId)->first();
+        $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
+        if ($workspace === null) {
+            return;
+        }
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('public_id', $invoiceId)
+            ->first();
         if ($invoice === null) {
             return;
         }

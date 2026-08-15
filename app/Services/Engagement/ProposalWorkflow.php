@@ -7,10 +7,13 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
 
 class ProposalWorkflow
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -145,11 +148,11 @@ class ProposalWorkflow
 
     private function assertParents(Workspace $workspace, ClientCompany $company, ?ClientProject $project): void
     {
-        if ($company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             throw new EngagementException('The client company does not belong to this workspace.');
         }
 
-        if ($project !== null && ($project->workspace_id !== $workspace->id || $project->client_company_id !== $company->id)) {
+        if ($project !== null && (! $this->workspaceAuthorization->isOwnedBy($workspace, $project) || $project->client_company_id !== $company->id)) {
             throw new EngagementException('The client project does not belong to this client company and workspace.');
         }
     }

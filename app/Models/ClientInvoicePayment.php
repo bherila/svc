@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,9 +16,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'external_finance_transaction_uuid', 'idempotency_key',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'external_finance_transaction_uuid', 'idempotency_key'])]
-class ClientInvoicePayment extends Model
+class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

@@ -8,10 +8,13 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
 
 class AgreementWorkflow
 {
+    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+
     /** @param array<string, mixed> $attributes */
     public function create(
         Workspace $workspace,
@@ -20,15 +23,15 @@ class AgreementWorkflow
         ?ClientProposal $sourceProposal,
         array $attributes,
     ): ClientAgreement {
-        if ($company->workspace_id !== $workspace->id) {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
             throw new EngagementException('The client company does not belong to this workspace.');
         }
 
-        if ($project !== null && ($project->workspace_id !== $workspace->id || $project->client_company_id !== $company->id)) {
+        if ($project !== null && (! $this->workspaceAuthorization->isOwnedBy($workspace, $project) || $project->client_company_id !== $company->id)) {
             throw new EngagementException('The client project does not belong to this client company and workspace.');
         }
 
-        if ($sourceProposal !== null && ($sourceProposal->workspace_id !== $workspace->id || $sourceProposal->client_company_id !== $company->id)) {
+        if ($sourceProposal !== null && (! $this->workspaceAuthorization->isOwnedBy($workspace, $sourceProposal) || $sourceProposal->client_company_id !== $company->id)) {
             throw new EngagementException('The source proposal does not belong to this client company and workspace.');
         }
 

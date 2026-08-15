@@ -6,12 +6,15 @@ use App\Http\Requests\Engagement\AcceptProposalRequest;
 use App\Http\Requests\Engagement\StoreProposalRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientProposal;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Engagement\EngagementAuthorization;
 use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\ProposalWorkflow;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Gate;
 
 class ProposalController extends EngagementController
 {
@@ -19,13 +22,13 @@ class ProposalController extends EngagementController
         StoreProposalRequest $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
-        EngagementAuthorization $authorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         ProposalWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
-        abort_if($user === null, 401);
-        abort_unless($authorization->canManage($user, $workspace), 403);
-        abort_unless($clientCompany->workspace_id === $workspace->id, 404);
+        abort_unless($user instanceof User, 401);
+        Gate::forUser($user)->authorize('manage', $workspace);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
         try {
             $proposal = $workflow->create($workspace, $clientCompany, null, $user, $request->validated());
@@ -45,14 +48,14 @@ class ProposalController extends EngagementController
     public function send(
         Workspace $workspace,
         ClientProposal $clientProposal,
-        EngagementAuthorization $authorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         ProposalWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $request = request();
         $user = $request->user();
-        abort_if($user === null, 401);
-        abort_unless($authorization->canManage($user, $workspace), 403);
-        abort_unless($clientProposal->workspace_id === $workspace->id, 404);
+        abort_unless($user instanceof User, 401);
+        Gate::forUser($user)->authorize('manage', $workspace);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientProposal);
 
         try {
             $proposal = $workflow->send($clientProposal);
@@ -72,18 +75,20 @@ class ProposalController extends EngagementController
         AcceptProposalRequest $request,
         ClientCompany $clientCompany,
         ClientProposal $clientProposal,
-        EngagementAuthorization $authorization,
+        EngagementAuthorization $engagementAuthorization,
+        WorkspaceAuthorization $workspaceAuthorization,
         ProposalWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
-        abort_if($user === null, 401);
+        abort_unless($user instanceof User, 401);
         $workspace = Workspace::query()->findOrFail($clientProposal->workspace_id);
         abort_unless(
             $clientProposal->client_company_id === $clientCompany->id
                 && $clientProposal->is_visible_to_client,
             404,
         );
-        abort_unless($authorization->canActAsClient($user, $workspace, $clientCompany), 403);
+        $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
+        abort_unless($engagementAuthorization->canActAsClient($user, $workspace, $clientCompany), 403);
 
         try {
             $proposal = $workflow->accept(

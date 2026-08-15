@@ -37,4 +37,25 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('find "$LOCAL_PATH" -type f -exec chmod 600 {} +', $script);
         $this->assertStringNotContainsString('rsync "${RSYNC_OPTS[@]}" --delete "${LOCAL_PATH}/" "${REMOTE}/"', $script);
     }
+
+    #[Test]
+    public function database_snapshot_is_pull_only_verified_and_scoped_to_x_data(): void
+    {
+        $script = file_get_contents(__DIR__.'/../../scripts/db-snapshot.sh');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('PROJECT="svc"', $script);
+        $this->assertStringContainsString('REMOTE_HOST="ssh-bwh-php"', $script);
+        $this->assertStringContainsString('REMOTE_PROJECT_PATH="svc-laravel"', $script);
+        $this->assertStringContainsString('LOCAL_DIRECTORY="${DB_SNAPSHOT_DIR:-$X_DATA/${PROJECT}-database}"', $script);
+        $this->assertStringNotContainsString('$X_DATA/$PROJECT/database', $script);
+        $this->assertStringContainsString('database snapshots must stay outside the rsync-managed', $script);
+        $this->assertStringContainsString('--single-transaction', $script);
+        $this->assertStringContainsString('--quick', $script);
+        $this->assertStringContainsString('--no-tablespaces', $script);
+        $this->assertStringContainsString('gzip -t', $script);
+        $this->assertStringContainsString('sha256_file', $script);
+        $this->assertStringContainsString('no restore or push mode exists', $script);
+        $this->assertStringNotContainsString('case "$MODE" in\n    push)', $script);
+    }
 }

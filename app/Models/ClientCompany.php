@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -21,9 +23,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 #[Fillable(['workspace_id', 'name', 'slug', 'billing_email', 'is_active'])]
 #[Hidden(['id', 'workspace_id'])]
-class ClientCompany extends Model
+class ClientCompany extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

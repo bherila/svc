@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,9 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'anchor_day', 'next_run_on', 'due_days', 'currency', 'is_active', 'line_template',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id'])]
-class ClientBillingSchedule extends Model
+class ClientBillingSchedule extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {

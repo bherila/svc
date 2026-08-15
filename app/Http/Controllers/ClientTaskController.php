@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateClientTaskRequest;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\Workspace;
+use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 
@@ -16,9 +17,10 @@ class ClientTaskController extends Controller
         StoreClientTaskRequest $request,
         Workspace $workspace,
         ClientProject $clientProject,
+        WorkspaceAuthorization $authorization,
     ): RedirectResponse {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientProject->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $clientProject);
 
         $clientProject->tasks()->create([
             'workspace_id' => $workspace->id,
@@ -34,9 +36,10 @@ class ClientTaskController extends Controller
         UpdateClientTaskRequest $request,
         Workspace $workspace,
         ClientTask $clientTask,
+        WorkspaceAuthorization $authorization,
     ): RedirectResponse {
         Gate::authorize('manage', $workspace);
-        abort_unless($clientTask->workspace_id === $workspace->id, 404);
+        $authorization->assertOwnedBy($workspace, $clientTask);
 
         $status = $request->string('status')->toString();
         $clientTask->update([

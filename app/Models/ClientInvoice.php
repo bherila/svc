@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,9 +26,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'paid_amount', 'balance_amount', 'notes', 'is_visible_to_client', 'issued_at', 'voided_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes'])]
-class ClientInvoice extends Model
+class ClientInvoice extends Model implements WorkspaceOwned
 {
-    use HasPublicId;
+    use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {
