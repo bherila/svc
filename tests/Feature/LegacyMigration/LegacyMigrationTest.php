@@ -209,6 +209,62 @@ class LegacyMigrationTest extends TestCase
         ]);
     }
 
+    public function test_duplicate_legacy_invoice_numbers_receive_stable_collision_suffixes(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (71, 11, NULL, 'SYN-DUPLICATE', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (72, 11, NULL, 'SYN-DUPLICATE', 'issued', '2026-01-11', '2026-02-11', '200.00', 'USD', NULL)");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+        $numbers = DB::table('client_invoices')->where('workspace_id', $workspace->getKey())->orderBy('id')->pluck('invoice_number')->all();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame('SYN-DUPLICATE', $numbers[0]);
+        $this->assertMatchesRegularExpression('/^SYN-DUPLICATE-legacy-[a-f0-9]{16}$/', $numbers[1]);
+    }
+
+    public function test_legacy_invoice_line_quantities_normalize_blank_and_hour_minute_values(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (81, 11, NULL, 'SYN-81', 'issued', '2026-01-10', '2026-02-10', '437.50', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (82, 81, NULL, NULL, 'Synthetic fixed line', '', '100.00', '100.00', 'adjustment', 1)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (83, 81, NULL, NULL, 'Synthetic hourly line', '2:15', '150.00', '337.50', 'time', 2)");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+        $quantities = DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())->orderBy('sort_order')->pluck('quantity')->all();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame(1.0, (float) $quantities[0]);
+        $this->assertSame(2.25, (float) $quantities[1]);
+    }
+
+    public function test_unknown_legacy_invoice_line_quantity_fails_instead_of_guessing(): void
+    {
+        $user = User::factory()->create();
+        Config::set('legacy-migration.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (91, 11, NULL, 'SYN-91', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (92, 91, NULL, NULL, 'Synthetic invalid quantity', 'several', '100.00', '100.00', 'adjustment', 1)");
+
+        $summary = app(LegacyMigrationService::class)->run('legacy', $workspace->slug, true);
+
+        $this->assertSame('completed_with_failures', $summary['status']);
+        $this->assertSame(1, (int) ($summary['counts']['failure_reasons']['row_transaction_failed'] ?? 0));
+        $this->assertDatabaseMissing('client_invoice_lines', ['description' => 'Synthetic invalid quantity']);
+    }
+
     public function test_unset_legacy_rates_import_as_null_and_cost_never_lands_in_the_billing_rate(): void
     {
         $user = User::factory()->create();
