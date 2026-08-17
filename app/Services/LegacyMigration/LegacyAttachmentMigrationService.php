@@ -142,7 +142,6 @@ final class LegacyAttachmentMigrationService
             throw new AttachmentCopyException('source_attachment_deleted');
         }
 
-        $sourceFile = $this->sourceFile($root, $row);
         $record = $this->record($workspace, $sourceIdentityHash, $mapping, $row);
         $publicId = Uuid::uuid5(
             Uuid::NAMESPACE_URL,
@@ -151,6 +150,7 @@ final class LegacyAttachmentMigrationService
 
         $attachment = ClientAttachment::query()->where('public_id', $publicId)->first();
         $copy = LegacyAttachmentCopy::query()->where('legacy_migration_item_id', $item->getKey())->first();
+        $sourceFile = $this->sourceFile($root, $row, $apply && ! $copy && ! $attachment);
         if ($copy) {
             if (! $attachment) {
                 throw new AttachmentCopyException('incomplete_copy_ledger');
@@ -173,24 +173,34 @@ final class LegacyAttachmentMigrationService
             return 'planned';
         }
 
-        $uploadedFile = new UploadedFile(
-            $sourceFile['path'],
-            $this->originalFilename($row),
-            $this->optionalString($row['mime_type'] ?? null),
-            null,
-            true,
-        );
-        $attachment = $this->storage->store($workspace, $record, $uploadedFile, $uploader, $publicId);
-        if ($attachment->sha256 !== $sourceFile['sha256'] || $attachment->bytes !== $sourceFile['bytes']) {
-            $this->storage->discardMigrationCopy($attachment);
-            throw new AttachmentCopyException('source_changed_during_copy');
+        $temporaryPath = $sourceFile['temporary_path'] ?? null;
+        if (! is_string($temporaryPath)) {
+            throw new AttachmentCopyException('source_snapshot_unavailable');
         }
 
         try {
-            $this->completeLedger($item, $workspace, $attachment, $sourceFile);
-        } catch (Throwable $exception) {
-            $this->storage->discardMigrationCopy($attachment);
-            throw $exception;
+            $uploadedFile = new UploadedFile(
+                $temporaryPath,
+                $this->originalFilename($row),
+                $this->optionalString($row['mime_type'] ?? null),
+                null,
+                true,
+            );
+            $attachment = null;
+            try {
+                $attachment = $this->storage->store($workspace, $record, $uploadedFile, $uploader, $publicId);
+                if ($attachment->sha256 !== $sourceFile['sha256'] || $attachment->bytes !== $sourceFile['bytes']) {
+                    throw new AttachmentCopyException('source_snapshot_mismatch');
+                }
+                $this->completeLedger($item, $workspace, $attachment, $sourceFile);
+            } catch (Throwable $exception) {
+                if ($attachment instanceof ClientAttachment) {
+                    $this->storage->discardMigrationCopy($attachment);
+                }
+                throw $exception;
+            }
+        } finally {
+            @unlink($temporaryPath);
         }
 
         return 'copied';
@@ -231,9 +241,9 @@ final class LegacyAttachmentMigrationService
     }
 
     /** @param array<string, mixed> $row
-     * @return array{path:string,path_hash:string,sha256:string,bytes:int}
+     * @return array{path_hash:string,sha256:string,bytes:int,temporary_path?:string}
      */
-    private function sourceFile(string $root, array $row): array
+    private function sourceFile(string $root, array $row, bool $materialize = false): array
     {
         $relativePath = $this->optionalString($row['s3_path'] ?? null);
         if ($relativePath === null || str_contains($relativePath, "\0") || str_contains($relativePath, '\\') || str_starts_with($relativePath, '/')) {
@@ -243,39 +253,186 @@ final class LegacyAttachmentMigrationService
         if (in_array('', $segments, true) || in_array('.', $segments, true) || in_array('..', $segments, true)) {
             throw new AttachmentCopyException('source_path_invalid');
         }
+        $candidate = $root.'/'.$relativePath;
+        $states = $this->capturePathStates($root, $segments);
+        $path = realpath($candidate);
+        if (! is_string($path) || ! str_starts_with($path, $root.'/')) {
+            throw new AttachmentCopyException('source_object_missing');
+        }
+        $source = @fopen($candidate, 'rb');
+        if (! is_resource($source)) {
+            throw new AttachmentCopyException('source_object_unreadable');
+        }
+
+        $temporaryPath = null;
+        $temporary = null;
+        try {
+            if (! flock($source, LOCK_SH)) {
+                throw new AttachmentCopyException('source_lock_unavailable');
+            }
+            $opened = fstat($source);
+            $this->assertPathStatesUnchanged($states);
+            $finalState = $states[array_key_last($states)];
+            if (! is_array($opened) || ! $this->sameObject($finalState, $opened)) {
+                throw new AttachmentCopyException('source_path_changed');
+            }
+
+            if ($materialize) {
+                $temporaryPath = tempnam(sys_get_temp_dir(), 'svc-legacy-attachment-');
+                if (! is_string($temporaryPath) || ! chmod($temporaryPath, 0600)) {
+                    throw new AttachmentCopyException('source_snapshot_unavailable');
+                }
+                $temporary = @fopen($temporaryPath, 'wb');
+                if (! is_resource($temporary)) {
+                    throw new AttachmentCopyException('source_snapshot_unavailable');
+                }
+            }
+
+            $snapshot = $this->readAndHash($source, $temporary);
+            if (is_resource($temporary) && ! fflush($temporary)) {
+                throw new AttachmentCopyException('source_snapshot_unavailable');
+            }
+            $afterSnapshot = fstat($source);
+            if (! is_array($afterSnapshot) || ! $this->sameVersion($opened, $afterSnapshot)) {
+                throw new AttachmentCopyException('source_changed_during_snapshot');
+            }
+            if (! rewind($source)) {
+                throw new AttachmentCopyException('source_object_unreadable');
+            }
+            $verification = $this->readAndHash($source);
+            $afterVerification = fstat($source);
+            $this->assertPathStatesUnchanged($states);
+            if (! is_array($afterVerification)
+                || ! $this->sameVersion($opened, $afterVerification)
+                || $snapshot !== $verification) {
+                throw new AttachmentCopyException('source_changed_during_snapshot');
+            }
+
+            $claimedBytes = $row['file_size_bytes'] ?? null;
+            if ($claimedBytes !== null && $claimedBytes !== '' && (int) $claimedBytes !== $snapshot['bytes']) {
+                throw new AttachmentCopyException('source_size_mismatch');
+            }
+
+            $result = [
+                'path_hash' => hash('sha256', $relativePath),
+                'sha256' => $snapshot['sha256'],
+                'bytes' => $snapshot['bytes'],
+            ];
+            if (is_string($temporaryPath)) {
+                $result['temporary_path'] = $temporaryPath;
+            }
+
+            return $result;
+        } catch (Throwable $exception) {
+            if (is_string($temporaryPath)) {
+                @unlink($temporaryPath);
+            }
+            throw $exception;
+        } finally {
+            if (is_resource($temporary)) {
+                fclose($temporary);
+            }
+            @flock($source, LOCK_UN);
+            fclose($source);
+        }
+    }
+
+    /**
+     * @param  list<string>  $segments
+     * @return array<string, array<string|int, int>>
+     */
+    private function capturePathStates(string $root, array $segments): array
+    {
+        $states = [];
         $candidate = $root;
-        foreach ($segments as $segment) {
-            $candidate .= '/'.$segment;
-            if (is_link($candidate)) {
+        foreach (array_merge([''], $segments) as $index => $segment) {
+            if ($segment !== '') {
+                $candidate .= '/'.$segment;
+            }
+            clearstatcache(true, $candidate);
+            $state = @lstat($candidate);
+            $expectedType = $index === count($segments) ? 0100000 : 0040000;
+            if (! is_array($state) || (((int) $state['mode']) & 0170000) !== $expectedType) {
                 throw new AttachmentCopyException('source_path_invalid');
+            }
+            $states[$candidate] = $state;
+        }
+
+        return $states;
+    }
+
+    /** @param array<string, array<string|int, int>> $states */
+    private function assertPathStatesUnchanged(array $states): void
+    {
+        foreach ($states as $path => $before) {
+            clearstatcache(true, $path);
+            $after = @lstat($path);
+            if (! is_array($after) || ! $this->sameObject($before, $after)) {
+                throw new AttachmentCopyException('source_path_changed');
+            }
+        }
+    }
+
+    /**
+     * @param  array<string|int, int>  $left
+     * @param  array<string|int, int>  $right
+     */
+    private function sameObject(array $left, array $right): bool
+    {
+        return (int) $left['dev'] === (int) $right['dev']
+            && (int) $left['ino'] === (int) $right['ino']
+            && (((int) $left['mode']) & 0170000) === (((int) $right['mode']) & 0170000);
+    }
+
+    /**
+     * @param  array<string|int, int>  $left
+     * @param  array<string|int, int>  $right
+     */
+    private function sameVersion(array $left, array $right): bool
+    {
+        return $this->sameObject($left, $right)
+            && (int) $left['size'] === (int) $right['size']
+            && (int) $left['mtime'] === (int) $right['mtime']
+            && (int) $left['ctime'] === (int) $right['ctime'];
+    }
+
+    /** @return array{sha256:string,bytes:int} */
+    private function readAndHash(mixed $source, mixed $destination = null): array
+    {
+        $hash = hash_init('sha256');
+        $bytes = 0;
+        while (! feof($source)) {
+            $chunk = fread($source, 1024 * 1024);
+            if ($chunk === false) {
+                throw new AttachmentCopyException('source_object_unreadable');
+            }
+            if ($chunk === '') {
+                continue;
+            }
+            $bytes += strlen($chunk);
+            if ($bytes > self::MAX_BYTES) {
+                throw new AttachmentCopyException('source_object_too_large');
+            }
+            hash_update($hash, $chunk);
+            if (is_resource($destination)) {
+                $this->writeAll($destination, $chunk);
             }
         }
 
-        $path = realpath($root.'/'.$relativePath);
-        if (! is_string($path) || ! str_starts_with($path, $root.'/') || ! is_file($path) || ! is_readable($path)) {
-            throw new AttachmentCopyException('source_object_missing');
-        }
+        return ['sha256' => hash_final($hash), 'bytes' => $bytes];
+    }
 
-        $bytes = filesize($path);
-        $sha256 = hash_file('sha256', $path);
-        if (! is_int($bytes) || ! is_string($sha256)) {
-            throw new AttachmentCopyException('source_object_unreadable');
+    private function writeAll(mixed $stream, string $contents): void
+    {
+        $offset = 0;
+        $length = strlen($contents);
+        while ($offset < $length) {
+            $written = fwrite($stream, substr($contents, $offset));
+            if ($written === false || $written === 0) {
+                throw new AttachmentCopyException('source_snapshot_unavailable');
+            }
+            $offset += $written;
         }
-        if ($bytes > self::MAX_BYTES) {
-            throw new AttachmentCopyException('source_object_too_large');
-        }
-
-        $claimedBytes = $row['file_size_bytes'] ?? null;
-        if ($claimedBytes !== null && $claimedBytes !== '' && (int) $claimedBytes !== $bytes) {
-            throw new AttachmentCopyException('source_size_mismatch');
-        }
-
-        return [
-            'path' => $path,
-            'path_hash' => hash('sha256', $relativePath),
-            'sha256' => $sha256,
-            'bytes' => $bytes,
-        ];
     }
 
     /** @param array{path_hash:string,sha256:string,bytes:int} $sourceFile */

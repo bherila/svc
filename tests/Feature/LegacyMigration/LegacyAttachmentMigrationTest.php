@@ -6,6 +6,7 @@ use App\Models\ClientAttachment;
 use App\Models\LegacyMigrationItem;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentStorageService;
 use App\Services\LegacyMigration\Fingerprint;
 use App\Services\LegacyMigration\LegacyAttachmentMigrationService;
 use App\Services\LegacyMigration\LegacyMigrationService;
@@ -111,6 +112,7 @@ class LegacyAttachmentMigrationTest extends TestCase
 
     public function test_apply_copies_verifies_and_is_idempotent_without_deleting_source(): void
     {
+        $temporaryBefore = glob(sys_get_temp_dir().'/svc-legacy-attachment-*') ?: [];
         $service = app(LegacyAttachmentMigrationService::class);
         $first = $service->run('legacy', $this->workspace->slug, $this->uploader->public_id, true);
         $second = $service->run('legacy', $this->workspace->slug, $this->uploader->public_id, true);
@@ -132,6 +134,10 @@ class LegacyAttachmentMigrationTest extends TestCase
             'status' => 'imported',
             'target_public_id' => $attachment->public_id,
         ]);
+        $temporaryAfter = glob(sys_get_temp_dir().'/svc-legacy-attachment-*') ?: [];
+        sort($temporaryBefore);
+        sort($temporaryAfter);
+        $this->assertSame($temporaryBefore, $temporaryAfter);
     }
 
     public function test_source_path_traversal_is_rejected_without_writes(): void
@@ -211,6 +217,28 @@ class LegacyAttachmentMigrationTest extends TestCase
 
         $this->assertDatabaseCount('legacy_attachment_copies', 1);
         $this->assertDatabaseHas('legacy_attachment_copies', ['client_attachment_id' => null]);
+    }
+
+    public function test_failed_migration_copy_is_quarantined_before_cleanup(): void
+    {
+        app(LegacyAttachmentMigrationService::class)->run(
+            'legacy',
+            $this->workspace->slug,
+            $this->uploader->public_id,
+            true,
+        );
+        $attachment = ClientAttachment::query()->firstOrFail();
+        $objectKey = $attachment->object_key;
+        $stateAtDelete = null;
+        ClientAttachment::deleting(function (ClientAttachment $deleting) use (&$stateAtDelete): void {
+            $stateAtDelete = $deleting->lifecycle_state;
+        });
+
+        app(AttachmentStorageService::class)->discardMigrationCopy($attachment);
+
+        $this->assertSame(ClientAttachment::STATE_CORRUPT, $stateAtDelete);
+        $this->assertDatabaseMissing('client_attachments', ['id' => $attachment->getKey()]);
+        Storage::disk('svc_files')->assertMissing($objectKey);
     }
 
     public function test_json_command_output_never_contains_source_values(): void
