@@ -36,6 +36,16 @@ case "$LOCAL_DIRECTORY/" in
         ;;
 esac
 
+[[ "$LOCAL_DIRECTORY" = /* && "$LOCAL_DIRECTORY" != "/" && "$LOCAL_DIRECTORY" != "$HOME" ]] \
+    || die "unsafe snapshot directory: $LOCAL_DIRECTORY"
+snapshot_parent=$(dirname "$LOCAL_DIRECTORY")
+[[ -d "$snapshot_parent" && ! -L "$snapshot_parent" ]] \
+    || die "snapshot parent must be an existing real directory: $snapshot_parent"
+canonical_snapshot_parent=$(cd "$snapshot_parent" && pwd -P)
+[[ "$LOCAL_DIRECTORY" == "$canonical_snapshot_parent/$(basename "$LOCAL_DIRECTORY")" ]] \
+    || die "snapshot directory must be canonical: $LOCAL_DIRECTORY"
+[[ ! -L "$LOCAL_DIRECTORY" ]] || die "snapshot directory must not be a symlink: $LOCAL_DIRECTORY"
+
 verify_snapshot() {
     local snapshot_path="$1"
     local checksum_path="${snapshot_path}.sha256"

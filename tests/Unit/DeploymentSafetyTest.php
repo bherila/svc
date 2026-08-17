@@ -39,6 +39,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('shasum -a 256 {} +', $script);
         $this->assertStringContainsString('cmp -s "$manifest_directory/web1.sha256" "$manifest_directory/x-data.sha256"', $script);
         $this->assertStringContainsString('[[ ! -L "$LOCAL_PATH" ]]', $script);
+        $this->assertStringContainsString('canonical_x_data=$(cd "$X_DATA" && pwd -P)', $script);
         $this->assertStringContainsString('if [ "$APPLY" -eq 1 ]; then', $script);
         $this->assertStringNotContainsString('rsync "${RSYNC_OPTS[@]}" --delete "${LOCAL_PATH}/" "${REMOTE}/"', $script);
     }
@@ -61,6 +62,8 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('gzip -t', $script);
         $this->assertStringContainsString('sha256_file', $script);
         $this->assertStringContainsString('[[ "$candidate" =~ ^${PROJECT}-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z\\.sql\\.gz$ ]] || continue', $script);
+        $this->assertStringContainsString('canonical_snapshot_parent=$(cd "$snapshot_parent" && pwd -P)', $script);
+        $this->assertStringContainsString('[[ ! -L "$LOCAL_DIRECTORY" ]]', $script);
         $this->assertStringContainsString('no restore or push mode exists', $script);
         $this->assertStringNotContainsString('case "$MODE" in\n    push)', $script);
     }

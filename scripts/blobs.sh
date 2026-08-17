@@ -43,6 +43,9 @@ RSYNC_OPTS=(-a --human-readable --itemize-changes --stats --exclude '.DS_Store' 
 
 [[ "$X_DATA" = /* && "$X_DATA" != "/" && "$X_DATA" != "$HOME" ]] \
     || die "unsafe x-data root: $X_DATA"
+[[ -d "$X_DATA" && ! -L "$X_DATA" ]] || die "x-data root must be an existing real directory: $X_DATA"
+canonical_x_data=$(cd "$X_DATA" && pwd -P)
+[[ "$X_DATA" == "$canonical_x_data" ]] || die "x-data root must be canonical: $X_DATA"
 [[ ! -L "$LOCAL_PATH" ]] || die "local mirror must not be a symlink: $LOCAL_PATH"
 
 case "$MODE" in
