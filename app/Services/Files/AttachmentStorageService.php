@@ -157,6 +157,7 @@ final class AttachmentStorageService
      */
     public function discardMigrationCopy(ClientAttachment $attachment): void
     {
+        $attachment->forceFill(['lifecycle_state' => ClientAttachment::STATE_CORRUPT])->save();
         $disk = $this->disk();
         $this->deleteIfPresent($disk, $attachment->staged_object_key);
         $this->deleteIfPresent($disk, $attachment->object_key);
