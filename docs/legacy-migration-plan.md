@@ -53,15 +53,18 @@ The implemented foundation includes:
 - `svc:migrate:legacy:inventory --source=legacy [--format=json]`, which reads an
   explicitly allowlisted source without resolving any destination connection or
   workspace and emits only redacted aggregate evidence;
+- `svc:migrate:legacy:attachments --source=legacy --workspace=... --uploader=...
+  [--apply]`, which copies only planned attachment rows from an exact private
+  local root, verifies both digests, and records path hashes instead of paths;
 - parent-ordered entity importers with idempotency and provenance tests;
 - a redacted inventory report and machine-readable verification summary;
 - high-water-mark and failed-row ledgers;
 - planned attachment-copy ledger entries that never delete source files.
 
 Attachments and provider-owned Stripe references are deliberately ledgered as
-planned work rather than copied by the row importer. The private attachment
-mirror and repair commands remain separate so a database migration cannot delete
-or overwrite source objects.
+planned work rather than copied by the row importer. The attachment command is
+dry-run by default and copy-only; the private mirror and repair commands remain
+separate so a database migration cannot delete or overwrite source objects.
 
 Identity mapping must be supplied as JSON maps from legacy identifiers (or
 trusted provider-and-subject pairs) to existing SVC public UUIDs. Email addresses

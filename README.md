@@ -46,6 +46,8 @@ an allowlisted read-only source is configured:
 ```bash
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --format=json
 php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
+php artisan svc:migrate:legacy:attachments --source=legacy --workspace=<workspace-public-id> --uploader=<user-public-id> --format=json
+php artisan svc:migrate:legacy:attachments --source=legacy --workspace=<workspace-public-id> --uploader=<user-public-id> --apply --format=json
 php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
 php artisan svc:migrate:legacy:rehearse --format=json
 php artisan svc:migrate:legacy:inventory --source=legacy --format=json
@@ -60,6 +62,10 @@ applies twice, verifies idempotency, and removes its artifacts.
 The source-only inventory command is the production-readiness path: it never
 resolves a destination workspace or connection, and reports only aggregate
 counts, ranges, orphan/duplicate totals, high-water marks, and fingerprints.
+Attachment migration is a separate copy-only path. It resolves only planned
+ledger rows beneath the exact server-held `LEGACY_MIGRATION_ATTACHMENT_ROOT`,
+verifies source and destination SHA-256 digests, records provenance without raw
+paths, and never deletes legacy objects.
 
 ## Deployment
 
