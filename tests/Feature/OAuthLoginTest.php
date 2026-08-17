@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -39,6 +41,28 @@ class OAuthLoginTest extends TestCase
         parse_str((string) parse_url((string) $response->headers->get('Location'), PHP_URL_QUERY), $query);
         $this->assertSame('S256', $query['code_challenge_method']);
         $this->assertSame('identity:read', $query['scope']);
+        $this->assertSame(session('oauth.login.state'), $query['state']);
+    }
+
+    public function test_inertia_redirect_uses_an_external_location_response(): void
+    {
+        $version = app(HandleInertiaRequests::class)->version(Request::create('/oauth/redirect'));
+
+        $response = $this->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => $version,
+        ])->get('/oauth/redirect');
+
+        $response->assertStatus(409);
+        $response->assertHeader('X-Inertia-Location');
+        $response->assertSessionHas('oauth.login.state');
+        $response->assertSessionHas('oauth.login.code_verifier');
+
+        $location = (string) $response->headers->get('X-Inertia-Location');
+
+        $this->assertStringStartsWith('https://identity.example.test/oauth/authorize?', $location);
+        parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+        $this->assertSame('S256', $query['code_challenge_method']);
         $this->assertSame(session('oauth.login.state'), $query['state']);
     }
 

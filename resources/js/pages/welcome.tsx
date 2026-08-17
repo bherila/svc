@@ -1,4 +1,4 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -12,12 +12,12 @@ export default function Welcome() {
                         <span className="text-xl font-semibold tracking-[0.22em]">
                             SVC
                         </span>
-                        <Link
+                        <a
                             href={auth.user ? '/app' : '/oauth/redirect'}
                             className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium hover:bg-white/10"
                         >
                             {auth.user ? 'Open workspace' : 'Sign in'}
-                        </Link>
+                        </a>
                     </nav>
 
                     <section className="grid flex-1 items-center gap-12 py-20 lg:grid-cols-[1.2fr_0.8fr]">
@@ -34,14 +34,14 @@ export default function Welcome() {
                                 payments, and files in one tenant-safe workspace
                                 for independent service businesses.
                             </p>
-                            <Link
+                            <a
                                 href={auth.user ? '/app' : '/oauth/redirect'}
                                 className="mt-9 inline-flex rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 hover:bg-cyan-200"
                             >
                                 {auth.user
                                     ? 'Continue to SVC'
                                     : 'Sign in to SVC'}
-                            </Link>
+                            </a>
                         </div>
 
                         <div className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-2xl shadow-cyan-950/30 backdrop-blur">

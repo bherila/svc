@@ -11,12 +11,20 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class OAuthLoginController extends Controller
 {
-    public function redirect(Request $request, OAuthClient $oauth): RedirectResponse
+    public function redirect(Request $request, OAuthClient $oauth): SymfonyResponse
     {
-        return $oauth->redirect($request);
+        $redirect = $oauth->redirect($request);
+
+        if ($request->header('X-Inertia')) {
+            return Inertia::location($redirect->getTargetUrl());
+        }
+
+        return $redirect;
     }
 
     public function callback(Request $request, OAuthClient $oauth): RedirectResponse
