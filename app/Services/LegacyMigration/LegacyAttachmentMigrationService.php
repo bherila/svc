@@ -181,6 +181,10 @@ final class LegacyAttachmentMigrationService
             true,
         );
         $attachment = $this->storage->store($workspace, $record, $uploadedFile, $uploader, $publicId);
+        if ($attachment->sha256 !== $sourceFile['sha256'] || $attachment->bytes !== $sourceFile['bytes']) {
+            $this->storage->discardMigrationCopy($attachment);
+            throw new AttachmentCopyException('source_changed_during_copy');
+        }
 
         try {
             $this->completeLedger($item, $workspace, $attachment, $sourceFile);
