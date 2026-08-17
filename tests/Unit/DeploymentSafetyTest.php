@@ -35,6 +35,11 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('rsync "${RSYNC_OPTS[@]}" --delete --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= "${REMOTE}/" "${LOCAL_PATH}/"', $script);
         $this->assertStringContainsString('find "$LOCAL_PATH" -type d -exec chmod 700 {} +', $script);
         $this->assertStringContainsString('find "$LOCAL_PATH" -type f -exec chmod 600 {} +', $script);
+        $this->assertStringContainsString('sha256sum {} +', $script);
+        $this->assertStringContainsString('shasum -a 256 {} +', $script);
+        $this->assertStringContainsString('cmp -s "$manifest_directory/web1.sha256" "$manifest_directory/x-data.sha256"', $script);
+        $this->assertStringContainsString('[[ ! -L "$LOCAL_PATH" ]]', $script);
+        $this->assertStringContainsString('if [ "$APPLY" -eq 1 ]; then', $script);
         $this->assertStringNotContainsString('rsync "${RSYNC_OPTS[@]}" --delete "${LOCAL_PATH}/" "${REMOTE}/"', $script);
     }
 
@@ -55,6 +60,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('--no-tablespaces', $script);
         $this->assertStringContainsString('gzip -t', $script);
         $this->assertStringContainsString('sha256_file', $script);
+        $this->assertStringContainsString('[[ "$candidate" =~ ^${PROJECT}-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z\\.sql\\.gz$ ]] || continue', $script);
         $this->assertStringContainsString('no restore or push mode exists', $script);
         $this->assertStringNotContainsString('case "$MODE" in\n    push)', $script);
     }

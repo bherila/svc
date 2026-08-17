@@ -164,6 +164,7 @@ newest_local=""
 for candidate_path in "$LOCAL_DIRECTORY/${PROJECT}"-*.sql.gz; do
     [[ -f "$candidate_path" ]] || continue
     candidate="$(basename "$candidate_path")"
+    [[ "$candidate" =~ ^${PROJECT}-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z\.sql\.gz$ ]] || continue
     [[ "$candidate" > "$newest_local" ]] && newest_local="$candidate"
 done
 if [[ -n "$newest_local" && "$newest_local" > "$remote_filename" ]]; then

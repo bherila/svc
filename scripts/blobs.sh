@@ -4,7 +4,7 @@
 #
 #   pnpm blobs pull            dry-run: web1 -> x-data
 #   pnpm blobs pull --apply    execute
-#   pnpm blobs verify          compare file count and bytes
+#   pnpm blobs verify          compare file count, bytes, and SHA-256 manifests
 #   pnpm blobs push --apply    restore path; rare, never prunes by default
 set -euo pipefail
 
@@ -41,16 +41,24 @@ done
 RSYNC_OPTS=(-a --human-readable --itemize-changes --stats --exclude '.DS_Store' --exclude '.gitignore')
 [ "$APPLY" -eq 1 ] && RSYNC_OPTS+=(--partial --progress) || RSYNC_OPTS+=(--dry-run)
 
+[[ "$X_DATA" = /* && "$X_DATA" != "/" && "$X_DATA" != "$HOME" ]] \
+    || die "unsafe x-data root: $X_DATA"
+[[ ! -L "$LOCAL_PATH" ]] || die "local mirror must not be a symlink: $LOCAL_PATH"
+
 case "$MODE" in
     pull)
-        mkdir -p "$LOCAL_PATH"
-        chmod 700 "$LOCAL_PATH"
+        if [ "$APPLY" -eq 1 ]; then
+            mkdir -p "$LOCAL_PATH"
+            chmod 700 "$LOCAL_PATH"
+        fi
         info "pull  ${REMOTE}/  ->  ${LOCAL_PATH}/   $([ "$APPLY" -eq 1 ] && echo '(APPLY)' || echo '(dry-run)')"
         rsync "${RSYNC_OPTS[@]}" --delete --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= "${REMOTE}/" "${LOCAL_PATH}/"
         # openrsync does not reliably apply --chmod to unchanged entries during
         # an incremental pull. Normalize the complete local mirror after rsync.
-        find "$LOCAL_PATH" -type d -exec chmod 700 {} +
-        find "$LOCAL_PATH" -type f -exec chmod 600 {} +
+        if [ "$APPLY" -eq 1 ]; then
+            find "$LOCAL_PATH" -type d -exec chmod 700 {} +
+            find "$LOCAL_PATH" -type f -exec chmod 600 {} +
+        fi
         ;;
     push)
         [ -d "$LOCAL_PATH" ] || die "local mirror does not exist: $LOCAL_PATH — run 'pull' first"
@@ -69,7 +77,7 @@ case "$MODE" in
         rsync "${RSYNC_OPTS[@]}" "${LOCAL_PATH}/" "${REMOTE}/"
         ;;
     verify)
-        info "comparing file count and bytes"
+        info "comparing file count, bytes, and SHA-256 manifests"
         remote_stat=$(ssh "$REMOTE_HOST" "find '$REMOTE_PATH' -type f ! -name .gitignore 2>/dev/null | wc -l; find '$REMOTE_PATH' -type f ! -name .gitignore -printf '%s\\n' 2>/dev/null | awk '{s+=\$1} END {print s+0}'")
         local_stat=$(printf '%s\n%s\n' \
             "$(find "$LOCAL_PATH" -type f ! -name .gitignore 2>/dev/null | wc -l | tr -d ' ')" \
@@ -77,7 +85,19 @@ case "$MODE" in
         printf 'web1    %s files, %s bytes\n' $(echo "$remote_stat" | tr '\n' ' ')
         printf 'x-data  %s files, %s bytes\n' $(echo "$local_stat" | tr '\n' ' ')
         [ "$(echo "$remote_stat" | tr -d ' \n')" = "$(echo "$local_stat" | tr -d ' \n')" ] \
-            && info "match" || die "MISMATCH — re-run 'pull --apply'"
+            || die "COUNT/BYTE MISMATCH — re-run 'pull --apply'"
+
+        manifest_directory=$(mktemp -d "${TMPDIR:-/tmp}/svc-blob-verify.XXXXXX")
+        trap 'find "$manifest_directory" -type f -delete; rmdir "$manifest_directory"' EXIT
+        ssh "$REMOTE_HOST" "cd '$REMOTE_PATH' && find . -type f ! -name .gitignore -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort" \
+            > "$manifest_directory/web1.sha256"
+        (
+            cd "$LOCAL_PATH"
+            find . -type f ! -name .gitignore -exec shasum -a 256 {} + 2>/dev/null | LC_ALL=C sort
+        ) > "$manifest_directory/x-data.sha256"
+        cmp -s "$manifest_directory/web1.sha256" "$manifest_directory/x-data.sha256" \
+            || die "SHA-256 MISMATCH — re-run 'pull --apply'"
+        info "match"
         ;;
     *) usage ;;
 esac
