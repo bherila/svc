@@ -34,6 +34,10 @@ return [
     'destination_connection' => env('LEGACY_MIGRATION_DESTINATION_CONNECTION', null),
     'batch_size' => 100,
 
+    // Exact local root of the legacy application's private blob disk. Legacy
+    // attachment keys are resolved beneath this root and may never escape it.
+    'attachment_root' => env('LEGACY_MIGRATION_ATTACHMENT_ROOT'),
+
     // Never infer identity from email. Values are SVC public UUIDs.
     'user_bindings' => json_decode((string) env('LEGACY_MIGRATION_USER_BINDINGS', '{}'), true) ?: [],
     'trusted_identity_bindings' => json_decode((string) env('LEGACY_MIGRATION_TRUSTED_IDENTITIES', '{}'), true) ?: [],

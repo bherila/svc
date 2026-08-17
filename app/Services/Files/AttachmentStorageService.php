@@ -33,10 +33,10 @@ final class AttachmentStorageService
      * promotion deliberately leaves the staged row for the repair command,
      * because the storage driver may have completed only part of a move.
      */
-    public function store(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader): ClientAttachment
+    public function store(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader, ?string $publicId = null): ClientAttachment
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
-        $metadata = $this->stage($workspace, $record, $file);
+        $metadata = $this->stage($workspace, $record, $file, $publicId);
 
         try {
             $attachment = DB::transaction(fn (): ClientAttachment => ClientAttachment::query()->create([
@@ -140,6 +140,27 @@ final class AttachmentStorageService
         ])->save();
 
         return $attachment->fresh();
+    }
+
+    public function assertAvailableObjectMatches(ClientAttachment $attachment): void
+    {
+        if ($attachment->lifecycle_state !== ClientAttachment::STATE_AVAILABLE) {
+            throw new RuntimeException('The attachment object is not available.');
+        }
+
+        $this->assertObjectMatches($attachment->object_key, $attachment->bytes, $attachment->sha256);
+    }
+
+    /**
+     * Remove only a newly-created migration copy after its provenance ledger
+     * transaction fails. The legacy source object is never touched.
+     */
+    public function discardMigrationCopy(ClientAttachment $attachment): void
+    {
+        $disk = $this->disk();
+        $this->deleteIfPresent($disk, $attachment->staged_object_key);
+        $this->deleteIfPresent($disk, $attachment->object_key);
+        $attachment->delete();
     }
 
     /**
@@ -247,7 +268,7 @@ final class AttachmentStorageService
     }
 
     /** @return array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} */
-    private function stage(Workspace $workspace, Model $record, UploadedFile $file): array
+    private function stage(Workspace $workspace, Model $record, UploadedFile $file, ?string $publicId = null): array
     {
         $source = fopen($file->getPathname(), 'rb');
         if (! is_resource($source)) {
@@ -284,7 +305,10 @@ final class AttachmentStorageService
                 $this->writeAll($temporary, $chunk);
             }
 
-            $publicId = (string) Str::uuid();
+            $publicId ??= (string) Str::uuid();
+            if (! Str::isUuid($publicId)) {
+                throw new RuntimeException('The attachment public ID is invalid.');
+            }
             $recordType = $this->recordTypeFor($record);
             $recordPublicId = (string) $record->getAttribute('public_id');
             $stagedObjectKey = self::STAGED_PREFIX.'/'.$publicId;

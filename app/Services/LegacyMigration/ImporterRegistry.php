@@ -60,10 +60,10 @@ final class ImporterRegistry
             ], 'client_stripe_payment_methods'),
             $this->spec('stripe_events', 'client_invoice_stripe_events', 'id', 'stripe_event', 'write', [], 'client_stripe_events'),
             $this->spec('stripe_payment_references', 'client_invoice_stripe_payments', 'id', 'stripe_payment_reference', 'planned_reference'),
-            $this->spec('attachments_companies', 'files_for_client_companies', 'id', 'attachment', 'planned_copy'),
-            $this->spec('attachments_projects', 'files_for_projects', 'id', 'attachment', 'planned_copy'),
-            $this->spec('attachments_tasks', 'files_for_tasks', 'id', 'attachment', 'planned_copy'),
-            $this->spec('attachments_agreements', 'files_for_agreements', 'id', 'attachment', 'planned_copy'),
+            $this->spec('attachments_companies', 'files_for_client_companies', 'id', 'attachment', 'planned_copy', [], 'client_attachments'),
+            $this->spec('attachments_projects', 'files_for_projects', 'id', 'attachment', 'planned_copy', [], 'client_attachments'),
+            $this->spec('attachments_tasks', 'files_for_tasks', 'id', 'attachment', 'planned_copy', [], 'client_attachments'),
+            $this->spec('attachments_agreements', 'files_for_agreements', 'id', 'attachment', 'planned_copy', [], 'client_attachments'),
         ];
     }
 

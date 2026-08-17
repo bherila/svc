@@ -125,3 +125,8 @@ the configured source connection must be explicitly marked read-only, and the
 command must refuse the destination connection as its source. Output contains
 counts, keys only when safe, and hashes; it never prints names, email addresses,
 descriptions, notes, invoice contents, or file paths.
+
+`svc:migrate:legacy:attachments` consumes only planned attachment ledger rows.
+It requires an explicit workspace member as the migration uploader, stores no
+raw source path in the provenance ledger, and verifies source and destination
+SHA-256 digests before an attachment becomes an imported migration item.

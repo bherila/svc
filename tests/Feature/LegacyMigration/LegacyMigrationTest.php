@@ -13,7 +13,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use PDO;
 use Tests\TestCase;
 
@@ -334,7 +333,7 @@ class LegacyMigrationTest extends TestCase
         $this->assertFalse(app(LegacyMigrationService::class)->verify($second['run_public_id'])['ok']);
     }
 
-    public function test_verify_disambiguates_repeated_attachment_target_types_by_source_table(): void
+    public function test_verify_resolves_imported_attachment_targets_to_attachment_table(): void
     {
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $run = LegacyMigrationRun::create([
@@ -355,11 +354,22 @@ class LegacyMigrationTest extends TestCase
         ];
 
         foreach ($attachmentTables as $index => $sourceTable) {
-            Schema::create($sourceTable, function ($table): void {
-                $table->uuid('public_id')->primary();
-            });
             $publicId = sprintf('00000000-0000-4000-8000-%012d', $index + 1);
-            DB::table($sourceTable)->insert(['public_id' => $publicId]);
+            DB::table('client_attachments')->insert([
+                'public_id' => $publicId,
+                'workspace_id' => $workspace->getKey(),
+                'record_type' => 'agreement',
+                'record_public_id' => sprintf('10000000-0000-4000-8000-%012d', $index + 1),
+                'object_key' => 'synthetic/object/'.$publicId,
+                'original_filename' => 'synthetic-'.$index.'.txt',
+                'media_type' => 'text/plain',
+                'bytes' => 9,
+                'sha256' => hash('sha256', 'synthetic'),
+                'lifecycle_state' => 'available',
+                'available_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
             $item = LegacyMigrationItem::create([
                 'legacy_migration_run_id' => $run->getKey(),
                 'source_connection' => 'synthetic',
