@@ -67,6 +67,7 @@ final class LegacyMigrationService
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
         /** @var MigrationCounts $counts */
         $counts = $this->emptyCounts($inventory);
+        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'failed' => 0];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, LegacyMigrationItem> $ledgerItems */
@@ -83,9 +84,10 @@ final class LegacyMigrationService
             }
 
             $this->reconcileImportedInvoices($run, $destinationName);
+            $this->reconcileTimeEntryInvoiceLinks($sourceConnection, $this->sourceGuard->runtimeName($source), $run, $destinationName, $ledgerItems, $queryCache, $linkCounts, $counts);
 
             $run->forceFill([
-                'counts' => $counts,
+                'counts' => $counts + ['link_counts' => $linkCounts],
                 'status' => $counts['failed'] > 0
                     ? 'completed_with_failures'
                     : ($counts['skipped'] > 0 ? 'completed_with_skips' : 'completed'),
@@ -98,6 +100,7 @@ final class LegacyMigrationService
 
         $summary['run_public_id'] = $run->public_id;
         $summary['counts'] = $counts;
+        $summary['link_counts'] = $linkCounts;
         $summary['status'] = $run->status;
 
         return $summary;
@@ -425,6 +428,17 @@ final class LegacyMigrationService
                 'is_active' => (bool) ($row['is_active'] ?? true),
             ],
             'company_membership' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'user_id' => $this->internalId($destinationName, 'users', $user), 'role' => $row['role'] ?? 'client'],
+            'company_activity' => $attributes + [
+                'client_company_id' => $this->internalId($destinationName, 'client_companies', $company),
+                'actor_user_id' => $this->internalId($destinationName, 'users', $user),
+                'action' => (string) ($row['action'] ?? 'legacy.activity'),
+                'subject_type' => $row['subject_type'] ?? null,
+                'legacy_subject_id' => isset($row['subject_id']) ? (int) $row['subject_id'] : null,
+                'payload' => $this->jsonOrNull([
+                    'legacy_subject_id' => isset($row['subject_id']) ? (int) $row['subject_id'] : null,
+                    'legacy_payload' => $this->decodeJson($row['payload'] ?? null),
+                ]),
+            ],
             'project' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'name' => $row['name'] ?? 'Legacy project', 'description' => $row['description'] ?? null, 'status' => 'active', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false)],
             'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'Legacy task', 'description' => $row['description'] ?? null, 'status' => ($row['completed_at'] ?? null) ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => $row['completed_at'] ?? null],
             'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => $row['date_worked'] ?? null, 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft'],
@@ -435,6 +449,34 @@ final class LegacyMigrationService
             'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft'],
             'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'Legacy invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => self::invoiceLineQuantity($row['quantity'] ?? null), 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0)],
             'invoice_payment' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'status' => 'succeeded', 'amount' => self::minorUnits($row['amount'] ?? null), 'refunded_amount' => 0, 'currency' => $row['currency'] ?? 'USD', 'received_on' => $row['payment_date'] ?? null, 'method' => $row['payment_method'] ?? 'legacy', 'reference' => $row['stripe_payment_intent_id'] ?? null, 'notes' => $row['notes'] ?? null, 'provider' => ($row['stripe_payment_intent_id'] ?? null) ? 'stripe' : null, 'provider_payment_identifier' => $row['stripe_payment_intent_id'] ?? null, 'external_finance_transaction_uuid' => null],
+            'invoice_email_delivery' => $attributes + [
+                'client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice),
+                'recipients' => $this->jsonOrNull([
+                    'to' => $this->decodeJson($row['to_recipients'] ?? null),
+                    'cc' => $this->decodeJson($row['cc_recipients'] ?? null),
+                    'bcc' => $this->decodeJson($row['bcc_recipients'] ?? null),
+                ]),
+                'subject' => (string) ($row['subject'] ?? ''),
+                'status' => (string) ($row['status'] ?? 'queued'),
+                'provider_message_reference' => $row['provider_message_id'] ?? $row['transport_message_id'] ?? null,
+                'error_summary' => $row['last_event_reason'] ?? $row['note'] ?? null,
+                'legacy_metadata' => $this->jsonOrNull([
+                    'legacy_id' => isset($row['id']) ? (int) $row['id'] : null,
+                    'queued_by_user_id' => isset($row['queued_by_user_id']) ? (int) $row['queued_by_user_id'] : null,
+                    'mailer' => $row['mailer'] ?? null,
+                    'provider' => $row['provider'] ?? null,
+                    'transport_message_id' => $row['transport_message_id'] ?? null,
+                    'note' => $row['note'] ?? null,
+                    'last_event' => $row['last_event'] ?? null,
+                    'last_event_at' => $row['last_event_at'] ?? null,
+                    'last_status_checked_at' => $row['last_status_checked_at'] ?? null,
+                    'delivery_events' => $this->decodeJson($row['delivery_events'] ?? null),
+                    'provider_response' => $this->decodeJson($row['provider_response'] ?? null),
+                ]),
+                'queued_at' => $row['queued_at'] ?? null,
+                'sent_at' => $row['sent_at'] ?? null,
+                'failed_at' => $row['failed_at'] ?? null,
+            ],
             'stripe_customer' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'stripe_customer_id' => $row['stripe_customer_id'] ?? null, 'metadata' => json_encode(['migrated' => true], JSON_THROW_ON_ERROR)],
             'stripe_payment_method' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_stripe_customer_id' => $this->stripeCustomerInternalId($destinationName, $company), 'stripe_payment_method_id' => $row['stripe_payment_method_id'] ?? null, 'type' => $row['type'] ?? 'unknown', 'brand' => $row['brand'] ?? null, 'last4' => $row['last4'] ?? null, 'exp_month' => $row['exp_month'] ?? null, 'exp_year' => $row['exp_year'] ?? null, 'is_default' => (bool) ($row['is_default'] ?? false), 'metadata' => json_encode(['migrated' => true], JSON_THROW_ON_ERROR)],
             'stripe_event' => $attributes + ['stripe_event_id' => $row['stripe_event_id'] ?? null, 'event_type' => $row['type'] ?? 'legacy.event', 'object_id' => $row['object_id'] ?? null, 'payload_hash' => Fingerprint::row($row), 'status' => 'received', 'processed_at' => $row['processed_at'] ?? null],
@@ -629,6 +671,72 @@ final class LegacyMigrationService
     }
 
     /**
+     * Legacy invoices stored their billed-time relationship on the time-entry row. SVC
+     * intentionally models that as a many-to-many link, so reconcile it after all parent
+     * importers have established their public-id mappings.
+     *
+     * @param  array<string, LegacyMigrationItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     * @param  array{source_rows:int,inserted:int,idempotent:int,failed:int}  $linkCounts
+     * @param  array<string, mixed>  $counts
+     */
+    private function reconcileTimeEntryInvoiceLinks(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        LegacyMigrationRun $run,
+        string $destinationName,
+        array $ledgerItems,
+        array &$queryCache,
+        array &$linkCounts,
+        array &$counts,
+    ): void {
+        if (! Schema::connection($sourceRuntimeName)->hasColumn('client_time_entries', 'client_invoice_line_id')) {
+            return;
+        }
+
+        $rows = $source->table('client_time_entries')
+            ->whereNotNull('client_invoice_line_id')
+            ->orderBy('id')
+            ->get(['id', 'client_invoice_line_id']);
+        $linkCounts['source_rows'] = $rows->count();
+
+        foreach ($rows as $row) {
+            $timePublicId = $this->resolveParentId('client_time_entries', (string) $row->id, $ledgerItems, $queryCache);
+            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) $row->client_invoice_line_id, $ledgerItems, $queryCache);
+            $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
+            $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+
+            if ($timeId === null || $lineId === null) {
+                $linkCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['missing_invoice_time_link_parent'] = ($counts['failure_reasons']['missing_invoice_time_link_parent'] ?? 0) + 1;
+
+                continue;
+            }
+
+            $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
+            $exists = $query->where('workspace_id', $run->workspace_id)
+                ->where('client_invoice_line_id', $lineId)
+                ->where('client_time_entry_id', $timeId)
+                ->exists();
+            if ($exists) {
+                $linkCounts['idempotent']++;
+
+                continue;
+            }
+
+            $query->insert([
+                'workspace_id' => $run->workspace_id,
+                'client_invoice_line_id' => $lineId,
+                'client_time_entry_id' => $timeId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $linkCounts['inserted']++;
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $spec
      * @param  array<string, mixed>  $row
      */
@@ -791,6 +899,23 @@ final class LegacyMigrationService
         return match ($status) {
             'accepted' => 'accepted', 'sent' => 'sent', 'expired' => 'expired', 'declined', 'rejected' => 'declined', default => 'draft',
         };
+    }
+
+    private function decodeJson(mixed $value): mixed
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return $value;
+        }
+
+        $decoded = json_decode($value, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $value;
+    }
+
+    /** @param array<string, mixed> $value */
+    private function jsonOrNull(array $value): string
+    {
+        return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     /**
