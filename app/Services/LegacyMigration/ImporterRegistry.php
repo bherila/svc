@@ -14,6 +14,10 @@ final class ImporterRegistry
                 ['source_table' => 'client_companies', 'source_column' => 'client_company_id', 'required' => true],
                 ['source_table' => 'users', 'source_column' => 'user_id', 'required' => true],
             ], 'client_company_memberships'),
+            $this->spec('company_activity', 'client_company_activity', 'id', 'company_activity', 'write', [
+                ['source_table' => 'client_companies', 'source_column' => 'client_company_id', 'required' => true],
+                ['source_table' => 'users', 'source_column' => 'actor_user_id', 'required' => false],
+            ]),
             $this->spec('projects', 'client_projects', 'id', 'project', 'write', [
                 ['source_table' => 'client_companies', 'source_column' => 'client_company_id', 'required' => true],
             ]),
@@ -50,6 +54,9 @@ final class ImporterRegistry
                 ['source_table' => 'client_agreement_recurring_items', 'source_column' => 'client_agreement_recurring_item_id', 'required' => false],
             ]),
             $this->spec('payments', 'client_invoice_payments', 'client_invoice_payment_id', 'invoice_payment', 'write', [
+                ['source_table' => 'client_invoices', 'source_column' => 'client_invoice_id', 'required' => true],
+            ]),
+            $this->spec('invoice_email_deliveries', 'client_invoice_email_deliveries', 'id', 'invoice_email_delivery', 'write', [
                 ['source_table' => 'client_invoices', 'source_column' => 'client_invoice_id', 'required' => true],
             ]),
             $this->spec('stripe_customers', 'client_company_stripe_customers', 'id', 'stripe_customer', 'write', [
