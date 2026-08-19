@@ -7,11 +7,14 @@ use App\Models\Workspace;
 use App\Policies\ClientCompanyPolicy;
 use App\Policies\WorkspacePolicy;
 use Carbon\CarbonImmutable;
+use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
+use Symfony\Component\Mailer\Transport\Dsn;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -32,6 +35,14 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ClientCompany::class, ClientCompanyPolicy::class);
 
         $this->configureDefaults();
+
+        $this->app->make(MailManager::class)->extend('brevo', function (array $config) {
+            $configuration = $this->app->make('config');
+
+            return (new BrevoTransportFactory)->create(
+                Dsn::fromString($configuration->get('services.brevo.dsn')),
+            );
+        });
     }
 
     /**
