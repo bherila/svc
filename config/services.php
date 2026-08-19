@@ -41,4 +41,8 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'brevo' => [
+        'dsn' => env('MAILER_DSN'),
+    ],
+
 ];

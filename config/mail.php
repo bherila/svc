@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'log'),
+    'default' => env('MAIL_MAILER', 'hybrid'),
 
     /*
     |--------------------------------------------------------------------------
@@ -77,6 +77,19 @@ return [
 
         'array' => [
             'transport' => 'array',
+        ],
+
+        'brevo' => [
+            'transport' => 'brevo',
+        ],
+
+        'hybrid' => [
+            'transport' => 'failover',
+            'mailers' => [
+                'brevo',
+                'smtp',
+            ],
+            'retry_after' => 60,
         ],
 
         'failover' => [
