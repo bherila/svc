@@ -84,7 +84,7 @@ final class LegacyMigrationService
             }
 
             $this->reconcileImportedInvoices($run, $destinationName);
-            $this->reconcileTimeEntryInvoiceLinks($sourceConnection, $run, $destinationName, $ledgerItems, $queryCache, $linkCounts, $counts);
+            $this->reconcileTimeEntryInvoiceLinks($sourceConnection, $this->sourceGuard->runtimeName($source), $run, $destinationName, $ledgerItems, $queryCache, $linkCounts, $counts);
 
             $run->forceFill([
                 'counts' => $counts + ['link_counts' => $linkCounts],
@@ -682,6 +682,7 @@ final class LegacyMigrationService
      */
     private function reconcileTimeEntryInvoiceLinks(
         ConnectionInterface $source,
+        string $sourceRuntimeName,
         LegacyMigrationRun $run,
         string $destinationName,
         array $ledgerItems,
@@ -689,7 +690,7 @@ final class LegacyMigrationService
         array &$linkCounts,
         array &$counts,
     ): void {
-        if (! $source->getSchemaBuilder()->hasColumn('client_time_entries', 'client_invoice_line_id')) {
+        if (! Schema::connection($sourceRuntimeName)->hasColumn('client_time_entries', 'client_invoice_line_id')) {
             return;
         }
 
@@ -912,7 +913,7 @@ final class LegacyMigrationService
     }
 
     /** @param array<string, mixed> $value */
-    private function jsonOrNull(array $value): ?string
+    private function jsonOrNull(array $value): string
     {
         return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
