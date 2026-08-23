@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentReadController;
@@ -47,6 +48,9 @@ Route::prefix('v1')
         Route::get('/context', [AgentReadController::class, 'context'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))
             ->name('context');
+        Route::delete('/connections/{token}', [AgentConnectionController::class, 'destroy'])
+            ->middleware(CheckToken::using(AgentApiScopes::MCP_USE))
+            ->name('connections.destroy');
         Route::get('/workspaces/{workspace}/summary', [AgentReadController::class, 'summary'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))
             ->name('workspaces.summary');

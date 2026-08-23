@@ -190,6 +190,7 @@ final class AgentReadController extends Controller
         return response()->json(['data' => $this->invoicePayload($workspace, $record, $access->isWorkspaceManager($user, $workspace)) + [
             'lines' => $record->lines->map(fn ($line): array => [
                 'id' => $line->public_id,
+                'project_id' => $line->project?->public_id,
                 'type' => $line->type,
                 'description' => $line->description,
                 'quantity' => (string) $line->quantity,
