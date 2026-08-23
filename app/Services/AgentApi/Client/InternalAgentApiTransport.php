@@ -20,16 +20,23 @@ final class InternalAgentApiTransport
         private readonly Application $application,
     ) {}
 
-    /** @param array<string, scalar|null> $query */
-    public function send(string $path, array $query = []): AgentApiTransportResponse
+    /** @param array<string, scalar|null> $query
+     * @param array<string, mixed>|null $json */
+    public function send(string $method, string $path, array $query = [], ?array $json = null, ?string $idempotencyKey = null): AgentApiTransportResponse
     {
         $previous = $this->application->make('request');
         try {
-            $request = Request::create('/api/v1/'.ltrim($path, '/'), 'GET', array_filter($query, static fn (mixed $value): bool => $value !== null), [], [], [
+            $request = Request::create('/api/v1/'.ltrim($path, '/'), strtoupper($method), array_filter($query, static fn (mixed $value): bool => $value !== null), [], [], [
                 'HTTP_ACCEPT' => 'application/json',
                 'HTTP_AUTHORIZATION' => (string) $this->outerRequest->header('Authorization', ''),
                 'REMOTE_ADDR' => (string) ($this->outerRequest->ip() ?? '127.0.0.1'),
-            ]);
+            ], $json === null ? null : json_encode($json, JSON_THROW_ON_ERROR));
+            if ($json !== null) {
+                $request->headers->set('Content-Type', 'application/json');
+            }
+            if ($idempotencyKey !== null) {
+                $request->headers->set('Idempotency-Key', $idempotencyKey);
+            }
             $request->setUserResolver(fn (?string $guard = null) => $this->outerRequest->user($guard));
             $this->application->instance('request', $request);
             RequestFacade::clearResolvedInstance();

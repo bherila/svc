@@ -89,7 +89,7 @@ final class AgentMcpReadTools
      *  @return array<string, mixed> */
     private function get(string $path, array $query = []): array
     {
-        $response = $this->api->send($path, $query);
+        $response = $this->api->send('GET', $path, $query);
         if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
             return $response->json;
         }
