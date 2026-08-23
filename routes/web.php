@@ -5,12 +5,22 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\OAuthDynamicClientRegistrationController;
 use App\Http\Controllers\OAuthLoginController;
+use App\Http\Controllers\OAuthMetadataController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
+
+Route::withoutMiddleware(['web'])->group(function (): void {
+    Route::get('/.well-known/oauth-authorization-server', [OAuthMetadataController::class, 'authorizationServer']);
+    Route::get('/.well-known/oauth-protected-resource', [OAuthMetadataController::class, 'protectedResource']);
+    Route::get('/.well-known/oauth-protected-resource/api/v1', [OAuthMetadataController::class, 'protectedResource']);
+    Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource']);
+    Route::post('/oauth/register', OAuthDynamicClientRegistrationController::class)->middleware('throttle:10,60');
+});
 
 Route::get('/login', [OAuthLoginController::class, 'redirect'])->name('login');
 Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])->name('oauth.redirect');

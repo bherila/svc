@@ -14,9 +14,11 @@
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/framework": "^13.17",
+        "laravel/passport": "^13.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
+        "mcp/sdk": "^0.7.1",
         "stripe/stripe-php": "^21.0",
         "symfony/brevo-mailer": "^8.1",
         "symfony/http-client": "^8.1"
