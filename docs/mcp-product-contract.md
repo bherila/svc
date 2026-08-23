@@ -82,6 +82,18 @@ current workspace/project/company permissions for every request. Initial scopes 
 delivery actions additionally require `billing:deliver`.
 Project detail embeds tasks only when the connection also has `tasks:read`.
 
+OAuth public clients use authorization code plus rotating refresh tokens, `code`
+response type, S256 PKCE, exact resource binding, and no token-endpoint client
+authentication. Dynamic registration accepts only that profile and safe HTTPS or
+loopback redirect URIs. Registrations are marked, their last token use is tracked,
+and a daily retention command removes only stale registrations with no active access
+or refresh credential. SVC renders its own consent screen after the Bherila.net login.
+
+Browser MCP traffic uses an exact configured origin allowlist for preflight and the
+actual POST/DELETE request. A disallowed preflight receives no allow-origin header;
+an actual disallowed-origin request is rejected. Origin-less native clients remain
+supported.
+
 ## Safety and observability
 
 Mutation retries are keyed by OAuth client, user, operation, and idempotency key. An
