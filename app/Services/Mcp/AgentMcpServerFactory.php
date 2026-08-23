@@ -19,6 +19,7 @@ final class AgentMcpServerFactory
         private readonly CacheRepository $cache,
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpReadTools $reads,
+        private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
@@ -49,13 +50,13 @@ final class AgentMcpServerFactory
             ))
             ->setLazyLoading(false);
 
-        foreach ($this->catalog->definitions($this->reads) as $definition) {
+        foreach ($this->catalog->definitions($this->reads, $this->writes) as $definition) {
             $builder->addTool(
                 handler: $definition->handler,
                 name: $definition->name,
                 title: $definition->title,
                 description: $definition->description,
-                annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+                annotations: new ToolAnnotations(readOnlyHint: $definition->readOnly, destructiveHint: $definition->destructive, idempotentHint: $definition->idempotent, openWorldHint: false),
                 inputSchema: $this->inputs->for($definition),
                 outputSchema: $this->outputs->for($definition),
             );

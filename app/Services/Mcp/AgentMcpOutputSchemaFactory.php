@@ -18,6 +18,11 @@ final class AgentMcpOutputSchemaFactory
             'tasks.list' => $this->page($this->task()),
             'time_entries.list' => $this->page($this->timeEntry()),
             'invoices.list' => $this->page($this->invoice()),
+            'time_entries.log' => $this->object(['data' => ['type' => 'array', 'items' => $this->timeEntry()]], ['data']),
+            'time_entries.update' => $this->object(['data' => $this->timeEntry()], ['data']),
+            'time_entries.delete' => $this->object(['data' => $this->object(['deleted_id' => $this->id()], ['deleted_id'])], ['data']),
+            'time_entries.approve' => $this->object(['data' => $this->object(['approved_ids' => ['type' => 'array', 'items' => $this->id()]], ['approved_ids'])], ['data']),
+            'tasks.create', 'tasks.update' => $this->object(['data' => $this->task()], ['data']),
             default => throw new \InvalidArgumentException("Unknown MCP operation [{$definition->operationId}]."),
         };
     }

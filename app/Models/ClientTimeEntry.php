@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $billing_rate_amount
  * @property string|null $currency
  * @property string $status
+ * @property int $lock_version
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',

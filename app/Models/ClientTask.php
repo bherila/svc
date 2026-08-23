@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $status
  * @property bool $is_visible_to_client
  * @property CarbonImmutable|null $completed_at
+ * @property int $lock_version
  */
 #[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at'])]
 #[Hidden(['id', 'workspace_id', 'client_project_id'])]

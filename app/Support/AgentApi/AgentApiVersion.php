@@ -14,4 +14,9 @@ final class AgentApiVersion
 
         return hash_hmac('sha256', "{$type}:{$id}:{$version}", (string) config('app.key'));
     }
+
+    public static function matches(Model $model, string $version): bool
+    {
+        return hash_equals(self::for($model), $version);
+    }
 }
