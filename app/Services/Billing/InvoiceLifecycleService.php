@@ -48,6 +48,7 @@ final class InvoiceLifecycleService
                 $lineTotal = self::lineTotal($line);
                 $invoice->lines()->create([
                     'workspace_id' => $workspace->id,
+                    'client_project_id' => $line['client_project_id'] ?? null,
                     'type' => $this->requiredString($line['type'] ?? null, 'line type'),
                     'description' => $this->requiredString($line['description'] ?? null, 'line description'),
                     'quantity' => $line['quantity'],
@@ -88,6 +89,10 @@ final class InvoiceLifecycleService
                 'is_visible_to_client' => true,
                 'balance_amount' => $locked->total_amount,
             ])->save();
+
+            foreach ($locked->lines()->with('timeEntries')->get() as $line) {
+                $line->timeEntries()->where('status', 'approved')->update(['status' => 'invoiced']);
+            }
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
