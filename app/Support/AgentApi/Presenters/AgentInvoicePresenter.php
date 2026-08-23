@@ -16,6 +16,7 @@ final class AgentInvoicePresenter
             'company_id' => $invoice->clientCompany->public_id,
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
+            'linked_time_state' => $this->linkedTimeState($invoice),
             'currency' => $invoice->currency,
             'total_amount' => $invoice->total_amount,
             'paid_amount' => $invoice->paid_amount,
@@ -40,9 +41,19 @@ final class AgentInvoicePresenter
         return [
             'id' => $invoice->public_id,
             'status' => $invoice->status,
+            'linked_time_state' => $this->linkedTimeState($invoice),
             'invoice_number' => $invoice->invoice_number,
             'version' => AgentApiVersion::for($invoice),
             'web_url' => route('svc.billing.invoices.show', [$workspace, $invoice]),
         ];
+    }
+
+    private function linkedTimeState(ClientInvoice $invoice): string
+    {
+        return match ($invoice->status) {
+            'draft' => 'reserved',
+            'void' => 'released',
+            default => 'consumed',
+        };
     }
 }

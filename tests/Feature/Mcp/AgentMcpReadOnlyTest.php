@@ -89,6 +89,7 @@ final class AgentMcpReadOnlyTest extends TestCase
 
         $this->assertFalse($byName['time_entries.log']['annotations']['readOnlyHint']);
         $this->assertTrue($byName['time_entries.delete']['annotations']['destructiveHint']);
+        $this->assertTrue($byName['invoices.discard_draft']['annotations']['destructiveHint']);
         $this->assertFalse($byName['tasks.create']['inputSchema']['additionalProperties']);
 
         $result = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-1', 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'MCP work']]]]], $session)->assertOk()->json('result');
