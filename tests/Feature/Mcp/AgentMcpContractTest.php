@@ -139,6 +139,26 @@ final class AgentMcpContractTest extends TestCase
         }
     }
 
+    public function test_every_write_operation_requires_an_idempotency_header_and_tool_argument(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        $factory = app(AgentMcpInputSchemaFactory::class);
+
+        foreach ($this->definitions() as $definition) {
+            if ($definition->readOnly) {
+                continue;
+            }
+            $operation = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))
+                ->firstWhere('operationId', $definition->operationId);
+            $parameterRefs = collect($operation['parameters'] ?? [])->pluck('$ref');
+            $input = $factory->for($definition);
+
+            $this->assertContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->name);
+            $this->assertContains('idempotency_key', $input['required'] ?? [], $definition->name);
+        }
+    }
+
     public function test_unrated_manager_time_conforms_through_rest_and_mcp(): void
     {
         [$user, $workspace, $project] = $this->workspace();
@@ -192,6 +212,7 @@ final class AgentMcpContractTest extends TestCase
                 'workspace_id' => $workspace->public_id,
                 'task_id' => $task->public_id,
                 'expected_version' => AgentApiVersion::for($task),
+                'idempotency_key' => 'mcp-task-update-1',
                 'description' => null,
             ]],
         ], $session)->assertOk()->json('result');

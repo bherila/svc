@@ -34,10 +34,10 @@ are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
 Every mutable representation contains an opaque `version`; updates and lifecycle
-transitions require `expected_version`. `time_entries.log` also requires an
-idempotency key. The write flag remains disabled until the shared mutation executor
-extends atomic idempotency, auditing, and revision guarantees to every applicable
-mutation. Cross-workspace identifiers resolve as 404.
+transitions require `expected_version`. Every Agent API mutation requires an
+idempotency key and runs through the same reservation-first transaction and audit
+boundary. The write flag remains disabled until the remaining time and invoice
+lifecycle correctness work is complete. Cross-workspace identifiers resolve as 404.
 
 Time follows `draft -> approved -> invoiced`. A draft invoice may include manual lines
 and explicitly selected time-entry IDs only. Selected entries must be approved,
@@ -55,13 +55,14 @@ delivery actions additionally require `billing:deliver`.
 
 ## Safety and observability
 
-For operations that advertise idempotency, retries are keyed by OAuth client, user,
-operation, and idempotency key. An identical retry returns its original result; key
-reuse with another request body is a 409 conflict. The guarded write implementation is
-not activated until all mutations use the shared audit/mutation boundary. Audit events
-record actor, OAuth client, workspace, operation, affected public IDs, result, request
-ID, and timestamp only. Request/response bodies, free text, tokens, filenames, blob
-data, payment data, and provider identifiers are never logged.
+Mutation retries are keyed by OAuth client, user, operation, and idempotency key. An
+identical retry returns its original result; key reuse with another request body is a
+409 conflict. Receipt reservation, business writes, receipt completion, and success
+audit commit atomically. Failed mutations roll back the receipt and business writes,
+then record a metadata-only failure audit. Audit events record actor, OAuth client,
+workspace, operation, affected public IDs, outcome/error category, request ID, and
+timestamp only. Request/response bodies, free text, tokens, filenames, blob data,
+payment data, and provider identifiers are never logged.
 
 The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output schemas
 are packaged from each tool's declared REST success component and enforced at runtime;

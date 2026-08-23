@@ -139,9 +139,9 @@ class ProjectAccessTest extends TestCase
 
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}")
             ->assertNotFound();
-        $this->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", ['title' => 'Unauthorized'])
+        $this->withHeader('Idempotency-Key', 'removed-member-task-create')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", ['title' => 'Unauthorized'])
             ->assertForbidden();
-        $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+        $this->withHeader('Idempotency-Key', 'removed-member-task-update')->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
             'expected_version' => AgentApiVersion::for($task),
             'title' => 'Unauthorized',
         ])->assertForbidden();
@@ -153,14 +153,14 @@ class ProjectAccessTest extends TestCase
                 'description' => 'Unauthorized',
             ]],
         ])->assertNotFound();
-        $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->withHeader('Idempotency-Key', 'removed-member-time-update')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
             'expected_version' => AgentApiVersion::for($entry),
             'minutes' => 60,
         ])->assertNotFound();
-        $this->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->withHeader('Idempotency-Key', 'removed-member-time-delete')->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
             'expected_version' => AgentApiVersion::for($entry),
         ])->assertNotFound();
-        $this->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", [
+        $this->withHeader('Idempotency-Key', 'removed-member-time-approve')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", [
             'entries' => [[
                 'id' => $entry->public_id,
                 'expected_version' => AgentApiVersion::for($entry),
