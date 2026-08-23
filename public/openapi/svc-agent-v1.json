@@ -118,10 +118,25 @@
         "responses": {"201": {"description": "Invoice draft created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
     },
-    "/workspaces/{workspace_id}/invoices/{invoice_id}": {"get": {
-      "operationId": "invoices.get", "security": [{"oauth2": ["billing:read"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
-      "responses": {"200": {"description": "Authorized invoice with browser payment URL", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    "/workspaces/{workspace_id}/invoices/{invoice_id}": {
+      "get": {
+        "operationId": "invoices.get", "security": [{"oauth2": ["billing:read"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+        "responses": {"200": {"description": "Authorized invoice with browser payment URL", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "patch": {
+        "operationId": "invoices.update_draft", "description": "Replace the explicit time selection and manual lines on a draft invoice.",
+        "security": [{"oauth2": ["billing:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceUpdateRequest"}}}},
+        "responses": {"200": {"description": "Draft invoice updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/workspaces/{workspace_id}/invoices/{invoice_id}/discard": {"post": {
+      "operationId": "invoices.discard_draft", "security": [{"oauth2": ["billing:write"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDiscardRequest"}}}},
+      "responses": {"200": {"description": "Draft discarded and linked time released", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/issue": {"post": {
       "operationId": "invoices.issue", "security": [{"oauth2": ["billing:deliver"]}],
@@ -174,6 +189,7 @@
       "Currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
       "TimeStatus": {"type": "string", "enum": ["draft", "approved", "invoiced"]},
       "InvoiceStatus": {"type": "string", "enum": ["draft", "issued", "partially_paid", "paid", "void"]},
+      "LinkedTimeState": {"type": "string", "enum": ["reserved", "consumed", "released"]},
       "PaginationMeta": {"type": "object", "additionalProperties": false, "required": ["next_cursor"], "properties": {"next_cursor": {"type": ["string", "null"]}}},
       "WorkspaceContext": {
         "type": "object", "additionalProperties": false,
@@ -230,24 +246,26 @@
       "ApprovalResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ApprovalReceipt"}}},
       "Invoice": {
         "type": "object", "additionalProperties": false,
-        "required": ["id", "company_id", "invoice_number", "status", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url"],
-        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}}
+        "required": ["id", "company_id", "invoice_number", "status", "linked_time_state", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "linked_time_state": {"$ref": "#/components/schemas/LinkedTimeState"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}}
       },
       "InvoiceLine": {"type": "object", "additionalProperties": false, "required": ["id", "project_id", "type", "description", "quantity", "unit_amount", "tax_amount", "total_amount"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "project_id": {"type": ["string", "null"], "format": "uuid"}, "type": {"type": "string"}, "description": {"type": "string"}, "quantity": {"type": "string"}, "unit_amount": {"type": "integer"}, "tax_amount": {"type": "integer"}, "total_amount": {"type": "integer"}}},
       "InvoiceDetail": {
         "type": "object", "additionalProperties": false,
-        "required": ["id", "company_id", "invoice_number", "status", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url", "lines"],
-        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}, "lines": {"type": "array", "items": {"$ref": "#/components/schemas/InvoiceLine"}}}
+        "required": ["id", "company_id", "invoice_number", "status", "linked_time_state", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url", "lines"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "linked_time_state": {"$ref": "#/components/schemas/LinkedTimeState"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}, "lines": {"type": "array", "items": {"$ref": "#/components/schemas/InvoiceLine"}}}
       },
       "InvoiceListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Invoice"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
       "InvoiceDetailResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/InvoiceDetail"}}},
-      "InvoiceMutation": {"type": "object", "additionalProperties": false, "required": ["id", "status", "invoice_number", "version", "web_url"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "invoice_number": {"type": "string"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}}},
+      "InvoiceMutation": {"type": "object", "additionalProperties": false, "required": ["id", "status", "linked_time_state", "invoice_number", "version", "web_url"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "linked_time_state": {"$ref": "#/components/schemas/LinkedTimeState"}, "invoice_number": {"type": "string"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}}},
       "InvoiceMutationResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/InvoiceMutation"}}},
       "InvoiceManualLine": {"type": "object", "additionalProperties": false, "required": ["type", "description", "quantity", "unit_amount"], "properties": {"project_id": {"type": ["string", "null"], "format": "uuid"}, "type": {"type": "string", "minLength": 1, "maxLength": 40}, "description": {"type": "string", "minLength": 1, "maxLength": 10000}, "quantity": {"type": ["string", "number", "integer"]}, "unit_amount": {"type": "integer", "minimum": 0}, "tax_amount": {"type": ["integer", "null"], "minimum": 0}}},
       "InvoiceCreateRequest": {"type": "object", "additionalProperties": false, "required": ["company_id"], "properties": {"company_id": {"$ref": "#/components/schemas/Uuid"}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}, "due_date": {"type": ["string", "null"], "format": "date"}, "notes": {"type": ["string", "null"], "maxLength": 10000}, "time_entry_ids": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"$ref": "#/components/schemas/Uuid"}}, "manual_lines": {"type": "array", "maxItems": 100, "items": {"$ref": "#/components/schemas/InvoiceManualLine"}}}},
+      "InvoiceUpdateRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "time_entry_ids", "manual_lines"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}, "due_date": {"type": ["string", "null"], "format": "date"}, "notes": {"type": ["string", "null"], "maxLength": 10000}, "time_entry_ids": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"$ref": "#/components/schemas/Uuid"}}, "manual_lines": {"type": "array", "maxItems": 100, "items": {"$ref": "#/components/schemas/InvoiceManualLine"}}}},
       "ConfirmedVersionRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}}},
       "InvoiceSendRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "recipients"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "recipients": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string", "format": "email"}}}},
-      "InvoiceVoidRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "reason"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "reason": {"type": "string", "minLength": 1, "maxLength": 1000}}}
+      "InvoiceVoidRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "reason"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "reason": {"type": "string", "minLength": 1, "maxLength": 1000}}},
+      "InvoiceDiscardRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "reason"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "reason": {"type": "string", "minLength": 1, "maxLength": 1000}}}
     }
   }
 }

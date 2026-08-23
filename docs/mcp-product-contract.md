@@ -8,12 +8,12 @@ they do not query Eloquent models directly.
 
 The operations v1 release lets authorized users view projects, tasks, time, and
 invoices. Its feature-gated write catalog manages tasks, draft time, time approval,
-invoice draft creation, and invoice issue/send/void workflows. Project creation,
-archival, and deletion remain website actions. Attachment metadata/download access,
-file uploads, and invoice draft update/discard are deferred from the currently shipped
-catalog. Payment collection, initiation, recording, refunds, card data, and provider
-identifiers are out of scope. Invoice responses contain a role-authorized browser URL
-so a user can continue a payment flow in the website.
+invoice draft creation/update/discard, and invoice issue/send/void workflows. Project
+creation, archival, and deletion remain website actions. Attachment metadata/download
+access and file uploads are deferred from the currently shipped catalog. Payment
+collection, initiation, recording, refunds, card data, and provider identifiers are out
+of scope. Invoice responses contain a role-authorized browser URL so a user can
+continue a payment flow in the website.
 
 ## Roles
 
@@ -30,7 +30,8 @@ The read catalog is `context.get`, `operations.summary`, `projects.list`,
 `invoices.get`. When the explicit write cutover flag is enabled, the additional tools
 are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
 `time_entries.delete`, `time_entries.approve`, `invoices.create_draft`,
-`invoices.issue`, `invoices.send`, and `invoices.void`. There is no generic CRUD tool.
+`invoices.update_draft`, `invoices.discard_draft`, `invoices.issue`, `invoices.send`,
+and `invoices.void`. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
 Every mutable representation contains an opaque `version`; updates and lifecycle
@@ -48,7 +49,13 @@ manual lines and explicitly selected time-entry IDs only. Selected entries must 
 approved, billable, non-deferred, currency-compatible, and unallocated. Time-derived
 line totals are rounded from integer minutes and hourly minor units; their four-place
 hour quantity is display-only. Invoice issue, send, and void are distinct
-confirmation-gated actions.
+confirmation-gated actions. Draft update is replace-all for the explicit time selection
+and manual lines. Removing time, discarding a draft, or voiding an unpaid invoice
+releases its allocation; issued linked time returns from `invoiced` to `approved`.
+Invoice responses describe linked time as `reserved`, `consumed`, or `released`.
+Invoice numbers come from a transaction-locked workspace counter consumed in the same
+transaction as invoice creation. Manual-line projects must belong to both the invoice
+workspace and client company.
 
 ## Authorization
 

@@ -68,6 +68,13 @@ workflow. It is intentionally provider-neutral and contains no production data.
   and ordering
 - `client_invoice_line_time_entries` explicitly associates billed time entries
   with lines and prevents one entry from being billed twice
+- draft replacement and discard release removed time allocations; voiding an
+  unpaid invoice restores linked `invoiced` time to `approved` and releases it
+- `workspace_invoice_counters` allocates monotonic `SVC-*` numbers under a row
+  lock in the same transaction that creates the invoice, while preserving the
+  highest existing SVC sequence among legacy-format numbers
+- every project-attributed manual line belongs to the invoice client as well as
+  the workspace
 
 `client_invoice_payments`
 

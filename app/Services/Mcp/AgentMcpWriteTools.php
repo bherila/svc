@@ -95,6 +95,37 @@ final class AgentMcpWriteTools
         return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
+    /** @param list<string> $time_entry_ids
+     * @param list<array<string, mixed>> $manual_lines
+     * @return array<string, mixed> */
+    public function invoicesUpdateDraft(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(maxItems: 100)] array $time_entry_ids,
+        #[Schema(maxItems: 100)] array $manual_lines,
+        RequestContext $context,
+        ?string $currency = null,
+        ?string $due_date = null,
+        ?string $notes = null,
+    ): array {
+        $body = compact('expected_version', 'time_entry_ids', 'manual_lines');
+        foreach (compact('currency', 'due_date', 'notes') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('PATCH', "workspaces/{$workspace_id}/invoices/{$invoice_id}", $body, $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesDiscardDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/discard", compact('expected_version', 'reason', 'confirm'), $idempotency_key);
+    }
+
     /** @return array<string, mixed> */
     public function invoicesIssue(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {

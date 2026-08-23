@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use Carbon\CarbonImmutable;
@@ -45,22 +46,62 @@ final class InvoiceLifecycleService
                 'is_visible_to_client' => (bool) ($attributes['is_visible_to_client'] ?? false),
             ]);
 
-            foreach ($lines as $index => $line) {
-                $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
-                $invoice->lines()->create([
-                    'workspace_id' => $workspace->id,
-                    'client_project_id' => $line['client_project_id'] ?? null,
-                    'type' => $this->requiredString($line['type'] ?? null, 'line type'),
-                    'description' => $this->requiredString($line['description'] ?? null, 'line description'),
-                    'quantity' => $line['quantity'],
-                    'unit_amount' => MoneyService::nonNegativeInteger($line['unit_amount'] ?? null, 'unit_amount'),
-                    'tax_amount' => MoneyService::nonNegativeInteger($line['tax_amount'] ?? 0, 'tax_amount'),
-                    'total_amount' => $lineTotal,
-                    'sort_order' => $this->nonNegativeSortOrder($line['sort_order'] ?? 0),
-                ]);
-            }
+            $this->createLines($invoice, $workspace, $lines, $subtotalOverrides);
 
             return $invoice->load('lines', 'clientCompany');
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<array<string, mixed>>  $lines
+     * @param  array<int, int>  $subtotalOverrides
+     */
+    public function updateDraft(ClientInvoice $invoice, Workspace $workspace, array $attributes, array $lines, array $subtotalOverrides = []): ClientInvoice
+    {
+        return DB::transaction(function () use ($invoice, $workspace, $attributes, $lines, $subtotalOverrides): ClientInvoice {
+            $locked = $this->lockInvoice($invoice, $workspace);
+            if ($locked->status !== 'draft') {
+                throw new DomainException('Only draft invoices can be updated.');
+            }
+            $currency = MoneyService::currency($attributes['currency'] ?? $locked->currency);
+            $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
+            $updates = [
+                'currency' => $currency,
+                ...$totals,
+                'balance_amount' => $totals['total_amount'],
+            ];
+            foreach (['due_date', 'notes'] as $attribute) {
+                if (array_key_exists($attribute, $attributes)) {
+                    $updates[$attribute] = $attributes[$attribute];
+                }
+            }
+
+            $locked->lines()->delete();
+            $locked->forceFill($updates)->save();
+            $this->createLines($locked, $workspace, $lines, $subtotalOverrides);
+
+            return $locked->fresh(['lines', 'clientCompany']);
+        });
+    }
+
+    public function discardDraft(ClientInvoice $invoice, Workspace $workspace, string $reason): ClientInvoice
+    {
+        return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
+            $locked = $this->lockInvoice($invoice, $workspace);
+            if ($locked->status !== 'draft') {
+                throw new DomainException('Only a draft invoice can be discarded.');
+            }
+
+            $this->releaseTimeAllocations($locked);
+            $locked->forceFill([
+                'status' => 'void',
+                'voided_at' => now(),
+                'void_reason' => $reason,
+                'balance_amount' => 0,
+            ])->save();
+
+            return $locked->fresh(['lines', 'clientCompany']);
         });
     }
 
@@ -120,6 +161,7 @@ final class InvoiceLifecycleService
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
             }
 
+            $this->releaseTimeAllocations($locked);
             $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'void_reason' => $reason, 'balance_amount' => 0])->save();
 
             return $locked->fresh(['lines', 'clientCompany']);
@@ -293,6 +335,47 @@ final class InvoiceLifecycleService
         $totals = MoneyService::invoiceTotals([$line], $subtotalOverride === null ? [] : [0 => $subtotalOverride]);
 
         return $totals['subtotal_amount'] + $totals['tax_amount'];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @param  array<int, int>  $subtotalOverrides
+     */
+    private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides): void
+    {
+        foreach ($lines as $index => $line) {
+            $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
+            $invoice->lines()->create([
+                'workspace_id' => $workspace->id,
+                'client_project_id' => $line['client_project_id'] ?? null,
+                'type' => $this->requiredString($line['type'] ?? null, 'line type'),
+                'description' => $this->requiredString($line['description'] ?? null, 'line description'),
+                'quantity' => $line['quantity'],
+                'unit_amount' => MoneyService::nonNegativeInteger($line['unit_amount'] ?? null, 'unit_amount'),
+                'tax_amount' => MoneyService::nonNegativeInteger($line['tax_amount'] ?? 0, 'tax_amount'),
+                'total_amount' => $lineTotal,
+                'sort_order' => $this->nonNegativeSortOrder($line['sort_order'] ?? 0),
+            ]);
+        }
+    }
+
+    private function releaseTimeAllocations(ClientInvoice $invoice): void
+    {
+        $lineIds = $invoice->lines()->pluck('id');
+        if ($lineIds->isEmpty()) {
+            return;
+        }
+        $entryIds = DB::table('client_invoice_line_time_entries')
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->pluck('client_time_entry_id');
+        if ($entryIds->isNotEmpty()) {
+            ClientTimeEntry::query()->whereIn('id', $entryIds)->lockForUpdate()->get();
+            ClientTimeEntry::query()->whereIn('id', $entryIds)->where('status', 'invoiced')->update([
+                'status' => 'approved',
+                'lock_version' => DB::raw('lock_version + 1'),
+            ]);
+        }
+        DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice
