@@ -39,10 +39,16 @@ idempotency key and runs through the same reservation-first transaction and audi
 boundary. The write flag remains disabled until the remaining time and invoice
 lifecycle correctness work is complete. Cross-workspace identifiers resolve as 404.
 
-Time follows `draft -> approved -> invoiced`. A draft invoice may include manual lines
-and explicitly selected time-entry IDs only. Selected entries must be approved,
-billable, non-deferred, currency-compatible, and unallocated. Invoice issue, send,
-and void are distinct confirmation-gated actions.
+Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
+currency from the most recently effective active agreement, preferring a
+project-specific agreement over a company-wide agreement. Billable approval fails
+when no applicable rate exists unless the approving manager supplies an explicit
+amount and currency; nonbillable time needs no rate. A draft invoice may include
+manual lines and explicitly selected time-entry IDs only. Selected entries must be
+approved, billable, non-deferred, currency-compatible, and unallocated. Time-derived
+line totals are rounded from integer minutes and hourly minor units; their four-place
+hour quantity is display-only. Invoice issue, send, and void are distinct
+confirmation-gated actions.
 
 ## Authorization
 

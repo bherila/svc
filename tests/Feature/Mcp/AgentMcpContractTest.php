@@ -109,6 +109,14 @@ final class AgentMcpContractTest extends TestCase
         foreach (['is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description'] as $property) {
             $this->assertArrayHasKey($property, $time['properties']);
         }
+
+        $approval = $factory->for($definitions->get('time_entries.approve'));
+        $approvalItem = $approval['$defs']['TimeApprovalItem'];
+        $this->assertSame(0, $approvalItem['properties']['billing_rate_amount']['minimum']);
+        $this->assertSame('#/$defs/Currency', $approvalItem['properties']['currency']['$ref']);
+        $this->assertSame(['currency'], $approvalItem['dependentRequired']['billing_rate_amount']);
+        $this->assertSame(['billing_rate_amount'], $approvalItem['dependentRequired']['currency']);
+        $this->assertFalse($approvalItem['additionalProperties']);
     }
 
     public function test_every_write_tool_inherits_its_body_contract_from_openapi(): void

@@ -77,8 +77,13 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->actingAsAgent($worker, [AgentApiScopes::TIME_APPROVE]);
         $this->withHeader('Idempotency-Key', 'time-approve-denied')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertForbidden();
         $this->actingAsAgent($manager, [AgentApiScopes::TIME_APPROVE]);
-        $this->withHeader('Idempotency-Key', 'time-approve-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertOk();
-        $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry->public_id, 'status' => 'approved']);
+        $this->withHeader('Idempotency-Key', 'time-approve-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [[
+            'id' => $entry->public_id,
+            'expected_version' => AgentApiVersion::for($entry),
+            'billing_rate_amount' => 17500,
+            'currency' => 'USD',
+        ]]])->assertOk();
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry->public_id, 'status' => 'approved', 'billing_rate_amount' => 17500, 'currency' => 'USD']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
     }

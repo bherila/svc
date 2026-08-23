@@ -25,6 +25,8 @@ final class InvoiceFromTimeService
                 throw new DomainException('One or more selected time entries were not found.');
             }
             $lines = $manualLines;
+            /** @var array<int, int> $subtotalOverrides */
+            $subtotalOverrides = [];
             foreach ($entries as $entry) {
                 if ($entry->client_company_id !== $company->id || $entry->status !== 'approved' || ! $entry->is_billable || $entry->is_deferred || $entry->billing_rate_amount === null || $entry->currency !== ($attributes['currency'] ?? null)) {
                     throw new DomainException('Selected time must be approved, billable, non-deferred, and currency-compatible.');
@@ -32,9 +34,20 @@ final class InvoiceFromTimeService
                 if ($entry->invoiceLines()->exists()) {
                     throw new DomainException('Selected time has already been allocated to an invoice.');
                 }
-                $lines[] = ['client_project_id' => $entry->client_project_id, 'type' => 'time', 'description' => $entry->description, 'quantity' => (string) ($entry->minutes / 60), 'unit_amount' => $entry->billing_rate_amount, 'tax_amount' => 0, 'sort_order' => count($lines), '_entry_id' => $entry->id];
+                $index = count($lines);
+                $lines[] = [
+                    'client_project_id' => $entry->client_project_id,
+                    'type' => 'time',
+                    'description' => $entry->description,
+                    'quantity' => MoneyService::hoursForMinutes($entry->minutes),
+                    'unit_amount' => $entry->billing_rate_amount,
+                    'tax_amount' => 0,
+                    'sort_order' => count($lines),
+                    '_entry_id' => $entry->id,
+                ];
+                $subtotalOverrides[$index] = MoneyService::hourlyAmount($entry->minutes, $entry->billing_rate_amount);
             }
-            $invoice = $this->invoices->createDraft($workspace, $company, $attributes, $lines);
+            $invoice = $this->invoices->createDraft($workspace, $company, $attributes, $lines, $subtotalOverrides);
             foreach ($invoice->lines as $index => $line) {
                 if (isset($lines[$index]['_entry_id'])) {
                     $line->timeEntries()->attach($lines[$index]['_entry_id'], ['workspace_id' => $workspace->id]);

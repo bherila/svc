@@ -17,17 +17,21 @@ final class MoneyService
 
     /**
      * @param  list<array<string, mixed>>  $lines
+     * @param  array<int, int>  $subtotalOverrides
      * @return array{subtotal_amount:int, tax_amount:int, total_amount:int}
      */
-    public static function invoiceTotals(array $lines): array
+    public static function invoiceTotals(array $lines, array $subtotalOverrides = []): array
     {
         $subtotal = 0;
         $tax = 0;
 
-        foreach ($lines as $line) {
+        foreach ($lines as $index => $line) {
             $unit = self::nonNegativeInteger($line['unit_amount'] ?? null, 'unit_amount');
             $lineTax = self::nonNegativeInteger($line['tax_amount'] ?? 0, 'tax_amount');
-            $subtotal = self::safeAdd($subtotal, self::multiply(self::decimal($line['quantity'] ?? null), $unit));
+            $lineSubtotal = array_key_exists($index, $subtotalOverrides)
+                ? self::nonNegativeInteger($subtotalOverrides[$index], 'subtotal override')
+                : self::multiply(self::decimal($line['quantity'] ?? null), $unit);
+            $subtotal = self::safeAdd($subtotal, $lineSubtotal);
             $tax = self::safeAdd($tax, $lineTax);
         }
 
@@ -53,6 +57,43 @@ final class MoneyService
         }
 
         return $integer;
+    }
+
+    public static function hourlyAmount(int $minutes, int $hourlyRate): int
+    {
+        if ($minutes <= 0) {
+            throw new InvalidArgumentException('minutes must be greater than zero.');
+        }
+        $hourlyRate = self::nonNegativeInteger($hourlyRate, 'hourly_rate');
+        $wholeHours = intdiv($minutes, 60);
+        if ($hourlyRate !== 0 && $wholeHours > intdiv(PHP_INT_MAX, $hourlyRate)) {
+            throw new InvalidArgumentException('Line total exceeds the supported integer range.');
+        }
+        $wholeAmount = $wholeHours * $hourlyRate;
+        $remainingMinutes = $minutes % 60;
+        if ($hourlyRate !== 0 && $remainingMinutes > intdiv(PHP_INT_MAX, $hourlyRate)) {
+            throw new InvalidArgumentException('Line total exceeds the supported integer range.');
+        }
+        $partial = $remainingMinutes * $hourlyRate;
+
+        return self::safeAdd($wholeAmount, intdiv($partial, 60) + ($partial % 60 >= 30 ? 1 : 0));
+    }
+
+    public static function hoursForMinutes(int $minutes): string
+    {
+        if ($minutes <= 0) {
+            throw new InvalidArgumentException('minutes must be greater than zero.');
+        }
+        if ($minutes > intdiv(PHP_INT_MAX, 10000)) {
+            throw new InvalidArgumentException('minutes exceeds the supported integer range.');
+        }
+        $minuteScale = $minutes * 10000;
+        $scaled = intdiv($minuteScale, 60);
+        if ($minuteScale % 60 >= 30) {
+            $scaled++;
+        }
+
+        return intdiv($scaled, 10000).'.'.str_pad((string) ($scaled % 10000), 4, '0', STR_PAD_LEFT);
     }
 
     /** @return array{numerator:int, denominator:int} */
