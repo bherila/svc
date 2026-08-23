@@ -10,7 +10,7 @@ final class AgentMcpToolCatalog
     {
         $definitions = [
             $this->tool('context.get', 'Get context', 'Get the authorized identity, workspaces, roles, and capabilities. Call this before selecting a workspace.', $tools, 'context'),
-            $this->tool('operations.summary', 'Get workspace summary', 'Get the role-filtered operational summary for one workspace.', $tools, 'summary'),
+            $this->tool('operations.summary', 'Get workspace summary', 'Get the role- and scope-filtered operational summary for one workspace.', $tools, 'summary'),
             $this->tool('projects.list', 'List projects', 'List authorized projects with bounded cursor pagination.', $tools, 'projects'),
             $this->tool('projects.get', 'Get project', 'Get one authorized project and its visible tasks.', $tools, 'project'),
             $this->tool('tasks.list', 'List tasks', 'List authorized tasks with bounded cursor pagination.', $tools, 'tasks'),

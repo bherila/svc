@@ -58,6 +58,11 @@ final class ProjectAccess
         return $this->projectRole($user, $project)?->canApproveTime() ?? false;
     }
 
+    public function canLogTime(User|AgentPrincipal $user, ClientProject $project): bool
+    {
+        return $this->projectRole($user, $project)?->canLogTime() ?? false;
+    }
+
     public function isWorkspaceManager(User|AgentPrincipal $user, Workspace $workspace): bool
     {
         return in_array($this->workspaceRole($user, $workspace), ['owner', 'admin'], true);

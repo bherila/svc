@@ -18,4 +18,9 @@ enum ProjectRole: string
     {
         return $this === self::Owner || $this === self::Manager;
     }
+
+    public function canLogTime(): bool
+    {
+        return $this !== self::Viewer;
+    }
 }

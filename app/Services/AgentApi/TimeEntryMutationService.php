@@ -26,7 +26,8 @@ final class TimeEntryMutationService
     public function create(Workspace $workspace, ClientProject $project, User $actor, array $data): ClientTimeEntry
     {
         abort_unless($this->access->canView($actor, $project), 404);
-        abort_unless($this->access->isWorkspaceManager($actor, $workspace) || $project->members()->whereKey($actor->id)->exists(), 403);
+        abort_unless($this->access->canLogTime($actor, $project), 403);
+        $this->assertClientDescription($data['is_visible_to_client'] ?? false, $data['client_visible_description'] ?? null);
         $task = null;
         if (is_string($data['task_id'] ?? null)) {
             $task = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $data['task_id'])->firstOrFail();
@@ -49,6 +50,9 @@ final class TimeEntryMutationService
     public function update(Workspace $workspace, ClientTimeEntry $entry, User $actor, array $data): ClientTimeEntry
     {
         $this->assertDraftEditable($workspace, $entry, $actor);
+        $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
+        $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;
+        $this->assertClientDescription($visible, $clientDescription);
         $attributes = Arr::only($data, [
             'worked_on', 'minutes', 'description', 'is_billable', 'is_deferred',
             'is_visible_to_client', 'client_visible_description',
@@ -121,5 +125,13 @@ final class TimeEntryMutationService
         abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be changed.');
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
         abort_unless($this->access->canView($actor, $entry->project), 404);
+        abort_unless($this->access->canLogTime($actor, $entry->project), 403);
+    }
+
+    private function assertClientDescription(bool $visible, mixed $description): void
+    {
+        if ($visible && (! is_string($description) || trim($description) === '')) {
+            throw new DomainException('Client-visible time requires an explicit client-facing description.');
+        }
     }
 }

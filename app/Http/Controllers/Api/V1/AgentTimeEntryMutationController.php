@@ -166,6 +166,7 @@ final class AgentTimeEntryMutationController extends Controller
         foreach ($entries as $record) {
             abort_unless($record->user_id === $user->id || $workspaceManager, 403);
             abort_unless($access->canView($user, $record->project), 404);
+            abort_unless($access->canLogTime($user, $record->project), 403);
         }
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Services\Mcp;
 
+use App\Services\Authorization\AgentTokenScopes;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
 use Mcp\Capability\Discovery\SchemaValidator;
@@ -23,6 +25,7 @@ final class AgentMcpServerFactory
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
         private readonly AgentMcpRequestArguments $requestArguments,
+        private readonly AgentTokenScopes $scopes,
     ) {}
 
     public function make(Request $request): Server
@@ -54,6 +57,9 @@ final class AgentMcpServerFactory
             ->setLazyLoading(false);
 
         foreach ($this->catalog->definitions($this->reads, $this->writes) as $definition) {
+            if (! $this->scopes->allowsAll($request, AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId))) {
+                continue;
+            }
             $builder->addTool(
                 handler: $definition->handler,
                 name: $definition->name,

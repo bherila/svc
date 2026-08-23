@@ -24,6 +24,8 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - workspace, client company, project, optional task, and worker user
 - `worked_on`, `minutes`, `description`
 - `is_billable`, `is_deferred`, optional `billing_rate_amount`, `currency`
+- client visibility requires an explicit client-facing description; internal
+  descriptions are never used as a client-facing fallback
 - status: `draft`, `approved`, or `invoiced`
 - optional approval user/time and subcontractor cost metadata
 - billable approval snapshots the rate/currency from the most recently effective
@@ -31,6 +33,9 @@ workflow. It is intentionally provider-neutral and contains no production data.
   explicit manager override is required when no applicable rate exists
 - time-derived invoice totals use integer `minutes * hourly_rate / 60` rounding;
   decimal hours are display metadata and never the authoritative amount
+- workspace managers see workspace time; project owners/managers see team time in
+  managed projects; contributors see their own assigned-project time; viewers see
+  no time; clients see only approved entries explicitly shared with their company
 
 `client_proposals` and `client_proposal_items`
 

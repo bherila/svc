@@ -20,7 +20,8 @@ continue a payment flow in the website.
 Workspace `owner` and `admin` retain full workspace access. Internal users can be
 assigned to a project as `owner`, `manager`, `contributor`, or `viewer`. Owners and
 managers can manage tasks and approve project time. Contributors can view assigned
-projects and manage only their own draft time. Client-company members remain read-only
+projects and manage only their own draft time. Viewers cannot read team time or log
+time. Client-company members remain read-only
 and see only records that existing client-visibility rules permit.
 
 ## Agent operations
@@ -37,8 +38,18 @@ All resources use public UUIDs. Lists use cursors with a maximum page size of 10
 Every mutable representation contains an opaque `version`; updates and lifecycle
 transitions require `expected_version`. Every Agent API mutation requires an
 idempotency key and runs through the same reservation-first transaction and audit
-boundary. The write flag remains disabled until the remaining time and invoice
-lifecycle correctness work is complete. Cross-workspace identifiers resolve as 404.
+boundary. The write flag remains disabled until all production-readiness blockers
+and the final write-authority cutover are complete. Cross-workspace identifiers
+resolve as 404.
+
+Tool discovery is filtered by the current access token's scopes. `context.get`
+reports the intersection of token scope, the write cutover flag, and current role,
+including per-project capabilities when `projects:read` permits disclosing project
+IDs. `operations.summary` always returns the workspace ID and conditionally includes
+project, time, and billing sections only when their respective read scopes are
+present. Invoice amounts are grouped by currency and distinguish drafts,
+collectible balances, and overdue balances; invoice-ready time excludes deferred,
+nonbillable, unrated, and already allocated entries.
 
 Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
 currency from the most recently effective active agreement, preferring a
@@ -57,6 +68,10 @@ Invoice numbers come from a transaction-locked workspace counter consumed in the
 transaction as invoice creation. Manual-line projects must belong to both the invoice
 workspace and client company.
 
+Client-visible time requires a non-empty, explicitly authored client-facing
+description. Client reads never fall back to an internal time description, including
+for legacy records that predate this invariant.
+
 ## Authorization
 
 Users authenticate in a browser through Bherila.net, then grant SVC-specific OAuth
@@ -65,6 +80,7 @@ current workspace/project/company permissions for every request. Initial scopes 
 `mcp:use`, `identity:read`, `projects:read`, `tasks:read`, `tasks:write`, `time:read`,
 `time:write`, `time:approve`, `billing:read`, and `billing:write`; invoice lifecycle
 delivery actions additionally require `billing:deliver`.
+Project detail embeds tasks only when the connection also has `tasks:read`.
 
 ## Safety and observability
 

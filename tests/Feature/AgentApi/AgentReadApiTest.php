@@ -66,6 +66,27 @@ class AgentReadApiTest extends TestCase
             ->assertJsonMissingPath('data.0.notes');
     }
 
+    public function test_legacy_client_visible_time_never_falls_back_to_internal_description(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $client = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $client->id, 'role' => 'client']);
+        $worker = User::factory()->create();
+        $this->workspaceMember($workspace, $worker, 'member');
+        $visible = $this->time($workspace, $company, $project, $worker, 'Internal text must stay private', [
+            'status' => 'approved',
+            'is_visible_to_client' => true,
+            'client_visible_description' => null,
+        ]);
+        $this->actingAsAgent($client, [AgentApiScopes::TIME_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $visible->public_id)
+            ->assertJsonPath('data.0.description', null)
+            ->assertJsonMissing(['Internal text must stay private']);
+    }
+
     /** @return array{Workspace, ClientCompany, ClientProject} */
     private function project(): array
     {

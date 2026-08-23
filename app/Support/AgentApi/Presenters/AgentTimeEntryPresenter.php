@@ -22,7 +22,7 @@ final class AgentTimeEntryPresenter
             'worked_on' => $entry->worked_on->toDateString(),
             'minutes' => $entry->minutes,
             'description' => $useClientDescription
-                ? ($entry->client_visible_description ?? $entry->description)
+                ? $entry->client_visible_description
                 : $entry->description,
             'is_billable' => $entry->is_billable,
             'is_deferred' => $entry->is_deferred,

@@ -29,6 +29,11 @@ final class AgentMcpInputSchemaFactory
             if (isset($body['$defs'])) {
                 $schema['$defs'] = $body['$defs'];
             }
+            foreach (['allOf', 'anyOf', 'oneOf', 'dependentRequired'] as $keyword) {
+                if (array_key_exists($keyword, $body)) {
+                    $schema[$keyword] = $body[$keyword];
+                }
+            }
         }
 
         return $schema;
