@@ -27,6 +27,10 @@ final class AgentMcpToolCatalog
                 new AgentMcpToolDefinition('time_entries.approve', 'Approve time', 'Approve a bounded batch of draft time entries after version checks.', [$writes, 'timeEntriesApprove'], 'time_entries.approve', false, false, true),
                 new AgentMcpToolDefinition('tasks.create', 'Create task', 'Create a task in an authorized project.', [$writes, 'tasksCreate'], 'tasks.create', false, false, true),
                 new AgentMcpToolDefinition('tasks.update', 'Update task', 'Update an authorized task using its current version.', [$writes, 'tasksUpdate'], 'tasks.update', false, false, true),
+                new AgentMcpToolDefinition('invoices.create_draft', 'Create invoice draft', 'Create a draft from explicit manual lines and/or explicit approved time.', [$writes, 'invoicesCreateDraft'], 'invoices.create_draft', false, false, true),
+                new AgentMcpToolDefinition('invoices.issue', 'Issue invoice', 'Issue a draft invoice only after explicit confirmation.', [$writes, 'invoicesIssue'], 'invoices.issue', false, false, true),
+                new AgentMcpToolDefinition('invoices.send', 'Send invoice', 'Queue delivery to explicit recipients only after confirmation.', [$writes, 'invoicesSend'], 'invoices.send', false, false, true),
+                new AgentMcpToolDefinition('invoices.void', 'Void invoice', 'Void an invoice only after explicit confirmation and reason.', [$writes, 'invoicesVoid'], 'invoices.void', false, true, true),
             ];
         }
 
