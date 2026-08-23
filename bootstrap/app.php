@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnforceOAuthResourceIndicator;
 use App\Http\Middleware\HandleInertiaRequests;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,6 +25,23 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json(
+                ['message' => 'Unauthenticated.'],
+                401,
+                [
+                    'Cache-Control' => 'private, no-store',
+                    'WWW-Authenticate' => sprintf(
+                        'Bearer resource_metadata="%s"',
+                        url('/.well-known/oauth-protected-resource/api/v1/mcp'),
+                    ),
+                ],
+            );
+        });
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

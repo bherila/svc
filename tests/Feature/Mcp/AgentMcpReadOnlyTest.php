@@ -53,6 +53,16 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->options('/api/v1/mcp', ['Origin' => 'http://localhost', 'Access-Control-Request-Method' => 'POST'])->assertNoContent();
     }
 
+    public function test_unauthenticated_mcp_request_returns_an_oauth_resource_challenge(): void
+    {
+        $this->mcp($this->initializeMessage())
+            ->assertUnauthorized()
+            ->assertHeader('WWW-Authenticate', sprintf(
+                'Bearer resource_metadata="%s"',
+                url('/.well-known/oauth-protected-resource/api/v1/mcp'),
+            ));
+    }
+
     public function test_write_tools_are_absent_until_the_explicit_cutover_flag_is_enabled(): void
     {
         config(['agent_api.writes_enabled' => false]);
