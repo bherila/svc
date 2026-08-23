@@ -38,4 +38,15 @@ class MoneyServiceTest extends TestCase
             ['quantity' => '10000.0001', 'unit_amount' => 900000000000, 'tax_amount' => 0],
         ])['subtotal_amount']);
     }
+
+    public function test_hourly_amounts_are_rounded_from_integer_minutes_not_display_hours(): void
+    {
+        $rate = 12345;
+        foreach ([1, 10, 20, 25, 30, 45, 60, 90] as $minutes) {
+            $expected = intdiv($minutes * $rate, 60) + (($minutes * $rate) % 60 >= 30 ? 1 : 0);
+
+            $this->assertSame($expected, MoneyService::hourlyAmount($minutes, $rate), (string) $minutes);
+            $this->assertMatchesRegularExpression('/^\d+\.\d{4}$/', MoneyService::hoursForMinutes($minutes));
+        }
+    }
 }

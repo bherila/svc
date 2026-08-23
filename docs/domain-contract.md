@@ -26,6 +26,11 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - `is_billable`, `is_deferred`, optional `billing_rate_amount`, `currency`
 - status: `draft`, `approved`, or `invoiced`
 - optional approval user/time and subcontractor cost metadata
+- billable approval snapshots the rate/currency from the most recently effective
+  active project agreement, falling back to a company-wide agreement; an
+  explicit manager override is required when no applicable rate exists
+- time-derived invoice totals use integer `minutes * hourly_rate / 60` rounding;
+  decimal hours are display metadata and never the authoritative amount
 
 `client_proposals` and `client_proposal_items`
 

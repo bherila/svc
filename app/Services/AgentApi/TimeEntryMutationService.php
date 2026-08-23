@@ -8,13 +8,19 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\AgreementBillingRateResolver;
+use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
+use DomainException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 final class TimeEntryMutationService
 {
-    public function __construct(private readonly ProjectAccess $access) {}
+    public function __construct(
+        private readonly ProjectAccess $access,
+        private readonly AgreementBillingRateResolver $rates,
+    ) {}
 
     /** @param array<string, mixed> $data */
     public function create(Workspace $workspace, ClientProject $project, User $actor, array $data): ClientTimeEntry
@@ -62,7 +68,7 @@ final class TimeEntryMutationService
         abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
     }
 
-    /** @param list<array{id: string, expected_version: string}> $entries */
+    /** @param list<array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}> $entries */
     public function approve(Workspace $workspace, User $actor, array $entries): void
     {
         DB::transaction(function () use ($workspace, $actor, $entries): void {
@@ -71,9 +77,42 @@ final class TimeEntryMutationService
                 abort_unless($this->access->canApproveTime($actor, $entry->project), 403);
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
                 abort_unless(AgentApiVersion::matches($entry, $item['expected_version']), 409, 'The time entry has changed; read it and retry.');
-                $entry->forceFill(['status' => 'approved', 'approved_by_user_id' => $actor->id, 'approved_at' => now(), 'lock_version' => $entry->lock_version + 1])->save();
+                $rate = $this->approvalRate($entry, $item);
+                $entry->forceFill([
+                    'status' => 'approved',
+                    'approved_by_user_id' => $actor->id,
+                    'approved_at' => now(),
+                    'billing_rate_amount' => $rate['amount'],
+                    'currency' => $rate['currency'],
+                    'lock_version' => $entry->lock_version + 1,
+                ])->save();
             }
         });
+    }
+
+    /**
+     * @param  array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}  $item
+     * @return array{amount:int|null,currency:string|null}
+     */
+    private function approvalRate(ClientTimeEntry $entry, array $item): array
+    {
+        if (! $entry->is_billable) {
+            return ['amount' => null, 'currency' => $entry->currency];
+        }
+
+        $hasAmount = array_key_exists('billing_rate_amount', $item);
+        $hasCurrency = array_key_exists('currency', $item);
+        if ($hasAmount && $hasCurrency) {
+            return [
+                'amount' => MoneyService::nonNegativeInteger($item['billing_rate_amount'], 'billing_rate_amount'),
+                'currency' => MoneyService::currency($item['currency']),
+            ];
+        }
+        if ($hasAmount || $hasCurrency) {
+            throw new DomainException('A billing-rate override requires both amount and currency.');
+        }
+
+        return $this->rates->resolve($entry);
     }
 
     private function assertDraftEditable(Workspace $workspace, ClientTimeEntry $entry, User $actor): void

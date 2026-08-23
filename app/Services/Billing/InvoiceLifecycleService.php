@@ -18,14 +18,15 @@ final class InvoiceLifecycleService
     /**
      * @param  array<string, mixed>  $attributes
      * @param  list<array<string, mixed>>  $lines
+     * @param  array<int, int>  $subtotalOverrides
      */
-    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines): ClientInvoice
+    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines, array $subtotalOverrides = []): ClientInvoice
     {
         $this->assertCompanyTenant($workspace, $company);
         $currency = MoneyService::currency($attributes['currency'] ?? null);
-        $totals = MoneyService::invoiceTotals($lines);
+        $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
 
-        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $currency, $totals): ClientInvoice {
+        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals): ClientInvoice {
             $invoice = ClientInvoice::query()->create([
                 'workspace_id' => $workspace->id,
                 'client_company_id' => $company->id,
@@ -44,8 +45,8 @@ final class InvoiceLifecycleService
                 'is_visible_to_client' => (bool) ($attributes['is_visible_to_client'] ?? false),
             ]);
 
-            foreach ($lines as $line) {
-                $lineTotal = self::lineTotal($line);
+            foreach ($lines as $index => $line) {
+                $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
                 $invoice->lines()->create([
                     'workspace_id' => $workspace->id,
                     'client_project_id' => $line['client_project_id'] ?? null,
@@ -287,9 +288,9 @@ final class InvoiceLifecycleService
     }
 
     /** @param array<string, mixed> $line */
-    public static function lineTotal(array $line): int
+    public static function lineTotal(array $line, ?int $subtotalOverride = null): int
     {
-        $totals = MoneyService::invoiceTotals([$line]);
+        $totals = MoneyService::invoiceTotals([$line], $subtotalOverride === null ? [] : [0 => $subtotalOverride]);
 
         return $totals['subtotal_amount'] + $totals['tax_amount'];
     }
