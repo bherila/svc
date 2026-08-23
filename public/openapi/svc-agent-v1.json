@@ -1,0 +1,16 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "SVC Agent API", "version": "v1"},
+  "servers": [{"url": "https://svc.bherila.net/api/v1"}],
+  "paths": {
+    "/context": {"get": {"operationId": "context.get", "responses": {"200": {"description": "Authorized context"}}}},
+    "/workspaces/{workspace}/summary": {"get": {"operationId": "operations.summary", "responses": {"200": {"description": "Role-sensitive summary"}}}},
+    "/workspaces/{workspace}/projects": {"get": {"operationId": "projects.list", "responses": {"200": {"description": "Bounded projects"}}}},
+    "/workspaces/{workspace}/projects/{project}": {"get": {"operationId": "projects.get", "responses": {"200": {"description": "Project"}}}},
+    "/workspaces/{workspace}/tasks": {"get": {"operationId": "tasks.list", "responses": {"200": {"description": "Bounded tasks"}}}},
+    "/workspaces/{workspace}/tasks/{task}": {"get": {"operationId": "tasks.get", "responses": {"200": {"description": "Task"}}}},
+    "/workspaces/{workspace}/time-entries": {"get": {"operationId": "time_entries.list", "responses": {"200": {"description": "Bounded time entries"}}}},
+    "/workspaces/{workspace}/invoices": {"get": {"operationId": "invoices.list", "responses": {"200": {"description": "Bounded invoices"}}}},
+    "/workspaces/{workspace}/invoices/{invoice}": {"get": {"operationId": "invoices.get", "responses": {"200": {"description": "Invoice"}}}}
+  }
+}
