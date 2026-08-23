@@ -17,6 +17,10 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString(':~/svc-laravel/', $workflow);
         $this->assertStringContainsString("--exclude='.env'", $workflow);
         $this->assertStringContainsString("--exclude='svc-blobs'", $workflow);
+        $this->assertStringContainsString("--exclude='/storage/app/private/oauth/'", $workflow);
+        $this->assertStringContainsString('Create or verify persistent OAuth signing keys', $workflow);
+        $this->assertStringContainsString('artisan passport:keys --force', $workflow);
+        $this->assertStringContainsString('refusing to rotate it automatically', $workflow);
         $this->assertStringNotContainsString(':~/', str_replace(':~/svc-laravel/', '', $workflow));
         $this->assertStringNotContainsString(':~/bwh-php/', $workflow);
         $this->assertStringNotContainsString(':~/phr-laravel/', $workflow);
