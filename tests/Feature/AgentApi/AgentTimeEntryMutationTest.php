@@ -36,6 +36,7 @@ final class AgentTimeEntryMutationTest extends TestCase
         $entry = $first->json('data.0');
         $this->withHeader('Idempotency-Key', 'time-log-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", $payload)->assertCreated()->assertJsonPath('data.0.id', $entry['id']);
         $this->assertDatabaseCount('client_time_entries', 1);
+        $this->withHeader('Idempotency-Key', 'time-log-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [[...$payload['entries'][0], 'minutes' => 46]]])->assertConflict();
 
         $updated = $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 60])->assertOk()->json('data');
         $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 90])->assertConflict();
