@@ -20,7 +20,13 @@ final class ProjectAccess
 
     public function projectRole(User|AgentPrincipal $user, ClientProject $project): ?ProjectRole
     {
-        if ($this->isWorkspaceManager($user, $project->workspace)) {
+        $workspaceRole = $this->workspaceRole($user, $project->workspace);
+
+        if ($workspaceRole === null) {
+            return null;
+        }
+
+        if (in_array($workspaceRole, ['owner', 'admin'], true)) {
             return ProjectRole::Owner;
         }
 
