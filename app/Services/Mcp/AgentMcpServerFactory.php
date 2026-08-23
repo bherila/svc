@@ -4,6 +4,10 @@ namespace App\Services\Mcp;
 
 use App\Services\Authorization\AgentTokenScopes;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
+use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
+use Bherila\McpLaravelBridge\Mcp\RequestArguments;
+use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
 use Mcp\Capability\Discovery\SchemaValidator;
@@ -13,6 +17,7 @@ use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Session\Psr16SessionStore;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 final class AgentMcpServerFactory
@@ -24,14 +29,20 @@ final class AgentMcpServerFactory
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
-        private readonly AgentMcpRequestArguments $requestArguments,
+        private readonly RequestArguments $requestArguments,
         private readonly AgentTokenScopes $scopes,
     ) {}
 
     public function make(Request $request): Server
     {
         $logger = new NullLogger;
+        $driftLogger = app(LoggerInterface::class);
         $registry = new Registry(logger: $logger);
+        $definitions = $this->catalog->definitions($this->reads, $this->writes);
+        $schemaIds = [];
+        foreach ($definitions as $definition) {
+            $schemaIds[$definition->name] = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
+        }
         $builder = Server::builder()
             ->setServerInfo(
                 name: 'SVC Agent API',
@@ -43,21 +54,24 @@ final class AgentMcpServerFactory
             )
             ->setInstructions($this->instructions())
             ->setPaginationLimit(100)
-            ->setSession(new Psr16SessionStore($this->cache, 'svc_mcp_'.hash('sha256', $this->tokenIdentity($request)).'_', (int) config('agent_api.mcp_session_ttl_seconds')))
+            ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
             ->setLogger($logger)
             ->setContainer(app())
             ->setRegistry($registry)
             ->setReferenceHandler(new ReferenceHandler(app()))
-            ->addRequestHandler(new AgentMcpValidatedCallToolHandler(
-                new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new AgentMcpSchemaValidator($logger, $this->requestArguments)),
+            ->addRequestHandler(new ValidatedCallToolHandler(
+                new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
                 $registry,
                 new SchemaValidator($logger),
+                $schemaIds,
+                $driftLogger,
+                'The SVC API returned a response that failed its output contract.',
             ))
             ->setLazyLoading(false);
 
-        foreach ($this->catalog->definitions($this->reads, $this->writes) as $definition) {
-            if (! $this->scopes->allowsAll($request, AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId))) {
+        foreach ($definitions as $definition) {
+            if (! $this->scopes->allowsAll($request, AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId()))) {
                 continue;
             }
             $builder->addTool(
@@ -72,13 +86,6 @@ final class AgentMcpServerFactory
         }
 
         return $builder->build();
-    }
-
-    private function tokenIdentity(Request $request): string
-    {
-        $token = $request->bearerToken();
-
-        return is_string($token) && $token !== '' ? $token : 'preflight';
     }
 
     private function instructions(): string

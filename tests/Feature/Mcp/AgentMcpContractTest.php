@@ -13,11 +13,11 @@ use App\Models\WorkspaceMembership;
 use App\Services\Mcp\AgentMcpInputSchemaFactory;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpToolDefinition;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Passport;
@@ -34,7 +34,7 @@ final class AgentMcpContractTest extends TestCase
         config(['agent_api.writes_enabled' => true]);
 
         foreach ($this->definitions() as $definition) {
-            $component = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId);
+            $component = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
             $schema = AgentApiResponseSchemaCatalog::schema($component);
             $encoded = json_encode($schema, JSON_THROW_ON_ERROR);
 
@@ -133,7 +133,7 @@ final class AgentMcpContractTest extends TestCase
             if ($definition->readOnly) {
                 continue;
             }
-            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->operationId);
+            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->operationId());
             $input = $factory->for($definition);
             $encoded = json_encode($input, JSON_THROW_ON_ERROR);
 
@@ -163,7 +163,7 @@ final class AgentMcpContractTest extends TestCase
                 continue;
             }
             $operation = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))
-                ->firstWhere('operationId', $definition->operationId);
+                ->firstWhere('operationId', $definition->operationId());
             $parameterRefs = collect($operation['parameters'] ?? [])->pluck('$ref');
             $input = $factory->for($definition);
 
@@ -250,7 +250,7 @@ final class AgentMcpContractTest extends TestCase
         $this->assertStringNotContainsString('release is read-only', $writable);
     }
 
-    /** @return list<AgentMcpToolDefinition> */
+    /** @return list<ToolDefinition> */
     private function definitions(): array
     {
         return app(AgentMcpToolCatalog::class)->definitions(

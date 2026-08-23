@@ -41,6 +41,11 @@ jobs:
           corepack enable
           corepack prepare pnpm@11.5.0 --activate
 
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
       - name: Setup Application
         run: composer setup
 
@@ -77,8 +82,13 @@ jobs:
           tools: composer:v2
           coverage: none
 
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
       - name: Install production Composer dependencies
-        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+        run: composer install --no-dev --no-interaction --optimize-autoloader
 
       - name: Download frontend build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
