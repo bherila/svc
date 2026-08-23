@@ -119,3 +119,29 @@ SVC exposes a narrow, versioned bearer-token API for listing invoice payments an
 linking them to transaction UUIDs owned by an external finance system. Tokens are
 expiring, stored only as hashes, and require explicit `finance.read` or
 `finance.reconcile` abilities. See [the API contract](docs/finance-api.md).
+
+## Connect an MCP client
+
+SVC's remote MCP endpoint is `https://svc.bherila.net/api/v1/mcp`. It uses OAuth
+with Bherila.net for sign-in; do not create or paste a personal API token. The
+browser opened by the login command shows the requested SVC permissions before
+continuing to the client.
+
+Install it for your user account, then complete the browser login:
+
+```bash
+# Codex CLI
+codex mcp add svc --url https://svc.bherila.net/api/v1/mcp \
+  --oauth-resource https://svc.bherila.net/api/v1
+codex mcp login svc
+
+# Claude Code CLI
+claude mcp add --transport http --scope user svc https://svc.bherila.net/api/v1/mcp
+claude mcp login svc
+```
+
+Restart the client if it was already running, then ask it to call `context.get`
+before choosing a workspace or carrying out an operation. Access remains limited by
+the signed-in user's current SVC role and granted OAuth scopes. Invoice payment is
+not an MCP capability; invoice results provide the browser payment URL when one is
+available.
