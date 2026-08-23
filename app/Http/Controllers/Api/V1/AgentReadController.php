@@ -11,8 +11,12 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Authorization\AgentCapabilities;
+use App\Services\Authorization\AgentTimeEntryQuery;
+use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
+use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
@@ -30,7 +34,7 @@ final class AgentReadController extends Controller
         private readonly AgentInvoicePresenter $invoices,
     ) {}
 
-    public function context(Request $request, AgentAccess $access, ProjectAccess $projects): JsonResponse
+    public function context(Request $request, AgentAccess $access, ProjectAccess $projects, AgentCapabilities $capabilities): JsonResponse
     {
         $user = $this->user($request);
         $workspaces = Workspace::query()->orderBy('name')->get()->filter(fn (Workspace $workspace): bool => $access->canViewWorkspace($user, $workspace));
@@ -38,50 +42,62 @@ final class AgentReadController extends Controller
         return response()->json(['data' => [
             'id' => $user->public_id,
             'name' => $user->name,
-            'workspaces' => $workspaces->map(fn (Workspace $workspace): array => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
-                'timezone' => $workspace->timezone,
-                'default_currency' => $workspace->default_currency,
-                'workspace_role' => $projects->workspaceRole($user, $workspace),
-                'capabilities' => $this->capabilities($user, $workspace, $access),
-                'web_url' => route('workspaces.operations', $workspace),
-            ])->values(),
+            'workspaces' => $workspaces->map(function (Workspace $workspace) use ($request, $user, $projects, $capabilities): array {
+                $authorized = $capabilities->forWorkspace($request, $user, $workspace);
+
+                return [
+                    'id' => $workspace->public_id,
+                    'name' => $workspace->name,
+                    'timezone' => $workspace->timezone,
+                    'default_currency' => $workspace->default_currency,
+                    'workspace_role' => $projects->workspaceRole($user, $workspace),
+                    ...$authorized,
+                    'web_url' => route('workspaces.operations', $workspace),
+                ];
+            })->values(),
         ]]);
     }
 
-    public function summary(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
+    public function summary(Request $request, Workspace $workspace, AgentAccess $access, AgentTimeEntryQuery $timeQueries, AgentTokenScopes $scopes): JsonResponse
     {
         $user = $this->user($request);
         $this->workspace($user, $workspace, $access);
-        $isManager = $access->isWorkspaceManager($user, $workspace);
-        $time = ClientTimeEntry::query()->where('workspace_id', $workspace->id);
-        if (! $isManager) {
-            $time->where('user_id', $user->id);
-        }
+        $data = ['workspace_id' => $workspace->public_id];
 
-        $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id);
-        if (! $isManager) {
-            $invoices->whereHas('clientCompany.portalUsers', fn (Builder $query) => $query->whereKey($user->id))
-                ->where('is_visible_to_client', true)
-                ->whereIn('status', ['issued', 'partially_paid', 'paid']);
+        if ($scopes->allows($request, AgentApiScopes::PROJECTS_READ)) {
+            $data['active_projects'] = $this->projectQuery($user, $workspace, $access)->where('status', 'active')->count();
         }
-
-        return response()->json(['data' => [
-            'workspace_id' => $workspace->public_id,
-            'active_projects' => $this->projectQuery($user, $workspace, $access)->where('status', 'active')->count(),
-            'time' => [
-                'draft_minutes' => (clone $time)->where('status', 'draft')->sum('minutes'),
-                'approved_minutes' => (clone $time)->where('status', 'approved')->sum('minutes'),
-                'unbilled_minutes' => (clone $time)->where('status', 'approved')->sum('minutes'),
-            ],
-            'invoices' => [
+        if ($scopes->allows($request, AgentApiScopes::TIME_READ)) {
+            $time = $timeQueries->visibleTo($user, $workspace);
+            $data['time'] = [
+                'draft_minutes' => (int) (clone $time)->where('status', 'draft')->sum('minutes'),
+                'approved_billable_unallocated_minutes' => (int) (clone $time)
+                    ->where('status', 'approved')
+                    ->where('is_billable', true)
+                    ->where('is_deferred', false)
+                    ->whereNotNull('billing_rate_amount')
+                    ->whereDoesntHave('invoiceLines')
+                    ->sum('minutes'),
+                'allocated_to_draft_minutes' => (int) (clone $time)
+                    ->where('status', 'approved')
+                    ->whereHas('invoiceLines.invoice', fn (Builder $invoices) => $invoices->where('status', 'draft'))
+                    ->sum('minutes'),
+            ];
+        }
+        if ($scopes->allows($request, AgentApiScopes::BILLING_READ)) {
+            $invoices = $this->invoiceQuery($user, $workspace, $access);
+            $collectible = (clone $invoices)->whereIn('status', ['issued', 'partially_paid'])->where('balance_amount', '>', 0);
+            $overdue = (clone $collectible)->whereDate('due_date', '<', now()->toDateString());
+            $data['invoices'] = [
                 'draft_count' => (clone $invoices)->where('status', 'draft')->count(),
-                'overdue_count' => (clone $invoices)->whereIn('status', ['issued', 'partially_paid'])->whereDate('due_date', '<', now()->toDateString())->count(),
-                'outstanding_amount' => (int) (clone $invoices)->sum('balance_amount'),
-                'currency' => $workspace->default_currency,
-            ],
-        ]]);
+                'overdue_count' => (clone $overdue)->count(),
+                'draft_amounts' => $this->amountsByCurrency((clone $invoices)->where('status', 'draft'), 'total_amount'),
+                'collectible_balances' => $this->amountsByCurrency($collectible, 'balance_amount'),
+                'overdue_balances' => $this->amountsByCurrency($overdue, 'balance_amount'),
+            ];
+        }
+
+        return response()->json(['data' => $data]);
     }
 
     public function projects(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
@@ -99,17 +115,24 @@ final class AgentReadController extends Controller
         return $this->paginatedProjects($query, $request, $workspace);
     }
 
-    public function project(Request $request, Workspace $workspace, string $project, AgentAccess $access): JsonResponse
+    public function project(Request $request, Workspace $workspace, string $project, AgentAccess $access, AgentTokenScopes $scopes): JsonResponse
     {
         $user = $this->user($request);
         $this->workspace($user, $workspace, $access);
-        $record = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $project)->with(['clientCompany', 'tasks'])->firstOrFail();
+        $query = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $project)->with('clientCompany');
+        if ($scopes->allows($request, AgentApiScopes::TASKS_READ)) {
+            $query->with('tasks');
+        }
+        $record = $query->firstOrFail();
         abort_unless($access->canViewProject($user, $record), 404);
 
-        return response()->json(['data' => $this->projects->present($workspace, $record) + [
-            'tasks' => $record->tasks->filter(fn (ClientTask $task): bool => $access->canViewTask($user, $task))
-                ->map(fn (ClientTask $task): array => $this->tasks->present($workspace, $task))->values(),
-        ]]);
+        $data = $this->projects->present($workspace, $record);
+        if ($record->relationLoaded('tasks')) {
+            $data['tasks'] = $record->tasks->filter(fn (ClientTask $task): bool => $access->canViewTask($user, $task))
+                ->map(fn (ClientTask $task): array => $this->tasks->present($workspace, $task))->values();
+        }
+
+        return response()->json(['data' => $data]);
     }
 
     public function tasks(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
@@ -142,11 +165,11 @@ final class AgentReadController extends Controller
         return response()->json(['data' => $this->tasks->present($workspace, $record)]);
     }
 
-    public function timeEntries(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
+    public function timeEntries(Request $request, Workspace $workspace, AgentAccess $access, AgentTimeEntryQuery $timeQueries): JsonResponse
     {
         $user = $this->user($request);
         $this->workspace($user, $workspace, $access);
-        $query = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->with(['project', 'clientCompany', 'task', 'user'])->orderBy('id');
+        $query = $timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task', 'user'])->orderBy('id');
         if ($request->filled('project_id')) {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $request->string('project_id')->toString()));
         }
@@ -158,13 +181,6 @@ final class AgentReadController extends Controller
         }
         if ($request->filled('to')) {
             $query->whereDate('worked_on', '<=', $request->string('to')->toString());
-        }
-
-        if (! $access->isWorkspaceManager($user, $workspace)) {
-            $query->where(function (Builder $entries) use ($user): void {
-                $entries->where(fn (Builder $own) => $own->where('user_id', $user->id)->whereHas('project.members', fn (Builder $members) => $members->whereKey($user->id)))
-                    ->orWhere(fn (Builder $shared) => $shared->where('status', 'approved')->where('is_visible_to_client', true)->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id)));
-            });
         }
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
         $next = $records->count() > $this->limit($request) ? $records->pop() : null;
@@ -178,13 +194,9 @@ final class AgentReadController extends Controller
     {
         $user = $this->user($request);
         $this->workspace($user, $workspace, $access);
-        $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany')->orderBy('id');
+        $query = $this->invoiceQuery($user, $workspace, $access)->with('clientCompany')->orderBy('id');
         if ($request->filled('status')) {
             $query->where('status', $request->string('status')->toString());
-        }
-        if (! $access->isWorkspaceManager($user, $workspace)) {
-            $query->where('is_visible_to_client', true)->whereIn('status', ['issued', 'partially_paid', 'paid'])
-                ->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id));
         }
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
         $next = $records->count() > $this->limit($request) ? $records->pop() : null;
@@ -280,11 +292,43 @@ final class AgentReadController extends Controller
         return $query;
     }
 
-    /** @return list<string> */
-    private function capabilities(User|AgentPrincipal $user, Workspace $workspace, AgentAccess $access): array
+    /** @return Builder<ClientInvoice> */
+    private function invoiceQuery(User|AgentPrincipal $user, Workspace $workspace, AgentAccess $access): Builder
     {
-        return $access->isWorkspaceManager($user, $workspace)
-            ? ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'billing:read', 'billing:write', 'billing:deliver']
-            : ['projects:read', 'tasks:read', 'time:read', 'time:write'];
+        $query = ClientInvoice::query()->where('workspace_id', $workspace->id);
+        if ($access->isWorkspaceManager($user, $workspace)) {
+            return $query;
+        }
+
+        return $query->where('is_visible_to_client', true)
+            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id));
+    }
+
+    /** @param Builder<ClientInvoice> $query
+     * @return list<array{currency:string,amount:int}> */
+    private function amountsByCurrency(Builder $query, string $column): array
+    {
+        $query->select('currency');
+        if ($column === 'total_amount') {
+            $query->selectRaw('SUM(total_amount) AS aggregate_amount');
+        } elseif ($column === 'balance_amount') {
+            $query->selectRaw('SUM(balance_amount) AS aggregate_amount');
+        } else {
+            throw new \InvalidArgumentException('Unsupported invoice amount column.');
+        }
+        $rows = $query
+            ->groupBy('currency')
+            ->orderBy('currency')
+            ->get();
+        $amounts = [];
+        foreach ($rows as $invoice) {
+            $amounts[] = [
+                'currency' => $invoice->currency,
+                'amount' => (int) $invoice->getAttribute('aggregate_amount'),
+            ];
+        }
+
+        return $amounts;
     }
 }

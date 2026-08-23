@@ -25,7 +25,14 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP Client', 'slug' => 'mcp-client']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP Project']);
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ]);
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::IDENTITY_READ,
+            AgentApiScopes::PROJECTS_READ,
+            AgentApiScopes::TASKS_READ,
+            AgentApiScopes::TIME_READ,
+            AgentApiScopes::BILLING_READ,
+        ]);
 
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
@@ -74,6 +81,17 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNotContains('time_entries.log', array_column($tools, 'name'));
     }
 
+    public function test_tool_discovery_omits_operations_outside_the_current_token_scopes(): void
+    {
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertOk()->json('result.tools');
+
+        $this->assertSame(['projects.list', 'projects.get'], array_column($tools, 'name'));
+    }
+
     public function test_write_catalog_is_conditionally_registered_after_cutover(): void
     {
         config(['agent_api.writes_enabled' => true]);
@@ -82,7 +100,14 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP write client', 'slug' => 'mcp-write-client']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP write project']);
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE]);
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::TASKS_WRITE,
+            AgentApiScopes::TIME_WRITE,
+            AgentApiScopes::TIME_APPROVE,
+            AgentApiScopes::BILLING_WRITE,
+            AgentApiScopes::BILLING_DELIVER,
+        ]);
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)->assertOk()->json('result.tools');
         $byName = collect($tools)->keyBy('name');

@@ -8,7 +8,7 @@
   "servers": [{"url": "https://svc.bherila.net/api/v1"}],
   "paths": {
     "/context": {"get": {
-      "operationId": "context.get", "security": [{"oauth2": ["identity:read"]}],
+      "operationId": "context.get", "description": "Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read.", "security": [{"oauth2": ["identity:read"]}],
       "responses": {"200": {"description": "Authorized context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContextResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/connections/{token}": {"delete": {
@@ -17,7 +17,7 @@
       "responses": {"204": {"description": "Connection revoked"}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/summary": {"get": {
-      "operationId": "operations.summary", "security": [{"oauth2": ["identity:read"]}],
+      "operationId": "operations.summary", "description": "Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope.", "security": [{"oauth2": ["identity:read"]}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
       "responses": {"200": {"description": "Role-sensitive summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SummaryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
@@ -31,7 +31,7 @@
       "responses": {"200": {"description": "Authorized projects", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/projects/{project_id}": {"get": {
-      "operationId": "projects.get", "security": [{"oauth2": ["projects:read"]}],
+      "operationId": "projects.get", "description": "Task data is embedded only when the token also has tasks:read.", "security": [{"oauth2": ["projects:read"]}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}],
       "responses": {"200": {"description": "Authorized project detail", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
@@ -193,14 +193,16 @@
       "PaginationMeta": {"type": "object", "additionalProperties": false, "required": ["next_cursor"], "properties": {"next_cursor": {"type": ["string", "null"]}}},
       "WorkspaceContext": {
         "type": "object", "additionalProperties": false,
-        "required": ["id", "name", "timezone", "default_currency", "workspace_role", "capabilities", "web_url"],
-        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "timezone": {"type": "string"}, "default_currency": {"$ref": "#/components/schemas/Currency"}, "workspace_role": {"type": ["string", "null"]}, "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}, "web_url": {"type": "string", "format": "uri"}}
+        "required": ["id", "name", "timezone", "default_currency", "workspace_role", "capabilities", "project_capabilities", "web_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "timezone": {"type": "string"}, "default_currency": {"$ref": "#/components/schemas/Currency"}, "workspace_role": {"type": ["string", "null"]}, "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}, "project_capabilities": {"type": "array", "items": {"$ref": "#/components/schemas/ProjectCapability"}}, "web_url": {"type": "string", "format": "uri"}}
       },
+      "ProjectCapability": {"type": "object", "additionalProperties": false, "required": ["project_id", "role", "capabilities"], "properties": {"project_id": {"$ref": "#/components/schemas/Uuid"}, "role": {"type": "string", "enum": ["owner", "manager", "contributor", "viewer", "client"]}, "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}}},
       "Context": {"type": "object", "additionalProperties": false, "required": ["id", "name", "workspaces"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "workspaces": {"type": "array", "items": {"$ref": "#/components/schemas/WorkspaceContext"}}}},
       "ContextResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Context"}}},
-      "SummaryTime": {"type": "object", "additionalProperties": false, "required": ["draft_minutes", "approved_minutes", "unbilled_minutes"], "properties": {"draft_minutes": {"type": "integer"}, "approved_minutes": {"type": "integer"}, "unbilled_minutes": {"type": "integer"}}},
-      "SummaryInvoices": {"type": "object", "additionalProperties": false, "required": ["draft_count", "overdue_count", "outstanding_amount", "currency"], "properties": {"draft_count": {"type": "integer"}, "overdue_count": {"type": "integer"}, "outstanding_amount": {"type": "integer"}, "currency": {"$ref": "#/components/schemas/Currency"}}},
-      "Summary": {"type": "object", "additionalProperties": false, "required": ["workspace_id", "active_projects", "time", "invoices"], "properties": {"workspace_id": {"$ref": "#/components/schemas/Uuid"}, "active_projects": {"type": "integer"}, "time": {"$ref": "#/components/schemas/SummaryTime"}, "invoices": {"$ref": "#/components/schemas/SummaryInvoices"}}},
+      "SummaryTime": {"type": "object", "additionalProperties": false, "required": ["draft_minutes", "approved_billable_unallocated_minutes", "allocated_to_draft_minutes"], "properties": {"draft_minutes": {"type": "integer"}, "approved_billable_unallocated_minutes": {"type": "integer"}, "allocated_to_draft_minutes": {"type": "integer"}}},
+      "CurrencyAmount": {"type": "object", "additionalProperties": false, "required": ["currency", "amount"], "properties": {"currency": {"$ref": "#/components/schemas/Currency"}, "amount": {"type": "integer"}}},
+      "SummaryInvoices": {"type": "object", "additionalProperties": false, "required": ["draft_count", "overdue_count", "draft_amounts", "collectible_balances", "overdue_balances"], "properties": {"draft_count": {"type": "integer"}, "overdue_count": {"type": "integer"}, "draft_amounts": {"type": "array", "items": {"$ref": "#/components/schemas/CurrencyAmount"}}, "collectible_balances": {"type": "array", "items": {"$ref": "#/components/schemas/CurrencyAmount"}}, "overdue_balances": {"type": "array", "items": {"$ref": "#/components/schemas/CurrencyAmount"}}}},
+      "Summary": {"type": "object", "additionalProperties": false, "required": ["workspace_id"], "properties": {"workspace_id": {"$ref": "#/components/schemas/Uuid"}, "active_projects": {"type": "integer"}, "time": {"$ref": "#/components/schemas/SummaryTime"}, "invoices": {"$ref": "#/components/schemas/SummaryInvoices"}}},
       "SummaryResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Summary"}}},
       "Project": {
         "type": "object", "additionalProperties": false,
@@ -209,7 +211,7 @@
       },
       "ProjectDetail": {
         "type": "object", "additionalProperties": false,
-        "required": ["id", "company_id", "name", "description", "status", "is_visible_to_client", "version", "web_url", "tasks"],
+        "required": ["id", "company_id", "name", "description", "status", "is_visible_to_client", "version", "web_url"],
         "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "status": {"type": "string"}, "is_visible_to_client": {"type": "boolean"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "tasks": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}
       },
       "ProjectListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Project"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
@@ -233,10 +235,11 @@
       "TimeEntryBatchResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/TimeEntry"}}}},
       "TimeLogItem": {
         "type": "object", "additionalProperties": false, "required": ["project_id", "worked_on", "minutes", "description"],
-        "properties": {"project_id": {"$ref": "#/components/schemas/Uuid"}, "task_id": {"type": ["string", "null"], "format": "uuid"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "minLength": 1, "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "maxLength": 10000}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}}
+        "properties": {"project_id": {"$ref": "#/components/schemas/Uuid"}, "task_id": {"type": ["string", "null"], "format": "uuid"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "minLength": 1, "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "minLength": 1, "maxLength": 10000}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}},
+        "allOf": [{"if": {"required": ["is_visible_to_client"], "properties": {"is_visible_to_client": {"const": true}}}, "then": {"required": ["client_visible_description"], "properties": {"client_visible_description": {"type": "string", "minLength": 1}}}}]
       },
       "TimeLogRequest": {"type": "object", "additionalProperties": false, "required": ["entries"], "properties": {"entries": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/components/schemas/TimeLogItem"}}}},
-      "TimeUpdateRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "maxLength": 10000}}},
+      "TimeUpdateRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "minLength": 1, "maxLength": 10000}}, "allOf": [{"if": {"required": ["is_visible_to_client"], "properties": {"is_visible_to_client": {"const": true}}}, "then": {"required": ["client_visible_description"], "properties": {"client_visible_description": {"type": "string", "minLength": 1}}}}]},
       "ExpectedVersionRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}}},
       "TimeApprovalItem": {"type": "object", "additionalProperties": false, "required": ["id", "expected_version"], "dependentRequired": {"billing_rate_amount": ["currency"], "currency": ["billing_rate_amount"]}, "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "expected_version": {"$ref": "#/components/schemas/Version"}, "billing_rate_amount": {"type": "integer", "minimum": 0}, "currency": {"$ref": "#/components/schemas/Currency"}}},
       "TimeApprovalRequest": {"type": "object", "additionalProperties": false, "required": ["entries"], "properties": {"entries": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/components/schemas/TimeApprovalItem"}}}},

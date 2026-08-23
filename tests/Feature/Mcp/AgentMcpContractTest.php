@@ -96,6 +96,8 @@ final class AgentMcpContractTest extends TestCase
         $this->assertSame('#/$defs/TimeLogItem', $log['properties']['entries']['items']['$ref']);
         $this->assertFalse($log['$defs']['TimeLogItem']['additionalProperties']);
         $this->assertSame(1440, $log['$defs']['TimeLogItem']['properties']['minutes']['maximum']);
+        $this->assertTrue($log['$defs']['TimeLogItem']['allOf'][0]['if']['properties']['is_visible_to_client']['const']);
+        $this->assertSame(['client_visible_description'], $log['$defs']['TimeLogItem']['allOf'][0]['then']['required']);
 
         $invoice = $factory->for($definitions->get('invoices.create_draft'));
         $this->assertTrue($invoice['properties']['time_entry_ids']['uniqueItems']);
@@ -111,6 +113,7 @@ final class AgentMcpContractTest extends TestCase
         foreach (['is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description'] as $property) {
             $this->assertArrayHasKey($property, $time['properties']);
         }
+        $this->assertTrue($time['allOf'][0]['if']['properties']['is_visible_to_client']['const']);
 
         $approval = $factory->for($definitions->get('time_entries.approve'));
         $approvalItem = $approval['$defs']['TimeApprovalItem'];

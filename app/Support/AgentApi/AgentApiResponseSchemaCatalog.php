@@ -21,6 +21,9 @@ final class AgentApiResponseSchemaCatalog
     /** @var array<string, string>|null */
     private static ?array $requestComponents = null;
 
+    /** @var array<string, list<string>>|null */
+    private static ?array $operationScopes = null;
+
     /** @var array<string, array<string, mixed>> */
     private static array $packaged = [];
 
@@ -63,11 +66,34 @@ final class AgentApiResponseSchemaCatalog
         return self::schema($components[$operationId]);
     }
 
+    /** @return list<string> */
+    public static function scopesForOperation(string $operationId): array
+    {
+        if (self::$operationScopes === null) {
+            self::$operationScopes = [];
+            foreach (self::document()['paths'] ?? [] as $operations) {
+                foreach (is_array($operations) ? $operations : [] as $operation) {
+                    $id = is_array($operation) ? ($operation['operationId'] ?? null) : null;
+                    $scopes = is_array($operation) ? ($operation['security'][0]['oauth2'] ?? null) : null;
+                    if (is_string($id) && is_array($scopes) && array_is_list($scopes)) {
+                        self::$operationScopes[$id] = array_values(array_filter($scopes, 'is_string'));
+                    }
+                }
+            }
+        }
+        if (! array_key_exists($operationId, self::$operationScopes)) {
+            throw new InvalidArgumentException("No OAuth scopes are declared for operation [{$operationId}].");
+        }
+
+        return self::$operationScopes[$operationId];
+    }
+
     public static function flush(): void
     {
         self::$document = null;
         self::$operationComponents = null;
         self::$requestComponents = null;
+        self::$operationScopes = null;
         self::$packaged = [];
     }
 

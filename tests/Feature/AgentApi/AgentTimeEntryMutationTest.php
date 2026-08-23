@@ -50,6 +50,7 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->withHeader('Idempotency-Key', 'time-update-stale')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 90])->assertConflict();
         $cleared = $this->withHeader('Idempotency-Key', 'time-update-clear')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", [
             'expected_version' => $updated['version'],
+            'is_visible_to_client' => false,
             'client_visible_description' => null,
         ])->assertOk()->json('data');
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry['id'], 'client_visible_description' => null]);
@@ -61,6 +62,68 @@ final class AgentTimeEntryMutationTest extends TestCase
         }
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.log', 'outcome' => 'replay']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.update', 'outcome' => 'failed', 'error_category' => 'conflict']);
+    }
+
+    public function test_client_visible_time_requires_explicit_client_facing_text(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'visible-without-text')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [[
+            'project_id' => $project->public_id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Internal implementation detail',
+            'is_visible_to_client' => true,
+        ]]])->assertUnprocessable()->assertJsonPath('message', 'Client-visible time requires an explicit client-facing description.');
+
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $contributor->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Internal implementation detail',
+        ]);
+        $this->withHeader('Idempotency-Key', 'visible-update-without-text')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
+            'expected_version' => AgentApiVersion::for($entry),
+            'is_visible_to_client' => true,
+        ])->assertUnprocessable()->assertJsonPath('message', 'Client-visible time requires an explicit client-facing description.');
+    }
+
+    public function test_project_viewer_cannot_log_time(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $viewer = User::factory()->create();
+        $this->member($workspace, $viewer);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $viewer->id, 'role' => 'viewer']);
+        $legacyDraft = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $viewer->id,
+            'worked_on' => '2026-08-22',
+            'minutes' => 15,
+            'description' => 'Created before role downgrade',
+        ]);
+        $this->actingAsAgent($viewer, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'viewer-time-denied')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [[
+            'project_id' => $project->public_id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Viewer may not log',
+        ]]])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'viewer-time-update-denied')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$legacyDraft->public_id}", [
+            'expected_version' => AgentApiVersion::for($legacyDraft),
+            'minutes' => 30,
+        ])->assertForbidden();
     }
 
     public function test_project_manager_can_approve_but_contributor_cannot(): void

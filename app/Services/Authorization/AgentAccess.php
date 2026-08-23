@@ -10,6 +10,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\ProjectRole;
 
 final class AgentAccess
 {
@@ -40,7 +41,14 @@ final class AgentAccess
 
     public function canViewTime(User|AgentPrincipal $user, ClientTimeEntry $entry): bool
     {
-        if ($this->projects->canView($user, $entry->project)) {
+        if ($this->isWorkspaceManager($user, $entry->workspace)) {
+            return true;
+        }
+        $role = $this->projects->projectRole($user, $entry->project);
+        if (in_array($role, [ProjectRole::Owner, ProjectRole::Manager], true)) {
+            return true;
+        }
+        if ($role === ProjectRole::Contributor && $entry->user_id === $user->id) {
             return true;
         }
 
@@ -60,7 +68,12 @@ final class AgentAccess
             && $this->isCompanyMember($user, $invoice->clientCompany);
     }
 
-    private function isCompanyMember(User|AgentPrincipal $user, ClientCompany $company): bool
+    public function isWorkspaceClient(User|AgentPrincipal $user, Workspace $workspace): bool
+    {
+        return $user->clientCompanies()->where('workspace_id', $workspace->id)->exists();
+    }
+
+    public function isCompanyMember(User|AgentPrincipal $user, ClientCompany $company): bool
     {
         return $company->portalUsers()->whereKey($user->id)->exists();
     }
