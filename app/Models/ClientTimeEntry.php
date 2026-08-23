@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @property int $id
@@ -36,7 +37,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, SoftDeletes;
 
     protected function casts(): array
     {
@@ -45,6 +46,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'minutes' => 'integer',
             'is_billable' => 'boolean',
             'is_deferred' => 'boolean',
+            'is_visible_to_client' => 'boolean',
             'billing_rate_amount' => 'integer',
             'approved_at' => 'immutable_datetime',
             'subcontractor_cost_amount' => 'integer',

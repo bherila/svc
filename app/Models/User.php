@@ -62,4 +62,13 @@ class User extends Authenticatable
             ->withPivot(['public_id', 'role'])
             ->withTimestamps();
     }
+
+    /** @return BelongsToMany<ClientProject, $this, ClientProjectMembership, 'pivot'> */
+    public function clientProjects(): BelongsToMany
+    {
+        return $this->belongsToMany(ClientProject::class, 'client_project_memberships')
+            ->using(ClientProjectMembership::class)
+            ->withPivot(['public_id', 'workspace_id', 'role'])
+            ->withTimestamps();
+    }
 }
