@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
@@ -69,3 +70,8 @@ Route::prefix('v1')
             ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
             ->name('invoices.show');
     });
+
+Route::options('/v1/mcp', AgentMcpController::class)->middleware('throttle:60,1')->name('agent-api.v1.mcp.options');
+Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
+    ->middleware(['auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1'])
+    ->name('agent-api.v1.mcp');
