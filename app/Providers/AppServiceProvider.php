@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
 use App\Models\Workspace;
 use App\Policies\ClientCompanyPolicy;
+use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Mail\MailManager;
@@ -33,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(ClientCompany::class, ClientCompanyPolicy::class);
+        Gate::policy(ClientProject::class, ClientProjectPolicy::class);
 
         $this->configureDefaults();
 

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -48,5 +49,14 @@ class ClientProject extends Model implements WorkspaceOwned
     public function tasks(): HasMany
     {
         return $this->hasMany(ClientTask::class);
+    }
+
+    /** @return BelongsToMany<User, $this, ClientProjectMembership, 'pivot'> */
+    public function members(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'client_project_memberships')
+            ->using(ClientProjectMembership::class)
+            ->withPivot(['public_id', 'workspace_id', 'role'])
+            ->withTimestamps();
     }
 }

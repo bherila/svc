@@ -31,7 +31,11 @@ class WorkspaceOperationsController extends Controller
 
         $timeEntriesByProject = $projectIds === []
             ? collect()
-            : ClientTimeEntry::query()
+            // The ranked derived table already applies ClientTimeEntry's soft-delete
+            // scope. Applying it a second time to the outer query would qualify
+            // `client_time_entries.deleted_at`, but that table is named
+            // `ranked_time_entries` at that level.
+            : ClientTimeEntry::withoutGlobalScopes()
                 ->fromSub(
                     ClientTimeEntry::query()
                         ->select('client_time_entries.*')

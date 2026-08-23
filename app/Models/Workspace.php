@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $name
  * @property string $slug
  */
-#[Fillable(['name', 'slug'])]
+#[Fillable(['name', 'slug', 'timezone', 'default_currency'])]
 class Workspace extends Model
 {
     use HasPublicId;
@@ -38,6 +38,12 @@ class Workspace extends Model
     public function clientCompanies(): HasMany
     {
         return $this->hasMany(ClientCompany::class);
+    }
+
+    /** @return HasMany<ClientProjectMembership, $this> */
+    public function projectMemberships(): HasMany
+    {
+        return $this->hasMany(ClientProjectMembership::class);
     }
 
     /** @return HasMany<PaymentReconciliation, $this> */
