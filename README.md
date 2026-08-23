@@ -77,6 +77,8 @@ GitHub-hosted `ubuntu-24.04-arm` runners and the protected `web1` environment:
 - Database: dedicated `bherila_svc` database and least-scope user
 - PHP: `ea-php85` for both the vhost and deployment Artisan commands
 - Private files: `storage/app/private/svc-blobs`, excluded from code-deploy deletion
+- OAuth signing keys: `storage/app/private/oauth`, generated once on the server and
+  excluded from code-deploy deletion
 
 The deployment installs the server-held `.env`, runs schema migrations, performs a
 write/read/delete probe against the private disk, checks the redacted Stripe status,
