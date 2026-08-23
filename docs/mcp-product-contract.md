@@ -6,12 +6,14 @@ they do not query Eloquent models directly.
 
 ## Scope and exclusions
 
-The first release lets authorized users view and manage project work, time, invoices,
-tasks, and attachment metadata. Project creation, archival, and deletion remain web
-application actions. File upload/download bytes and payment collection, initiation,
-recording, refunds, and provider identifiers are out of scope. Invoice responses may
-contain a role-authorized canonical browser URL so a user can continue a payment flow
-in the website.
+The operations v1 release lets authorized users view projects, tasks, time, and
+invoices. Its feature-gated write catalog manages tasks, draft time, time approval,
+invoice draft creation, and invoice issue/send/void workflows. Project creation,
+archival, and deletion remain website actions. Attachment metadata/download access,
+file uploads, and invoice draft update/discard are deferred from the currently shipped
+catalog. Payment collection, initiation, recording, refunds, card data, and provider
+identifiers are out of scope. Invoice responses contain a role-authorized browser URL
+so a user can continue a payment flow in the website.
 
 ## Roles
 
@@ -23,13 +25,19 @@ and see only records that existing client-visibility rules permit.
 
 ## Agent operations
 
-The initial catalog is `context.get`, `operations.summary`, project/task reads,
-time-entry list/log/update/delete/approve, invoice list/get/create_draft/update_draft/
-issue/send/void, and attachment metadata listing. There is no generic CRUD tool.
+The read catalog is `context.get`, `operations.summary`, `projects.list`,
+`projects.get`, `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`, and
+`invoices.get`. When the explicit write cutover flag is enabled, the additional tools
+are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
+`time_entries.delete`, `time_entries.approve`, `invoices.create_draft`,
+`invoices.issue`, `invoices.send`, and `invoices.void`. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
-Every mutable representation contains an opaque `version`; mutation requests require
-`expected_version` and an idempotency key. Cross-workspace identifiers resolve as 404.
+Every mutable representation contains an opaque `version`; updates and lifecycle
+transitions require `expected_version`. `time_entries.log` also requires an
+idempotency key. The write flag remains disabled until the shared mutation executor
+extends atomic idempotency, auditing, and revision guarantees to every applicable
+mutation. Cross-workspace identifiers resolve as 404.
 
 Time follows `draft -> approved -> invoiced`. A draft invoice may include manual lines
 and explicitly selected time-entry IDs only. Selected entries must be approved,
@@ -47,8 +55,14 @@ delivery actions additionally require `billing:deliver`.
 
 ## Safety and observability
 
-Mutation retries are keyed by OAuth client, user, operation, and idempotency key. An
-identical retry returns its original result; key reuse with another request body is a
-409 conflict. Audit events record actor, OAuth client, workspace, operation, affected
-public IDs, result, request ID, and timestamp only. Request/response bodies, free text,
-tokens, filenames, blob data, payment data, and provider identifiers are never logged.
+For operations that advertise idempotency, retries are keyed by OAuth client, user,
+operation, and idempotency key. An identical retry returns its original result; key
+reuse with another request body is a 409 conflict. The guarded write implementation is
+not activated until all mutations use the shared audit/mutation boundary. Audit events
+record actor, OAuth client, workspace, operation, affected public IDs, result, request
+ID, and timestamp only. Request/response bodies, free text, tokens, filenames, blob
+data, payment data, and provider identifiers are never logged.
+
+The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output schemas
+are packaged from each tool's declared REST success component and enforced at runtime;
+the MCP layer does not maintain a second response-schema tree.

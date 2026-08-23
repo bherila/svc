@@ -5,10 +5,14 @@ namespace App\Services\Mcp;
 use App\Services\AgentApi\Client\InternalAgentApiTransport;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
+use Mcp\Server\RequestContext;
 
 final class AgentMcpWriteTools
 {
-    public function __construct(private readonly InternalAgentApiTransport $api) {}
+    public function __construct(
+        private readonly InternalAgentApiTransport $api,
+        private readonly AgentMcpRequestArguments $requestArguments,
+    ) {}
 
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
@@ -18,9 +22,27 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string, mixed> */
-    public function timeEntriesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, ?string $worked_on = null, ?int $minutes = null, ?string $description = null): array
-    {
-        return $this->send('PATCH', "workspaces/{$workspace_id}/time-entries/{$entry_id}", array_filter(compact('expected_version', 'worked_on', 'minutes', 'description'), static fn (mixed $value): bool => $value !== null));
+    public function timeEntriesUpdate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $entry_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        RequestContext $context,
+        #[Schema(format: 'date')] ?string $worked_on = null,
+        #[Schema(minimum: 1, maximum: 1440)] ?int $minutes = null,
+        #[Schema(maxLength: 10000)] ?string $description = null,
+        ?bool $is_billable = null,
+        ?bool $is_deferred = null,
+        ?bool $is_visible_to_client = null,
+        #[Schema(maxLength: 10000)] ?string $client_visible_description = null,
+    ): array {
+        $body = compact('expected_version');
+        foreach (compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('PATCH', "workspaces/{$workspace_id}/time-entries/{$entry_id}", $body);
     }
 
     /** @return array<string, mixed> */
@@ -43,9 +65,24 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string, mixed> */
-    public function tasksUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, ?string $title = null, ?string $description = null, #[Schema(enum: ['open', 'in_progress', 'completed'])] ?string $status = null): array
-    {
-        return $this->send('PATCH', "workspaces/{$workspace_id}/tasks/{$task_id}", array_filter(compact('expected_version', 'title', 'description', 'status'), static fn (mixed $value): bool => $value !== null));
+    public function tasksUpdate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $task_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        RequestContext $context,
+        #[Schema(minLength: 1, maxLength: 255)] ?string $title = null,
+        #[Schema(maxLength: 10000)] ?string $description = null,
+        #[Schema(enum: ['open', 'in_progress', 'completed'])] ?string $status = null,
+        ?bool $is_visible_to_client = null,
+    ): array {
+        $body = compact('expected_version');
+        foreach (compact('title', 'description', 'status', 'is_visible_to_client') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('PATCH', "workspaces/{$workspace_id}/tasks/{$task_id}", $body);
     }
 
     /** @param list<string> $time_entry_ids
