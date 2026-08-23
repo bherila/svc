@@ -71,7 +71,9 @@ Route::prefix('v1')
             ->name('invoices.show');
     });
 
-Route::options('/v1/mcp', AgentMcpController::class)->middleware('throttle:60,1')->name('agent-api.v1.mcp.options');
+Route::options('/v1/mcp', static fn () => response()->noContent())
+    ->middleware('throttle:60,1')
+    ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
     ->middleware(['auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1'])
     ->name('agent-api.v1.mcp');
