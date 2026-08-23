@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentPrincipal;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -200,7 +201,7 @@ final class AgentReadController extends Controller
     }
 
     /** @return Builder<ClientProject> */
-    private function projectQuery(User $user, Workspace $workspace, AgentAccess $access): Builder
+    private function projectQuery(User|AgentPrincipal $user, Workspace $workspace, AgentAccess $access): Builder
     {
         $query = ClientProject::query()->where('workspace_id', $workspace->id);
         if ($access->isWorkspaceManager($user, $workspace)) {
@@ -213,15 +214,15 @@ final class AgentReadController extends Controller
         });
     }
 
-    private function workspace(User $user, Workspace $workspace, AgentAccess $access): void
+    private function workspace(User|AgentPrincipal $user, Workspace $workspace, AgentAccess $access): void
     {
         abort_unless($access->canViewWorkspace($user, $workspace), 404);
     }
 
-    private function user(Request $request): User
+    private function user(Request $request): User|AgentPrincipal
     {
         $user = $request->user();
-        abort_unless($user instanceof User, 401);
+        abort_unless($user instanceof User || $user instanceof AgentPrincipal, 401);
 
         return $user;
     }
@@ -299,7 +300,7 @@ final class AgentReadController extends Controller
     }
 
     /** @return list<string> */
-    private function capabilities(User $user, Workspace $workspace, AgentAccess $access): array
+    private function capabilities(User|AgentPrincipal $user, Workspace $workspace, AgentAccess $access): array
     {
         return $access->isWorkspaceManager($user, $workspace)
             ? ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'billing:read', 'billing:write', 'billing:deliver']

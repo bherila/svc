@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -13,7 +14,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
+use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 class AgentReadApiTest extends TestCase
@@ -32,7 +33,7 @@ class AgentReadApiTest extends TestCase
         $this->time($workspace, $company, $project, $other, 'Other work');
         $otherProject = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Unassigned']);
 
-        Sanctum::actingAs($contributor, [AgentApiScopes::PROJECTS_READ, AgentApiScopes::TIME_READ]);
+        $this->actingAsAgent($contributor, [AgentApiScopes::PROJECTS_READ, AgentApiScopes::TIME_READ]);
 
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $project->public_id);
@@ -55,7 +56,7 @@ class AgentReadApiTest extends TestCase
         $invoice = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'INV-1', 'status' => 'issued', 'currency' => 'USD', 'is_visible_to_client' => true]);
         ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'INV-2', 'status' => 'draft', 'currency' => 'USD', 'is_visible_to_client' => true]);
 
-        Sanctum::actingAs($client, [AgentApiScopes::TIME_READ, AgentApiScopes::BILLING_READ]);
+        $this->actingAsAgent($client, [AgentApiScopes::TIME_READ, AgentApiScopes::BILLING_READ]);
 
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $visible->public_id)
@@ -84,5 +85,11 @@ class AgentReadApiTest extends TestCase
     private function workspaceMember(Workspace $workspace, User $user, string $role): void
     {
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => $role]);
+    }
+
+    /** @param list<string> $scopes */
+    private function actingAsAgent(User $user, array $scopes): void
+    {
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
     }
 }

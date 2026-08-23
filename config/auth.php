@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AgentPrincipal;
 use App\Models\User;
 
 return [
@@ -42,6 +43,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'api' => [
+            'driver' => 'passport',
+            'provider' => 'agent-principals',
+        ],
     ],
 
     /*
@@ -65,6 +70,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'agent-principals' => [
+            'driver' => 'eloquent',
+            'model' => AgentPrincipal::class,
         ],
 
         // 'users' => [

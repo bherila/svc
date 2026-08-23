@@ -2,6 +2,7 @@
 
 namespace App\Services\Authorization;
 
+use App\Models\AgentPrincipal;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
@@ -10,14 +11,14 @@ use App\Support\AgentApi\ProjectRole;
 
 final class ProjectAccess
 {
-    public function workspaceRole(User $user, Workspace $workspace): ?string
+    public function workspaceRole(User|AgentPrincipal $user, Workspace $workspace): ?string
     {
         $role = $workspace->memberships()->where('user_id', $user->id)->value('role');
 
         return is_string($role) ? $role : null;
     }
 
-    public function projectRole(User $user, ClientProject $project): ?ProjectRole
+    public function projectRole(User|AgentPrincipal $user, ClientProject $project): ?ProjectRole
     {
         if ($this->isWorkspaceManager($user, $project->workspace)) {
             return ProjectRole::Owner;
@@ -36,22 +37,22 @@ final class ProjectAccess
         return is_string($role) ? ProjectRole::tryFrom($role) : null;
     }
 
-    public function canView(User $user, ClientProject $project): bool
+    public function canView(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project) !== null;
     }
 
-    public function canManageTasks(User $user, ClientProject $project): bool
+    public function canManageTasks(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project)?->canManageTasks() ?? false;
     }
 
-    public function canApproveTime(User $user, ClientProject $project): bool
+    public function canApproveTime(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project)?->canApproveTime() ?? false;
     }
 
-    public function isWorkspaceManager(User $user, Workspace $workspace): bool
+    public function isWorkspaceManager(User|AgentPrincipal $user, Workspace $workspace): bool
     {
         return in_array($this->workspaceRole($user, $workspace), ['owner', 'admin'], true);
     }
