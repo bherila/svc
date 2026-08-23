@@ -30,7 +30,14 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->member($workspace, $other);
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
         $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
-        $payload = ['entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 45, 'description' => 'Draft work']]];
+        $payload = ['entries' => [[
+            'project_id' => $project->public_id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 45,
+            'description' => 'Draft work',
+            'is_visible_to_client' => true,
+            'client_visible_description' => 'Client-safe work',
+        ]]];
 
         $first = $this->withHeader('Idempotency-Key', 'time-log-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", $payload)->assertCreated();
         $entry = $first->json('data.0');
@@ -39,8 +46,14 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->withHeader('Idempotency-Key', 'time-log-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [[...$payload['entries'][0], 'minutes' => 46]]])->assertConflict();
 
         $updated = $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 60])->assertOk()->json('data');
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry['id'], 'client_visible_description' => 'Client-safe work']);
         $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 90])->assertConflict();
-        $this->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $updated['version']])
+        $cleared = $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", [
+            'expected_version' => $updated['version'],
+            'client_visible_description' => null,
+        ])->assertOk()->json('data');
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry['id'], 'client_visible_description' => null]);
+        $this->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $cleared['version']])
             ->assertOk()->assertJsonPath('data.deleted_id', $entry['id']);
         $this->assertSoftDeleted('client_time_entries', ['public_id' => $entry['id']]);
     }

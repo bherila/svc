@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 final class TimeEntryMutationService
@@ -42,11 +43,10 @@ final class TimeEntryMutationService
     public function update(Workspace $workspace, ClientTimeEntry $entry, User $actor, array $data): ClientTimeEntry
     {
         $this->assertDraftEditable($workspace, $entry, $actor);
-        $attributes = array_filter([
-            'worked_on' => $data['worked_on'] ?? null, 'minutes' => $data['minutes'] ?? null, 'description' => $data['description'] ?? null,
-            'is_billable' => $data['is_billable'] ?? null, 'is_deferred' => $data['is_deferred'] ?? null,
-            'is_visible_to_client' => $data['is_visible_to_client'] ?? null, 'client_visible_description' => $data['client_visible_description'] ?? null,
-        ], static fn (mixed $value): bool => $value !== null);
+        $attributes = Arr::only($data, [
+            'worked_on', 'minutes', 'description', 'is_billable', 'is_deferred',
+            'is_visible_to_client', 'client_visible_description',
+        ]);
         abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
         $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
         abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');

@@ -10,14 +10,14 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationReceiptService;
 use App\Services\AgentApi\TimeEntryMutationService;
-use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Passport\AccessToken;
 
 final class AgentTimeEntryMutationController extends Controller
 {
-    public function store(Request $request, Workspace $workspace, AgentMutationReceiptService $receipts, TimeEntryMutationService $time): JsonResponse
+    public function store(Request $request, Workspace $workspace, AgentMutationReceiptService $receipts, TimeEntryMutationService $time, AgentTimeEntryPresenter $presenter): JsonResponse
     {
         $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*.project_id' => ['required', 'uuid'], 'entries.*.task_id' => ['nullable', 'uuid'], 'entries.*.worked_on' => ['required', 'date_format:Y-m-d'], 'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'], 'entries.*.description' => ['required', 'string', 'max:10000'], 'entries.*.is_billable' => ['sometimes', 'boolean'], 'entries.*.is_deferred' => ['sometimes', 'boolean'], 'entries.*.is_visible_to_client' => ['sometimes', 'boolean'], 'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'], 'entries.*.currency' => ['nullable', 'string', 'size:3']]);
         $user = $this->user($request);
@@ -35,16 +35,16 @@ final class AgentTimeEntryMutationController extends Controller
         });
         $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get();
 
-        return response()->json(['data' => $entries->map(fn (ClientTimeEntry $entry): array => $this->payload($workspace, $entry))->values()], 201);
+        return response()->json(['data' => $entries->map(fn (ClientTimeEntry $entry): array => $presenter->present($workspace, $entry))->values()], 201);
     }
 
-    public function update(Request $request, Workspace $workspace, string $entry, TimeEntryMutationService $time): JsonResponse
+    public function update(Request $request, Workspace $workspace, string $entry, TimeEntryMutationService $time, AgentTimeEntryPresenter $presenter): JsonResponse
     {
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'worked_on' => ['sometimes', 'date_format:Y-m-d'], 'minutes' => ['sometimes', 'integer', 'min:1', 'max:1440'], 'description' => ['sometimes', 'string', 'max:10000'], 'is_billable' => ['sometimes', 'boolean'], 'is_deferred' => ['sometimes', 'boolean'], 'is_visible_to_client' => ['sometimes', 'boolean'], 'client_visible_description' => ['nullable', 'string', 'max:10000']]);
         $record = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $entry)->firstOrFail();
         $record = $time->update($workspace, $record, $this->user($request), $data);
 
-        return response()->json(['data' => $this->payload($workspace, $record)]);
+        return response()->json(['data' => $presenter->present($workspace, $record)]);
     }
 
     public function destroy(Request $request, Workspace $workspace, string $entry, TimeEntryMutationService $time): JsonResponse
@@ -79,11 +79,5 @@ final class AgentTimeEntryMutationController extends Controller
         $id = $attributes['client_id'] ?? null;
 
         return is_string($id) && $id !== '' ? $id : 'testing-client';
-    }
-
-    /** @return array<string, mixed> */
-    private function payload(Workspace $workspace, ClientTimeEntry $entry): array
-    {
-        return ['id' => $entry->public_id, 'project_id' => $entry->project->public_id, 'task_id' => $entry->task?->public_id, 'worked_on' => $entry->worked_on->toDateString(), 'minutes' => $entry->minutes, 'description' => $entry->description, 'is_billable' => $entry->is_billable, 'is_deferred' => $entry->is_deferred, 'status' => $entry->status, 'version' => AgentApiVersion::for($entry), 'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id];
     }
 }

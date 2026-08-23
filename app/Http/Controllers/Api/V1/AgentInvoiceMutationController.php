@@ -15,12 +15,13 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\InvoiceNumberAllocator;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 final class AgentInvoiceMutationController extends Controller
 {
-    public function createDraft(Request $request, Workspace $workspace, AgentAccess $access, InvoiceFromTimeService $fromTime, InvoiceNumberAllocator $numbers): JsonResponse
+    public function createDraft(Request $request, Workspace $workspace, AgentAccess $access, InvoiceFromTimeService $fromTime, InvoiceNumberAllocator $numbers, AgentInvoicePresenter $presenter): JsonResponse
     {
         $data = $request->validate(['company_id' => ['required', 'uuid'], 'currency' => ['nullable', 'string', 'size:3'], 'due_date' => ['nullable', 'date'], 'notes' => ['nullable', 'string', 'max:10000'], 'time_entry_ids' => ['array', 'max:100'], 'time_entry_ids.*' => ['uuid', 'distinct'], 'manual_lines' => ['array', 'max:100'], 'manual_lines.*.project_id' => ['nullable', 'uuid'], 'manual_lines.*.type' => ['required', 'string', 'max:40'], 'manual_lines.*.description' => ['required', 'string', 'max:10000'], 'manual_lines.*.quantity' => ['required'], 'manual_lines.*.unit_amount' => ['required', 'integer', 'min:0'], 'manual_lines.*.tax_amount' => ['nullable', 'integer', 'min:0']]);
         $user = $this->user($request);
@@ -44,37 +45,37 @@ final class AgentInvoiceMutationController extends Controller
         }
         $invoice = $fromTime->create($workspace, $company, ['invoice_number' => $numbers->next($workspace), 'currency' => strtoupper($data['currency'] ?? $workspace->default_currency), 'due_date' => $data['due_date'] ?? null, 'notes' => $data['notes'] ?? null], $data['time_entry_ids'] ?? [], $lines);
 
-        return response()->json(['data' => $this->payload($workspace, $invoice)], 201);
+        return response()->json(['data' => $presenter->mutation($workspace, $invoice)], 201);
     }
 
-    public function issue(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle): JsonResponse
+    public function issue(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle, AgentInvoicePresenter $presenter): JsonResponse
     {
         $record = $this->invoice($workspace, $invoice, $access, $request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'confirm' => ['accepted']]);
         abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
         $record = $lifecycle->issue($record, $workspace);
 
-        return response()->json(['data' => $this->payload($workspace, $record)]);
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
-    public function void(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle): JsonResponse
+    public function void(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle, AgentInvoicePresenter $presenter): JsonResponse
     {
         $record = $this->invoice($workspace, $invoice, $access, $request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['accepted']]);
         abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
         $record = $lifecycle->void($record, $workspace);
 
-        return response()->json(['data' => $this->payload($workspace, $record)]);
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
-    public function send(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceEmailService $email): JsonResponse
+    public function send(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceEmailService $email, AgentInvoicePresenter $presenter): JsonResponse
     {
         $record = $this->invoice($workspace, $invoice, $access, $request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'recipients' => ['required', 'array', 'min:1', 'max:10'], 'recipients.*' => ['email'], 'confirm' => ['accepted']]);
         abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
         $email->queue($record, $data['recipients'], $workspace);
 
-        return response()->json(['data' => $this->payload($workspace, $record)]);
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
     private function invoice(Workspace $workspace, string $id, AgentAccess $access, Request $request): ClientInvoice
@@ -91,11 +92,5 @@ final class AgentInvoiceMutationController extends Controller
         abort_unless($p instanceof AgentPrincipal, 401);
 
         return User::query()->findOrFail($p->id);
-    }
-
-    /** @return array<string,mixed> */
-    private function payload(Workspace $workspace, ClientInvoice $invoice): array
-    {
-        return ['id' => $invoice->public_id, 'status' => $invoice->status, 'invoice_number' => $invoice->invoice_number, 'version' => AgentApiVersion::for($invoice), 'web_url' => route('svc.billing.invoices.show', [$workspace, $invoice])];
     }
 }

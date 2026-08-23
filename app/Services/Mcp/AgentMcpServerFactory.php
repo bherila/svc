@@ -22,6 +22,7 @@ final class AgentMcpServerFactory
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
+        private readonly AgentMcpRequestArguments $requestArguments,
     ) {}
 
     public function make(Request $request): Server
@@ -32,10 +33,12 @@ final class AgentMcpServerFactory
             ->setServerInfo(
                 name: 'SVC Agent API',
                 version: 'v1',
-                description: 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
+                description: (bool) config('agent_api.writes_enabled')
+                    ? 'Read and safely manage authorized SVC tasks, time, and invoices through the versioned REST API.'
+                    : 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
                 websiteUrl: url('/'),
             )
-            ->setInstructions('Authenticate using OAuth Authorization Code with S256 PKCE. First call context.get; select an ID returned there and never guess a workspace or resource ID. This release is read-only. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, or file blobs through MCP.')
+            ->setInstructions($this->instructions())
             ->setPaginationLimit(100)
             ->setSession(new Psr16SessionStore($this->cache, 'svc_mcp_'.hash('sha256', $this->tokenIdentity($request)).'_', (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
@@ -44,7 +47,7 @@ final class AgentMcpServerFactory
             ->setRegistry($registry)
             ->setReferenceHandler(new ReferenceHandler(app()))
             ->addRequestHandler(new AgentMcpValidatedCallToolHandler(
-                new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new SchemaValidator($logger)),
+                new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new AgentMcpSchemaValidator($logger, $this->requestArguments)),
                 $registry,
                 new SchemaValidator($logger),
             ))
@@ -70,5 +73,15 @@ final class AgentMcpServerFactory
         $token = $request->bearerToken();
 
         return is_string($token) && $token !== '' ? $token : 'preflight';
+    }
+
+    private function instructions(): string
+    {
+        $base = 'Authenticate using OAuth Authorization Code with S256 PKCE. First call context.get; select an ID returned there and never guess a workspace or resource ID.';
+        $mode = (bool) config('agent_api.writes_enabled')
+            ? 'Task, time, and invoice workflow writes are enabled. Read the current record before mutation, supply its opaque version when required, and obtain explicit user confirmation before issue, send, or void.'
+            : 'This release is read-only; use the SVC website for changes.';
+
+        return $base.' '.$mode.' Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.';
     }
 }

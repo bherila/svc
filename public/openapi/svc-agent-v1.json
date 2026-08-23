@@ -1,16 +1,253 @@
 {
   "openapi": "3.1.0",
-  "info": {"title": "SVC Agent API", "version": "v1"},
+  "info": {
+    "title": "SVC Agent API",
+    "version": "1.0.0",
+    "description": "Versioned OAuth API for role-filtered project, task, time, and invoice operations. Payments, project mutations, and file uploads are outside v1."
+  },
   "servers": [{"url": "https://svc.bherila.net/api/v1"}],
   "paths": {
-    "/context": {"get": {"operationId": "context.get", "responses": {"200": {"description": "Authorized context"}}}},
-    "/workspaces/{workspace}/summary": {"get": {"operationId": "operations.summary", "responses": {"200": {"description": "Role-sensitive summary"}}}},
-    "/workspaces/{workspace}/projects": {"get": {"operationId": "projects.list", "responses": {"200": {"description": "Bounded projects"}}}},
-    "/workspaces/{workspace}/projects/{project}": {"get": {"operationId": "projects.get", "responses": {"200": {"description": "Project"}}}},
-    "/workspaces/{workspace}/tasks": {"get": {"operationId": "tasks.list", "responses": {"200": {"description": "Bounded tasks"}}}},
-    "/workspaces/{workspace}/tasks/{task}": {"get": {"operationId": "tasks.get", "responses": {"200": {"description": "Task"}}}},
-    "/workspaces/{workspace}/time-entries": {"get": {"operationId": "time_entries.list", "responses": {"200": {"description": "Bounded time entries"}}}},
-    "/workspaces/{workspace}/invoices": {"get": {"operationId": "invoices.list", "responses": {"200": {"description": "Bounded invoices"}}}},
-    "/workspaces/{workspace}/invoices/{invoice}": {"get": {"operationId": "invoices.get", "responses": {"200": {"description": "Invoice"}}}}
+    "/context": {"get": {
+      "operationId": "context.get", "security": [{"oauth2": ["identity:read"]}],
+      "responses": {"200": {"description": "Authorized context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContextResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/connections/{token}": {"delete": {
+      "operationId": "connections.revoke", "security": [{"oauth2": ["mcp:use"]}],
+      "parameters": [{"$ref": "#/components/parameters/TokenId"}],
+      "responses": {"204": {"description": "Connection revoked"}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/summary": {"get": {
+      "operationId": "operations.summary", "security": [{"oauth2": ["identity:read"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
+      "responses": {"200": {"description": "Role-sensitive summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SummaryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/projects": {"get": {
+      "operationId": "projects.list", "security": [{"oauth2": ["projects:read"]}],
+      "parameters": [
+        {"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"},
+        {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["active", "archived", "completed"]}},
+        {"name": "query", "in": "query", "schema": {"type": "string", "maxLength": 200}}
+      ],
+      "responses": {"200": {"description": "Authorized projects", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/projects/{project_id}": {"get": {
+      "operationId": "projects.get", "security": [{"oauth2": ["projects:read"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}],
+      "responses": {"200": {"description": "Authorized project detail", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks": {"post": {
+      "operationId": "tasks.create", "security": [{"oauth2": ["tasks:write"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskCreateRequest"}}}},
+      "responses": {"201": {"description": "Task created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/tasks": {"get": {
+      "operationId": "tasks.list", "security": [{"oauth2": ["tasks:read"]}],
+      "parameters": [
+        {"$ref": "#/components/parameters/WorkspaceId"},
+        {"name": "project_id", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+        {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}
+      ],
+      "responses": {"200": {"description": "Authorized tasks", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/tasks/{task_id}": {
+      "get": {
+        "operationId": "tasks.get", "security": [{"oauth2": ["tasks:read"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}],
+        "responses": {"200": {"description": "Authorized task", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "patch": {
+        "operationId": "tasks.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
+        "security": [{"oauth2": ["tasks:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskUpdateRequest"}}}},
+        "responses": {"200": {"description": "Task updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/workspaces/{workspace_id}/time-entries": {
+      "get": {
+        "operationId": "time_entries.list", "security": [{"oauth2": ["time:read"]}],
+        "parameters": [
+          {"$ref": "#/components/parameters/WorkspaceId"},
+          {"name": "project_id", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+          {"name": "status", "in": "query", "schema": {"$ref": "#/components/schemas/TimeStatus"}},
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}
+        ],
+        "responses": {"200": {"description": "Authorized time entries", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "operationId": "time_entries.log", "security": [{"oauth2": ["time:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeLogRequest"}}}},
+        "responses": {"201": {"description": "Time entries logged or replayed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryBatchResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/workspaces/{workspace_id}/time-entries/{entry_id}": {
+      "patch": {
+        "operationId": "time_entries.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
+        "security": [{"oauth2": ["time:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeUpdateRequest"}}}},
+        "responses": {"200": {"description": "Draft time updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "delete": {
+        "operationId": "time_entries.delete", "security": [{"oauth2": ["time:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},
+        "responses": {"200": {"description": "Draft time soft-deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/workspaces/{workspace_id}/time-entries/approve": {"post": {
+      "operationId": "time_entries.approve", "security": [{"oauth2": ["time:approve"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeApprovalRequest"}}}},
+      "responses": {"200": {"description": "Time entries approved", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ApprovalResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/invoices": {
+      "get": {
+        "operationId": "invoices.list", "security": [{"oauth2": ["billing:read"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"name": "status", "in": "query", "schema": {"$ref": "#/components/schemas/InvoiceStatus"}}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
+        "responses": {"200": {"description": "Authorized invoices", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "operationId": "invoices.create_draft", "security": [{"oauth2": ["billing:write"]}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceCreateRequest"}}}},
+        "responses": {"201": {"description": "Invoice draft created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/workspaces/{workspace_id}/invoices/{invoice_id}": {"get": {
+      "operationId": "invoices.get", "security": [{"oauth2": ["billing:read"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "responses": {"200": {"description": "Authorized invoice with browser payment URL", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/invoices/{invoice_id}/issue": {"post": {
+      "operationId": "invoices.issue", "security": [{"oauth2": ["billing:deliver"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ConfirmedVersionRequest"}}}},
+      "responses": {"200": {"description": "Invoice issued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/invoices/{invoice_id}/send": {"post": {
+      "operationId": "invoices.send", "security": [{"oauth2": ["billing:deliver"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceSendRequest"}}}},
+      "responses": {"200": {"description": "Invoice delivery queued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }},
+    "/workspaces/{workspace_id}/invoices/{invoice_id}/void": {"post": {
+      "operationId": "invoices.void", "security": [{"oauth2": ["billing:deliver"]}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceVoidRequest"}}}},
+      "responses": {"200": {"description": "Invoice voided", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+    }}
+  },
+  "components": {
+    "securitySchemes": {"oauth2": {
+      "type": "oauth2", "description": "Authorization code with S256 PKCE and interactive Bherila.net login.",
+      "flows": {"authorizationCode": {
+        "authorizationUrl": "https://svc.bherila.net/oauth/authorize", "tokenUrl": "https://svc.bherila.net/oauth/token",
+        "scopes": {
+          "mcp:use": "Connect through MCP", "identity:read": "Read identity and workspaces", "projects:read": "Read projects",
+          "tasks:read": "Read tasks", "tasks:write": "Create and update tasks", "time:read": "Read time",
+          "time:write": "Log and manage draft time", "time:approve": "Approve project time", "billing:read": "Read invoices",
+          "billing:write": "Create invoice drafts", "billing:deliver": "Issue, send, and void invoices"
+        }
+      }}
+    }},
+    "parameters": {
+      "WorkspaceId": {"name": "workspace_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "ProjectId": {"name": "project_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "TaskId": {"name": "task_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "TimeEntryId": {"name": "entry_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "InvoiceId": {"name": "invoice_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "TokenId": {"name": "token", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 100}},
+      "Limit": {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}},
+      "Cursor": {"name": "cursor", "in": "query", "schema": {"type": "string", "maxLength": 2048}},
+      "IdempotencyKey": {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 255}}
+    },
+    "responses": {"Error": {"description": "OAuth, authorization, tenant, conflict, validation, or rate-limit error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}},
+    "schemas": {
+      "Error": {"type": "object", "additionalProperties": false, "required": ["message"], "properties": {"message": {"type": "string"}, "errors": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}}}},
+      "Uuid": {"type": "string", "format": "uuid"},
+      "Version": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+      "Currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+      "TimeStatus": {"type": "string", "enum": ["draft", "approved", "invoiced"]},
+      "InvoiceStatus": {"type": "string", "enum": ["draft", "issued", "partially_paid", "paid", "void"]},
+      "PaginationMeta": {"type": "object", "additionalProperties": false, "required": ["next_cursor"], "properties": {"next_cursor": {"type": ["string", "null"]}}},
+      "WorkspaceContext": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "name", "timezone", "default_currency", "workspace_role", "capabilities", "web_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "timezone": {"type": "string"}, "default_currency": {"$ref": "#/components/schemas/Currency"}, "workspace_role": {"type": ["string", "null"]}, "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}, "web_url": {"type": "string", "format": "uri"}}
+      },
+      "Context": {"type": "object", "additionalProperties": false, "required": ["id", "name", "workspaces"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "workspaces": {"type": "array", "items": {"$ref": "#/components/schemas/WorkspaceContext"}}}},
+      "ContextResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Context"}}},
+      "SummaryTime": {"type": "object", "additionalProperties": false, "required": ["draft_minutes", "approved_minutes", "unbilled_minutes"], "properties": {"draft_minutes": {"type": "integer"}, "approved_minutes": {"type": "integer"}, "unbilled_minutes": {"type": "integer"}}},
+      "SummaryInvoices": {"type": "object", "additionalProperties": false, "required": ["draft_count", "overdue_count", "outstanding_amount", "currency"], "properties": {"draft_count": {"type": "integer"}, "overdue_count": {"type": "integer"}, "outstanding_amount": {"type": "integer"}, "currency": {"$ref": "#/components/schemas/Currency"}}},
+      "Summary": {"type": "object", "additionalProperties": false, "required": ["workspace_id", "active_projects", "time", "invoices"], "properties": {"workspace_id": {"$ref": "#/components/schemas/Uuid"}, "active_projects": {"type": "integer"}, "time": {"$ref": "#/components/schemas/SummaryTime"}, "invoices": {"$ref": "#/components/schemas/SummaryInvoices"}}},
+      "SummaryResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Summary"}}},
+      "Project": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "company_id", "name", "description", "status", "is_visible_to_client", "version", "web_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "status": {"type": "string"}, "is_visible_to_client": {"type": "boolean"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}}
+      },
+      "ProjectDetail": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "company_id", "name", "description", "status", "is_visible_to_client", "version", "web_url", "tasks"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "status": {"type": "string"}, "is_visible_to_client": {"type": "boolean"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "tasks": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}
+      },
+      "ProjectListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Project"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
+      "ProjectDetailResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ProjectDetail"}}},
+      "Task": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "project_id", "title", "description", "status", "is_visible_to_client", "completed_at", "version", "web_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "project_id": {"$ref": "#/components/schemas/Uuid"}, "title": {"type": "string"}, "description": {"type": ["string", "null"]}, "status": {"type": "string", "enum": ["open", "in_progress", "completed"]}, "is_visible_to_client": {"type": "boolean"}, "completed_at": {"type": ["string", "null"], "format": "date-time"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}}
+      },
+      "TaskListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
+      "TaskResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Task"}}},
+      "TaskCreateRequest": {"type": "object", "additionalProperties": false, "required": ["title"], "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 255}, "description": {"type": ["string", "null"], "maxLength": 10000}, "is_visible_to_client": {"type": "boolean"}}},
+      "TaskUpdateRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "title": {"type": "string", "minLength": 1, "maxLength": 255}, "description": {"type": ["string", "null"], "maxLength": 10000}, "status": {"type": "string", "enum": ["open", "in_progress", "completed"]}, "is_visible_to_client": {"type": "boolean"}}},
+      "TimeEntry": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "project_id", "task_id", "worked_on", "minutes", "description", "is_billable", "is_deferred", "status", "version", "web_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "project_id": {"$ref": "#/components/schemas/Uuid"}, "task_id": {"type": ["string", "null"], "format": "uuid"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer"}, "description": {"type": ["string", "null"]}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "status": {"$ref": "#/components/schemas/TimeStatus"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "billing_rate_amount": {"type": ["integer", "null"]}, "currency": {"$ref": "#/components/schemas/Currency"}}
+      },
+      "TimeEntryListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/TimeEntry"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
+      "TimeEntryResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/TimeEntry"}}},
+      "TimeEntryBatchResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/TimeEntry"}}}},
+      "TimeLogItem": {
+        "type": "object", "additionalProperties": false, "required": ["project_id", "worked_on", "minutes", "description"],
+        "properties": {"project_id": {"$ref": "#/components/schemas/Uuid"}, "task_id": {"type": ["string", "null"], "format": "uuid"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "minLength": 1, "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "maxLength": 10000}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}}
+      },
+      "TimeLogRequest": {"type": "object", "additionalProperties": false, "required": ["entries"], "properties": {"entries": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/components/schemas/TimeLogItem"}}}},
+      "TimeUpdateRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "worked_on": {"type": "string", "format": "date"}, "minutes": {"type": "integer", "minimum": 1, "maximum": 1440}, "description": {"type": "string", "maxLength": 10000}, "is_billable": {"type": "boolean"}, "is_deferred": {"type": "boolean"}, "is_visible_to_client": {"type": "boolean"}, "client_visible_description": {"type": ["string", "null"], "maxLength": 10000}}},
+      "ExpectedVersionRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}}},
+      "TimeApprovalItem": {"type": "object", "additionalProperties": false, "required": ["id", "expected_version"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "expected_version": {"$ref": "#/components/schemas/Version"}}},
+      "TimeApprovalRequest": {"type": "object", "additionalProperties": false, "required": ["entries"], "properties": {"entries": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/components/schemas/TimeApprovalItem"}}}},
+      "DeletionReceipt": {"type": "object", "additionalProperties": false, "required": ["deleted_id"], "properties": {"deleted_id": {"$ref": "#/components/schemas/Uuid"}}},
+      "DeletionResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/DeletionReceipt"}}},
+      "ApprovalReceipt": {"type": "object", "additionalProperties": false, "required": ["approved_ids"], "properties": {"approved_ids": {"type": "array", "items": {"$ref": "#/components/schemas/Uuid"}, "uniqueItems": true}}},
+      "ApprovalResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ApprovalReceipt"}}},
+      "Invoice": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "company_id", "invoice_number", "status", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}}
+      },
+      "InvoiceLine": {"type": "object", "additionalProperties": false, "required": ["id", "project_id", "type", "description", "quantity", "unit_amount", "tax_amount", "total_amount"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "project_id": {"type": ["string", "null"], "format": "uuid"}, "type": {"type": "string"}, "description": {"type": "string"}, "quantity": {"type": "string"}, "unit_amount": {"type": "integer"}, "tax_amount": {"type": "integer"}, "total_amount": {"type": "integer"}}},
+      "InvoiceDetail": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "company_id", "invoice_number", "status", "currency", "total_amount", "paid_amount", "balance_amount", "issue_date", "due_date", "version", "web_url", "pdf_url", "lines"],
+        "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "company_id": {"$ref": "#/components/schemas/Uuid"}, "invoice_number": {"type": "string"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "currency": {"$ref": "#/components/schemas/Currency"}, "total_amount": {"type": "integer"}, "paid_amount": {"type": "integer"}, "balance_amount": {"type": "integer"}, "issue_date": {"type": ["string", "null"], "format": "date"}, "due_date": {"type": ["string", "null"], "format": "date"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}, "pdf_url": {"type": "string", "format": "uri"}, "notes": {"type": ["string", "null"]}, "lines": {"type": "array", "items": {"$ref": "#/components/schemas/InvoiceLine"}}}
+      },
+      "InvoiceListResponse": {"type": "object", "additionalProperties": false, "required": ["data", "meta"], "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Invoice"}}, "meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
+      "InvoiceDetailResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/InvoiceDetail"}}},
+      "InvoiceMutation": {"type": "object", "additionalProperties": false, "required": ["id", "status", "invoice_number", "version", "web_url"], "properties": {"id": {"$ref": "#/components/schemas/Uuid"}, "status": {"$ref": "#/components/schemas/InvoiceStatus"}, "invoice_number": {"type": "string"}, "version": {"$ref": "#/components/schemas/Version"}, "web_url": {"type": "string", "format": "uri"}}},
+      "InvoiceMutationResponse": {"type": "object", "additionalProperties": false, "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/InvoiceMutation"}}},
+      "InvoiceManualLine": {"type": "object", "additionalProperties": false, "required": ["type", "description", "quantity", "unit_amount"], "properties": {"project_id": {"type": ["string", "null"], "format": "uuid"}, "type": {"type": "string", "minLength": 1, "maxLength": 40}, "description": {"type": "string", "minLength": 1, "maxLength": 10000}, "quantity": {"type": ["string", "number", "integer"]}, "unit_amount": {"type": "integer", "minimum": 0}, "tax_amount": {"type": ["integer", "null"], "minimum": 0}}},
+      "InvoiceCreateRequest": {"type": "object", "additionalProperties": false, "required": ["company_id"], "properties": {"company_id": {"$ref": "#/components/schemas/Uuid"}, "currency": {"type": ["string", "null"], "pattern": "^[A-Za-z]{3}$"}, "due_date": {"type": ["string", "null"], "format": "date"}, "notes": {"type": ["string", "null"], "maxLength": 10000}, "time_entry_ids": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"$ref": "#/components/schemas/Uuid"}}, "manual_lines": {"type": "array", "maxItems": 100, "items": {"$ref": "#/components/schemas/InvoiceManualLine"}}}},
+      "ConfirmedVersionRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}}},
+      "InvoiceSendRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "recipients"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "recipients": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string", "format": "email"}}}},
+      "InvoiceVoidRequest": {"type": "object", "additionalProperties": false, "required": ["expected_version", "confirm", "reason"], "properties": {"expected_version": {"$ref": "#/components/schemas/Version"}, "confirm": {"type": "boolean", "const": true}, "reason": {"type": "string", "minLength": 1, "maxLength": 1000}}}
+    }
   }
 }

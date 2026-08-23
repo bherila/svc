@@ -13,13 +13,23 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
-use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 final class AgentReadController extends Controller
 {
+    public function __construct(
+        private readonly AgentProjectPresenter $projects,
+        private readonly AgentTaskPresenter $tasks,
+        private readonly AgentTimeEntryPresenter $timeEntries,
+        private readonly AgentInvoicePresenter $invoices,
+    ) {}
+
     public function context(Request $request, AgentAccess $access, ProjectAccess $projects): JsonResponse
     {
         $user = $this->user($request);
@@ -96,9 +106,9 @@ final class AgentReadController extends Controller
         $record = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $project)->with(['clientCompany', 'tasks'])->firstOrFail();
         abort_unless($access->canViewProject($user, $record), 404);
 
-        return response()->json(['data' => $this->projectPayload($workspace, $record) + [
+        return response()->json(['data' => $this->projects->present($workspace, $record) + [
             'tasks' => $record->tasks->filter(fn (ClientTask $task): bool => $access->canViewTask($user, $task))
-                ->map(fn (ClientTask $task): array => $this->taskPayload($workspace, $task))->values(),
+                ->map(fn (ClientTask $task): array => $this->tasks->present($workspace, $task))->values(),
         ]]);
     }
 
@@ -119,7 +129,7 @@ final class AgentReadController extends Controller
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
         $next = $records->count() > $this->limit($request) ? $records->pop() : null;
 
-        return response()->json(['data' => $records->map(fn (ClientTask $task): array => $this->taskPayload($workspace, $task))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
+        return response()->json(['data' => $records->map(fn (ClientTask $task): array => $this->tasks->present($workspace, $task))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
     }
 
     public function task(Request $request, Workspace $workspace, string $task, AgentAccess $access): JsonResponse
@@ -129,7 +139,7 @@ final class AgentReadController extends Controller
         $record = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $task)->with('project.clientCompany')->firstOrFail();
         abort_unless($access->canViewTask($user, $record), 404);
 
-        return response()->json(['data' => $this->taskPayload($workspace, $record)]);
+        return response()->json(['data' => $this->tasks->present($workspace, $record)]);
     }
 
     public function timeEntries(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
@@ -159,7 +169,9 @@ final class AgentReadController extends Controller
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
         $next = $records->count() > $this->limit($request) ? $records->pop() : null;
 
-        return response()->json(['data' => $records->map(fn (ClientTimeEntry $entry): array => $this->timePayload($workspace, $entry, $access->isWorkspaceManager($user, $workspace)))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
+        $includeFinancials = $access->isWorkspaceManager($user, $workspace);
+
+        return response()->json(['data' => $records->map(fn (ClientTimeEntry $entry): array => $this->timeEntries->present($workspace, $entry, $includeFinancials, $entry->is_visible_to_client))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
     }
 
     public function invoices(Request $request, Workspace $workspace, AgentAccess $access): JsonResponse
@@ -177,7 +189,9 @@ final class AgentReadController extends Controller
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
         $next = $records->count() > $this->limit($request) ? $records->pop() : null;
 
-        return response()->json(['data' => $records->map(fn (ClientInvoice $invoice): array => $this->invoicePayload($workspace, $invoice, $access->isWorkspaceManager($user, $workspace)))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
+        $includeNotes = $access->isWorkspaceManager($user, $workspace);
+
+        return response()->json(['data' => $records->map(fn (ClientInvoice $invoice): array => $this->invoices->present($workspace, $invoice, $includeNotes))->values(), 'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())]]);
     }
 
     public function invoice(Request $request, Workspace $workspace, string $invoice, AgentAccess $access): JsonResponse
@@ -187,7 +201,7 @@ final class AgentReadController extends Controller
         $record = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $invoice)->with(['clientCompany', 'lines'])->firstOrFail();
         abort_unless($access->canViewInvoice($user, $record), 404);
 
-        return response()->json(['data' => $this->invoicePayload($workspace, $record, $access->isWorkspaceManager($user, $workspace)) + [
+        return response()->json(['data' => $this->invoices->present($workspace, $record, $access->isWorkspaceManager($user, $workspace)) + [
             'lines' => $record->lines->map(fn ($line): array => [
                 'id' => $line->public_id,
                 'project_id' => $line->project?->public_id,
@@ -240,7 +254,7 @@ final class AgentReadController extends Controller
         $next = $records->count() > $limit ? $records->pop() : null;
 
         return response()->json([
-            'data' => $records->map(fn (ClientProject $project): array => $this->projectPayload($workspace, $project))->values(),
+            'data' => $records->map(fn (ClientProject $project): array => $this->projects->present($workspace, $project))->values(),
             'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $records->last()->getKey())],
         ]);
     }
@@ -264,40 +278,6 @@ final class AgentReadController extends Controller
         }
 
         return $query;
-    }
-
-    /** @return array<string, mixed> */
-    private function projectPayload(Workspace $workspace, ClientProject $project): array
-    {
-        return ['id' => $project->public_id, 'company_id' => $project->clientCompany->public_id, 'name' => $project->name, 'description' => $project->description, 'status' => $project->status, 'is_visible_to_client' => $project->is_visible_to_client, 'version' => AgentApiVersion::for($project), 'web_url' => route('workspaces.operations', $workspace).'?project='.$project->public_id];
-    }
-
-    /** @return array<string, mixed> */
-    private function taskPayload(Workspace $workspace, ClientTask $task): array
-    {
-        return ['id' => $task->public_id, 'project_id' => $task->project->public_id, 'title' => $task->title, 'description' => $task->description, 'status' => $task->status, 'is_visible_to_client' => $task->is_visible_to_client, 'completed_at' => $task->completed_at?->toAtomString(), 'version' => AgentApiVersion::for($task), 'web_url' => route('workspaces.operations', $workspace).'?task='.$task->public_id];
-    }
-
-    /** @return array<string, mixed> */
-    private function timePayload(Workspace $workspace, ClientTimeEntry $entry, bool $includeFinancials): array
-    {
-        $payload = ['id' => $entry->public_id, 'project_id' => $entry->project->public_id, 'task_id' => $entry->task?->public_id, 'worked_on' => $entry->worked_on->toDateString(), 'minutes' => $entry->minutes, 'description' => $entry->is_visible_to_client ? ($entry->client_visible_description ?? $entry->description) : $entry->description, 'is_billable' => $entry->is_billable, 'is_deferred' => $entry->is_deferred, 'status' => $entry->status, 'version' => AgentApiVersion::for($entry), 'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id];
-        if ($includeFinancials) {
-            $payload += ['billing_rate_amount' => $entry->billing_rate_amount, 'currency' => $entry->currency];
-        }
-
-        return $payload;
-    }
-
-    /** @return array<string, mixed> */
-    private function invoicePayload(Workspace $workspace, ClientInvoice $invoice, bool $includeNotes): array
-    {
-        $payload = ['id' => $invoice->public_id, 'company_id' => $invoice->clientCompany->public_id, 'invoice_number' => $invoice->invoice_number, 'status' => $invoice->status, 'currency' => $invoice->currency, 'total_amount' => $invoice->total_amount, 'paid_amount' => $invoice->paid_amount, 'balance_amount' => $invoice->balance_amount, 'issue_date' => $invoice->issue_date?->toDateString(), 'due_date' => $invoice->due_date?->toDateString(), 'version' => AgentApiVersion::for($invoice), 'web_url' => route('svc.billing.invoices.show', [$workspace, $invoice]), 'pdf_url' => route('svc.billing.invoices.pdf', [$workspace, $invoice])];
-        if ($includeNotes) {
-            $payload['notes'] = $invoice->notes;
-        }
-
-        return $payload;
     }
 
     /** @return list<string> */
