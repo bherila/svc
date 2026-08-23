@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'type', 'description', 'quantity',
-    'unit_amount', 'tax_amount', 'total_amount', 'sort_order',
+    'client_project_id', 'unit_amount', 'tax_amount', 'total_amount', 'sort_order',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_invoice_id'])]
 class ClientInvoiceLine extends Model implements WorkspaceOwned
@@ -35,6 +35,12 @@ class ClientInvoiceLine extends Model implements WorkspaceOwned
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(ClientInvoice::class, 'client_invoice_id');
+    }
+
+    /** @return BelongsTo<ClientProject, $this> */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(ClientProject::class, 'client_project_id');
     }
 
     /** @return BelongsToMany<ClientTimeEntry, $this> */

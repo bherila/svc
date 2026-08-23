@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -89,5 +90,11 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by_user_id');
+    }
+
+    /** @return BelongsToMany<ClientInvoiceLine, $this> */
+    public function invoiceLines(): BelongsToMany
+    {
+        return $this->belongsToMany(ClientInvoiceLine::class, 'client_invoice_line_time_entries', 'client_time_entry_id', 'client_invoice_line_id')->withPivot('workspace_id')->withTimestamps();
     }
 }

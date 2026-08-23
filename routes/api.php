@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
@@ -85,6 +86,14 @@ Route::prefix('v1')
             ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentWritesEnabled::class])->name('time-entries.destroy');
         Route::post('/workspaces/{workspace}/time-entries/approve', [AgentTimeEntryMutationController::class, 'approve'])
             ->middleware([CheckToken::using(AgentApiScopes::TIME_APPROVE), EnsureAgentWritesEnabled::class])->name('time-entries.approve');
+        Route::post('/workspaces/{workspace}/invoices', [AgentInvoiceMutationController::class, 'createDraft'])
+            ->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class])->name('invoices.store');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/issue', [AgentInvoiceMutationController::class, 'issue'])
+            ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_DELIVER), EnsureAgentWritesEnabled::class])->name('invoices.issue');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/send', [AgentInvoiceMutationController::class, 'send'])
+            ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_DELIVER), EnsureAgentWritesEnabled::class])->name('invoices.send');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/void', [AgentInvoiceMutationController::class, 'void'])
+            ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_DELIVER), EnsureAgentWritesEnabled::class])->name('invoices.void');
     });
 
 Route::options('/v1/mcp', static fn () => response()->noContent())
