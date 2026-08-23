@@ -62,7 +62,7 @@ const RULES = [
   {
     name: 'non-test-email',
     pattern: /\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b)(?![^\s@]*\.(?:test|invalid|localhost)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-    ignore: /@(?:bherila\.net|users\.noreply\.github\.com|sentry\.io)\b|\{|\}|\$|:[a-z]/i,
+    ignore: /^git@github\.com$|@(?:bherila\.net|users\.noreply\.github\.com|sentry\.io)\b|\{|\}|\$|:[a-z]/i,
   },
 ]
 

@@ -3,22 +3,20 @@
 namespace App\Services\Mcp;
 
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
-use Mcp\Capability\Discovery\DocBlockParser;
-use Mcp\Capability\Discovery\HandlerResolver;
-use Mcp\Capability\Discovery\SchemaGenerator;
-use Psr\Log\NullLogger;
+use Bherila\McpLaravelBridge\Mcp\ReflectedInputSchemaFactory;
+use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 
 final class AgentMcpInputSchemaFactory
 {
+    public function __construct(private readonly ReflectedInputSchemaFactory $reflected) {}
+
     /** @return array<string, mixed> */
-    public function for(AgentMcpToolDefinition $definition): array
+    public function for(ToolDefinition $definition): array
     {
-        $schema = (new SchemaGenerator(new DocBlockParser(logger: new NullLogger)))
-            ->generate(HandlerResolver::resolve($definition->handler));
-        $schema['additionalProperties'] = false;
+        $schema = $this->reflected->for($definition->handler);
 
         if (! $definition->readOnly) {
-            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->operationId);
+            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->operationId());
             foreach ($body['properties'] as $name => $property) {
                 $schema['properties'][$name] = $property;
             }

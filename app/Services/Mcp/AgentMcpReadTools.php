@@ -2,7 +2,7 @@
 
 namespace App\Services\Mcp;
 
-use App\Services\AgentApi\Client\InternalAgentApiTransport;
+use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
 

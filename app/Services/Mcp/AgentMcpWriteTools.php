@@ -2,7 +2,8 @@
 
 namespace App\Services\Mcp;
 
-use App\Services\AgentApi\Client\InternalAgentApiTransport;
+use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
+use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
 use Mcp\Server\RequestContext;
@@ -11,7 +12,7 @@ final class AgentMcpWriteTools
 {
     public function __construct(
         private readonly InternalAgentApiTransport $api,
-        private readonly AgentMcpRequestArguments $requestArguments,
+        private readonly RequestArguments $requestArguments,
     ) {}
 
     /** @param list<array<string, mixed>> $entries
@@ -149,9 +150,8 @@ final class AgentMcpWriteTools
      * @return array<string, mixed> */
     private function send(string $method, string $path, array $body, ?string $idempotencyKey = null): array
     {
-        // The internal transport copies only bearer auth. Header-derived idempotency
-        // is passed as a request field on this adapter's explicit REST boundary.
-        $response = $this->api->send($method, $path, json: $body, idempotencyKey: $idempotencyKey);
+        $headers = $idempotencyKey === null ? [] : ['Idempotency-Key' => $idempotencyKey];
+        $response = $this->api->send($method, $path, json: $body, headers: $headers);
         if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
             return $response->json;
         }

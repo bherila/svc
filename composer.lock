@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c56a275428d6f172486a4f8db9330d82",
+    "content-hash": "261713407fa6fae9974d0b994f485895",
     "packages": [
         {
             "name": "bherila/auth-laravel",
@@ -61,6 +61,57 @@
                 "source": "https://github.com/bherila/auth/tree/v0.5.2"
             },
             "time": "2026-08-15T06:21:58+00:00"
+        },
+        {
+            "name": "bherila/mcp-laravel-bridge",
+            "version": "v0.1.0",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:bherila/mcp-laravel-bridge.git",
+                "reference": "bc36bb0a5a8b9461143bf48aa9b6fc360963cf82"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/bherila/mcp-laravel-bridge/zipball/bc36bb0a5a8b9461143bf48aa9b6fc360963cf82",
+                "reference": "bc36bb0a5a8b9461143bf48aa9b6fc360963cf82",
+                "shasum": ""
+            },
+            "require": {
+                "guzzlehttp/psr7": "^2.7",
+                "illuminate/contracts": "^12.0 || ^13.0",
+                "illuminate/http": "^12.0 || ^13.0",
+                "illuminate/routing": "^12.0 || ^13.0",
+                "illuminate/support": "^12.0 || ^13.0",
+                "mcp/sdk": "^0.7.1",
+                "php": ">=8.3 <8.6",
+                "psr/log": "^3.0",
+                "symfony/psr-http-message-bridge": "^7.2 || ^8.0"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.0 || ^11.0",
+                "phpunit/phpunit": "^12.0 || ^13.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Bherila\\McpLaravelBridge\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Bherila\\McpLaravelBridge\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Shared MCP-over-REST infrastructure for Laravel applications.",
+            "time": "2026-08-23T23:05:41+00:00"
         },
         {
             "name": "brick/math",
@@ -6394,16 +6445,16 @@
         },
         {
             "name": "symfony/http-foundation",
-            "version": "v8.1.4",
+            "version": "v8.1.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/http-foundation.git",
-                "reference": "57e712b75f2d0bc8844edbdb18a81dab6f9d55c2"
+                "reference": "ee16f97e95cfa011a742714d7c8c8f70fe7423f4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/http-foundation/zipball/57e712b75f2d0bc8844edbdb18a81dab6f9d55c2",
-                "reference": "57e712b75f2d0bc8844edbdb18a81dab6f9d55c2",
+                "url": "https://api.github.com/repos/symfony/http-foundation/zipball/ee16f97e95cfa011a742714d7c8c8f70fe7423f4",
+                "reference": "ee16f97e95cfa011a742714d7c8c8f70fe7423f4",
                 "shasum": ""
             },
             "require": {
@@ -6451,7 +6502,7 @@
             "description": "Defines an object-oriented layer for the HTTP specification",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/http-foundation/tree/v8.1.4"
+                "source": "https://github.com/symfony/http-foundation/tree/v8.1.5"
             },
             "funding": [
                 {
@@ -6471,7 +6522,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-07T15:02:39+00:00"
+            "time": "2026-08-20T09:59:12+00:00"
         },
         {
             "name": "symfony/http-kernel",

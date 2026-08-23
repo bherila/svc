@@ -12,10 +12,13 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ResourceAccessTokenRepository;
 use App\Support\AgentApi\ResourceAuthCodeRepository;
 use App\Support\AgentApi\ResourceRefreshTokenRepository;
+use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -36,6 +39,14 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         Passport::$deviceCodeGrantEnabled = false;
+        $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
+            router: $app->make(Router::class),
+            exceptions: $app->make(ExceptionHandler::class),
+            outerRequest: $app->make('request'),
+            application: $app,
+            allowedHeaders: ['Idempotency-Key'],
+            temporaryFilePrefix: 'svc-agent-',
+        ));
         $this->app->bind(AccessTokenRepository::class, ResourceAccessTokenRepository::class);
         $this->app->bind(AuthCodeRepository::class, ResourceAuthCodeRepository::class);
         $this->app->bind(RefreshTokenRepository::class, ResourceRefreshTokenRepository::class);
