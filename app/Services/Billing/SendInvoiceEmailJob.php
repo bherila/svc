@@ -33,6 +33,7 @@ final class SendInvoiceEmailJob implements ShouldQueue
             'sent_at' => now(),
             'provider_message_reference' => null,
         ])->save();
+        $invoice->advanceAgentRevision();
     }
 
     public function failed(Throwable $exception): void
@@ -42,5 +43,6 @@ final class SendInvoiceEmailJob implements ShouldQueue
             'failed_at' => now(),
             'error_summary' => 'Email delivery failed ('.class_basename($exception).').',
         ]);
+        ClientInvoice::query()->find($this->invoiceId)?->advanceAgentRevision();
     }
 }

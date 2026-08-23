@@ -91,16 +91,19 @@ final class InvoiceLifecycleService
             ])->save();
 
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
-                $line->timeEntries()->where('status', 'approved')->update(['status' => 'invoiced']);
+                $line->timeEntries()->where('status', 'approved')->update([
+                    'status' => 'invoiced',
+                    'lock_version' => DB::raw('lock_version + 1'),
+                ]);
             }
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
     }
 
-    public function void(ClientInvoice $invoice, ?Workspace $workspace = null): ClientInvoice
+    public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
     {
-        return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
             $locked = $this->lockInvoice($invoice, $workspace);
 
             if ($locked->status === 'void') {
@@ -116,7 +119,7 @@ final class InvoiceLifecycleService
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
             }
 
-            $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'balance_amount' => 0])->save();
+            $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'void_reason' => $reason, 'balance_amount' => 0])->save();
 
             return $locked->fresh(['lines', 'clientCompany']);
         });

@@ -37,7 +37,7 @@
     }},
     "/workspaces/{workspace_id}/projects/{project_id}/tasks": {"post": {
       "operationId": "tasks.create", "security": [{"oauth2": ["tasks:write"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskCreateRequest"}}}},
       "responses": {"201": {"description": "Task created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
@@ -59,7 +59,7 @@
       "patch": {
         "operationId": "tasks.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
         "security": [{"oauth2": ["tasks:write"]}],
-        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskUpdateRequest"}}}},
         "responses": {"200": {"description": "Task updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
@@ -88,20 +88,20 @@
       "patch": {
         "operationId": "time_entries.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
         "security": [{"oauth2": ["time:write"]}],
-        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeUpdateRequest"}}}},
         "responses": {"200": {"description": "Draft time updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "delete": {
         "operationId": "time_entries.delete", "security": [{"oauth2": ["time:write"]}],
-        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},
         "responses": {"200": {"description": "Draft time soft-deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
     },
     "/workspaces/{workspace_id}/time-entries/approve": {"post": {
       "operationId": "time_entries.approve", "security": [{"oauth2": ["time:approve"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeApprovalRequest"}}}},
       "responses": {"200": {"description": "Time entries approved", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ApprovalResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
@@ -113,7 +113,7 @@
       },
       "post": {
         "operationId": "invoices.create_draft", "security": [{"oauth2": ["billing:write"]}],
-        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceCreateRequest"}}}},
         "responses": {"201": {"description": "Invoice draft created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
@@ -125,19 +125,19 @@
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/issue": {"post": {
       "operationId": "invoices.issue", "security": [{"oauth2": ["billing:deliver"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ConfirmedVersionRequest"}}}},
       "responses": {"200": {"description": "Invoice issued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/send": {"post": {
       "operationId": "invoices.send", "security": [{"oauth2": ["billing:deliver"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceSendRequest"}}}},
       "responses": {"200": {"description": "Invoice delivery queued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/void": {"post": {
       "operationId": "invoices.void", "security": [{"oauth2": ["billing:deliver"]}],
-      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
+      "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceVoidRequest"}}}},
       "responses": {"200": {"description": "Invoice voided", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }}

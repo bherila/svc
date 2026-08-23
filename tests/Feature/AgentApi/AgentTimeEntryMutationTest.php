@@ -45,17 +45,22 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseCount('client_time_entries', 1);
         $this->withHeader('Idempotency-Key', 'time-log-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [[...$payload['entries'][0], 'minutes' => 46]]])->assertConflict();
 
-        $updated = $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 60])->assertOk()->json('data');
+        $updated = $this->withHeader('Idempotency-Key', 'time-update-1')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 60])->assertOk()->json('data');
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry['id'], 'client_visible_description' => 'Client-safe work']);
-        $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 90])->assertConflict();
-        $cleared = $this->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", [
+        $this->withHeader('Idempotency-Key', 'time-update-stale')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $entry['version'], 'minutes' => 90])->assertConflict();
+        $cleared = $this->withHeader('Idempotency-Key', 'time-update-clear')->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", [
             'expected_version' => $updated['version'],
             'client_visible_description' => null,
         ])->assertOk()->json('data');
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry['id'], 'client_visible_description' => null]);
-        $this->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $cleared['version']])
+        $this->withHeader('Idempotency-Key', 'time-delete-1')->deleteJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry['id']}", ['expected_version' => $cleared['version']])
             ->assertOk()->assertJsonPath('data.deleted_id', $entry['id']);
         $this->assertSoftDeleted('client_time_entries', ['public_id' => $entry['id']]);
+        foreach (['time_entries.log', 'time_entries.update', 'time_entries.delete'] as $operation) {
+            $this->assertDatabaseHas('agent_mutation_audits', ['operation' => $operation, 'outcome' => 'success']);
+        }
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.log', 'outcome' => 'replay']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.update', 'outcome' => 'failed', 'error_category' => 'conflict']);
     }
 
     public function test_project_manager_can_approve_but_contributor_cannot(): void
@@ -70,10 +75,12 @@ final class AgentTimeEntryMutationTest extends TestCase
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $manager->id, 'role' => 'manager']);
         $entry = ClientTimeEntry::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'client_project_id' => $project->id, 'user_id' => $worker->id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'Review me', 'currency' => 'USD']);
         $this->actingAsAgent($worker, [AgentApiScopes::TIME_APPROVE]);
-        $this->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'time-approve-denied')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertForbidden();
         $this->actingAsAgent($manager, [AgentApiScopes::TIME_APPROVE]);
-        $this->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertOk();
+        $this->withHeader('Idempotency-Key', 'time-approve-1')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/approve", ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]])->assertOk();
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry->public_id, 'status' => 'approved']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
     }
 
     /** @return array{Workspace, ClientProject} */

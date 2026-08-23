@@ -40,6 +40,7 @@ final class InvoiceEmailService
                 'status' => 'pending',
                 'queued_at' => now(),
             ]);
+            $invoice->advanceAgentRevision();
             dispatch(new SendInvoiceEmailJob($invoice->id, $delivery->id))->afterCommit();
 
             return $delivery;
