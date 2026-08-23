@@ -23,6 +23,7 @@ final class AgentMcpOutputSchemaFactory
             'time_entries.delete' => $this->object(['data' => $this->object(['deleted_id' => $this->id()], ['deleted_id'])], ['data']),
             'time_entries.approve' => $this->object(['data' => $this->object(['approved_ids' => ['type' => 'array', 'items' => $this->id()]], ['approved_ids'])], ['data']),
             'tasks.create', 'tasks.update' => $this->object(['data' => $this->task()], ['data']),
+            'invoices.create_draft', 'invoices.issue', 'invoices.send', 'invoices.void' => $this->object(['data' => $this->invoiceMutation()], ['data']),
             default => throw new \InvalidArgumentException("Unknown MCP operation [{$definition->operationId}]."),
         };
     }
@@ -90,6 +91,12 @@ final class AgentMcpOutputSchemaFactory
         }
 
         return $schema;
+    }
+
+    /** @return array<string, mixed> */
+    private function invoiceMutation(): array
+    {
+        return $this->object(['id' => $this->id(), 'status' => ['type' => 'string'], 'invoice_number' => ['type' => 'string'], 'version' => ['type' => 'string'], 'web_url' => ['type' => 'string', 'format' => 'uri']], ['id', 'status', 'invoice_number', 'version', 'web_url']);
     }
 
     /** @return array<string, mixed> */

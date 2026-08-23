@@ -48,6 +48,33 @@ final class AgentMcpWriteTools
         return $this->send('PATCH', "workspaces/{$workspace_id}/tasks/{$task_id}", array_filter(compact('expected_version', 'title', 'description', 'status'), static fn (mixed $value): bool => $value !== null));
     }
 
+    /** @param list<string> $time_entry_ids
+     * @param list<array<string, mixed>> $manual_lines
+     * @return array<string, mixed> */
+    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'notes'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesIssue(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/issue", compact('expected_version', 'confirm'));
+    }
+
+    /** @param list<string> $recipients
+     * @return array<string, mixed> */
+    public function invoicesSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 10)] array $recipients): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", compact('expected_version', 'recipients', 'confirm'));
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesVoid(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/void", compact('expected_version', 'reason', 'confirm'));
+    }
+
     /** @param array<string, mixed> $body
      * @return array<string, mixed> */
     private function send(string $method, string $path, array $body, ?string $idempotencyKey = null): array
