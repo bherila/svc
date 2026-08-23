@@ -53,11 +53,60 @@ final class AgentMcpReadOnlyTest extends TestCase
 
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void
     {
+        config(['agent_api.mcp_allowed_origins' => ['http://localhost']]);
         $user = User::factory()->create();
         Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::PROJECTS_READ]);
 
         $this->mcp($this->initializeMessage())->assertForbidden();
-        $this->options('/api/v1/mcp', ['Origin' => 'http://localhost', 'Access-Control-Request-Method' => 'POST'])->assertNoContent();
+        $this->options('/api/v1/mcp', [], [
+            'Origin' => 'http://localhost',
+            'Access-Control-Request-Method' => 'POST',
+            'Access-Control-Request-Headers' => 'authorization, content-type, mcp-protocol-version, mcp-session-id',
+        ])->assertNoContent()
+            ->assertHeader('Access-Control-Allow-Origin', 'http://localhost')
+            ->assertHeader('Access-Control-Allow-Methods', 'POST, DELETE, OPTIONS');
+    }
+
+    public function test_unapproved_browser_origin_gets_no_cors_authorization_and_is_rejected(): void
+    {
+        config(['agent_api.mcp_allowed_origins' => ['https://approved.example']]);
+
+        $this->options('/api/v1/mcp', [], [
+            'Origin' => 'https://unapproved.example',
+            'Access-Control-Request-Method' => 'POST',
+            'Access-Control-Request-Headers' => 'authorization, content-type',
+        ])->assertNoContent()->assertHeaderMissing('Access-Control-Allow-Origin');
+
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        $this->withHeader('Origin', 'https://unapproved.example')
+            ->postJson('/api/v1/mcp', $this->initializeMessage(), ['Mcp-Protocol-Version' => '2025-06-18'])
+            ->assertForbidden()
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+    }
+
+    public function test_approved_browser_origin_can_initialize_and_receives_cors_headers(): void
+    {
+        config(['agent_api.mcp_allowed_origins' => ['https://approved.example']]);
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+
+        $this->withHeaders([
+            'Origin' => 'https://approved.example',
+            'Mcp-Protocol-Version' => '2025-06-18',
+        ])->postJson('/api/v1/mcp', $this->initializeMessage())
+            ->assertOk()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://approved.example')
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version');
+    }
+
+    public function test_originless_native_cli_request_remains_supported(): void
+    {
+        config(['agent_api.mcp_allowed_origins' => []]);
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+
+        $this->mcp($this->initializeMessage())->assertOk()->assertHeader('Mcp-Session-Id');
     }
 
     public function test_unauthenticated_mcp_request_returns_an_oauth_resource_challenge(): void

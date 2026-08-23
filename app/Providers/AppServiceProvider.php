@@ -13,6 +13,8 @@ use App\Support\AgentApi\ResourceAccessTokenRepository;
 use App\Support\AgentApi\ResourceAuthCodeRepository;
 use App\Support\AgentApi\ResourceRefreshTokenRepository;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -45,9 +47,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Passport::loadKeysFrom(storage_path('app/private/oauth'));
+        Passport::authorizationView('oauth.authorize');
         Passport::tokensCan(AgentApiScopes::descriptions());
         Passport::tokensExpireIn(now()->addMinutes(15));
         Passport::refreshTokensExpireIn(now()->addDays(30));
+        HandleCors::skipWhen(fn (Request $request): bool => $request->is('api/v1/mcp'));
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(ClientCompany::class, ClientCompanyPolicy::class);
         Gate::policy(ClientProject::class, ClientProjectPolicy::class);

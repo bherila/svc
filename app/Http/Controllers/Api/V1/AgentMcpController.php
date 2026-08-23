@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Services\Mcp\AgentMcpServerFactory;
 use GuzzleHttp\Psr7\HttpFactory;
 use Illuminate\Http\Request;
-use Mcp\Server\Transport\Http\Middleware\CorsMiddleware;
 use Mcp\Server\Transport\Http\Middleware\DnsRebindingProtectionMiddleware;
 use Mcp\Server\Transport\Http\Middleware\ProtocolVersionMiddleware;
 use Mcp\Server\Transport\StreamableHttpTransport;
@@ -25,7 +24,6 @@ final class AgentMcpController extends Controller
             responseFactory: $factory,
             streamFactory: $factory,
             middleware: [
-                new CorsMiddleware(allowedOrigins: $this->allowedOrigins()),
                 new DnsRebindingProtectionMiddleware(allowedHosts: $this->allowedHosts()),
                 new ProtocolVersionMiddleware,
             ],
@@ -40,18 +38,11 @@ final class AgentMcpController extends Controller
     }
 
     /** @return list<string> */
-    private function allowedOrigins(): array
-    {
-        $origins = config('agent_api.mcp_allowed_origins', []);
-
-        return is_array($origins) ? array_values(array_filter($origins, 'is_string')) : [];
-    }
-
-    /** @return list<string> */
     private function allowedHosts(): array
     {
         $hosts = [];
-        foreach ([config('app.url'), ...$this->allowedOrigins()] as $url) {
+        $origins = config('agent_api.mcp_allowed_origins', []);
+        foreach ([config('app.url'), ...(is_array($origins) ? $origins : [])] as $url) {
             $host = is_string($url) ? parse_url($url, PHP_URL_HOST) : null;
             if (is_string($host) && $host !== '') {
                 $hosts[] = $host;

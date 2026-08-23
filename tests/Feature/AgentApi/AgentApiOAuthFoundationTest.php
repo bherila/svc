@@ -45,12 +45,39 @@ class AgentApiOAuthFoundationTest extends TestCase
         $this->postJson('/oauth/register', [
             'client_name' => 'SVC MCP Test',
             'redirect_uris' => ['http://127.0.0.1:3210/callback'],
+            'grant_types' => ['refresh_token', 'authorization_code'],
+            'response_types' => ['code'],
             'token_endpoint_auth_method' => 'none',
         ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonStructure(['client_id']);
+        $this->assertDatabaseHas('oauth_clients', ['name' => 'SVC MCP Test', 'secret' => null]);
+        $this->assertNotNull(Passport::client()->newQuery()->where('name', 'SVC MCP Test')->value('dynamically_registered_at'));
 
         $this->postJson('/oauth/register', [
             'client_name' => 'Unsafe Client',
             'redirect_uris' => ['http://example.test/callback'],
         ])->assertStatus(400)->assertJsonPath('error', 'invalid_client_metadata');
+    }
+
+    public function test_registration_rejects_unsupported_or_ambiguous_metadata(): void
+    {
+        $base = [
+            'client_name' => 'Invalid metadata client',
+            'redirect_uris' => ['http://localhost:3210/callback'],
+            'token_endpoint_auth_method' => 'none',
+        ];
+        foreach ([
+            ['grant_types' => ['authorization_code']],
+            ['grant_types' => ['authorization_code', 'client_credentials']],
+            ['response_types' => ['token']],
+            ['token_endpoint_auth_method' => 'client_secret_basic'],
+            ['client_secret' => 'not-allowed'],
+            ['client_name' => "Invalid\nname"],
+        ] as $invalid) {
+            $response = $this->postJson('/oauth/register', [...$base, ...$invalid])
+                ->assertBadRequest()
+                ->assertJsonPath('error', 'invalid_client_metadata');
+            $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        }
+        $this->assertDatabaseCount('oauth_clients', 0);
     }
 }

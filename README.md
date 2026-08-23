@@ -147,3 +147,10 @@ before choosing a workspace or carrying out an operation. Access remains limited
 the signed-in user's current SVC role and granted OAuth scopes. Invoice payment is
 not an MCP capability; invoice results provide the browser payment URL when one is
 available.
+
+Browser-based MCP clients must use an exact origin listed in
+`AGENT_API_MCP_ALLOWED_ORIGINS`; unlisted origins receive no CORS authorization and
+their MCP requests are rejected. Native clients that omit `Origin` continue to work.
+Dynamic public-client registrations are marked at creation, updated when used, and
+pruned after 30 inactive days by the scheduled
+`svc:oauth:prune-dynamic-clients` command (the retention is configurable).

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
+use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Support\AgentApi\AgentApiScopes;
@@ -106,8 +107,8 @@ Route::prefix('v1')
     });
 
 Route::options('/v1/mcp', static fn () => response()->noContent())
-    ->middleware('throttle:60,1')
+    ->middleware([EnforceAgentMcpOrigin::class, 'throttle:60,1'])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware(['auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([EnforceAgentMcpOrigin::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');
