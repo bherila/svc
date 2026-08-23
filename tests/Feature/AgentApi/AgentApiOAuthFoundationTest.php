@@ -37,7 +37,7 @@ class AgentApiOAuthFoundationTest extends TestCase
             ->assertJsonPath('code_challenge_methods_supported.0', 'S256');
         $this->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
             ->assertOk()
-            ->assertJsonPath('resource', 'http://localhost/api/v1');
+            ->assertJsonPath('resource', url('/api/v1'));
     }
 
     public function test_public_client_registration_accepts_only_safe_redirects(): void
