@@ -10,6 +10,7 @@ use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OAuthMetadataController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceOperationsController;
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
@@ -23,7 +24,9 @@ Route::withoutMiddleware(['web'])->group(function (): void {
 });
 
 Route::get('/login', [OAuthLoginController::class, 'redirect'])->name('login');
-Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])->name('oauth.redirect');
+Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])
+    ->withoutMiddleware(HandleInertiaRequests::class)
+    ->name('oauth.redirect');
 Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('oauth.callback');
 
 Route::middleware('auth')->group(function (): void {
