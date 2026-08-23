@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Engagement;
 
 use App\Http\Requests\Engagement\StoreTimeEntryRequest;
 use App\Models\ClientProject;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\TimeEntryWorkflow;
@@ -22,7 +23,7 @@ class TimeEntryController extends EngagementController
         TimeEntryWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
-        abort_if($user === null, 401);
+        abort_unless($user instanceof User, 401);
         Gate::forUser($user)->authorize('manage', $workspace);
         $workspaceAuthorization->assertOwnedBy($workspace, $clientProject);
 

@@ -6,6 +6,7 @@ use App\Http\Requests\Engagement\SignAgreementRequest;
 use App\Http\Requests\Engagement\StoreAgreementRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\EngagementException;
@@ -24,7 +25,9 @@ class AgreementController extends EngagementController
         AgreementWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
-        abort_if($user === null, 401);
+        if (! $user instanceof User) {
+            abort(401);
+        }
         Gate::forUser($user)->authorize('manage', $workspace);
         $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
@@ -75,7 +78,9 @@ class AgreementController extends EngagementController
         AgreementWorkflow $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
-        abort_if($user === null, 401);
+        if (! $user instanceof User) {
+            abort(401);
+        }
         Gate::forUser($user)->authorize('manage', $workspace);
         $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
