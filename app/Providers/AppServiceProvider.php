@@ -11,6 +11,7 @@ use App\Policies\WorkspacePolicy;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ResourceAccessTokenRepository;
 use App\Support\AgentApi\ResourceAuthCodeRepository;
+use App\Support\AgentApi\ResourceRefreshTokenRepository;
 use Carbon\CarbonImmutable;
 use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Date;
@@ -20,6 +21,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Passport\Bridge\AccessTokenRepository;
 use Laravel\Passport\Bridge\AuthCodeRepository;
+use Laravel\Passport\Bridge\RefreshTokenRepository;
 use Laravel\Passport\Passport;
 use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
 use Symfony\Component\Mailer\Transport\Dsn;
@@ -34,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
         Passport::$deviceCodeGrantEnabled = false;
         $this->app->bind(AccessTokenRepository::class, ResourceAccessTokenRepository::class);
         $this->app->bind(AuthCodeRepository::class, ResourceAuthCodeRepository::class);
+        $this->app->bind(RefreshTokenRepository::class, ResourceRefreshTokenRepository::class);
     }
 
     /**
