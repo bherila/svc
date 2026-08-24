@@ -14,6 +14,7 @@ use App\Services\Files\AttachmentStorageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PDO;
@@ -141,6 +142,31 @@ class ExternalAttachmentImportTest extends TestCase
         sort($temporaryBefore);
         sort($temporaryAfter);
         $this->assertSame($temporaryBefore, $temporaryAfter);
+    }
+
+    public function test_apply_is_idempotent_even_if_the_public_id_derivation_seed_changes(): void
+    {
+        // public_id is derived from a namespace seed that names this feature (e.g.
+        // 'external-attachment'). That seed is allowed to change later (a rename, for
+        // example), which would make a fresh run compute a different UUID for the same
+        // source row than the one already stored. The copy ledger's client_attachment_id
+        // foreign key is the durable link, and must still resolve the existing attachment
+        // in that case — not report a broken copy and not create a duplicate.
+        $service = app(ExternalAttachmentImportService::class);
+        $first = $service->run('external', $this->workspace->slug, $this->uploader->public_id, true);
+        $this->assertSame(1, $first['counts']['copied']);
+
+        // public_id is guarded as immutable at the model level, so simulate a row that
+        // predates a seed change with a raw update rather than an Eloquent save.
+        $attachment = ClientAttachment::query()->firstOrFail();
+        DB::table('client_attachments')->where('id', $attachment->getKey())->update(['public_id' => (string) Str::uuid()]);
+
+        $second = $service->run('external', $this->workspace->slug, $this->uploader->public_id, true);
+
+        $this->assertSame(1, $second['counts']['idempotent']);
+        $this->assertSame(0, $second['counts']['failed']);
+        $this->assertDatabaseCount('client_attachments', 1);
+        $this->assertDatabaseCount('external_import_attachment_copies', 1);
     }
 
     public function test_source_path_traversal_is_rejected_without_writes(): void

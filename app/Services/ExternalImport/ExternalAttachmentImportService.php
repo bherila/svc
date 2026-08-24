@@ -150,6 +150,13 @@ final class ExternalAttachmentImportService
 
         $attachment = ClientAttachment::query()->where('public_id', $publicId)->first();
         $copy = ExternalImportAttachmentCopy::query()->where('external_import_item_id', $item->getKey())->first();
+        if ($copy && ! $attachment) {
+            // The public_id above is derived from a namespace seed that is allowed to
+            // change (e.g. a rename of this feature). The copy ledger's
+            // client_attachment_id is the durable link to the real attachment, so
+            // resolve through it before concluding the prior copy is broken.
+            $attachment = $copy->attachment;
+        }
         $sourceFile = $this->sourceFile($root, $row, $apply && ! $copy && ! $attachment);
         if ($copy) {
             if (! $attachment) {
