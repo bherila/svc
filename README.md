@@ -1,8 +1,6 @@
 # SVC
 
-SVC is an open-source-ready operations platform for independent service businesses. It is being extracted from the mature client-management domain in [`bherila/2025-website`](https://github.com/bherila/2025-website) without copying production data.
-
-The application will cover clients, projects, agreements, time, invoices, payments, files, and subcontractor workflows. Banking and tax systems remain external integrations.
+SVC is an open-source-ready operations platform for independent service businesses: workspaces, clients, projects, agreements, time, invoices, payments, files, and subcontractor workflows. Banking and tax systems remain external integrations.
 
 ## Current status
 
@@ -17,14 +15,14 @@ The current alpha establishes:
   time entries, invoices, payments, PDFs, and authenticated client views;
 - private tenant-scoped attachments with staged promotion, digest verification,
   repair tooling, and guarded web1-to-x-data mirroring;
-- dry-run-first legacy migration and verification commands with explicit public-UUID
-  identity bindings, redacted inventories, idempotent provenance ledgers, and
-  source-change detection;
-- an explicit extraction and integration boundary.
+- dry-run-first onboarding data import and verification commands with explicit
+  public-UUID identity bindings, redacted inventories, idempotent provenance
+  ledgers, and source-change detection;
+- an explicit product and integration boundary.
 
-See [the architecture](docs/architecture.md), [the extraction plan](docs/extraction-plan.md),
+See [the architecture](docs/architecture.md), [the product roadmap](docs/onboarding-import-plan.md),
 [the private file storage plan](docs/file-storage-plan.md), and
-[the legacy migration plan](docs/legacy-migration-plan.md).
+[the external data import contract](docs/external-data-import.md).
 
 ## Local development
 
@@ -40,17 +38,17 @@ composer dev
 The generated SQLite database and `.env` are local-only. Do not import production data into this checkout.
 
 The integrated workspace screen is available at
-`/workspaces/{workspace-public-id}/operations`. Legacy migration is inert until
-an allowlisted read-only source is configured:
+`/workspaces/{workspace-public-id}/operations`. Onboarding data import is inert
+until an allowlisted read-only source is configured:
 
 ```bash
-php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --format=json
-php artisan svc:migrate:legacy --source=legacy --workspace=<workspace-public-id> --apply --format=json
-php artisan svc:migrate:legacy:attachments --source=legacy --workspace=<workspace-public-id> --uploader=<user-public-id> --format=json
-php artisan svc:migrate:legacy:attachments --source=legacy --workspace=<workspace-public-id> --uploader=<user-public-id> --apply --format=json
-php artisan svc:migrate:legacy:verify --run=<run-public-id> --format=json
-php artisan svc:migrate:legacy:rehearse --format=json
-php artisan svc:migrate:legacy:inventory --source=legacy --format=json
+php artisan svc:import:external --source=external --workspace=<workspace-public-id> --format=json
+php artisan svc:import:external --source=external --workspace=<workspace-public-id> --apply --format=json
+php artisan svc:import:external:attachments --source=external --workspace=<workspace-public-id> --uploader=<user-public-id> --format=json
+php artisan svc:import:external:attachments --source=external --workspace=<workspace-public-id> --uploader=<user-public-id> --apply --format=json
+php artisan svc:import:external:verify --run=<run-public-id> --format=json
+php artisan svc:import:external:rehearse --format=json
+php artisan svc:import:external:inventory --source=external --format=json
 ```
 
 The first command is a no-write inventory. Apply runs that report skips or
@@ -62,10 +60,10 @@ applies twice, verifies idempotency, and removes its artifacts.
 The source-only inventory command is the production-readiness path: it never
 resolves a destination workspace or connection, and reports only aggregate
 counts, ranges, orphan/duplicate totals, high-water marks, and fingerprints.
-Attachment migration is a separate copy-only path. It resolves only planned
-ledger rows beneath the exact server-held `LEGACY_MIGRATION_ATTACHMENT_ROOT`,
+Attachment import is a separate copy-only path. It resolves only planned
+ledger rows beneath the exact server-held `EXTERNAL_IMPORT_ATTACHMENT_ROOT`,
 verifies source and destination SHA-256 digests, records provenance without raw
-paths, and never deletes legacy objects.
+paths, and never deletes source objects.
 
 ## Deployment
 

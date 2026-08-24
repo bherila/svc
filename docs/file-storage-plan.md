@@ -45,13 +45,13 @@ Deletion is two-phase: hide and mark the row first, then enqueue physical blob
 deletion after the retention window. A blob-reference registry must cover every
 attachment model so pruning cannot delete a still-referenced object.
 
-## Backup and migration
+## Backup and onboarding import
 
 Backups must include both the database and the private blob root from a
 consistent recovery point. Restores are verified by attachment count, total
 bytes, and SHA-256 manifest before the application is reopened.
 
-Legacy files are copied, never moved, during migration. The importer records
-source identity, source path hash, destination key, byte count, and digest in a
-migration ledger. A rerun is idempotent; source deletion is a separate,
+Externally imported files are copied, never moved. The importer records
+source identity, source path hash, destination key, byte count, and digest in
+an import ledger. A rerun is idempotent; source deletion is a separate,
 explicitly approved operation after readback and backup verification.

@@ -77,7 +77,7 @@ workflow. It is intentionally provider-neutral and contains no production data.
   unpaid invoice restores linked `invoiced` time to `approved` and releases it
 - `workspace_invoice_counters` allocates monotonic `SVC-*` numbers under a row
   lock in the same transaction that creates the invoice, while preserving the
-  highest existing SVC sequence among legacy-format numbers
+  highest existing SVC sequence among externally imported numbers
 - every project-attributed manual line belongs to the invoice client as well as
   the workspace
 
@@ -129,21 +129,21 @@ uploader, and lifecycle state. Controllers use the attachment service rather
 than Laravel storage directly. Upload promotion and deletion follow the
 two-phase process in `file-storage-plan.md`.
 
-## Legacy migration
+## External data import
 
-`legacy_migration_runs`, `legacy_migration_items`, and
-`legacy_migration_failures` form the migration ledger. Source identity is the
+`external_import_runs`, `external_import_items`, and
+`external_import_failures` form the import ledger. Source identity is the
 tuple `(source_connection, source_table, source_key)`. Successful items map that
 tuple to an SVC record type and public UUID. A run records source high-water
 marks, redacted counts, deterministic fingerprints, mode, and completion state.
 
-`svc:migrate:legacy` is dry-run by default. `--apply` is required for writes,
+`svc:import:external` is dry-run by default. `--apply` is required for writes,
 the configured source connection must be explicitly marked read-only, and the
 command must refuse the destination connection as its source. Output contains
 counts, keys only when safe, and hashes; it never prints names, email addresses,
 descriptions, notes, invoice contents, or file paths.
 
-`svc:migrate:legacy:attachments` consumes only planned attachment ledger rows.
-It requires an explicit workspace member as the migration uploader, stores no
+`svc:import:external:attachments` consumes only planned attachment ledger rows.
+It requires an explicit workspace member as the import uploader, stores no
 raw source path in the provenance ledger, and verifies source and destination
-SHA-256 digests before an attachment becomes an imported migration item.
+SHA-256 digests before an attachment becomes an imported item.
