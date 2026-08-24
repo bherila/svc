@@ -50,7 +50,8 @@ class AgentApiOAuthFoundationTest extends TestCase
             'response_types' => ['code'],
             'token_endpoint_auth_method' => 'none',
             'scope' => $scope,
-        ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonPath('scope', $scope)->assertJsonStructure(['client_id']);
+            'application_type' => 'native',
+        ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonPath('scope', $scope)->assertJsonPath('application_type', 'native')->assertJsonStructure(['client_id']);
         $this->assertDatabaseHas('oauth_clients', ['name' => 'SVC MCP Test', 'secret' => null]);
         $this->assertNotNull(Passport::client()->newQuery()->where('name', 'SVC MCP Test')->value('dynamically_registered_at'));
 
@@ -77,6 +78,7 @@ class AgentApiOAuthFoundationTest extends TestCase
             ['scope' => 'mcp:use unsupported:scope'],
             ['scope' => 'mcp:use mcp:use'],
             ['scope' => 'mcp:use  identity:read'],
+            ['application_type' => 'web'],
         ] as $invalid) {
             $response = $this->postJson('/oauth/register', [...$base, ...$invalid])
                 ->assertBadRequest()
