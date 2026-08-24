@@ -152,8 +152,8 @@ final class AttachmentStorageService
     }
 
     /**
-     * Remove only a newly-created migration copy after its provenance ledger
-     * transaction fails. The legacy source object is never touched.
+     * Remove only a newly-created import copy after its provenance ledger
+     * transaction fails. The external source object is never touched.
      */
     public function discardMigrationCopy(ClientAttachment $attachment): void
     {

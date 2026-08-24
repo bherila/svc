@@ -108,7 +108,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       # The destination is intentionally hard-coded. This cPanel account also hosts
-      # bwh-php, PHR, and Games; an interpolated or broad --delete target is unsafe.
+      # other applications; an interpolated or broad --delete target is unsafe.
       # svc-blobs is authoritative production data and must survive every code deploy.
       - name: Deploy application with guarded rsync
         run: |
