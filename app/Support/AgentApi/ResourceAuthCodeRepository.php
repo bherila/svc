@@ -2,6 +2,7 @@
 
 namespace App\Support\AgentApi;
 
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Laravel\Passport\Bridge\AuthCodeRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\Entities\AuthCodeEntityInterface;

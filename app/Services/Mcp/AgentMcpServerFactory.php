@@ -7,6 +7,7 @@ use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
+use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ final class AgentMcpServerFactory
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpReadTools $reads,
         private readonly AgentMcpWriteTools $writes,
+        private readonly AgentMcpPrompts $prompts,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
         private readonly RequestArguments $requestArguments,
@@ -39,8 +41,19 @@ final class AgentMcpServerFactory
         $driftLogger = app(LoggerInterface::class);
         $registry = new Registry(logger: $logger);
         $definitions = $this->catalog->definitions($this->reads, $this->writes);
+        $exposedDefinitions = array_values(array_filter(
+            $definitions,
+            fn (ToolDefinition $definition): bool => $this->scopes->allowsAll(
+                $request,
+                AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId()),
+            ),
+        ));
+        $exposedToolNames = array_fill_keys(array_map(
+            static fn (ToolDefinition $definition): string => $definition->name,
+            $exposedDefinitions,
+        ), true);
         $schemaIds = [];
-        foreach ($definitions as $definition) {
+        foreach ($exposedDefinitions as $definition) {
             $schemaIds[$definition->name] = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
         }
         $builder = Server::builder()
@@ -52,8 +65,33 @@ final class AgentMcpServerFactory
                     : 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
                 websiteUrl: url('/'),
             )
-            ->setInstructions($this->instructions())
-            ->setPaginationLimit(100)
+            ->setInstructions($this->instructions($exposedToolNames));
+
+        if ($this->hasTools($exposedToolNames, ['context.get', 'projects.list', 'time_entries.log'])) {
+            $builder->addPrompt(
+                handler: [$this->prompts, 'logTimeAcrossProjects'],
+                name: 'log-time-across-projects',
+                title: 'Log time across projects',
+                description: 'Safely discover SVC projects and log one or more completed time entries with retry-safe idempotency.',
+            );
+        }
+        if ($this->hasTools($exposedToolNames, [
+            'context.get',
+            'projects.get',
+            'time_entries.list',
+            'invoices.get',
+            'invoices.create_draft',
+            'invoices.update_draft',
+        ])) {
+            $builder->addPrompt(
+                handler: [$this->prompts, 'prepareInvoiceSafely'],
+                name: 'prepare-invoice-safely',
+                title: 'Prepare an invoice safely',
+                description: 'Build and review an invoice draft while preserving explicit confirmation for consequential actions.',
+            );
+        }
+
+        $builder->setPaginationLimit(100)
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
             ->setLogger($logger)
@@ -70,10 +108,7 @@ final class AgentMcpServerFactory
             ))
             ->setLazyLoading(false);
 
-        foreach ($definitions as $definition) {
-            if (! $this->scopes->allowsAll($request, AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId()))) {
-                continue;
-            }
+        foreach ($exposedDefinitions as $definition) {
             $builder->addTool(
                 handler: $definition->handler,
                 name: $definition->name,
@@ -88,13 +123,50 @@ final class AgentMcpServerFactory
         return $builder->build();
     }
 
-    private function instructions(): string
+    /**
+     * @param  array<string, true>  $available
+     * @param  list<string>  $required
+     */
+    private function hasTools(array $available, array $required): bool
     {
-        $base = 'Authenticate using OAuth Authorization Code with S256 PKCE. First call context.get; select an ID returned there and never guess a workspace or resource ID.';
-        $mode = (bool) config('agent_api.writes_enabled')
-            ? 'Task, time, and invoice workflow writes are enabled. Read the current record before mutation, supply its opaque version when required, and obtain explicit user confirmation before issue, send, or void.'
-            : 'This release is read-only; use the SVC website for changes.';
+        return array_diff($required, array_keys($available)) === [];
+    }
 
-        return $base.' '.$mode.' Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.';
+    /** @param array<string, true> $available */
+    private function instructions(array $available): string
+    {
+        if ($this->hasTools($available, ['context.get', 'projects.list', 'time_entries.log'])) {
+            $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version.';
+        } elseif (isset($available['context.get'])) {
+            $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection.';
+        } else {
+            $base = 'Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID.';
+        }
+        $mode = (bool) config('agent_api.writes_enabled')
+            ? 'Workflow writes are enabled, but write tools are filtered by the current OAuth scopes. Read the current record before mutation and supply its opaque version when required.'
+            : 'This release is read-only; use the SVC website for changes.';
+        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before issue, send, or void.';
+        }
+
+        $promptGuidance = [];
+        if ($this->hasTools($available, ['context.get', 'projects.list', 'time_entries.log'])) {
+            $promptGuidance[] = 'log-time-across-projects';
+        }
+        if ($this->hasTools($available, [
+            'context.get',
+            'projects.get',
+            'time_entries.list',
+            'invoices.get',
+            'invoices.create_draft',
+            'invoices.update_draft',
+        ])) {
+            $promptGuidance[] = 'prepare-invoice-safely';
+        }
+        $prompts = $promptGuidance === []
+            ? ''
+            : ' Use the '.implode(' and ', $promptGuidance).' prompts for complete guided workflows when the client exposes MCP prompts.';
+
+        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.'.$prompts;
     }
 }

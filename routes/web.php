@@ -5,12 +5,12 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\OAuthDynamicClientRegistrationController;
 use App\Http\Controllers\OAuthLoginController;
-use App\Http\Controllers\OAuthMetadataController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Middleware\HandleInertiaRequests;
+use BWH\Auth\Http\Controllers\OAuthDynamicClientRegistrationController;
+use BWH\Auth\Http\Controllers\OAuthMetadataController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
