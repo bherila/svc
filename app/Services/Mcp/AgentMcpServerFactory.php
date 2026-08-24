@@ -143,7 +143,7 @@ final class AgentMcpServerFactory
             $base = 'Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID.';
         }
         $mode = (bool) config('agent_api.writes_enabled')
-            ? 'Write tools are filtered by the current OAuth scopes. Read the current record before mutation and supply its opaque version when required.'
+            ? 'Workflow writes are enabled, but write tools are filtered by the current OAuth scopes. Read the current record before mutation and supply its opaque version when required.'
             : 'This release is read-only; use the SVC website for changes.';
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, or void.';
