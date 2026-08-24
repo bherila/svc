@@ -42,13 +42,15 @@ class AgentApiOAuthFoundationTest extends TestCase
 
     public function test_public_client_registration_accepts_only_safe_redirects(): void
     {
+        $scope = implode(' ', array_keys(AgentApiScopes::descriptions()));
         $this->postJson('/oauth/register', [
             'client_name' => 'SVC MCP Test',
             'redirect_uris' => ['http://127.0.0.1:3210/callback'],
             'grant_types' => ['refresh_token', 'authorization_code'],
             'response_types' => ['code'],
             'token_endpoint_auth_method' => 'none',
-        ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonStructure(['client_id']);
+            'scope' => $scope,
+        ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonPath('scope', $scope)->assertJsonStructure(['client_id']);
         $this->assertDatabaseHas('oauth_clients', ['name' => 'SVC MCP Test', 'secret' => null]);
         $this->assertNotNull(Passport::client()->newQuery()->where('name', 'SVC MCP Test')->value('dynamically_registered_at'));
 
@@ -72,6 +74,9 @@ class AgentApiOAuthFoundationTest extends TestCase
             ['token_endpoint_auth_method' => 'client_secret_basic'],
             ['client_secret' => 'not-allowed'],
             ['client_name' => "Invalid\nname"],
+            ['scope' => 'mcp:use unsupported:scope'],
+            ['scope' => 'mcp:use mcp:use'],
+            ['scope' => 'mcp:use  identity:read'],
         ] as $invalid) {
             $response = $this->postJson('/oauth/register', [...$base, ...$invalid])
                 ->assertBadRequest()
