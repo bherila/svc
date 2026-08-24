@@ -175,6 +175,6 @@ jobs:
             --output /dev/null --write-out '%{redirect_url}' \
             https://svc.bherila.net/oauth/redirect)"
           case "$redirect_url" in
-            https://bherila.net/oauth/authorize?*) ;;
+            https://id.bherila.net/oauth/authorize?*) ;;
             *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
           esac
