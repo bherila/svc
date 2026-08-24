@@ -24,7 +24,9 @@ The current alpha establishes:
 
 See [the architecture](docs/architecture.md), [the extraction plan](docs/extraction-plan.md),
 [the private file storage plan](docs/file-storage-plan.md), and
-[the legacy migration plan](docs/legacy-migration-plan.md).
+[the legacy migration plan](docs/legacy-migration-plan.md). The pre-extraction
+business rules being reimplemented are preserved at
+[docs/legacy-client-management/](docs/legacy-client-management/README.md).
 
 ## Local development
 
