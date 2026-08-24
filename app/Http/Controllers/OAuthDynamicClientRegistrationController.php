@@ -23,7 +23,7 @@ final class OAuthDynamicClientRegistrationController extends Controller
             return $this->invalid();
         }
         $input = $request->json()->all();
-        $allowed = ['client_name', 'redirect_uris', 'grant_types', 'response_types', 'token_endpoint_auth_method', 'scope'];
+        $allowed = ['client_name', 'redirect_uris', 'grant_types', 'response_types', 'token_endpoint_auth_method', 'scope', 'application_type'];
         if (array_diff(array_keys($input), $allowed) !== []) {
             return $this->invalid();
         }
@@ -37,6 +37,7 @@ final class OAuthDynamicClientRegistrationController extends Controller
             'response_types.*' => ['required', 'string', 'distinct', 'in:code'],
             'token_endpoint_auth_method' => ['sometimes', 'in:none'],
             'scope' => ['sometimes', 'string', 'min:1', 'max:2048'],
+            'application_type' => ['sometimes', 'string', 'in:native'],
         ]);
         if ($validator->fails()) {
             return $this->invalid();
@@ -72,6 +73,9 @@ final class OAuthDynamicClientRegistrationController extends Controller
         ];
         if ($scope !== null) {
             $response['scope'] = $scope;
+        }
+        if (isset($metadata['application_type'])) {
+            $response['application_type'] = $metadata['application_type'];
         }
 
         return response()->json($response, 201, ['Cache-Control' => 'no-store', 'Pragma' => 'no-cache', 'X-Content-Type-Options' => 'nosniff']);
