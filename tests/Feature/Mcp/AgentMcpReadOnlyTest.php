@@ -59,6 +59,28 @@ final class AgentMcpReadOnlyTest extends TestCase
         $initialization = $this->mcp($this->initializeMessage())->assertOk();
         $instructions = $initialization->json('result.instructions');
         $this->assertIsString($instructions);
+        $this->assertStringContainsString('missing tools are not authorized', $instructions);
+        $this->assertStringNotContainsString('time_entries.log', $instructions);
+        $limitedSession = $initialization->headers->get('Mcp-Session-Id');
+        $this->assertIsString($limitedSession);
+        $limitedPrompts = $this->mcp([
+            'jsonrpc' => '2.0', 'id' => 2, 'method' => 'prompts/list', 'params' => [],
+        ], $limitedSession)->assertOk()->json('result.prompts');
+        $this->assertSame([], $limitedPrompts);
+
+        config(['agent_api.writes_enabled' => true]);
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::IDENTITY_READ,
+            AgentApiScopes::PROJECTS_READ,
+            AgentApiScopes::TIME_READ,
+            AgentApiScopes::TIME_WRITE,
+            AgentApiScopes::BILLING_READ,
+            AgentApiScopes::BILLING_WRITE,
+        ]);
+        $initialization = $this->mcp($this->initializeMessage())->assertOk();
+        $instructions = $initialization->json('result.instructions');
+        $this->assertIsString($instructions);
         $firstDecisionWindow = substr($instructions, 0, 512);
         $this->assertStringContainsString('First call context.get', $firstDecisionWindow);
         $this->assertStringContainsString('time_entries.log', $firstDecisionWindow);
