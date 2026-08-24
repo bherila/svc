@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "261713407fa6fae9974d0b994f485895",
+    "content-hash": "14fcdaee74a7c1050478c81f469ed424",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.5.2",
+            "version": "v0.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth.git",
-                "reference": "8cbae89b5cceb1a9fb000ac4bf75aff41d8dcefd"
+                "reference": "4fbafe2f9ff084bfa0129a172874ce3384671507"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth/zipball/8cbae89b5cceb1a9fb000ac4bf75aff41d8dcefd",
-                "reference": "8cbae89b5cceb1a9fb000ac4bf75aff41d8dcefd",
+                "url": "https://api.github.com/repos/bherila/auth/zipball/4fbafe2f9ff084bfa0129a172874ce3384671507",
+                "reference": "4fbafe2f9ff084bfa0129a172874ce3384671507",
                 "shasum": ""
             },
             "require": {
@@ -36,7 +36,11 @@
                 "web-auth/webauthn-lib": "^5.2"
             },
             "require-dev": {
+                "laravel/passport": "^13.0",
                 "orchestra/testbench": "^10.0"
+            },
+            "suggest": {
+                "laravel/passport": "Required only when using the optional OAuth authorization-server helpers."
             },
             "type": "library",
             "extra": {
@@ -58,9 +62,9 @@
             "description": "Shared Laravel authentication services for BWH applications.",
             "support": {
                 "issues": "https://github.com/bherila/auth/issues",
-                "source": "https://github.com/bherila/auth/tree/v0.5.2"
+                "source": "https://github.com/bherila/auth/tree/v0.6.0"
             },
-            "time": "2026-08-15T06:21:58+00:00"
+            "time": "2026-08-24T06:18:19+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

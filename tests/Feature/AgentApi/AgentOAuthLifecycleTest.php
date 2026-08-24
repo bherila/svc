@@ -4,7 +4,7 @@ namespace Tests\Feature\AgentApi;
 
 use App\Models\User;
 use App\Support\AgentApi\AgentApiScopes;
-use App\Support\AgentApi\OAuthResourceIndicator;
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Passport;
@@ -29,21 +29,21 @@ final class AgentOAuthLifecycleTest extends TestCase
         $verifier = $this->verifier();
         $code = $this->authorize($user, $clientId, $verifier);
 
-        $exchange = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::agentApi())
+        $exchange = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())
             ->assertOk()
             ->assertJsonStructure(['access_token', 'refresh_token', 'expires_in']);
         $this->assertStringContainsString('no-store', (string) $exchange->headers->get('Cache-Control'));
         $tokens = $exchange->json();
         $firstAccess = Passport::token()->newQuery()->where('client_id', $clientId)->sole();
-        $this->assertSame(OAuthResourceIndicator::agentApi(), $firstAccess->resource_uri);
+        $this->assertSame(OAuthResourceIndicator::resource(), $firstAccess->resource_uri);
         $this->assertNotNull(Passport::client()->newQuery()->findOrFail($clientId)->last_used_at);
 
-        $rotated = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::agentApi())
+        $rotated = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())
             ->assertOk()
             ->assertJsonStructure(['access_token', 'refresh_token'])
             ->json();
         $this->assertNotSame($tokens['refresh_token'], $rotated['refresh_token']);
-        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::agentApi())
+        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())
             ->assertBadRequest()
             ->assertJsonPath('error', 'invalid_grant');
 
@@ -54,7 +54,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertStringContainsString('no-store', (string) $revocation->headers->get('Cache-Control'));
         $this->assertTrue((bool) $newAccess->fresh()->revoked);
 
-        $this->refresh($clientId, $rotated['refresh_token'], OAuthResourceIndicator::agentApi())
+        $this->refresh($clientId, $rotated['refresh_token'], OAuthResourceIndicator::resource())
             ->assertBadRequest()
             ->assertJsonPath('error', 'invalid_grant');
         $this->assertDatabaseHas('oauth_refresh_tokens', ['access_token_id' => $newAccess->id, 'revoked' => true]);
@@ -76,7 +76,7 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         $verifier = $this->verifier();
         $validCode = $this->authorize($user, $clientId, $verifier);
-        $tokens = $this->exchangeCode($clientId, $validCode, $verifier, OAuthResourceIndicator::agentApi())->assertOk()->json();
+        $tokens = $this->exchangeCode($clientId, $validCode, $verifier, OAuthResourceIndicator::resource())->assertOk()->json();
         $access = Passport::token()->newQuery()->where('client_id', $clientId)->where('revoked', false)->latest('created_at')->firstOrFail();
         $refreshFailure = $this->refresh($clientId, $tokens['refresh_token'], $wrong)
             ->assertBadRequest()
@@ -108,7 +108,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             'state' => 'oauth-test-state',
             'code_challenge' => $this->base64Url(hash('sha256', $verifier, true)),
             'code_challenge_method' => 'S256',
-            'resource' => OAuthResourceIndicator::agentApi(),
+            'resource' => OAuthResourceIndicator::resource(),
         ], '', '&', PHP_QUERY_RFC3986));
         $response->assertOk()->assertSee('Connect Lifecycle client to SVC?');
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));

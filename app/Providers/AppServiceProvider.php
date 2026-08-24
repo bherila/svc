@@ -58,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Passport::loadKeysFrom(storage_path('app/private/oauth'));
-        Passport::authorizationView('oauth.authorize');
+        Passport::authorizationView('bherila-auth::oauth.authorize');
         Passport::tokensCan(AgentApiScopes::descriptions());
         Passport::tokensExpireIn(now()->addMinutes(15));
         Passport::refreshTokensExpireIn(now()->addDays(30));

@@ -51,6 +51,44 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame($project->public_id, $response['structuredContent']['data']['id']);
     }
 
+    public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void
+    {
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+
+        $initialization = $this->mcp($this->initializeMessage())->assertOk();
+        $instructions = $initialization->json('result.instructions');
+        $this->assertIsString($instructions);
+        $firstDecisionWindow = substr($instructions, 0, 512);
+        $this->assertStringContainsString('First call context.get', $firstDecisionWindow);
+        $this->assertStringContainsString('time_entries.log', $firstDecisionWindow);
+        $this->assertStringContainsString('never approve time unless the user asks', $firstDecisionWindow);
+
+        $session = $initialization->headers->get('Mcp-Session-Id');
+        $this->assertIsString($session);
+        $prompts = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'prompts/list',
+            'params' => [],
+        ], $session)->assertOk()->json('result.prompts');
+        $this->assertSame(
+            ['log-time-across-projects', 'prepare-invoice-safely'],
+            array_column($prompts, 'name'),
+        );
+
+        $guide = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'prompts/get',
+            'params' => ['name' => 'log-time-across-projects', 'arguments' => []],
+        ], $session)->assertOk()->json('result.messages.0.content.text');
+        $this->assertIsString($guide);
+        $this->assertStringContainsString('context.get', $guide);
+        $this->assertStringContainsString('stable, task-specific idempotency_key', $guide);
+        $this->assertStringContainsString('Do not approve time', $guide);
+    }
+
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void
     {
         config(['agent_api.mcp_allowed_origins' => ['http://localhost']]);

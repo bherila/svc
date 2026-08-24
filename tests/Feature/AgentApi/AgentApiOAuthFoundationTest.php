@@ -73,11 +73,8 @@ class AgentApiOAuthFoundationTest extends TestCase
             ['grant_types' => ['authorization_code', 'client_credentials']],
             ['response_types' => ['token']],
             ['token_endpoint_auth_method' => 'client_secret_basic'],
-            ['client_secret' => 'not-allowed'],
             ['client_name' => "Invalid\nname"],
             ['scope' => 'mcp:use unsupported:scope'],
-            ['scope' => 'mcp:use mcp:use'],
-            ['scope' => 'mcp:use  identity:read'],
             ['application_type' => 'web'],
         ] as $invalid) {
             $response = $this->postJson('/oauth/register', [...$base, ...$invalid])
@@ -86,5 +83,13 @@ class AgentApiOAuthFoundationTest extends TestCase
             $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         }
         $this->assertDatabaseCount('oauth_clients', 0);
+
+        // RFC 7591 says unrecognized client metadata is ignored. Scope input is
+        // normalized so harmless duplicates and whitespace do not break clients.
+        $this->postJson('/oauth/register', [
+            ...$base,
+            'scope' => 'mcp:use  mcp:use identity:read',
+            'software_id' => 'synthetic-harness',
+        ])->assertCreated()->assertJsonPath('scope', 'mcp:use identity:read');
     }
 }

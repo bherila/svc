@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Middleware\EnforceOAuthPkce;
 use App\Http\Middleware\OAuthSecurityHeaders;
+use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 
 return [
 

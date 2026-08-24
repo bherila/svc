@@ -87,7 +87,8 @@ response type, S256 PKCE, exact resource binding, and no token-endpoint client
 authentication. Dynamic registration accepts only that profile and safe HTTPS or
 loopback redirect URIs. Registrations are marked, their last token use is tracked,
 and a daily retention command removes only stale registrations with no active access
-or refresh credential. SVC renders its own consent screen after the Bherila.net login.
+or refresh credential. SVC configures the shared auth package's consent screen after
+the Bherila.net login.
 
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;
@@ -108,3 +109,8 @@ payment data, and provider identifiers are never logged.
 The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output schemas
 are packaged from each tool's declared REST success component and enforced at runtime;
 the MCP layer does not maintain a second response-schema tree.
+
+The MCP initialize response front-loads the operational rules a harness needs for safe
+time and invoice work. Clients that implement MCP prompts can also expose the guided
+`log-time-across-projects` and `prepare-invoice-safely` workflows. Tool descriptions,
+schemas, and annotations remain the authority for each individual call.

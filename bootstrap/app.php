@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Middleware\EnforceOAuthResourceIndicator;
 use App\Http\Middleware\HandleInertiaRequests;
+use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;

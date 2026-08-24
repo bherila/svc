@@ -142,11 +142,12 @@ claude mcp add --transport http --scope user svc https://svc.bherila.net/api/v1/
 claude mcp login svc
 ```
 
-Restart the client if it was already running, then ask it to call `context.get`
-before choosing a workspace or carrying out an operation. Access remains limited by
-the signed-in user's current SVC role and granted OAuth scopes. Invoice payment is
-not an MCP capability; invoice results provide the browser payment URL when one is
-available.
+Restart the client if it was already running. The MCP initialization response teaches
+compatible harnesses to call `context.get` before choosing a workspace, and exposes
+guided `log-time-across-projects` and `prepare-invoice-safely` prompts when the client
+supports MCP prompts. Access remains limited by the signed-in user's current SVC role
+and granted OAuth scopes. Invoice payment is not an MCP capability; invoice results
+provide the browser payment URL when one is available.
 
 Browser-based MCP clients must use an exact origin listed in
 `AGENT_API_MCP_ALLOWED_ORIGINS`; unlisted origins receive no CORS authorization and

@@ -27,6 +27,7 @@ final class AgentMcpServerFactory
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpReadTools $reads,
         private readonly AgentMcpWriteTools $writes,
+        private readonly AgentMcpPrompts $prompts,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
         private readonly RequestArguments $requestArguments,
@@ -53,6 +54,18 @@ final class AgentMcpServerFactory
                 websiteUrl: url('/'),
             )
             ->setInstructions($this->instructions())
+            ->addPrompt(
+                handler: [$this->prompts, 'logTimeAcrossProjects'],
+                name: 'log-time-across-projects',
+                title: 'Log time across projects',
+                description: 'Safely discover SVC projects and log one or more completed time entries with retry-safe idempotency.',
+            )
+            ->addPrompt(
+                handler: [$this->prompts, 'prepareInvoiceSafely'],
+                name: 'prepare-invoice-safely',
+                title: 'Prepare an invoice safely',
+                description: 'Build and review an invoice draft while preserving explicit confirmation for consequential actions.',
+            )
             ->setPaginationLimit(100)
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
@@ -90,11 +103,11 @@ final class AgentMcpServerFactory
 
     private function instructions(): string
     {
-        $base = 'Authenticate using OAuth Authorization Code with S256 PKCE. First call context.get; select an ID returned there and never guess a workspace or resource ID.';
+        $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version.';
         $mode = (bool) config('agent_api.writes_enabled')
             ? 'Task, time, and invoice workflow writes are enabled. Read the current record before mutation, supply its opaque version when required, and obtain explicit user confirmation before issue, send, or void.'
             : 'This release is read-only; use the SVC website for changes.';
 
-        return $base.' '.$mode.' Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.';
+        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.';
     }
 }
