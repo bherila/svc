@@ -99,6 +99,55 @@ final class AgentTimeEntryMutationTest extends TestCase
         ])->assertUnprocessable()->assertJsonPath('message', 'Client-visible time requires an explicit client-facing description.');
     }
 
+    public function test_time_write_cutoff_overrides_the_broad_write_flag(): void
+    {
+        config([
+            'agent_api.writes_enabled' => true,
+            'agent_api.time_entry_writes_enabled' => false,
+        ]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'disabled-time-write')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries",
+            ['entries' => [[
+                'project_id' => $project->public_id,
+                'worked_on' => '2026-08-23',
+                'minutes' => 30,
+                'description' => 'Must stay disabled',
+            ]]],
+        )->assertNotFound();
+        $this->assertDatabaseCount('client_time_entries', 0);
+    }
+
+    public function test_time_logging_rejects_invalid_currency_codes(): void
+    {
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'invalid-time-currency')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries",
+            ['entries' => [[
+                'project_id' => $project->public_id,
+                'worked_on' => '2026-08-23',
+                'minutes' => 30,
+                'description' => 'Invalid currency',
+                'currency' => '$$$',
+            ]]],
+        )->assertUnprocessable()->assertJsonValidationErrors('entries.0.currency');
+        $this->assertDatabaseCount('client_time_entries', 0);
+    }
+
     public function test_project_viewer_cannot_log_time(): void
     {
         config(['agent_api.writes_enabled' => true]);
