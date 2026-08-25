@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "14fcdaee74a7c1050478c81f469ed424",
+    "content-hash": "c071f6c3e8aa2fd8c3ca99215a60ccce",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.6.0",
+            "version": "v0.8.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/bherila/auth.git",
-                "reference": "4fbafe2f9ff084bfa0129a172874ce3384671507"
+                "url": "https://github.com/bherila/auth-laravel.git",
+                "reference": "69b6f31bfa3fd42abb309538069d29044e838a82"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth/zipball/4fbafe2f9ff084bfa0129a172874ce3384671507",
-                "reference": "4fbafe2f9ff084bfa0129a172874ce3384671507",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/69b6f31bfa3fd42abb309538069d29044e838a82",
+                "reference": "69b6f31bfa3fd42abb309538069d29044e838a82",
                 "shasum": ""
             },
             "require": {
@@ -32,7 +32,7 @@
                 "illuminate/support": "^12.0 || ^13.0",
                 "illuminate/validation": "^12.0 || ^13.0",
                 "php": "^8.2",
-                "symfony/uid": "^7.0",
+                "symfony/uid": "^7.0 || ^8.0",
                 "web-auth/webauthn-lib": "^5.2"
             },
             "require-dev": {
@@ -52,7 +52,7 @@
             },
             "autoload": {
                 "psr-4": {
-                    "BWH\\Auth\\": "php/src/"
+                    "BWH\\Auth\\": "src/"
                 }
             },
             "notification-url": "https://packagist.org/downloads/",
@@ -60,11 +60,12 @@
                 "MIT"
             ],
             "description": "Shared Laravel authentication services for BWH applications.",
+            "homepage": "https://github.com/bherila/auth-laravel",
             "support": {
-                "issues": "https://github.com/bherila/auth/issues",
-                "source": "https://github.com/bherila/auth/tree/v0.6.0"
+                "issues": "https://github.com/bherila/auth-laravel/issues",
+                "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-08-24T06:18:19+00:00"
+            "time": "2026-08-25T06:01:50+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

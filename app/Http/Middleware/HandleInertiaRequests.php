@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\OAuthLoginController;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -50,6 +51,13 @@ class HandleInertiaRequests extends Middleware
                     'updated_at' => $user->updated_at?->toIso8601String(),
                 ],
             ],
+            // The sibling applications the identity provider reported for this person when
+            // they signed in. Shared from the session rather than compiled into the bundle,
+            // so which applications exist is visible only to someone actually signed in —
+            // and the provider, not this application, decides what is listed.
+            'applications' => $user === null
+                ? []
+                : OAuthLoginController::applications($request),
         ];
     }
 }
