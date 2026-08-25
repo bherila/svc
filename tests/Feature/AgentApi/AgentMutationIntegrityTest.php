@@ -109,6 +109,51 @@ final class AgentMutationIntegrityTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'test.concurrent', 'outcome' => 'failed', 'error_category' => 'conflict']);
     }
 
+    public function test_the_same_idempotency_key_is_independent_across_workspaces(): void
+    {
+        [$user, $firstWorkspace] = $this->tenant();
+        $secondWorkspace = Workspace::query()->create(['name' => 'Second Integrity Workspace', 'slug' => 'second-integrity-'.Str::lower(Str::random(8))]);
+        $secondWorkspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $executor = app(AgentMutationExecutor::class);
+        $calls = 0;
+        $firstId = (string) Str::uuid();
+        $secondId = (string) Str::uuid();
+
+        $first = $executor->run(
+            $user,
+            $firstWorkspace,
+            'test-client',
+            'time_entries.log',
+            'shared-key',
+            ['entries' => [['minutes' => 30]]],
+            function () use (&$calls, $firstId): array {
+                $calls++;
+
+                return [$firstId];
+            },
+        );
+        $second = $executor->run(
+            $user,
+            $secondWorkspace,
+            'test-client',
+            'time_entries.log',
+            'shared-key',
+            ['entries' => [['minutes' => 30]]],
+            function () use (&$calls, $secondId): array {
+                $calls++;
+
+                return [$secondId];
+            },
+        );
+
+        $this->assertSame([$firstId], $first);
+        $this->assertSame([$secondId], $second);
+        $this->assertSame(2, $calls);
+        $this->assertDatabaseCount('agent_mutation_receipts', 2);
+        $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $firstWorkspace->id, 'idempotency_key' => 'shared-key']);
+        $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $secondWorkspace->id, 'idempotency_key' => 'shared-key']);
+    }
+
     public function test_a_failure_halfway_through_a_time_batch_rolls_back_the_first_entry_and_receipt(): void
     {
         config(['agent_api.writes_enabled' => true]);

@@ -62,6 +62,7 @@ final class AgentMutationExecutor
         } catch (UniqueConstraintViolationException $collision) {
             $winner = AgentMutationReceipt::query()->where([
                 'user_id' => $user->id,
+                'workspace_id' => $workspace->id,
                 'oauth_client_id' => $clientId,
                 'operation' => $operation,
                 'idempotency_key' => $key,

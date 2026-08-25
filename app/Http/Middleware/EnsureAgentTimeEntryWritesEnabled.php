@@ -10,11 +10,7 @@ final class EnsureAgentTimeEntryWritesEnabled
 {
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless(
-            (bool) config('agent_api.writes_enabled')
-                || (bool) config('agent_api.time_entry_writes_enabled'),
-            404,
-        );
+        abort_unless((bool) config('agent_api.time_entry_writes_enabled'), 404);
 
         return $next($request);
     }

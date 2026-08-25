@@ -47,8 +47,7 @@ final class AgentMcpToolCatalog
 
     private function timeEntryWritesEnabled(): bool
     {
-        return (bool) config('agent_api.writes_enabled')
-            || (bool) config('agent_api.time_entry_writes_enabled');
+        return (bool) config('agent_api.time_entry_writes_enabled');
     }
 
     private function tool(string $name, string $title, string $description, AgentMcpReadTools $tools, string $method): ToolDefinition

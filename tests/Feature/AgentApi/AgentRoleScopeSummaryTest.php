@@ -99,21 +99,22 @@ final class AgentRoleScopeSummaryTest extends TestCase
             AgentApiScopes::PROJECTS_READ,
             AgentApiScopes::TASKS_WRITE,
             AgentApiScopes::TIME_READ,
+            AgentApiScopes::TIME_WRITE,
             AgentApiScopes::TIME_APPROVE,
             AgentApiScopes::BILLING_WRITE,
         ]);
 
         $workspaceContext = $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
-        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:approve'], $workspaceContext['capabilities']);
+        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:write', 'time:approve'], $workspaceContext['capabilities']);
         $this->assertSame($project->public_id, $workspaceContext['project_capabilities'][0]['project_id']);
         $this->assertSame('manager', $workspaceContext['project_capabilities'][0]['role']);
-        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:approve'], $workspaceContext['project_capabilities'][0]['capabilities']);
+        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:write', 'time:approve'], $workspaceContext['project_capabilities'][0]['capabilities']);
         $this->assertNotContains('billing:write', $workspaceContext['capabilities']);
 
-        config(['agent_api.writes_enabled' => false]);
-        $readOnlyContext = $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
-        $this->assertSame(['projects:read', 'time:read'], $readOnlyContext['capabilities']);
-        $this->assertSame(['projects:read', 'time:read'], $readOnlyContext['project_capabilities'][0]['capabilities']);
+        config(['agent_api.time_entry_writes_enabled' => false]);
+        $timeWritesDisabled = $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
+        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:approve'], $timeWritesDisabled['capabilities']);
+        $this->assertSame(['projects:read', 'tasks:write', 'time:read', 'time:approve'], $timeWritesDisabled['project_capabilities'][0]['capabilities']);
     }
 
     public function test_project_detail_embeds_tasks_only_with_task_scope(): void

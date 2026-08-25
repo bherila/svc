@@ -179,10 +179,10 @@ final class AgentMcpReadOnlyTest extends TestCase
             ));
     }
 
-    public function test_time_write_tools_are_absent_when_both_write_cutoffs_are_disabled(): void
+    public function test_time_write_tools_are_absent_when_the_time_cutoff_is_disabled(): void
     {
         config([
-            'agent_api.writes_enabled' => false,
+            'agent_api.writes_enabled' => true,
             'agent_api.time_entry_writes_enabled' => false,
         ]);
         $user = User::factory()->create();

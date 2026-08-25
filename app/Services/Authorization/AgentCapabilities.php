@@ -146,7 +146,6 @@ final class AgentCapabilities
 
     private function timeEntryWritesEnabled(): bool
     {
-        return $this->writesEnabled()
-            || (bool) config('agent_api.time_entry_writes_enabled');
+        return (bool) config('agent_api.time_entry_writes_enabled');
     }
 }
