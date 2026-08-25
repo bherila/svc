@@ -147,6 +147,12 @@ supports MCP prompts. Access remains limited by the signed-in user's current SVC
 and granted OAuth scopes. Invoice payment is not an MCP capability; invoice results
 provide the browser payment URL when one is available.
 
+Time-entry tools support listing and idempotent logging plus optimistic-locking
+updates and soft deletion. Updates and deletion are limited to authorized draft
+entries that have not been approved or invoiced. Set
+`AGENT_API_TIME_ENTRY_WRITES_ENABLED=false` for an emergency time-write cutoff;
+`AGENT_API_WRITES_ENABLED` remains the separate full workflow-write cutover.
+
 Browser-based MCP clients must use an exact origin listed in
 `AGENT_API_MCP_ALLOWED_ORIGINS`; unlisted origins receive no CORS authorization and
 their MCP requests are rejected. Native clients that omit `Origin` continue to work.

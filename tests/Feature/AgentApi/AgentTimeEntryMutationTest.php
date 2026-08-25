@@ -22,7 +22,10 @@ final class AgentTimeEntryMutationTest extends TestCase
 
     public function test_contributor_can_idempotently_log_then_edit_and_delete_their_draft_only(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
         [$workspace, $project] = $this->project();
         $contributor = User::factory()->create();
         $other = User::factory()->create();
@@ -124,6 +127,39 @@ final class AgentTimeEntryMutationTest extends TestCase
             'expected_version' => AgentApiVersion::for($legacyDraft),
             'minutes' => 30,
         ])->assertForbidden();
+    }
+
+    public function test_approved_time_cannot_be_updated_or_deleted(): void
+    {
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $contributor->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Approved work',
+            'status' => 'approved',
+        ]);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'approved-time-update')->patchJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}",
+            ['expected_version' => AgentApiVersion::for($entry), 'minutes' => 45],
+        )->assertConflict()->assertJsonPath('message', 'Only draft time entries can be changed.');
+        $this->withHeader('Idempotency-Key', 'approved-time-delete')->deleteJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}",
+            ['expected_version' => AgentApiVersion::for($entry)],
+        )->assertConflict()->assertJsonPath('message', 'Only draft time entries can be changed.');
+        $this->assertNotSoftDeleted('client_time_entries', ['id' => $entry->id]);
     }
 
     public function test_project_manager_can_approve_but_contributor_cannot(): void
