@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
 use App\Http\Middleware\EnforceAgentMcpOrigin;
+use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Support\AgentApi\AgentApiScopes;
@@ -85,11 +86,11 @@ Route::prefix('v1')
         Route::patch('/workspaces/{workspace}/tasks/{task}', [AgentTaskMutationController::class, 'update'])
             ->whereUuid('task')->middleware([CheckToken::using(AgentApiScopes::TASKS_WRITE), EnsureAgentWritesEnabled::class])->name('tasks.update');
         Route::post('/workspaces/{workspace}/time-entries', [AgentTimeEntryMutationController::class, 'store'])
-            ->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentWritesEnabled::class])->name('time-entries.store');
+            ->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentTimeEntryWritesEnabled::class])->name('time-entries.store');
         Route::patch('/workspaces/{workspace}/time-entries/{entry}', [AgentTimeEntryMutationController::class, 'update'])
-            ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentWritesEnabled::class])->name('time-entries.update');
+            ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentTimeEntryWritesEnabled::class])->name('time-entries.update');
         Route::delete('/workspaces/{workspace}/time-entries/{entry}', [AgentTimeEntryMutationController::class, 'destroy'])
-            ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentWritesEnabled::class])->name('time-entries.destroy');
+            ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentTimeEntryWritesEnabled::class])->name('time-entries.destroy');
         Route::post('/workspaces/{workspace}/time-entries/approve', [AgentTimeEntryMutationController::class, 'approve'])
             ->middleware([CheckToken::using(AgentApiScopes::TIME_APPROVE), EnsureAgentWritesEnabled::class])->name('time-entries.approve');
         Route::post('/workspaces/{workspace}/invoices', [AgentInvoiceMutationController::class, 'createDraft'])

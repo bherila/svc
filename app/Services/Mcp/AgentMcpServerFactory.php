@@ -52,6 +52,9 @@ final class AgentMcpServerFactory
             static fn (ToolDefinition $definition): string => $definition->name,
             $exposedDefinitions,
         ), true);
+        $hasWriteTools = collect($exposedDefinitions)->contains(
+            static fn (ToolDefinition $definition): bool => ! $definition->readOnly,
+        );
         $schemaIds = [];
         foreach ($exposedDefinitions as $definition) {
             $schemaIds[$definition->name] = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
@@ -60,12 +63,12 @@ final class AgentMcpServerFactory
             ->setServerInfo(
                 name: 'SVC Agent API',
                 version: 'v1',
-                description: (bool) config('agent_api.writes_enabled')
-                    ? 'Read and safely manage authorized SVC tasks, time, and invoices through the versioned REST API.'
+                description: $hasWriteTools
+                    ? 'Read authorized SVC data and safely use the write operations authorized for this connection.'
                     : 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
                 websiteUrl: url('/'),
             )
-            ->setInstructions($this->instructions($exposedToolNames));
+            ->setInstructions($this->instructions($exposedToolNames, $hasWriteTools));
 
         if ($this->hasTools($exposedToolNames, ['context.get', 'projects.list', 'time_entries.log'])) {
             $builder->addPrompt(
@@ -133,7 +136,7 @@ final class AgentMcpServerFactory
     }
 
     /** @param array<string, true> $available */
-    private function instructions(array $available): string
+    private function instructions(array $available, bool $hasWriteTools): string
     {
         if ($this->hasTools($available, ['context.get', 'projects.list', 'time_entries.log'])) {
             $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version.';
@@ -142,9 +145,9 @@ final class AgentMcpServerFactory
         } else {
             $base = 'Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID.';
         }
-        $mode = (bool) config('agent_api.writes_enabled')
-            ? 'Workflow writes are enabled, but write tools are filtered by the current OAuth scopes. Read the current record before mutation and supply its opaque version when required.'
-            : 'This release is read-only; use the SVC website for changes.';
+        $mode = $hasWriteTools
+            ? 'Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required.'
+            : 'This connection is read-only; use the SVC website for changes.';
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, or void.';
         }

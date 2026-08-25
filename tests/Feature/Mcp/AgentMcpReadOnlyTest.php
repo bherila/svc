@@ -179,15 +179,49 @@ final class AgentMcpReadOnlyTest extends TestCase
             ));
     }
 
-    public function test_write_tools_are_absent_until_the_explicit_cutover_flag_is_enabled(): void
+    public function test_time_write_tools_are_absent_when_both_write_cutoffs_are_disabled(): void
     {
-        config(['agent_api.writes_enabled' => false]);
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => false,
+        ]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::TIME_WRITE,
+        ]);
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)->json('result.tools');
 
         $this->assertNotContains('time_entries.log', array_column($tools, 'name'));
+    }
+
+    public function test_time_entry_cutover_exposes_only_draft_time_mutations(): void
+    {
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
+        $user = User::factory()->create();
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::TASKS_WRITE,
+            AgentApiScopes::TIME_WRITE,
+            AgentApiScopes::TIME_APPROVE,
+            AgentApiScopes::BILLING_WRITE,
+        ]);
+        $session = $this->initialize();
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertOk()->json('result.tools');
+        $names = array_column($tools, 'name');
+
+        $this->assertSame(
+            ['time_entries.log', 'time_entries.update', 'time_entries.delete'],
+            array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'time_entries.'))),
+        );
+        $this->assertNotContains('tasks.create', $names);
+        $this->assertNotContains('time_entries.approve', $names);
+        $this->assertNotContains('invoices.create_draft', $names);
     }
 
     public function test_tool_discovery_omits_operations_outside_the_current_token_scopes(): void

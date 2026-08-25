@@ -87,7 +87,7 @@ final class AgentCapabilities
             && ($client || in_array($role, [ProjectRole::Owner, ProjectRole::Manager, ProjectRole::Contributor], true))) {
             $capabilities[] = 'time:read';
         }
-        if ($this->writesEnabled() && $this->scopes->allows($request, AgentApiScopes::TIME_WRITE)
+        if ($this->timeEntryWritesEnabled() && $this->scopes->allows($request, AgentApiScopes::TIME_WRITE)
             && in_array($role, [ProjectRole::Owner, ProjectRole::Manager, ProjectRole::Contributor], true)) {
             $capabilities[] = 'time:write';
         }
@@ -108,10 +108,12 @@ final class AgentCapabilities
             AgentApiScopes::TIME_READ => 'time:read',
             AgentApiScopes::BILLING_READ => 'billing:read',
         ];
+        if ($this->timeEntryWritesEnabled()) {
+            $mapping[AgentApiScopes::TIME_WRITE] = 'time:write';
+        }
         if ($this->writesEnabled()) {
             $mapping += [
                 AgentApiScopes::TASKS_WRITE => 'tasks:write',
-                AgentApiScopes::TIME_WRITE => 'time:write',
                 AgentApiScopes::TIME_APPROVE => 'time:approve',
                 AgentApiScopes::BILLING_WRITE => 'billing:write',
                 AgentApiScopes::BILLING_DELIVER => 'billing:deliver',
@@ -140,5 +142,11 @@ final class AgentCapabilities
     private function writesEnabled(): bool
     {
         return (bool) config('agent_api.writes_enabled');
+    }
+
+    private function timeEntryWritesEnabled(): bool
+    {
+        return $this->writesEnabled()
+            || (bool) config('agent_api.time_entry_writes_enabled');
     }
 }

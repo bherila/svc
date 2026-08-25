@@ -238,16 +238,19 @@ final class AgentMcpContractTest extends TestCase
     public function test_server_instructions_match_the_write_flag(): void
     {
         $user = User::factory()->create();
-        $this->actingAsAgent($user, [AgentApiScopes::MCP_USE]);
+        $this->actingAsAgent($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE]);
 
-        config(['agent_api.writes_enabled' => false]);
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => false,
+        ]);
         $readOnly = $this->mcp($this->initializeMessage())->assertOk()->json('result.instructions');
         $this->assertStringContainsString('read-only', $readOnly);
 
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.time_entry_writes_enabled' => true]);
         $writable = $this->mcp($this->initializeMessage())->assertOk()->json('result.instructions');
-        $this->assertStringContainsString('writes are enabled', $writable);
-        $this->assertStringNotContainsString('release is read-only', $writable);
+        $this->assertStringContainsString('write tools are enabled', $writable);
+        $this->assertStringNotContainsString('connection is read-only', $writable);
     }
 
     /** @return list<ToolDefinition> */
