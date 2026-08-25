@@ -145,7 +145,7 @@ function NewTaskForm({
 }
 
 export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
-    const { auth } = usePage().props;
+    const { auth, applications } = usePage().props;
     const workspaceForm = useForm({ name: '' });
     const createWorkspace = (event: FormEvent) => {
         event.preventDefault();
@@ -170,6 +170,28 @@ export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
                             <span className="text-slate-600">
                                 {auth.user?.name}
                             </span>
+                            {/* The sibling applications the identity provider reported at
+                                sign-in. A native disclosure keeps this to markup, and the
+                                list arrives per request as a shared prop rather than being
+                                compiled in, so what exists is not readable from the bundle. */}
+                            {applications.length > 0 && (
+                                <details className="relative">
+                                    <summary className="cursor-pointer list-none font-medium text-slate-600 hover:text-slate-950">
+                                        Apps
+                                    </summary>
+                                    <div className="absolute right-0 z-50 mt-2 min-w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                                        {applications.map((app) => (
+                                            <a
+                                                key={app.key}
+                                                href={app.url}
+                                                className="block rounded-lg px-3 py-1.5 whitespace-nowrap text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                                            >
+                                                {app.name}
+                                            </a>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
                             <Link
                                 href="/logout"
                                 method="post"

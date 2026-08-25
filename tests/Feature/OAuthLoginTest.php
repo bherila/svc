@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\OAuthLoginController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,7 +28,58 @@ class OAuthLoginTest extends TestCase
             'authorize_path' => '/oauth/authorize',
             'token_path' => '/oauth/token',
             'identity_path' => '/api/oauth/user',
+            // This application's own config does not restate `oauth_client`, so it inherits
+            // the package's paths. This setUp *does* restate it, and `mergeConfigFrom` is a
+            // shallow merge, so an omitted key here would be blank rather than inherited and
+            // `endSessionUrl()` would abort 503.
+            'end_session_path' => '/oauth/end-session',
         ]]);
+    }
+
+    public function test_signing_out_ends_the_session_at_the_provider(): void
+    {
+        $user = User::factory()->create();
+
+        // Ending only the local session leaves the provider still recognising this person,
+        // so the next protected page hands them straight back with no prompt.
+        $this->actingAs($user)
+            ->post('/logout')
+            ->assertRedirect(
+                'https://identity.example.test/oauth/end-session?client_id=svc-client'
+                    .'&post_logout_redirect_uri='.urlencode(url('/')),
+            );
+
+        $this->assertGuest();
+    }
+
+    public function test_signing_out_stays_local_when_no_provider_is_configured(): void
+    {
+        config(['bherila-auth.oauth_client.client_id' => '']);
+
+        $user = User::factory()->create();
+
+        // Handing off to a provider that was never configured aborts 503, which would make
+        // signing out fail outright — worse than signing out only locally.
+        $this->actingAs($user)->post('/logout')->assertRedirect(route('home'));
+        $this->assertGuest();
+    }
+
+    public function test_the_application_list_is_shared_with_the_page_only_when_signed_in(): void
+    {
+        $user = User::factory()->create();
+        $apps = [['key' => 'phr', 'name' => 'Health', 'url' => 'https://phr.example.test']];
+
+        $request = Request::create('/');
+        $request->setLaravelSession(app('session.store'));
+        $request->session()->put(OAuthLoginController::APPLICATIONS_SESSION_KEY, $apps);
+        $request->setUserResolver(fn () => $user);
+
+        $shared = app(HandleInertiaRequests::class)->share($request);
+        $this->assertSame($apps, $shared['applications']);
+
+        // Which applications exist is not public, so an anonymous request is told nothing.
+        $request->setUserResolver(fn () => null);
+        $this->assertSame([], app(HandleInertiaRequests::class)->share($request)['applications']);
     }
 
     public function test_redirect_uses_state_and_pkce(): void
