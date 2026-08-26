@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Http\Controllers\OAuthLoginController;
+use BWH\Auth\OAuth\ProviderApplications;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -57,7 +57,7 @@ class HandleInertiaRequests extends Middleware
             // and the provider, not this application, decides what is listed.
             'applications' => $user === null
                 ? []
-                : OAuthLoginController::applications($request),
+                : ProviderApplications::forRequest($request),
         ];
     }
 }
