@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Http\Controllers\OAuthLoginController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
+use BWH\Auth\OAuth\ProviderApplications;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -71,7 +71,7 @@ class OAuthLoginTest extends TestCase
 
         $request = Request::create('/');
         $request->setLaravelSession(app('session.store'));
-        $request->session()->put(OAuthLoginController::APPLICATIONS_SESSION_KEY, $apps);
+        $request->session()->put(ProviderApplications::SESSION_KEY, $apps);
         $request->setUserResolver(fn () => $user);
 
         $shared = app(HandleInertiaRequests::class)->share($request);
