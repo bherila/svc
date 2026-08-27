@@ -84,6 +84,7 @@ class ClientCompany extends Model implements WorkspaceOwned
         $today = CarbonImmutable::now()->startOfDay();
 
         return $this->agreements()
+            ->where('workspace_id', $this->workspace_id)
             ->where('status', 'active')
             ->where(fn ($query) => $query->whereNull('starts_on')->orWhere('starts_on', '<=', $today->toDateString()))
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhere('ends_on', '>=', $today->toDateString()))
@@ -99,6 +100,7 @@ class ClientCompany extends Model implements WorkspaceOwned
     public function mostRecentAgreement(): ?ClientAgreement
     {
         return $this->agreements()
+            ->where('workspace_id', $this->workspace_id)
             ->where('status', '!=', 'draft')
             ->orderByDesc('starts_on')
             ->orderByDesc('id')

@@ -156,6 +156,33 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Work whose hours have actually drawn on the retainer.
+     *
+     * Deferred work draws only once the allocator bills it, so a deferred entry
+     * still waiting is excluded - counting it consumes pool nothing has taken,
+     * manufactures a negative balance, and bills catch-up hours to restore
+     * capacity that was never used.
+     *
+     * The subtlety is the other half: allocation attaches the entry to a
+     * zero-value retainer line and never clears `is_deferred`. Four ledger
+     * queries wrote `where('is_deferred', false)` by hand, so once the invoice
+     * was issued those hours vanished from every later rebuild, the same pool
+     * rolled forward a second time, and the overage that followed was
+     * understated. Billed is billed, whatever the flag still says.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeDeferredOnlyOnceAllocated(Builder $query): Builder
+    {
+        return $query->where(
+            fn (Builder $entry): Builder => $entry
+                ->where('is_deferred', false)
+                ->orWhereHas('invoiceLines'),
+        );
+    }
+
+    /**
      * Work that may appear on an invoice at all.
      *
      * Distinct from {@see scopeRetainerBillable()} in the predecessor, where it

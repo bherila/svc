@@ -28,6 +28,14 @@ final class AgreementSelector
      *
      * The fallback is what lets a terminated client still receive a closing
      * invoice for work done in the final period.
+     *
+     * Every selector here carries the company's `workspace_id` explicitly. A
+     * company id is globally unique, so an agreement row holding this company's
+     * id under another tenant's workspace is reachable through the foreign key
+     * alone - and the schema has no composite constraint to stop one existing.
+     * The explicit-agreement path validates both keys; these automatic paths
+     * never passed through it, so bulk and date-based generation could bill a
+     * client on another tenant's terms.
      */
     public function agreementForInvoiceGeneration(ClientCompany $company): ClientAgreement
     {
@@ -53,6 +61,7 @@ final class AgreementSelector
         $now = CarbonImmutable::now();
 
         $agreements = $company->agreements()
+            ->where('workspace_id', $company->workspace_id)
             ->where('status', '!=', 'draft')
             // Every cadence bills its opening retainer in advance, monthly
             // included, so an agreement starting next month is selected now.
@@ -104,6 +113,7 @@ final class AgreementSelector
     public function agreementCoveringDate(ClientCompany $company, CarbonImmutable $date): ?ClientAgreement
     {
         return $company->agreements()
+            ->where('workspace_id', $company->workspace_id)
             ->where('status', '!=', 'draft')
             ->where('starts_on', '<=', $date->toDateString())
             ->where(function ($query) use ($date): void {

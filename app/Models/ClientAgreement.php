@@ -164,6 +164,25 @@ class ClientAgreement extends Model implements WorkspaceOwned
         return $this->retainer_hours ?? $this->monthly_retainer_hours * $this->effectiveBillingCadence()->monthsInCycle();
     }
 
+    /**
+     * One month's worth of retainer hours.
+     *
+     * The same number {@see periodRetainerHours()} sells, divided back down to
+     * a month. Capacity used to read `retainer_minutes` directly while the
+     * invoice line was built from `period_retainer_minutes`, so an imported
+     * agreement carrying both - and disagreeing - sold the client one number of
+     * hours on the invoice and granted a different one to allocation, rollover
+     * and `retainer_hours_included`.
+     */
+    public function retainerHoursPerMonth(): float
+    {
+        $monthsInCycle = max(1, $this->effectiveBillingCadence()->monthsInCycle());
+
+        return $this->retainer_hours === null
+            ? $this->monthly_retainer_hours
+            : round($this->retainer_hours / $monthsInCycle, 4);
+    }
+
     /** Retainer fee for one whole billing cycle, in whole currency units. */
     public function periodRetainerFee(): float
     {

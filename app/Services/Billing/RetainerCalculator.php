@@ -104,7 +104,7 @@ class RetainerCalculator
     public function retainerHoursForMonth(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
         return round(
-            (float) $agreement->monthly_retainer_hours * $this->monthRetainerMultiplier($agreement, $monthStart, $monthEnd),
+            $agreement->retainerHoursPerMonth() * $this->monthRetainerMultiplier($agreement, $monthStart, $monthEnd),
             4,
         );
     }

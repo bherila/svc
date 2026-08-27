@@ -15,7 +15,6 @@ use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
-use App\Support\Billing\FirstCycleProration;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -633,13 +632,18 @@ final class ClientInvoicingService
                 // for this; the monthly path used to charge a full retainer for
                 // an agreement that started or ended mid-month, overcharging the
                 // client and granting a full pool against a partial term.
-                $multiplier = $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod
-                    ? 1.0
-                    : $this->retainerCalculator->monthRetainerMultiplier(
-                        $agreement,
-                        $retainerMonthStart->copy()->startOfDay(),
-                        $retainerMonthEnd->copy()->startOfDay(),
-                    );
+                //
+                // The calculator already knows when `full_period` applies: to
+                // the opening month and nowhere else. Short-circuiting it here
+                // with a flat 1.0 reinstated the same defect facing the other
+                // way - a full fee for a termination month whose capacity
+                // `retainerHoursForMonth()` had already prorated, so the client
+                // was charged for a whole month and given part of one.
+                $multiplier = $this->retainerCalculator->monthRetainerMultiplier(
+                    $agreement,
+                    $retainerMonthStart->copy()->startOfDay(),
+                    $retainerMonthEnd->copy()->startOfDay(),
+                );
 
                 $this->createRetainerFeeLine(
                     $invoice,
@@ -1103,7 +1107,7 @@ final class ClientInvoicingService
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
-            ->where('is_deferred', false)
+            ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
             ->min('worked_on');
@@ -1119,7 +1123,7 @@ final class ClientInvoicingService
             // Same rule as InvoiceLedgerBuilder: deferred work draws on the pool
             // only once the allocator bills it. This path is the monthly
             // equivalent of that ledger and was missed when the other was fixed.
-            ->where('is_deferred', false)
+            ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
             ->where('worked_on', '<=', $periodEnd->toDateString())
@@ -1265,7 +1269,10 @@ final class ClientInvoicingService
         return (float) ClientInvoice::query()
             ->where('workspace_id', $agreement->workspace_id)
             ->where('client_agreement_id', $agreement->id)
-            ->where('status', '!=', 'void')
+            // Charged, not merely non-void. A draft catch-up invoice may never
+            // be issued, and counting its hours as debt the client has already
+            // settled grants capacity against money nobody has been asked for.
+            ->whereIn('status', InvoiceStatus::charged())
             ->where('service_period_end', '<=', $periodEnd->toDateString())
             ->sum('hours_billed_at_rate');
     }

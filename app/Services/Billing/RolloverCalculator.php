@@ -286,11 +286,13 @@ class RolloverCalculator
                 $unusedByMonth[$yearMonth] = $summary->closing->unusedHours;
             }
 
-            // Drop balances that can no longer be spent. Pruned by calendar
-            // distance for the same reason as above; one extra month is kept so
-            // the next month can still report what expired.
+            // Drop balances that can no longer be spent, in the month they
+            // expire. A balance first falls outside the window at exactly
+            // `rolloverMonths + 1`, which is the month that reports it as
+            // expired; keeping it past that reported the same hours as expiring
+            // again every month afterwards.
             foreach (array_keys($unusedByMonth) as $key) {
-                if ($this->monthsBetween((string) $key, $yearMonth) > $rolloverMonths + 1) {
+                if ($this->monthsBetween((string) $key, $yearMonth) >= $rolloverMonths + 1) {
                     unset($unusedByMonth[$key]);
                 }
             }

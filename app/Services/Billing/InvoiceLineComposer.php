@@ -52,7 +52,14 @@ class InvoiceLineComposer
         Carbon $periodEnd,
         int &$sortOrder,
     ): void {
-        $agreement->loadMissing('recurringItems');
+        // Loaded through the tenant, not the foreign key alone. A recurring
+        // item row carrying this agreement's id under another workspace is
+        // reachable otherwise, and its description and price would be copied
+        // straight onto this tenant's invoice.
+        $agreement->setRelation(
+            'recurringItems',
+            $agreement->recurringItems()->where('workspace_id', $invoice->workspace_id)->get(),
+        );
 
         foreach ($this->recurringItemBiller->linesForCycle($agreement, $periodStart, $periodEnd) as $lineData) {
             // The item carries its own currency and the line carries only a
@@ -94,9 +101,12 @@ class InvoiceLineComposer
         Carbon $periodEnd,
         int &$sortOrder
     ): void {
+        $projectId = $this->agreementProjectId($invoice);
+
         $tasks = ClientTask::query()
             ->where('workspace_id', $company->workspace_id)
             ->whereHas('project', fn ($q) => $q->where('client_company_id', $company->id))
+            ->when($projectId !== null, fn ($q) => $q->where('client_project_id', $projectId))
             ->where('milestone_price_amount', '>', 0)
             ->whereNotNull('completed_at')
             ->whereNull('client_invoice_line_id')
@@ -225,9 +235,12 @@ class InvoiceLineComposer
         // keeps the per-entry cost but not the mode, so the cost being present
         // is the whole signal. Restoring modes means restoring that column and
         // narrowing this query again.
+        $projectId = $this->agreementProjectId($invoice);
+
         $entries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
+            ->when($projectId !== null, fn ($q) => $q->where('client_project_id', $projectId))
             ->whereDoesntHave('invoiceLines')
             ->where('is_billable', true)
             ->where('is_deferred', false)
@@ -388,5 +401,29 @@ class InvoiceLineComposer
     private function formatMoney(int $minorUnits, string $currency): string
     {
         return sprintf('%s %s', number_format($minorUnits / 100, 2), $currency);
+    }
+
+    /**
+     * The project an invoice's agreement is confined to, if any.
+     *
+     * Ordinary time was project-scoped through `forAgreementScope()`, but the
+     * supplemental sources - milestones and flat-hourly subcontractor work -
+     * still selected by company. With two project-scoped agreements under one
+     * company, whichever generated first claimed the other project's tasks and
+     * time and attached them permanently to the wrong invoice.
+     *
+     * Read from the invoice rather than taken as an argument, because an
+     * argument is the thing four callers already forgot to pass.
+     */
+    private function agreementProjectId(ClientInvoice $invoice): ?int
+    {
+        if ($invoice->client_agreement_id === null) {
+            return null;
+        }
+
+        return ClientAgreement::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_agreement_id)
+            ->value('client_project_id');
     }
 }

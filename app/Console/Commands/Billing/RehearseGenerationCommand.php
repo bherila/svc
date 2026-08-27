@@ -59,8 +59,21 @@ final class RehearseGenerationCommand extends Command
             $companies->count(),
         ));
 
+        if ($companies->isEmpty()) {
+            // Nothing was generated and nothing was compared, so "safe to run"
+            // would be a claim about an empty set stated with the authority of
+            // a check.
+            $this->components->error(
+                'This workspace has no client companies, so there is nothing to rehearse. '.
+                'Select a workspace that holds the data you mean to test.',
+            );
+
+            return self::FAILURE;
+        }
+
         $settledBefore = [];
         $created = 0;
+        /** @var list<array{company: string, detail: string}> $failures */
         $failures = [];
 
         DB::beginTransaction();
@@ -74,9 +87,27 @@ final class RehearseGenerationCommand extends Command
             $service = app(ClientInvoicingService::class);
             foreach ($companies as $company) {
                 try {
-                    $service->generateAllInvoices($company);
+                    $result = $service->generateAllInvoices($company);
                 } catch (Throwable $e) {
-                    $failures[] = $company->public_id;
+                    $failures[] = ['company' => $company->public_id, 'detail' => $e->getMessage()];
+
+                    continue;
+                }
+
+                // A period that threw does not reach the catch above.
+                // `generateAllInvoicesForAgreement()` catches each period's
+                // Throwable and returns it as a skip carrying an `error`, so
+                // relying on exceptions alone let a company fail every period
+                // it attempted and still be reported as proof the run is safe.
+                foreach ($result['skipped'] as $skip) {
+                    if (! isset($skip['error'])) {
+                        continue;
+                    }
+
+                    $failures[] = [
+                        'company' => $company->public_id,
+                        'detail' => sprintf('%s: %s', $skip['period'] ?? 'unknown period', $skip['error']),
+                    ];
                 }
             }
 
@@ -96,8 +127,8 @@ final class RehearseGenerationCommand extends Command
             }
         }
 
-        foreach ($failures as $companyPublicId) {
-            $this->components->warn('generation failed for company '.$companyPublicId);
+        foreach ($failures as $failure) {
+            $this->components->warn(sprintf('generation failed for company %s - %s', $failure['company'], $failure['detail']));
         }
 
         if ($failures !== []) {
@@ -105,10 +136,10 @@ final class RehearseGenerationCommand extends Command
             // run" because every company threw would give the reader the
             // opposite of the truth, with the authority of a check.
             $this->components->error(sprintf(
-                'Generation failed for %d of %d companies, so this rehearsal proves nothing about them. '.
-                'Fix the failures and run it again.',
+                'Generation failed %d time(s) across %d companies, so this rehearsal proves nothing about '.
+                'the periods that failed. Fix the failures and run it again.',
                 count($failures),
-                $companies->count(),
+                count(array_unique(array_column($failures, 'company'))),
             ));
 
             return self::FAILURE;

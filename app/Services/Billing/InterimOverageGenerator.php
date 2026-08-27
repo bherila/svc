@@ -77,6 +77,16 @@ final class InterimOverageGenerator
             throw new RuntimeException('No agreement found for this interim overage period.');
         }
 
+        // An agreement handed in by a caller is not automatically this
+        // company's. Without both keys checked, this path would raise an
+        // invoice owned by one company carrying another's agreement id,
+        // currency and rate - the cadence path was hardened against exactly
+        // that and this delegated one was not.
+        if ((int) $agreement->client_company_id !== (int) $company->id
+            || (int) $agreement->workspace_id !== (int) $company->workspace_id) {
+            throw new RuntimeException('That agreement belongs to a different client company.');
+        }
+
         if ($agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
             throw new RuntimeException('Interim overage invoices only apply to non-monthly billing cadences.');
         }
@@ -147,17 +157,23 @@ final class InterimOverageGenerator
                 ->whereIn('status', InvoiceStatus::charged())
                 ->sum('hours_billed_at_rate');
 
-            $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
-            if ($targetOverageHours <= 0.0) {
-                return null;
-            }
-
             // An existing draft still owns its time through the pivot, so
             // selecting unbilled entries before releasing it finds nothing and
             // the refresh silently returns the stale amount. Release first, then
             // look - the same order the cadence generator uses.
+            //
+            // This runs before the target check, not after it. When the
+            // underlying time is reduced, deleted or made non-billable the
+            // target falls to zero, and returning at that point left the stale
+            // charge and its pivots on the draft - so the cadence invoice then
+            // skipped work that an interim overage no longer claimed.
             if ($existingInvoice instanceof ClientInvoice) {
                 $this->invoiceLineComposer->resetSystemGeneratedLines($existingInvoice);
+            }
+
+            $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
+            if ($targetOverageHours <= 0.0) {
+                return null;
             }
 
             $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);

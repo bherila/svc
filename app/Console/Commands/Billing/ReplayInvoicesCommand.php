@@ -8,6 +8,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
@@ -99,6 +100,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @var array<string, array{rollover_months:int, project_scoped:bool, other_project_work:bool, deferred_work:bool, recurring_items:bool, cycle_opens_mid_month:bool}>
      */
+    /** @var array<string, CorrectionFacts> */
     private array $factCache = [];
 
     public function handle(): int
@@ -741,9 +743,13 @@ final class ReplayInvoicesCommand extends Command
     /**
      * What is true of the agreement and period behind a comparison key.
      *
-     * @return array{rollover_months:int, project_scoped:bool, other_project_work:bool, deferred_work:bool, recurring_items:bool, cycle_opens_mid_month:bool}
+     * Built with the same scopes the billing engine applies to the same
+     * question. This query used to select every time entry the company owned,
+     * so a draft entry, a non-billable one, a flat-hourly subcontractor entry
+     * or one belonging to a different workspace could set `deferredWork` or
+     * `otherProjectWork` and waive a divergence that no correction had touched.
      */
-    private function facts(string $key): array
+    private function facts(string $key): CorrectionFacts
     {
         if (isset($this->factCache[$key])) {
             return $this->factCache[$key];
@@ -756,22 +762,97 @@ final class ReplayInvoicesCommand extends Command
         [$periodStart, $periodEnd] = array_pad(explode('..', $period, 2), 2, '');
         $cycleStart = explode('..', $cycle, 2)[0];
 
-        $entries = ClientTimeEntry::query()
+        // The work that could actually have drawn on this retainer.
+        $eligible = ClientTimeEntry::query()
             ->where('client_company_id', (int) $companyId)
-            ->when($periodStart !== '' && $periodStart !== '?', fn ($q) => $q->where('worked_on', '>=', $periodStart))
-            ->when($periodEnd !== '' && $periodEnd !== '?', fn ($q) => $q->where('worked_on', '<=', $periodEnd));
+            ->when(
+                $agreement !== null,
+                fn (Builder $q): Builder => $q->where('workspace_id', $agreement->workspace_id),
+            )
+            ->retainerBillable();
 
-        $facts = [
-            'rollover_months' => (int) ($agreement->rollover_months ?? 0),
-            'project_scoped' => $agreement?->client_project_id !== null,
-            'other_project_work' => $agreement?->client_project_id !== null
-                && (clone $entries)->where('client_project_id', '!=', $agreement->client_project_id)->exists(),
-            'deferred_work' => (clone $entries)->where('is_deferred', true)->exists(),
-            'recurring_items' => $agreement !== null && $agreement->recurringItems()->exists(),
-            'cycle_opens_mid_month' => $cycleStart !== '' && Carbon::parse($cycleStart)->day !== 1,
-        ];
+        $inPeriod = (clone $eligible)
+            ->when($periodStart !== '' && $periodStart !== '?', fn (Builder $q): Builder => $q->where('worked_on', '>=', $periodStart))
+            ->when($periodEnd !== '' && $periodEnd !== '?', fn (Builder $q): Builder => $q->where('worked_on', '<=', $periodEnd));
+
+        $facts = new CorrectionFacts(
+            rolloverMonths: (int) ($agreement->rollover_months ?? 0),
+            fullyUsedMonthInRolloverWindow: $this->fullyUsedMonthInRolloverWindow($agreement, $eligible, $periodStart),
+            projectScoped: $agreement?->client_project_id !== null,
+            otherProjectWork: $agreement?->client_project_id !== null
+                && (clone $inPeriod)->where('client_project_id', '!=', $agreement->client_project_id)->exists(),
+            deferredWork: $agreement === null
+                ? (clone $inPeriod)->where('is_deferred', true)->exists()
+                : (clone $inPeriod)->forAgreementScope($agreement)->where('is_deferred', true)->exists(),
+            cycleOpensMidMonth: $cycleStart !== '' && Carbon::parse($cycleStart)->day !== 1,
+            recurringItemAnchoredBeforeCycleOpens: $this->recurringItemAnchoredBeforeCycleOpens($agreement, $cycleStart),
+        );
 
         return $this->factCache[$key] = $facts;
+    }
+
+    /**
+     * Did a month inside the rollover window consume its entire retainer?
+     *
+     * This is what the calendar-ageing correction needs to have changed
+     * anything. The original aged rollover by walking stored non-zero balances,
+     * so a month that used every hour it was given left no balance to walk and
+     * became invisible - older lots stayed spendable past their window. A month
+     * with hours left over aged correctly under both engines.
+     *
+     * @param  Builder<ClientTimeEntry>  $eligible
+     */
+    private function fullyUsedMonthInRolloverWindow(?ClientAgreement $agreement, Builder $eligible, string $periodStart): bool
+    {
+        $rolloverMonths = (int) ($agreement->rollover_months ?? 0);
+        $retainerMinutes = (int) ($agreement->retainer_minutes ?? 0);
+
+        if ($agreement === null || $rolloverMonths <= 0 || $retainerMinutes <= 0) {
+            return false;
+        }
+
+        if ($periodStart === '' || $periodStart === '?') {
+            return false;
+        }
+
+        $windowEnd = Carbon::parse($periodStart)->startOfMonth();
+        $windowStart = $windowEnd->copy()->subMonths($rolloverMonths + 1);
+
+        $monthlyMinutes = (clone $eligible)
+            ->forAgreementScope($agreement)
+            ->where('worked_on', '>=', $windowStart->toDateString())
+            ->where('worked_on', '<', $windowEnd->toDateString())
+            ->get(['worked_on', 'minutes'])
+            ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->worked_on)->format('Y-m'))
+            ->map(fn (Collection $month): int => (int) $month->sum('minutes'));
+
+        return $monthlyMinutes->contains(fn (int $minutes): bool => $minutes >= $retainerMinutes);
+    }
+
+    /**
+     * Is there an item whose anchor the previous cycle already covered?
+     *
+     * The corrected engine bills a recurring item from its start date only in
+     * the item's own first month. For that to explain a divergence there has to
+     * be an item the original would have re-billed: active, anchored on a day
+     * the mid-month cycle has already passed, and running since before this
+     * month.
+     */
+    private function recurringItemAnchoredBeforeCycleOpens(?ClientAgreement $agreement, string $cycleStart): bool
+    {
+        if ($agreement === null || $cycleStart === '') {
+            return false;
+        }
+
+        $opens = Carbon::parse($cycleStart);
+
+        return $agreement->recurringItems()
+            ->where('is_active', true)
+            ->whereNotNull('anchor_day')
+            ->where('anchor_day', '<', $opens->day)
+            ->whereNotNull('effective_on')
+            ->where('effective_on', '<', $opens->copy()->startOfMonth()->toDateString())
+            ->exists();
     }
 
     private function show(mixed $value): string
