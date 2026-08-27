@@ -10,6 +10,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -128,7 +129,7 @@ class InvoiceLineComposer
             'client_agreement_id' => $agreement->id,
             'description' => sprintf(
                 'Deferred work items applied to retainer (%s)',
-                $this->formatHoursForQuantity($hours),
+                HoursQuantity::format($hours),
             ),
             // A retainer draw-down charges nothing; the capacity was already paid for.
             'quantity' => '0',
@@ -172,10 +173,10 @@ class InvoiceLineComposer
             'client_agreement_id' => $agreement->id,
             'description' => sprintf(
                 'Deferred work items billed on agreement termination (%s @ %s/hr)',
-                $this->formatHoursForQuantity($hours),
+                HoursQuantity::format($hours),
                 $this->formatMoney($rateAmount, (string) $invoice->currency),
             ),
-            'quantity' => $this->formatHoursForQuantity($hours),
+            'quantity' => HoursQuantity::format($hours),
             'unit_amount' => $rateAmount,
             'tax_amount' => 0,
             'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
@@ -250,10 +251,10 @@ class InvoiceLineComposer
                 'description' => sprintf(
                     'Subcontractor: %s (%s @ %s/hr)',
                     $name,
-                    $this->formatHoursForQuantity($hours),
+                    HoursQuantity::format($hours),
                     $this->formatMoney($rateAmount, (string) $invoice->currency),
                 ),
-                'quantity' => $this->formatHoursForQuantity($hours),
+                'quantity' => HoursQuantity::format($hours),
                 'unit_amount' => $rateAmount,
                 'tax_amount' => 0,
                 'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
@@ -358,14 +359,5 @@ class InvoiceLineComposer
     private function formatMoney(int $minorUnits, string $currency): string
     {
         return sprintf('%s %s', number_format($minorUnits / 100, 2), $currency);
-    }
-
-    private function formatHoursForQuantity(float $hours): string
-    {
-        $totalMinutes = (int) round($hours * 60);
-        $h = intdiv($totalMinutes, 60);
-        $m = $totalMinutes % 60;
-
-        return sprintf('%d:%02d', $h, $m);
     }
 }

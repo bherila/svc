@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'type', 'description', 'quantity',
@@ -57,5 +58,18 @@ class ClientInvoiceLine extends Model implements WorkspaceOwned
             'client_invoice_line_id',
             'client_time_entry_id',
         )->withPivot('workspace_id')->withTimestamps();
+    }
+
+    /**
+     * Milestone tasks billed on this line.
+     *
+     * A single column rather than a pivot, unlike time entries: a milestone is
+     * one deliverable at one price and can never be split across lines.
+     *
+     * @return HasMany<ClientTask, $this>
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(ClientTask::class, 'client_invoice_line_id');
     }
 }

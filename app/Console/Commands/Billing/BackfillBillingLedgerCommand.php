@@ -263,6 +263,8 @@ final class BackfillBillingLedgerCommand extends Command
                     'unused_hours_balance' => $row->unused_hours_balance ?? null,
                     'negative_hours_balance' => $row->negative_hours_balance ?? null,
                     'hours_billed_at_rate' => $row->hours_billed_at_rate ?? null,
+                    'starting_unused_hours' => $row->starting_unused_hours ?? null,
+                    'starting_negative_hours' => $row->starting_negative_hours ?? null,
                 ], $dryRun, $counters);
             }
         });

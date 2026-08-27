@@ -94,7 +94,6 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         return $this->belongsTo(User::class, 'approved_by_user_id');
     }
 
-    /** @return BelongsToMany<ClientInvoiceLine, $this> */
     /**
      * Approved work only.
      *
@@ -120,6 +119,37 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     public function scopeRetainerBillable(Builder $query): Builder
     {
         return $query->approved();
+    }
+
+    /**
+     * Work that may appear on an invoice at all.
+     *
+     * Distinct from {@see scopeRetainerBillable()} in the predecessor, where it
+     * excluded only directly-billed subcontractor work. This schema records no
+     * billing mode, so the two currently coincide; they stay separate because
+     * the generator asks two different questions of them.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeBillableForInvoicing(Builder $query): Builder
+    {
+        return $query->approved();
+    }
+
+    /**
+     * Work not yet attached to any invoice line.
+     *
+     * The predecessor tested a null column; here the absence of a pivot row is
+     * the equivalent, and the unique index on the pivot is what makes "no row"
+     * and "not billed" the same statement.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeUnbilled(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('invoiceLines');
     }
 
     // ── Billing engine surface ───────────────────────────────────────────────
