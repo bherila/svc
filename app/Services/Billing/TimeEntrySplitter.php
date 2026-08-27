@@ -146,6 +146,9 @@ class TimeEntrySplitter
                 'client_project_id' => $entry->client_project_id,
                 'client_task_id' => $entry->client_task_id,
                 'user_id' => $entry->user_id,
+                // Always the root, never an intermediate fragment, so a repeatedly
+                // split entry stays one flat group for recombination.
+                'split_from_time_entry_id' => $entry->split_from_time_entry_id ?? $entry->id,
                 'worked_on' => $entry->worked_on,
                 'minutes' => $overflowMinutes,
                 'description' => $entry->description,
