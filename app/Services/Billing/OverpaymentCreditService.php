@@ -121,8 +121,13 @@ class OverpaymentCreditService
         // Remove any stale credit lines from a previous regeneration pass.
         $invoice->lines()->where('type', InvoiceLineType::Credit->value)->delete();
 
+        // The stored totals were reduced by the credit line just deleted, and
+        // issue() trusts them. Recalculate on every path out of here, not only
+        // the one that writes a replacement.
         $available = $this->availableCreditForCompany($company, (string) $invoice->currency);
         if ($available <= 0.0) {
+            $this->recalculateTotals($invoice);
+
             return;
         }
 
@@ -132,6 +137,8 @@ class OverpaymentCreditService
         $subtotal = ((int) $invoice->lines()->sum('total_amount')) / 100;
         $applied = round(min($available, max(0.0, $subtotal)), 2);
         if ($applied <= 0.0) {
+            $this->recalculateTotals($invoice);
+
             return;
         }
 

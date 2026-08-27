@@ -172,6 +172,7 @@ final class ReplayInvoicesTest extends TestCase
             'retainer_amount' => 150000,
             'catch_up_threshold_minutes' => 60,
             'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
             'rollover_months' => 2,
         ]);
 

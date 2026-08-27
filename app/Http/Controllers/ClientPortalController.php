@@ -92,6 +92,10 @@ class ClientPortalController extends Controller
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
             ->where('is_visible_to_client', true)
+            // Visibility is the worker's intent; approval is the gate. An entry
+            // is created as a draft, so filtering on visibility alone showed
+            // clients work nobody had approved - and work later rejected.
+            ->approved()
             ->whereIn('client_project_id', $clientCompany->projects->pluck('id'))
             ->orderByDesc('worked_on')
             ->orderByDesc('id')

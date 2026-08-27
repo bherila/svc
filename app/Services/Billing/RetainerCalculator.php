@@ -117,7 +117,17 @@ class RetainerCalculator
             return 1.0;
         }
 
-        if ($agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod) {
+        // FirstCycleProration says what happens to the *first* cycle. Applying
+        // it to any partial month also grants a full month's capacity in a
+        // termination month, which understates the overage the client owes.
+        $agreementStart = $agreement->starts_on === null
+            ? null
+            : Carbon::parse((string) $agreement->starts_on)->startOfDay();
+
+        $isOpeningMonth = $agreementStart !== null
+            && $agreementStart->betweenIncluded($monthStart, $monthEnd);
+
+        if ($isOpeningMonth && $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod) {
             return 1.0;
         }
 

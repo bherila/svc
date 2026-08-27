@@ -82,6 +82,9 @@ final class ClientInvoicingService
      */
     public const SKIP_REASON_ZERO_ACTIVITY = 'zero_activity_non_retainer';
 
+    /** An agreement with no repeating cycle produces no cycle invoices. */
+    public const SKIP_REASON_NOT_RECURRING = 'not_recurring_cadence';
+
     /**
      * Deferred entries the most recent generation could not fit into remaining
      * retainer capacity.
@@ -253,6 +256,23 @@ final class ClientInvoicingService
         $generated = [];
         $updated = [];
         $skipped = [];
+
+        // A one-time agreement has no cycle length, so it has no cycles to walk.
+        // It reached here because BillingCadence has no `one_time` case and the
+        // model's fallback answered "monthly", which billed a retainer every
+        // month for something bought once.
+        if (! $agreement->billsOnARecurringCadence()) {
+            $skipped[] = [
+                'period' => 'all',
+                'reason_code' => self::SKIP_REASON_NOT_RECURRING,
+                'reason' => sprintf(
+                    'Agreement bills %s, which is not a recurring cadence; no cycle invoices are generated for it.',
+                    (string) $agreement->billing_cadence,
+                ),
+            ];
+
+            return $this->summarizeGenerationResults($generated, $updated, $skipped);
+        }
 
         $through = $this->retainerGenerationThroughDate($agreement, $successorAgreement);
         $billExcessImmediately = $agreement->effectiveBillingCadence() !== BillingCadence::Monthly

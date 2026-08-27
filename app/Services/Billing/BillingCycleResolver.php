@@ -7,6 +7,7 @@ use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use RuntimeException;
 
 /**
  * Resolves billing cycles for a client agreement.
@@ -29,6 +30,17 @@ class BillingCycleResolver
     public function cyclesForAgreement(ClientAgreement $agreement, CarbonInterface $through): iterable
     {
         $cadence = $agreement->effectiveBillingCadence();
+
+        // Activation does not currently require a start date, and every cycle
+        // here is measured from one. Without this the call died on a TypeError
+        // deep inside Carbon, which reads as a bug in the billing engine rather
+        // than as an agreement that is not ready to be billed.
+        if ($agreement->starts_on === null) {
+            throw new RuntimeException(
+                'This agreement has no start date, so its billing cycles cannot be determined. Set one before generating invoices.'
+            );
+        }
+
         $activeDate = Carbon::instance($agreement->starts_on)->startOfDay();
         $terminationDate = $agreement->ends_on
             ? Carbon::instance($agreement->ends_on)->startOfDay()

@@ -19,7 +19,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     // them, which is how the recurring-item quantity went missing for so long.
     'hours', 'line_date', 'client_agreement_id', 'client_agreement_recurring_item_id',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id'])]
+// The agreement references are internal auto-increment ids. InvoiceController
+// serializes line models straight to JSON for the client portal, so leaving
+// them visible published another tenant-scoped table's primary keys.
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'client_agreement_id', 'client_agreement_recurring_item_id'])]
 class ClientInvoiceLine extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;

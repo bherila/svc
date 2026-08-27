@@ -154,6 +154,7 @@ final class ClientInvoicingServiceTest extends TestCase
             'retainer_minutes' => 0,
             'retainer_amount' => 0,
             'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
             'rollover_months' => 0,
         ]);
 
@@ -179,6 +180,7 @@ final class ClientInvoicingServiceTest extends TestCase
             'retainer_minutes' => 0,
             'retainer_amount' => 0,
             'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
             'rollover_months' => 0,
         ]);
         $this->entry(Carbon::now()->startOfMonth()->subMonth()->addDays(4)->toDateString(), 90);
@@ -204,6 +206,7 @@ final class ClientInvoicingServiceTest extends TestCase
             'retainer_minutes' => 0,
             'retainer_amount' => 0,
             'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
             'rollover_months' => 0,
         ]);
         // Work in the most recent month only; the earlier cycles are empty.
@@ -379,6 +382,7 @@ final class ClientInvoicingServiceTest extends TestCase
             'retainer_amount' => 150000,
             'catch_up_threshold_minutes' => 60,
             'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
             'rollover_months' => 2,
         ]);
     }

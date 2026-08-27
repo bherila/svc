@@ -77,7 +77,39 @@ class ClientAgreement extends Model implements WorkspaceOwned
     // stores integer minutes and minor units. Conversion belongs at this seam,
     // never inside the arithmetic.
 
-    /** Cycle grouping policy; an unset or unrecognised cadence bills monthly. */
+    /**
+     * Does this agreement bill on a repeating cycle at all?
+     *
+     * `one_time` is an accepted cadence on the request and the *default* in
+     * AgreementWorkflow, but BillingCadence has no such case because a one-time
+     * arrangement has no cycle length, start or end. So it fell through
+     * {@see effectiveBillingCadence()}'s fallback and was billed monthly,
+     * forever - granting a retainer every month for something bought once.
+     *
+     * Callers that generate recurring invoices must ask this first.
+     */
+    public function billsOnARecurringCadence(): bool
+    {
+        $cadence = (string) ($this->billing_cadence ?? '');
+
+        // An agreement that never had a cadence set still bills monthly; that
+        // fallback predates this and a good deal of data relies on it. What must
+        // not fall through is a cadence that *was* chosen and is not a repeating
+        // one - `one_time` above all, which the workflow uses as its default.
+        if ($cadence === '') {
+            return true;
+        }
+
+        return BillingCadence::tryFrom($cadence) !== null;
+    }
+
+    /**
+     * Cycle grouping policy; an unset or unrecognised cadence bills monthly.
+     *
+     * Only meaningful once {@see billsOnARecurringCadence()} is true. The
+     * monthly fallback is for an agreement whose cadence was never set, not a
+     * licence to treat a one-time arrangement as recurring.
+     */
     public function effectiveBillingCadence(): BillingCadence
     {
         return BillingCadence::tryFrom((string) $this->billing_cadence) ?? BillingCadence::Monthly;
