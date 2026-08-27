@@ -406,6 +406,37 @@ final class ClientInvoicingService
     }
 
     /**
+     * Has some other invoice already sold this retainer cycle?
+     *
+     * The cycle an invoice sells is derived from its work period - the month
+     * after it - so two invoices covering different work can land on the same
+     * cycle. That is exactly what a correction range does: billing 1-15
+     * February as a correction derives the February cycle that January's
+     * ordinary invoice already sold.
+     *
+     * The overlap guard does not catch it, because it compares service periods
+     * and those genuinely do not overlap. A void invoice sold nothing, and the
+     * invoice being refreshed is not competing with itself.
+     */
+    private function cycleAlreadySold(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        Carbon $retainerMonthStart,
+        ?ClientInvoice $invoice,
+    ): bool {
+        return $this->scopedInvoices($company)
+            ->where('client_agreement_id', $agreement->id)
+            ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+            ->whereDate('cycle_start', $retainerMonthStart->toDateString())
+            ->where('status', '!=', 'void')
+            ->when(
+                $invoice instanceof ClientInvoice,
+                fn (Builder $query): Builder => $query->whereKeyNot($invoice->getKey()),
+            )
+            ->exists();
+    }
+
+    /**
      * The monthly cadence invoice this run may refresh, if one exists.
      *
      * Found by the cycle it sells, not by the work period. The period is
@@ -656,7 +687,16 @@ final class ClientInvoicingService
 
             $this->invoiceLineComposer->linkAllFragmentsToLines($fragmentsToLines, $this->timeEntrySplitter);
 
-            if (! $isRetainerMonthPostTermination) {
+            // A cadence charge is sold once per cycle, and "which cycle" is
+            // derived from the work period - so a disjoint correction range
+            // inside an already-billed month lands on a cycle some earlier
+            // invoice has already sold. The service-period overlap guard cannot
+            // see that: the periods genuinely do not overlap. Without this the
+            // correction adds the retainer and every recurring item a second
+            // time, on top of an invoice the client may already have paid.
+            $cycleAlreadySold = $this->cycleAlreadySold($company, $agreement, $retainerMonthStart, $invoice);
+
+            if (! $isRetainerMonthPostTermination && ! $cycleAlreadySold) {
                 $retainerMonthEnd = $retainerMonthStart->copy()->endOfMonth();
                 // A month the agreement only partly covers is billed for the
                 // part it covers. The cadence path already asks the calculator
@@ -688,13 +728,19 @@ final class ClientInvoicingService
             }
 
             $this->invoiceLineComposer->addBillableMilestoneTasks($company, $invoice, $periodEnd, $sortOrder);
-            $this->invoiceLineComposer->addRecurringItemLines(
-                $invoice,
-                $agreement,
-                $retainerMonthStart,
-                $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
-                $sortOrder,
-            );
+
+            // Recurring items are sold with the cycle, so they are skipped for
+            // the same reason and by the same test as the retainer fee. Work
+            // reconciliation below is not: that is what a correction is for.
+            if (! $cycleAlreadySold) {
+                $this->invoiceLineComposer->addRecurringItemLines(
+                    $invoice,
+                    $agreement,
+                    $retainerMonthStart,
+                    $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
+                    $sortOrder,
+                );
+            }
             $this->invoiceLineComposer->addSubcontractorFlatHourlyLines($company, $invoice, $periodStart, $periodEnd, $sortOrder);
 
             $this->applyDeferredWork(
@@ -766,6 +812,13 @@ final class ClientInvoicingService
             if ($generateMissingInterims && $workCycle->end->gte($activeDate)) {
                 $this->interimOverageGenerator->ensureInterimOveragesForCycle($company, $agreement, $workCycle, $immediateLedger);
             }
+
+            // Before anything is selected for this invoice. An interim draft
+            // claims its overage entries as soon as it exists, and the
+            // reconciliation below counts only interim invoices that charged
+            // someone - so work held by a draft was invisible to the selector
+            // and absent from the reconciliation, and nothing billed it.
+            $this->interimOverageGenerator->releaseUnchargedInterimClaims($company, $agreement, $workCycle);
 
             $invoice = $this->scopedInvoices($company)
                 ->where('client_agreement_id', $agreement->id)

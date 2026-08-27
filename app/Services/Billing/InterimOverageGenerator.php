@@ -361,6 +361,37 @@ final class InterimOverageGenerator
      * Hours already billed interim inside a cycle, so the cadence invoice can
      * show them as reconciled rather than charge for them again.
      */
+    /**
+     * Give back the work an uncharged interim draft is holding.
+     *
+     * An interim draft pivot-links its overage entries the moment it is
+     * created, but {@see interimOverageHoursForCycle()} counts only invoices
+     * that actually charged someone. So a draft interim held work the cadence
+     * selector could no longer see - `unbilled()` skips a linked entry - while
+     * contributing nothing to the reconciliation that would have billed it.
+     * The hours belonged to neither invoice and the client was charged for
+     * them by neither.
+     *
+     * A draft has charged nobody, which is the rule everywhere else here, so
+     * the cadence invoice takes the work. Anything issued keeps its claim.
+     */
+    public function releaseUnchargedInterimClaims(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        BillingCycle $cycle,
+    ): int {
+        $drafts = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+            ->whereNotIn('status', InvoiceStatus::settled())
+            ->get();
+
+        foreach ($drafts as $draft) {
+            $this->invoiceLineComposer->resetSystemGeneratedLines($draft);
+            $draft->update(['hours_billed_at_rate' => 0]);
+        }
+
+        return $drafts->count();
+    }
+
     public function interimOverageHoursForCycle(ClientAgreement $agreement, BillingCycle $cycle): float
     {
         return round((float) ClientInvoice::query()

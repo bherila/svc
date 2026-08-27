@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\AgreementSelector;
+use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
@@ -318,6 +319,93 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertSame('rollover_expiry_ages_by_calendar', $explained[0]['key'] ?? null);
     }
 
+    /**
+     * A correction range lands on a cycle an earlier invoice already sold.
+     *
+     * Billing 1-15 February as a correction derives the February cycle that
+     * January's ordinary invoice sold. The service-period overlap guard cannot
+     * see it - the periods genuinely do not overlap - so the retainer and every
+     * recurring item were charged a second time.
+     */
+    public function test_a_correction_range_does_not_resell_a_cycle_already_sold(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->agreement();
+        $this->entry($project, '2024-01-10', 120);
+        $this->entry($project, '2024-02-05', 120);
+
+        $service = app(ClientInvoicingService::class);
+
+        // January's work sells the February retainer.
+        $ordinary = $service->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            Carbon::parse('2024-01-31'),
+        )->refresh();
+
+        $this->assertSame('2024-02-01', Carbon::parse((string) $ordinary->cycle_start)->toDateString());
+        $this->assertSame(1, $ordinary->lines()->where('type', 'retainer')->count());
+
+        // A correction covering part of February derives the same cycle.
+        $correction = $service->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-15'),
+        )->refresh();
+
+        $this->assertSame(
+            0,
+            $correction->lines()->where('type', 'retainer')->count(),
+            'The February retainer was sold by the January invoice and must not be sold again',
+        );
+        $this->assertSame(0, $correction->lines()->where('type', 'recurring_item')->count());
+    }
+
+    /**
+     * An interim draft claims its entries immediately, but only a charged
+     * interim counts toward the cadence reconciliation - so work held by a
+     * draft was invisible to the selector and absent from the reconciliation,
+     * and nothing billed it.
+     */
+    public function test_an_uncharged_interim_draft_gives_its_work_back(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        // Comfortably over the quarter's retainer, in a completed month.
+        $this->entry($project, '2024-01-15', 1800);
+
+        $interim = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $interim);
+        $this->assertSame('draft', (string) $interim->status);
+        $this->assertGreaterThan(0, $interim->lines()->count());
+
+        $released = app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        $this->assertSame(1, $released);
+        $this->assertSame(0, $interim->refresh()->lines()->count(), 'The draft no longer holds the work');
+        // The interim split the entry into a billed fragment and a covered one,
+        // so the row count is not the invariant. Every worked minute being
+        // available again is.
+        $this->assertSame(
+            1800,
+            (int) ClientTimeEntry::query()
+                ->where('client_company_id', $this->company->id)
+                ->unbilled()
+                ->sum('minutes'),
+            'Every minute is available to the cadence invoice again',
+        );
+    }
+
     // ── Replay attribution ───────────────────────────────────────────────────
 
     /**
@@ -440,6 +528,17 @@ final class CapacityAndScopeGuardsTest extends TestCase
             'client_company_id' => $this->company->id,
             'name' => $name,
         ]);
+    }
+
+    private function quarterlyAgreement(?ClientProject $project = null): ClientAgreement
+    {
+        $agreement = $this->agreement($project);
+        $agreement->forceFill([
+            'billing_cadence' => 'quarterly',
+            'bill_overage_interim' => true,
+        ])->save();
+
+        return $agreement->refresh();
     }
 
     private function agreement(?ClientProject $project = null): ClientAgreement
