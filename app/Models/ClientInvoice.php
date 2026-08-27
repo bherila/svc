@@ -20,6 +20,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $due_date
  * @property CarbonImmutable|null $service_period_start
  * @property CarbonImmutable|null $service_period_end
+ * @property string|null $invoice_kind
+ * @property CarbonImmutable|null $cycle_start
+ * @property CarbonImmutable|null $cycle_end
+ * @property CarbonImmutable|null $paid_on
+ * @property numeric-string|null $retainer_hours_included
+ * @property numeric-string|null $hours_worked
+ * @property numeric-string|null $rollover_hours_used
+ * @property numeric-string|null $unused_hours_balance
+ * @property numeric-string|null $negative_hours_balance
+ * @property numeric-string|null $hours_billed_at_rate
+ * @property numeric-string|null $starting_unused_hours
+ * @property numeric-string|null $starting_negative_hours
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
