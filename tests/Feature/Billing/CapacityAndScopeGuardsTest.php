@@ -16,6 +16,7 @@ use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\RetainerCalculator;
+use App\Services\Billing\RolloverCalculator;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use Carbon\Carbon;
@@ -283,6 +284,38 @@ final class CapacityAndScopeGuardsTest extends TestCase
             Carbon::parse('2024-02-01'),
             $foreign,
         );
+    }
+
+    /**
+     * The sentinel has to survive the round trip.
+     *
+     * `rollover_months` was `unsignedInteger`, so -1 could not be stored at
+     * all: MySQL refuses the write and SQLite accepts it, which is exactly the
+     * shape that hid the negative-balance defect. A test that only exercised
+     * the calculator would have reported the feature working while production
+     * rejected every attempt to configure it.
+     */
+    public function test_an_agreement_can_actually_store_unlimited_rollover(): void
+    {
+        $agreement = $this->agreement();
+        $agreement->forceFill(['rollover_months' => RolloverCalculator::UNLIMITED])->save();
+
+        $this->assertSame(RolloverCalculator::UNLIMITED, (int) $agreement->fresh()->rollover_months);
+        $this->assertTrue(RolloverCalculator::carriesForever((int) $agreement->fresh()->rollover_months));
+    }
+
+    /**
+     * A rule asking "is rollover on?" must test against zero, not `> 0`, or
+     * unlimited reads as off.
+     */
+    public function test_unlimited_rollover_is_not_read_as_rollover_being_off(): void
+    {
+        $explained = DeliberateCorrections::explaining(
+            ['additional_hours'],
+            $this->facts(rolloverMonths: RolloverCalculator::UNLIMITED, fullyUsedMonth: true),
+        );
+
+        $this->assertSame('rollover_expiry_ages_by_calendar', $explained[0]['key'] ?? null);
     }
 
     // ── Replay attribution ───────────────────────────────────────────────────

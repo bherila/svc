@@ -18,7 +18,8 @@ use App\Services\Billing\Balances\OpeningBalance;
  *
  * Rules:
  * 1. Each month grants retainer_hours to the available pool
- * 2. Unused hours roll over for up to rollover_months (1 = this month only, no rollover)
+ * 2. Unused hours survive for rollover_months months after the month earned
+ *    (0 = none, 1 = through the following month, -1 = never expire)
  * 3. When hours worked exceed current month's retainer, rollover hours are used first (FIFO)
  * 4. If all available hours are exhausted, excess is billed at hourly rate
  * 5. If previous month had a negative balance, new month's hours offset it first
@@ -26,12 +27,39 @@ use App\Services\Billing\Balances\OpeningBalance;
 class RolloverCalculator
 {
     /**
+     * `rollover_months` meaning "hours never expire".
+     *
+     * A sentinel rather than a second column, because "how long do unused hours
+     * survive?" has one answer. Any negative value is read as unlimited; -1 is
+     * simply the one worth writing.
+     */
+    public const UNLIMITED = -1;
+
+    /** Do unused hours under these terms ever expire? */
+    public static function carriesForever(int $rolloverMonths): bool
+    {
+        return $rolloverMonths < 0;
+    }
+
+    /**
+     * May a balance earned `$monthsAgo` still be spent?
+     *
+     * The single definition of the window. It was written out at two comparison
+     * sites and again in the pruning, which is how one question came to have
+     * three chances to disagree with itself.
+     */
+    public static function isSpendable(int $monthsAgo, int $rolloverMonths): bool
+    {
+        return self::carriesForever($rolloverMonths) || $monthsAgo <= $rolloverMonths;
+    }
+
+    /**
      * Calculate the opening balance for a month.
      *
      * @param  float  $retainerHours  Hours included in the current month's retainer
      * @param  array<int, float>  $previousMonthsUnused  Array of unused hours from previous months,
      *                                                   indexed by months ago (1 = last month, 2 = two months ago, etc.)
-     * @param  int  $rolloverMonths  Number of months hours can roll over (1 = no rollover)
+     * @param  int  $rolloverMonths  Months hours survive after the month earned; self::UNLIMITED never expires
      * @param  float  $previousNegativeBalance  Negative balance carried from previous month
      */
     public function calculateOpeningBalance(
@@ -45,10 +73,10 @@ class RolloverCalculator
 
         // Calculate rollover and expired hours from previous months
         foreach ($previousMonthsUnused as $monthsAgo => $unusedHours) {
-            // If rollover_months is 1, hours from 1 month ago roll over
-            // If rollover_months is 2, hours from 1-2 months ago roll over
-            // If rollover_months is 0, nothing rolls over
-            if ($monthsAgo <= $rolloverMonths) {
+            // N is months *after* the month earned: 1 keeps January's
+            // remainder spendable through February, 0 keeps nothing, and the
+            // UNLIMITED sentinel keeps everything.
+            if (self::isSpendable((int) $monthsAgo, $rolloverMonths)) {
                 $rolloverHours += $unusedHours;
             } else {
                 $expiredHours += $unusedHours;
@@ -146,7 +174,7 @@ class RolloverCalculator
      * @param  float  $retainerHours  Hours included in monthly retainer
      * @param  float  $hoursWorked  Hours worked during the month
      * @param  array<int, float>  $previousMonthsUnused  Unused hours from previous months by month index
-     * @param  int  $rolloverMonths  Number of months hours can roll over
+     * @param  int  $rolloverMonths  Months hours survive after the month earned; self::UNLIMITED never expires
      * @param  float  $previousNegativeBalance  Negative balance from previous month
      */
     public function calculateMonthSummary(
@@ -196,7 +224,7 @@ class RolloverCalculator
      *                                                    post-termination month so unused pre-termination hours are forfeited
      *                                                    rather than carried forward. The negative balance (unbilled overage)
      *                                                    is intentionally preserved across a reset.
-     * @param  int  $rolloverMonths  Number of months hours can roll over
+     * @param  int  $rolloverMonths  Months hours survive after the month earned; self::UNLIMITED never expires
      * @param  bool  $billExcessImmediately  Whether to bill excess hours immediately or carry them forward as negative balance.
      *                                       MonthSummary::closing->excessHours is populated only when this is true.
      * @return array<MonthSummary> Array of month summaries
@@ -263,7 +291,7 @@ class RolloverCalculator
                     }
 
                     $monthsAgo = $this->monthsBetween((string) $key, $yearMonth);
-                    if ($monthsAgo <= $rolloverMonths) {
+                    if (self::isSpendable($monthsAgo, $rolloverMonths)) {
                         // This entry contributed to rollover
                         $amount = $unusedByMonth[$key];
                         $deduct = min($amount, $usedRollover);
@@ -291,9 +319,11 @@ class RolloverCalculator
             // `rolloverMonths + 1`, which is the month that reports it as
             // expired; keeping it past that reported the same hours as expiring
             // again every month afterwards.
-            foreach (array_keys($unusedByMonth) as $key) {
-                if ($this->monthsBetween((string) $key, $yearMonth) >= $rolloverMonths + 1) {
-                    unset($unusedByMonth[$key]);
+            if (! self::carriesForever($rolloverMonths)) {
+                foreach (array_keys($unusedByMonth) as $key) {
+                    if (! self::isSpendable($this->monthsBetween((string) $key, $yearMonth), $rolloverMonths)) {
+                        unset($unusedByMonth[$key]);
+                    }
                 }
             }
         }

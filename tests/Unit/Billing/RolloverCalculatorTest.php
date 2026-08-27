@@ -543,4 +543,49 @@ class RolloverCalculatorTest extends TestCase
         $description = $this->calculator->getStatusDescription($summary);
         $this->assertStringContainsString('Used 2.00 rollover hours', $description);
     }
+
+    /**
+     * -1 means unused hours never expire.
+     *
+     * The sentinel lives in the same column as the window because "how long do
+     * unused hours survive?" has one answer. Zero still means none.
+     */
+    public function test_unlimited_rollover_never_expires_a_balance(): void
+    {
+        $calculator = new RolloverCalculator;
+
+        $opening = $calculator->calculateOpeningBalance(
+            retainerHours: 10.0,
+            previousMonthsUnused: [1 => 2.0, 6 => 3.0, 60 => 4.0],
+            rolloverMonths: RolloverCalculator::UNLIMITED,
+        );
+
+        $this->assertSame(9.0, round($opening->rolloverHours, 4), 'Every vintage is still spendable');
+        $this->assertSame(0.0, round($opening->expiredHours, 4));
+    }
+
+    public function test_zero_still_means_no_rollover_at_all(): void
+    {
+        $opening = (new RolloverCalculator)->calculateOpeningBalance(
+            retainerHours: 10.0,
+            previousMonthsUnused: [1 => 2.0],
+            rolloverMonths: 0,
+        );
+
+        $this->assertSame(0.0, round($opening->rolloverHours, 4));
+        $this->assertSame(2.0, round($opening->expiredHours, 4));
+    }
+
+    /**
+     * The window is one question, and it used to be answered at three sites.
+     */
+    public function test_the_window_is_defined_once(): void
+    {
+        $this->assertTrue(RolloverCalculator::isSpendable(1, 1), 'N counts months after the month earned');
+        $this->assertFalse(RolloverCalculator::isSpendable(2, 1));
+        $this->assertFalse(RolloverCalculator::isSpendable(1, 0), 'Zero carries nothing forward');
+        $this->assertTrue(RolloverCalculator::isSpendable(9999, RolloverCalculator::UNLIMITED));
+        $this->assertTrue(RolloverCalculator::carriesForever(RolloverCalculator::UNLIMITED));
+        $this->assertFalse(RolloverCalculator::carriesForever(0));
+    }
 }

@@ -8,6 +8,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\RolloverCalculator;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
@@ -831,7 +832,7 @@ final class ReplayInvoicesCommand extends Command
         $rolloverMonths = (int) ($agreement->rollover_months ?? 0);
         $retainerMinutes = (int) ($agreement->retainer_minutes ?? 0);
 
-        if ($agreement === null || $rolloverMonths <= 0 || $retainerMinutes <= 0) {
+        if ($agreement === null || $rolloverMonths === 0 || $retainerMinutes <= 0) {
             return false;
         }
 
@@ -840,7 +841,11 @@ final class ReplayInvoicesCommand extends Command
         }
 
         $windowEnd = Carbon::parse($periodStart)->startOfMonth();
-        $windowStart = $windowEnd->copy()->subMonths($rolloverMonths + 1);
+        // Unlimited rollover has no window to look back through, so the whole
+        // history of the agreement is in scope.
+        $windowStart = RolloverCalculator::carriesForever($rolloverMonths)
+            ? Carbon::parse((string) ($agreement->starts_on ?? $periodStart))->startOfMonth()
+            : $windowEnd->copy()->subMonths($rolloverMonths + 1);
 
         $monthlyMinutes = (clone $eligible)
             ->forAgreementScope($agreement)

@@ -50,9 +50,38 @@ First-cycle behavior is controlled by `first_cycle_proration`:
 
 ### Rollover Hours
 Unused retainer hours can roll over to future months (configurable via `rollover_months` in agreements). The calculation uses a chronological balance pool:
-- **rollover_months = 0**: No rollover; unused hours are lost
-- **rollover_months = 1**: Hours can only be used in the month they're earned  
-- **rollover_months = 2+**: Hours roll over for N-1 additional months
+- **`rollover_months = 0`**: No rollover. Unused hours are lost at the end of
+  the month they were earned.
+- **`rollover_months = N`**: Unused hours survive for N months *after* the month
+  they were earned. `1` keeps January's remainder spendable through February and
+  expires it at the end of it; `2` carries it through March.
+- **`rollover_months = -1`**: Unlimited. Unused hours never expire.
+  `RolloverCalculator::UNLIMITED` is the name for it; any negative value is read
+  the same way.
+
+> This section previously said `1` meant hours were usable only in the month
+> they were earned, which is off by one against `RolloverCalculator` and against
+> `RolloverExpiryTest`, where February spends January's remainder at `1`. The
+> code is the contract and the documentation was wrong. It mattered more than an
+> off-by-one usually does: every rollover-bearing agreement in the migrated data
+> carries exactly `1`, so the two readings disagreed about all of them, and no
+> rollover divergence in the replay could be adjudicated while both statements
+> stood.
+
+The sentinel shares the window's column rather than adding a boolean beside it,
+because "how long do unused hours survive?" is one question. That required
+widening `rollover_months` from `unsignedInteger`, which could not hold it —
+MySQL refuses the write and SQLite accepts it, so the feature would have looked
+correct in the test suite and failed in production. `RolloverCalculator` answers
+the window through `isSpendable()` and `carriesForever()`; a caller comparing
+`rollover_months > 0` reads unlimited as off.
+
+Expiry is by elapsed calendar months, not by walking stored balances. The
+predecessor aged rollover by stepping through months that held a non-zero
+balance, so a month which used its entire retainer left nothing to step through
+and became invisible, and older hours stayed spendable past their window. A
+balance is reported as expired in the first month it falls outside the window
+and dropped at the end of that month, so it is not reported as expiring again.
 - **Negative Balance**: If hours worked exceed available pool, the difference is carried forward as a negative balance rather than billed immediately, UNLESS the Minimum Availability Rule is triggered.
 
 For non-monthly agreements, rollover is still calculated month-by-month. The cadence-period invoice summarizes the cycle, but it does not replace the monthly ledger used by `RolloverCalculator`.
