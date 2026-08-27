@@ -86,15 +86,20 @@ final class DeclaredRestoreSourceTest extends TestCase
     }
 
     /**
-     * A sqlite identity is a resolved filesystem path, so substituting a name
-     * would mean something different. Refused rather than quietly ignored.
+     * For sqlite the declaration names a path rather than a database. Supported
+     * on the same terms - refusing it here would have left the whole mechanism
+     * untestable, which is a worse outcome than the case it guarded against.
      */
-    public function test_a_restore_declaration_is_refused_for_sqlite(): void
+    public function test_a_sqlite_source_can_declare_the_path_it_stands_in_for(): void
     {
-        $this->expectException(SourceConfigurationException::class);
-        $this->expectExceptionMessage('restore_declaration_unsupported_for_sqlite');
+        $original = $this->resolveWith(['driver' => 'sqlite', 'database' => '/tmp/source-as-imported.sqlite'], null);
+        $declared = $this->resolveWith(
+            ['driver' => 'sqlite', 'database' => '/tmp/source-restored.sqlite'],
+            '/tmp/source-as-imported.sqlite',
+        );
 
-        $this->resolveWith(['driver' => 'sqlite', 'database' => ':memory:'], 'anything');
+        $this->assertSame($original['identity_hash'], $declared['identity_hash']);
+        $this->assertSame('/tmp/source-restored.sqlite', $declared['config']['database']);
     }
 
     /**

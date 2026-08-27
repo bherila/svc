@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Billing;
 
 use App\Services\ExternalImport\Fingerprint;
+use App\Services\ExternalImport\RestoreAgreementVerifier;
 use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
@@ -30,7 +31,8 @@ final class BackfillBillingLedgerCommand extends Command
     protected $signature = 'svc:billing:backfill-ledger
         {--source=external : Allowlisted read-only source key from config/external-import.php}
         {--workspace= : Required. Ledger rows imported into this workspace public id, and no other}
-        {--dry-run : Report what would change without writing}';
+        {--dry-run : Report what would change without writing}
+        {--accept-drift= : Comma-separated destination columns allowed to differ from the source, for a declared restore that kept being used}';
 
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
 
@@ -46,6 +48,16 @@ final class BackfillBillingLedgerCommand extends Command
     private string $destination;
 
     private int $workspaceId;
+
+    /**
+     * A declared restore is verified column by column instead.
+     *
+     * The whole-row hash cannot distinguish a renumbering from a rewrite, so
+     * against a source that kept being used it rejects everything. The column
+     * comparison answers the same question with names attached, and runs once
+     * up front rather than per row.
+     */
+    private bool $skipRowFingerprint = false;
 
     public function handle(SourceGuard $guard): int
     {
@@ -95,11 +107,18 @@ final class BackfillBillingLedgerCommand extends Command
         if ($declaredRestore !== null) {
             $this->components->warn(sprintf(
                 'Reading %s, declared a restore of %s. Ledger rows are matched as if they came from %s, '.
-                'and every row is verified against the fingerprint taken at import.',
+                'and the restore is compared column by column against what the importer wrote.',
                 (string) ($source['config']['database'] ?? '?'),
                 $declaredRestore,
                 $declaredRestore,
             ));
+        }
+
+        if ($declaredRestore !== null) {
+            $verdict = $this->verifyRestore($legacy, $identityHash);
+            if ($verdict !== self::SUCCESS) {
+                return $verdict;
+            }
         }
 
         $totals = [];
@@ -221,7 +240,7 @@ final class BackfillBillingLedgerCommand extends Command
             return null;
         }
 
-        if (Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
+        if (! $this->skipRowFingerprint && Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
             $counters['changed']++;
 
             return null;
@@ -269,6 +288,77 @@ final class BackfillBillingLedgerCommand extends Command
                 ->where('workspace_id', $this->workspaceId)
                 ->update($changes);
         }
+    }
+
+    /**
+     * Compare the declared restore against what the importer wrote, and refuse
+     * unless every difference has been named.
+     */
+    private function verifyRestore(ConnectionInterface $legacy, string $identityHash): int
+    {
+        $accepted = array_values(array_filter(array_map(
+            trim(...),
+            explode(',', (string) ($this->option('accept-drift') ?? '')),
+        ), static fn (string $c): bool => $c !== ''));
+
+        $verifier = new RestoreAgreementVerifier;
+        $drift = [];
+        $compared = 0;
+
+        foreach (RestoreAgreementVerifier::comparableColumns() as $table => $_) {
+            $idMap = array_map(static fn (array $m): int => $m['id'], $this->idMap($table, $table, $identityHash));
+            if ($idMap === []) {
+                // The ledger recorded nothing from this table, so there is
+                // nothing to compare and no reason to touch it in the source.
+                continue;
+            }
+
+            $result = $verifier->verify(
+                $legacy,
+                $table,
+                self::SOURCE_KEYS[$table],
+                $table,
+                $this->destination,
+                $idMap,
+            );
+            $compared += $result['compared'];
+            foreach ($result['drift'] as $column => $count) {
+                $drift[$column] = ($drift[$column] ?? 0) + $count;
+            }
+        }
+
+        $this->components->twoColumnDetail('rows verified against the import', (string) $compared);
+
+        $unexpected = array_diff_key($drift, array_flip($accepted));
+
+        foreach ($drift as $column => $count) {
+            $this->components->twoColumnDetail(
+                "  {$column}",
+                sprintf('%d row(s) differ%s', $count, in_array($column, $accepted, true) ? ' - accepted' : ''),
+            );
+        }
+
+        if ($unexpected !== []) {
+            $this->components->error(sprintf(
+                'The restore no longer agrees with what was imported, in %s. Money and dates are '.
+                'compared here, so review these before deciding. If the change is intended, re-run with '.
+                '--accept-drift=%s.',
+                implode(', ', array_keys($unexpected)),
+                implode(',', array_keys($unexpected)),
+            ));
+
+            return self::FAILURE;
+        }
+
+        if ($drift === []) {
+            $this->components->info('The restore matches what was imported on every compared column.');
+        }
+
+        // Verified by comparison; the whole-row hash would now only re-reject
+        // the drift that has just been examined and accepted.
+        $this->skipRowFingerprint = true;
+
+        return self::SUCCESS;
     }
 
     /** @return array{matched:int,written:int,unmatched:int,changed:int} */

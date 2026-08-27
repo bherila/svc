@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\DB;
  * configured. Two properties keep it from becoming a hole:
  *
  * - It must be declared. Nothing infers it, so substitution is never silent.
+ *   For sqlite it names a path rather than a database, which says the same
+ *   thing: this file stands where that one stood.
  * - It is checked, not trusted. Every ledger row carries a fingerprint of the
  *   source row as it was at import; callers verify those, and a restore that is
  *   not the same data fails on the fingerprints rather than on the name.
@@ -68,12 +70,6 @@ final class SourceGuard
 
         $restoreOf = $entry['restore_of_database'] ?? null;
         $restoreOf = is_string($restoreOf) && $restoreOf !== '' ? $restoreOf : null;
-
-        if ($restoreOf !== null && ($config['driver'] ?? '') === 'sqlite') {
-            // sqlite identity is a resolved path, so a name substitution would
-            // mean something different here. No caller needs it.
-            throw new SourceConfigurationException('restore_declaration_unsupported_for_sqlite');
-        }
 
         $identity = $this->identity($config, $restoreOf);
 
@@ -126,7 +122,9 @@ final class SourceGuard
     {
         $driver = strtolower((string) ($config['driver'] ?? ''));
         if ($driver === 'sqlite') {
-            $database = (string) ($config['database'] ?? $config['url'] ?? '');
+            // The declaration names a path here rather than a database, which is
+            // the same statement: this file stands where that one stood.
+            $database = $restoreOf ?? (string) ($config['database'] ?? $config['url'] ?? '');
 
             return ['driver' => $driver, 'database' => $this->normalizePath($database)];
         }
