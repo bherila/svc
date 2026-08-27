@@ -75,7 +75,7 @@ billing engine itself, which is implemented and green on both engines.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | Attempted. Blocked: the replay needs `invoice_kind` and `cycle_start`/`cycle_end`, which the ledger backfill populates, and the backfill cannot verify the restore. See #73 - the source identity now resolves, but two thirds of source rows no longer reproduce the fingerprints taken at import. Until that is explained, "the port reproduces history" is a claim the tests support and the data cannot yet confirm. | #73 |
+| Replay against production data | **Ran.** The port does not currently reproduce history: of 36 comparable invoices, 4 match on money and 32 differ, spread across companies rather than concentrated in one. Every divergence changes the line count, most change a retainer line, and the engine bills more than history did in 26 of 33 cases. The prerequisites are done - the backfill runs and is verified - so this is now a billing question rather than a tooling one. | #73 |
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. | #76 |

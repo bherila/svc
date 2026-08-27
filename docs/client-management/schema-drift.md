@@ -145,6 +145,31 @@ live connection driver is not a test-infrastructure change — but the CI job
 matches production deliberately, so a switch would need making in both places at
 once.
 
+## Verifying a source that moved
+
+The import ledger records, per row, a hash of the source row as it was. That is
+the right check for a source nobody touches and the wrong one for a source that
+kept being used: it collapses "someone renumbered the invoices" and "the money
+is different" into the same refusal.
+
+The predecessor's database was renumbered and partly soft-deleted after the
+migration, so 1052 of 1372 rows failed that hash while every money column, every
+date and every status was in fact intact. A declared restore
+(`restore_of_database`) is therefore verified by comparing it against what the
+importer wrote, column by column, in `RestoreAgreementVerifier`. Differences are
+named and counted, and each has to be accepted by name with `--accept-drift`.
+Accepting a renumbering does not accept a changed total.
+
+Columns being backfilled are skipped, because the destination holds no copy of
+them - which is exactly what makes them worth backfilling. Their trustworthiness
+rests on the rest of the row still agreeing, and that is now measured.
+
+This is also where the engine gap bit twice: the verifier truncated only the
+source side of a date comparison, which is invisible against MySQL (a `date`
+column returns `2026-03-01`) and wrong against SQLite (`2026-03-01 00:00:00`).
+It passed against the real restore and failed the moment a test ran it on the
+other engine.
+
 ## Rule
 
 Before porting any write, check the destination column against this table. A
