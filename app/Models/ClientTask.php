@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $completed_at
  * @property int $lock_version
  */
-#[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at'])]
+#[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at', 'milestone_price_amount', 'client_invoice_line_id'])]
 #[Hidden(['id', 'workspace_id', 'client_project_id'])]
 class ClientTask extends Model implements WorkspaceOwned
 {

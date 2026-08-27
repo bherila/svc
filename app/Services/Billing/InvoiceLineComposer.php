@@ -1,0 +1,371 @@
+<?php
+
+namespace App\Services\Billing;
+
+use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
+use App\Services\Billing\Balances\DeferredAllocationResult;
+use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Support\Billing\InvoiceLineType;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
+
+class InvoiceLineComposer
+{
+    public function __construct(private readonly RecurringItemBiller $recurringItemBiller = new RecurringItemBiller) {}
+
+    /**
+     * Remove generated lines from a draft invoice before regeneration.
+     */
+    public function resetSystemGeneratedLines(ClientInvoice $invoice): void
+    {
+        $systemLines = $invoice->lines()
+            ->whereIn('type', InvoiceLineType::systemGeneratedValues())
+            ->get();
+
+        foreach ($systemLines as $line) {
+            // Time is linked through a pivot here, so releasing it is a detach
+            // rather than nulling a column. Milestones keep a column, because a
+            // deliverable is never split across lines.
+            $line->timeEntries()->detach();
+            ClientTask::query()->where('client_invoice_line_id', $line->id)
+                ->update(['client_invoice_line_id' => null]);
+        }
+
+        $invoice->lines()->whereIn('type', InvoiceLineType::systemGeneratedValues())->delete();
+
+    }
+
+    /**
+     * Add recurring fixed-fee item incidences to a cadence-period invoice.
+     */
+    public function addRecurringItemLines(
+        ClientInvoice $invoice,
+        ClientAgreement $agreement,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        int &$sortOrder,
+    ): void {
+        $agreement->loadMissing('recurringItems');
+
+        foreach ($this->recurringItemBiller->linesForCycle($agreement, $periodStart, $periodEnd) as $lineData) {
+            $line = $this->recurringItemBiller->buildLine($lineData, $sortOrder++);
+            // The biller builds the line without knowing which invoice it lands
+            // on. `associate` sets the key through the relation, which types it
+            // correctly rather than casting an int into an unsigned column.
+            $line->workspace_id = $invoice->workspace_id;
+            $line->invoice()->associate($invoice);
+            $line->save();
+        }
+    }
+
+    /**
+     * Add billable milestone tasks (with milestone_price > 0) to the invoice.
+     *
+     * Includes all unbilled tasks completed on or before the period end.
+     * This handles the case where a task was completed in a prior period where
+     * the invoice was already issued/paid — such tasks are carried forward to
+     * the next available (draft or new) invoice.
+     */
+    public function addBillableMilestoneTasks(
+        ClientCompany $company,
+        ClientInvoice $invoice,
+        Carbon $periodEnd,
+        int &$sortOrder
+    ): void {
+        $tasks = ClientTask::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->whereHas('project', fn ($q) => $q->where('client_company_id', $company->id))
+            ->where('milestone_price_amount', '>', 0)
+            ->whereNotNull('completed_at')
+            ->whereNull('client_invoice_line_id')
+            ->where('completed_at', '<=', $periodEnd->copy()->endOfDay())
+            ->orderBy('completed_at')
+            ->get();
+
+        foreach ($tasks as $task) {
+            $line = ClientInvoiceLine::create([
+                'workspace_id' => $invoice->workspace_id,
+                'client_invoice_id' => $invoice->id,
+                'client_agreement_id' => $invoice->client_agreement_id,
+                'description' => 'Milestone: '.$task->title,
+                'quantity' => '1',
+                'unit_amount' => (int) $task->milestone_price_amount,
+                'tax_amount' => 0,
+                'total_amount' => (int) $task->milestone_price_amount,
+                'type' => 'milestone',
+                'hours' => null,
+                'line_date' => $task->completed_at,
+                'sort_order' => $sortOrder++,
+            ]);
+
+            $task->update(['client_invoice_line_id' => $line->id]);
+        }
+    }
+
+    /**
+     * Add a single prior_month_retainer line that covers all deferred time
+     * entries that fit in the remaining capacity for this period.
+     *
+     * The whole-entry invariant (see docs/client-management/deferred-billing.md):
+     * each entry is attached directly — TimeEntrySplitter is never involved.
+     */
+    public function addDeferredRetainerLine(
+        ClientInvoice $invoice,
+        ClientAgreement $agreement,
+        DeferredAllocationResult $result,
+        Carbon $periodEnd,
+        int &$sortOrder,
+    ): void {
+        $hours = $result->hoursBilled;
+        $line = ClientInvoiceLine::create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => sprintf(
+                'Deferred work items applied to retainer (%s)',
+                $this->formatHoursForQuantity($hours),
+            ),
+            // A retainer draw-down charges nothing; the capacity was already paid for.
+            'quantity' => '0',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'type' => 'prior_month_retainer',
+            'hours' => $hours,
+            'line_date' => $periodEnd,
+            'sort_order' => $sortOrder++,
+        ]);
+
+        foreach ($result->billed as $candidate) {
+            $this->attach($line, $candidate->entry);
+        }
+    }
+
+    /**
+     * Add an additional_hours line that force-bills every outstanding deferred
+     * entry at the agreement's hourly rate. Used on termination invoices so
+     * the client is never left with unbilled deferred work.
+     *
+     * @param  Collection<int, ClientTimeEntry>  $entries
+     */
+    public function addDeferredTerminationLine(
+        ClientInvoice $invoice,
+        ClientAgreement $agreement,
+        Collection $entries,
+        int &$sortOrder,
+    ): void {
+        $totalMinutes = (int) $entries->sum('minutes_worked');
+        if ($totalMinutes <= 0) {
+            return;
+        }
+        $hours = round($totalMinutes / 60, 4);
+        $rateAmount = (int) ($agreement->hourly_rate_amount ?? 0);
+
+        $line = ClientInvoiceLine::create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => sprintf(
+                'Deferred work items billed on agreement termination (%s @ %s/hr)',
+                $this->formatHoursForQuantity($hours),
+                $this->formatMoney($rateAmount, (string) $invoice->currency),
+            ),
+            'quantity' => $this->formatHoursForQuantity($hours),
+            'unit_amount' => $rateAmount,
+            'tax_amount' => 0,
+            'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
+            'type' => 'additional_hours',
+            'hours' => $hours,
+            'line_date' => $invoice->service_period_end,
+            'sort_order' => $sortOrder++,
+        ]);
+
+        foreach ($entries as $entry) {
+            $this->attach($line, $entry);
+        }
+    }
+
+    /**
+     * Add one invoice line per flat-hourly subcontractor for the period, billed
+     * at the rate snapshotted on each entry. These hours are independent of the
+     * retainer pool (they were excluded from the ledger), so the line is purely
+     * additive. Whole entries only — never split. Idempotent on draft
+     * regeneration because `subcontractor` is a system-generated line type.
+     */
+    public function addSubcontractorFlatHourlyLines(
+        ClientCompany $company,
+        ClientInvoice $invoice,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        int &$sortOrder,
+    ): void {
+        // The predecessor selected by subcontractor billing mode. This schema
+        // keeps the per-entry cost but not the mode, so the cost being present
+        // is the whole signal. Restoring modes means restoring that column and
+        // narrowing this query again.
+        $entries = ClientTimeEntry::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->whereDoesntHave('invoiceLines')
+            ->where('is_billable', true)
+            ->where('is_deferred', false)
+            ->whereNotNull('subcontractor_cost_amount')
+            ->approved()
+            ->whereBetween('worked_on', [$periodStart, $periodEnd])
+            ->with('user:id,name')
+            ->orderBy('worked_on')
+            ->orderBy('id')
+            ->get();
+
+        // Group by (user, project, snapshot rate) so a mid-period rate change
+        // produces correctly-priced separate lines rather than one blended line.
+        $groups = $entries->groupBy(fn (ClientTimeEntry $entry): string => implode('|', [
+            $entry->user_id,
+            $entry->client_project_id,
+            (string) $entry->subcontractor_cost_amount,
+        ]));
+
+        foreach ($groups as $groupEntries) {
+            /** @var ClientTimeEntry $sample */
+            $sample = $groupEntries->first();
+            $rateAmount = (int) $sample->subcontractor_cost_amount;
+            $totalMinutes = (int) $groupEntries->sum('minutes');
+            $hours = round($totalMinutes / 60, 4);
+            if ($hours <= 0) {
+                continue;
+            }
+
+            $name = $sample->user->name;
+
+            $line = ClientInvoiceLine::create([
+                'workspace_id' => $invoice->workspace_id,
+                'client_invoice_id' => $invoice->id,
+                'client_agreement_id' => $invoice->client_agreement_id,
+                'client_project_id' => $sample->client_project_id,
+                'description' => sprintf(
+                    'Subcontractor: %s (%s @ %s/hr)',
+                    $name,
+                    $this->formatHoursForQuantity($hours),
+                    $this->formatMoney($rateAmount, (string) $invoice->currency),
+                ),
+                'quantity' => $this->formatHoursForQuantity($hours),
+                'unit_amount' => $rateAmount,
+                'tax_amount' => 0,
+                'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
+                'type' => InvoiceLineType::Subcontractor->value,
+                'hours' => $hours,
+                'line_date' => $periodEnd,
+                'sort_order' => $sortOrder++,
+            ]);
+
+            foreach ($groupEntries as $entry) {
+                $this->attach($line, $entry);
+            }
+        }
+    }
+
+    /**
+     * Link all time entry fragments to their respective invoice lines, handling splits correctly.
+     *
+     * @param  array<int, array<int, TimeEntryFragment>>  $fragmentsToLines
+     */
+    public function linkAllFragmentsToLines(array $fragmentsToLines, TimeEntrySplitter $splitter): void
+    {
+        $entrySplitPlan = [];
+
+        foreach ($fragmentsToLines as $lineId => $fragments) {
+            foreach ($fragments as $fragment) {
+                $entryId = $fragment->originalTimeEntryId;
+                if (! isset($entrySplitPlan[$entryId])) {
+                    $entrySplitPlan[$entryId] = [];
+                }
+                $entrySplitPlan[$entryId][] = [
+                    'line_id' => $lineId,
+                    'minutes' => $fragment->minutes,
+                ];
+            }
+        }
+
+        foreach ($entrySplitPlan as $entryId => $splits) {
+            $entry = ClientTimeEntry::find($entryId);
+            if (! $entry) {
+                continue;
+            }
+
+            if (count($splits) == 1 && $splits[0]['minutes'] >= $entry->minutes_worked) {
+                $this->attachToLineId($splits[0]['line_id'], $entry);
+
+                continue;
+            }
+
+            $remainingEntry = $entry;
+            $totalMinutes = $entry->minutes_worked;
+            $processedMinutes = 0;
+
+            foreach ($splits as $i => $split) {
+                $minutesForThisSplit = min($split['minutes'], $totalMinutes - $processedMinutes);
+
+                if ($minutesForThisSplit <= 0) {
+                    break;
+                }
+
+                $isLastSplit = ($i == count($splits) - 1) || ($processedMinutes + $minutesForThisSplit >= $totalMinutes);
+
+                if ($isLastSplit) {
+                    $this->attachToLineId($split['line_id'], $remainingEntry);
+                } else {
+                    // Each fragment becomes its own row, carrying lineage back to
+                    // the entry it came from, so the pivot's one-line-per-entry
+                    // rule holds and recombination can put it back later.
+                    $splitResult = $splitter->splitEntry($remainingEntry, $minutesForThisSplit);
+                    $this->attachToLineId($split['line_id'], $splitResult['primary']);
+                    $remainingEntry = $splitResult['overflow'];
+                }
+
+                $processedMinutes += $minutesForThisSplit;
+            }
+        }
+    }
+
+    /**
+     * Bill one entry on one line.
+     *
+     * The predecessor stored this as a column on the entry. Here it is a pivot
+     * with a unique index per entry, which is what stops the same work being
+     * billed twice.
+     */
+    private function attach(ClientInvoiceLine $line, ClientTimeEntry $entry): void
+    {
+        $line->timeEntries()->syncWithoutDetaching([
+            $entry->id => ['workspace_id' => $line->workspace_id],
+        ]);
+    }
+
+    private function attachToLineId(int $lineId, ClientTimeEntry $entry): void
+    {
+        $line = ClientInvoiceLine::query()->find($lineId);
+        if ($line instanceof ClientInvoiceLine) {
+            $this->attach($line, $entry);
+        }
+    }
+
+    /** Minor units as a plain decimal beside its currency code. */
+    private function formatMoney(int $minorUnits, string $currency): string
+    {
+        return sprintf('%s %s', number_format($minorUnits / 100, 2), $currency);
+    }
+
+    private function formatHoursForQuantity(float $hours): string
+    {
+        $totalMinutes = (int) round($hours * 60);
+        $h = intdiv($totalMinutes, 60);
+        $m = $totalMinutes % 60;
+
+        return sprintf('%d:%02d', $h, $m);
+    }
+}

@@ -1,0 +1,263 @@
+<?php
+
+namespace Tests\Feature\Billing;
+
+use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
+use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Services\Billing\Balances\DeferredAllocationResult;
+use App\Services\Billing\Balances\DeferredEntryCandidate;
+use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Services\Billing\InvoiceLineComposer;
+use App\Services\Billing\TimeEntrySplitter;
+use App\Support\Billing\InvoiceLineType;
+use Carbon\Carbon;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * The composer is where the ported engine meets this schema's pivot. The
+ * predecessor stored the invoice link as a column on the time entry; here it is
+ * a many-to-many with a unique index per entry, so linking, releasing and
+ * splitting all behave differently even though the composition rules do not.
+ */
+final class InvoiceLineComposerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Workspace $workspace;
+
+    private ClientCompany $company;
+
+    private ClientProject $project;
+
+    private ClientAgreement $agreement;
+
+    private User $user;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->workspace = Workspace::query()->create(['name' => 'Composer', 'slug' => 'composer']);
+        $this->company = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Composer Client', 'slug' => 'composer-client',
+        ]);
+        $this->project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Composer Project',
+        ]);
+        $this->agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'title' => 'Retainer', 'status' => 'active', 'currency' => 'USD',
+            'hourly_rate_amount' => 30000, 'starts_on' => '2026-01-01',
+        ]);
+        $this->user = User::factory()->create();
+    }
+
+    public function test_a_completed_milestone_bills_once_and_not_again(): void
+    {
+        $task = $this->milestone(18750);
+        $invoice = $this->invoice();
+        $sort = 0;
+
+        app(InvoiceLineComposer::class)->addBillableMilestoneTasks(
+            $this->company, $invoice, Carbon::parse('2026-03-31'), $sort,
+        );
+
+        $line = $invoice->lines()->where('type', 'milestone')->firstOrFail();
+        $this->assertSame(18750, (int) $line->total_amount);
+        $this->assertSame($line->id, $task->refresh()->client_invoice_line_id);
+
+        // Regenerating must not find it unbilled and charge again.
+        app(InvoiceLineComposer::class)->addBillableMilestoneTasks(
+            $this->company, $invoice, Carbon::parse('2026-03-31'), $sort,
+        );
+
+        $this->assertSame(1, $invoice->lines()->where('type', 'milestone')->count());
+    }
+
+    public function test_regeneration_releases_time_and_milestones_it_had_claimed(): void
+    {
+        $task = $this->milestone(18750);
+        $entry = $this->entry(60);
+        $invoice = $this->invoice();
+        $sort = 0;
+
+        $composer = app(InvoiceLineComposer::class);
+        $composer->addBillableMilestoneTasks($this->company, $invoice, Carbon::parse('2026-03-31'), $sort);
+        $composer->addDeferredRetainerLine(
+            $invoice,
+            $this->agreement,
+            new DeferredAllocationResult([DeferredEntryCandidate::fromEntry($entry)], [], 1.0),
+            Carbon::parse('2026-03-31'),
+            $sort,
+        );
+
+        $this->assertTrue($entry->refresh()->invoiceLines()->exists());
+        $this->assertNotNull($task->refresh()->client_invoice_line_id);
+
+        $composer->resetSystemGeneratedLines($invoice->refresh());
+
+        // Both must come free, or the next pass silently skips them forever.
+        $this->assertFalse($entry->refresh()->invoiceLines()->exists());
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame(0, $invoice->lines()->count());
+    }
+
+    public function test_a_manual_adjustment_survives_regeneration(): void
+    {
+        $invoice = $this->invoice();
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $invoice->id,
+            'type' => InvoiceLineType::Adjustment->value, 'description' => 'Goodwill discount',
+            'quantity' => '1', 'unit_amount' => -2500, 'tax_amount' => 0, 'total_amount' => -2500, 'sort_order' => 9,
+        ]);
+
+        app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
+
+        $this->assertSame(1, $invoice->lines()->count());
+        $this->assertSame('Goodwill discount', $invoice->lines()->first()->description);
+    }
+
+    public function test_a_retainer_draw_down_bills_the_hours_at_no_charge(): void
+    {
+        $entry = $this->entry(90);
+        $invoice = $this->invoice();
+        $sort = 0;
+
+        app(InvoiceLineComposer::class)->addDeferredRetainerLine(
+            $invoice,
+            $this->agreement,
+            new DeferredAllocationResult([DeferredEntryCandidate::fromEntry($entry)], [], 1.5),
+            Carbon::parse('2026-03-31'),
+            $sort,
+        );
+
+        $line = $invoice->lines()->firstOrFail();
+        $this->assertSame('prior_month_retainer', $line->type);
+        // The capacity was already paid for, so the line carries hours but no money.
+        $this->assertSame(0, (int) $line->total_amount);
+        $this->assertSame('1.5000', (string) $line->hours);
+    }
+
+    public function test_termination_force_bills_outstanding_deferred_time(): void
+    {
+        $first = $this->entry(60);
+        $second = $this->entry(30);
+        $invoice = $this->invoice();
+        $sort = 0;
+
+        app(InvoiceLineComposer::class)->addDeferredTerminationLine(
+            $invoice, $this->agreement, collect([$first, $second]), $sort,
+        );
+
+        $line = $invoice->lines()->firstOrFail();
+        $this->assertSame('additional_hours', $line->type);
+        // 1.5h at 300.00/hr.
+        $this->assertSame(45000, (int) $line->total_amount);
+        $this->assertTrue($first->refresh()->invoiceLines()->exists());
+        $this->assertTrue($second->refresh()->invoiceLines()->exists());
+    }
+
+    public function test_an_entry_spanning_two_lines_is_split_into_rows_that_can_recombine(): void
+    {
+        $entry = $this->entry(120);
+        $invoice = $this->invoice();
+        $retainer = $this->line($invoice, 'prior_month_retainer', 0, 0);
+        $overage = $this->line($invoice, 'additional_hours', 30000, 30000, 1);
+
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+            $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+            $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+        ], app(TimeEntrySplitter::class));
+
+        // One entry became two rows, one per line, because the pivot allows a
+        // single line per entry.
+        $rows = ClientTimeEntry::query()->where('client_company_id', $this->company->id)->get();
+        $this->assertCount(2, $rows);
+        $this->assertSame(120, (int) $rows->sum('minutes'));
+        $this->assertSame(1, $retainer->timeEntries()->count());
+        $this->assertSame(1, $overage->timeEntries()->count());
+
+        // And the fragment knows where it came from, so it can be put back.
+        $fragment = $rows->firstWhere('split_from_time_entry_id', '!=', null);
+        $this->assertNotNull($fragment);
+        $this->assertSame($entry->id, $fragment->split_from_time_entry_id);
+    }
+
+    public function test_an_entry_covered_by_one_line_is_not_split(): void
+    {
+        $entry = $this->entry(60);
+        $invoice = $this->invoice();
+        $line = $this->line($invoice, 'additional_hours', 30000, 30000);
+
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+            $line->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+        ], app(TimeEntrySplitter::class));
+
+        $this->assertSame(1, ClientTimeEntry::query()->where('client_company_id', $this->company->id)->count());
+        $this->assertSame(1, $line->timeEntries()->count());
+    }
+
+    private function invoice(): ClientInvoice
+    {
+        return ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $this->agreement->id,
+            'invoice_number' => 'SVC-COMP-'.uniqid(),
+            'currency' => 'USD',
+            'status' => 'draft',
+            'service_period_end' => '2026-03-31',
+        ]);
+    }
+
+    private function line(ClientInvoice $invoice, string $type, int $unit, int $total, int $sort = 0): ClientInvoiceLine
+    {
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => $type,
+            'description' => ucfirst(str_replace('_', ' ', $type)),
+            'quantity' => '1',
+            'unit_amount' => $unit,
+            'tax_amount' => 0,
+            'total_amount' => $total,
+            'sort_order' => $sort,
+        ]);
+    }
+
+    private function entry(int $minutes): ClientTimeEntry
+    {
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-03-14',
+            'minutes' => $minutes,
+            'description' => 'Work',
+            'is_billable' => true,
+            'is_deferred' => true,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+    }
+
+    private function milestone(int $priceAmount): ClientTask
+    {
+        return ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Deliverable',
+            'status' => 'completed',
+            'completed_at' => '2026-03-20',
+            'milestone_price_amount' => $priceAmount,
+        ]);
+    }
+}

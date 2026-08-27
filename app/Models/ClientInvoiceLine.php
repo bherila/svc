@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'type', 'description', 'quantity',
     'client_project_id', 'unit_amount', 'tax_amount', 'total_amount', 'sort_order',
+    // Restored ledger detail. Without these here a model create silently drops
+    // them, which is how the recurring-item quantity went missing for so long.
+    'hours', 'line_date', 'client_agreement_id', 'client_agreement_recurring_item_id',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_invoice_id'])]
 class ClientInvoiceLine extends Model implements WorkspaceOwned
