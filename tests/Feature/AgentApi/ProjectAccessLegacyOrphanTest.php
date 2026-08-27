@@ -11,6 +11,7 @@ use App\Models\WorkspaceMembership;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -73,5 +74,31 @@ final class ProjectAccessLegacyOrphanTest extends TestCase
     {
         // This isolated process intentionally needs foreign-key enforcement toggled
         // to reproduce project rows left behind by a legacy membership removal.
+        // SQLite refuses to change `PRAGMA foreign_keys` inside a transaction, so
+        // there can be no transaction to roll back - which means this test has to
+        // clean up after itself. See tearDown.
+    }
+
+    /**
+     * Everything above is committed, so it has to be removed by hand.
+     *
+     * On in-memory SQLite this was invisible: the separate process gets its own
+     * database and the committed rows die with it. Against a shared server they
+     * survive, and every later test sees a workspace and a client company it
+     * did not create - which is how one uncleaned test failed eight others.
+     */
+    protected function tearDown(): void
+    {
+        Schema::disableForeignKeyConstraints();
+
+        try {
+            foreach (['client_project_memberships', 'workspace_memberships', 'client_projects', 'client_companies', 'workspaces', 'users'] as $table) {
+                DB::table($table)->delete();
+            }
+        } finally {
+            Schema::enableForeignKeyConstraints();
+        }
+
+        parent::tearDown();
     }
 }

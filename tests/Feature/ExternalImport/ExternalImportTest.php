@@ -81,7 +81,12 @@ class ExternalImportTest extends TestCase
 
     public function test_destination_equivalence_is_refused(): void
     {
-        Config::set('external-import.sources.external.config', ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
+        // Point the source at whatever the destination actually is, rather than
+        // assuming sqlite. Hard-coding it made this assert nothing on a MySQL
+        // run: the two were genuinely distinct, so the guard correctly let the
+        // import through and the test failed on a later check instead.
+        $destination = (string) (Config::get('external-import.destination_connection') ?: Config::get('database.default'));
+        Config::set('external-import.sources.external.config', Config::get("database.connections.{$destination}"));
 
         try {
             app(ExternalImportService::class)->run('external', 'missing-workspace');
@@ -408,7 +413,9 @@ class ExternalImportTest extends TestCase
         DB::enableQueryLog();
         app(ExternalImportService::class)->run('external', $workspace->slug, true);
         $ledgerReads = collect(DB::getQueryLog())
-            ->filter(fn (array $query): bool => str_contains(strtolower((string) $query['query']), 'from "external_import_items"'))
+            // Each grammar quotes identifiers its own way - SQLite with double
+            // quotes, MySQL with backticks - so match the name, not the quoting.
+            ->filter(fn (array $query): bool => preg_match('/\bfrom\s+["`]?external_import_items["`]?\b/i', (string) $query['query']) === 1)
             ->count();
         DB::disableQueryLog();
 

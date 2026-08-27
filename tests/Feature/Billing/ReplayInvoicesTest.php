@@ -141,7 +141,18 @@ final class ReplayInvoicesTest extends TestCase
         $parts = [];
 
         foreach (['client_invoices', 'client_invoice_lines', 'client_invoice_line_time_entries', 'client_time_entries', 'client_tasks', 'workspace_invoice_counters'] as $table) {
-            $rows = DB::table($table)->orderBy('id')->get();
+            // Sorted here rather than in SQL because not every one of these
+            // tables has an `id`: workspace_invoice_counters is keyed on
+            // workspace_id alone. `orderBy('id')` looked fine on SQLite, which
+            // reinterprets an unresolvable double-quoted identifier as a string
+            // literal - so it ordered by the constant 'id', silently doing
+            // nothing. MySQL raises 1054 instead. Sorting the encoded rows needs
+            // no key at all and is stable on both.
+            $rows = DB::table($table)->get()
+                ->map(static fn (object $row): string => (string) json_encode($row))
+                ->sort()
+                ->values()
+                ->all();
             $parts[] = $table.':'.md5((string) json_encode($rows));
         }
 

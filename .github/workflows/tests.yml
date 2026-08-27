@@ -60,10 +60,85 @@ jobs:
           path: public/build/
           retention-days: 2
 
+  mariadb:
+    name: Tests on MariaDB
+    runs-on: ubuntu-24.04-arm
+
+    # The default suite runs on in-memory SQLite; production is MariaDB 10.6
+    # reached through Laravel's `mysql` driver. SQLite stores whatever it is
+    # handed, so a value MariaDB refuses passes there without comment - which is
+    # how a `h:mm` string written into a decimal column survived 404 green
+    # tests. Every schema difference between the two engines is invisible until
+    # the suite runs on the engine that ships.
+    #
+    # This job is deliberately separate from `ci` rather than replacing its
+    # database: SQLite keeps the local and CI feedback loop fast, and this run
+    # is the one that has to be true.
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MARIADB_ROOT_PASSWORD: testing
+          MARIADB_DATABASE: svc_testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    # PHPUnit's <env> entries do not overwrite variables already present in the
+    # environment, so these win over the sqlite defaults in phpunit.xml without
+    # needing a second config file to drift out of step.
+    #
+    # DB_EXPECT_DRIVER is not read by the application. It tells the suite what
+    # this run is claiming to be, and DatabaseDriverTest fails if the claim is
+    # wrong - otherwise a mistyped variable or a service container that never
+    # came up would quietly fall back to SQLite and report a green run that
+    # proved nothing.
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: svc_testing
+      DB_USERNAME: root
+      DB_PASSWORD: testing
+      DB_EXPECT_DRIVER: mysql
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_mysql
+          tools: composer:v2
+          coverage: none
+
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-interaction --prefer-dist
+          test -f .env || cp .env.example .env
+
+      # No lint or static analysis here; `ci` already runs those and they say
+      # nothing about the engine. This job exists for the database alone.
+      - name: Run the test suite against MariaDB
+        run: php artisan test
+
   deploy:
     name: Deploy empty alpha to web1
-    needs: ci
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' }}
+    needs: [ci, mariadb]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
     permissions:
