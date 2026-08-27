@@ -73,6 +73,7 @@ class DeferredBillingAllocator
     public function collectForTermination(ClientCompany $company, ?Carbon $upTo = null): Collection
     {
         $query = ClientTimeEntry::query()
+            ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
             ->where('is_deferred', true)
@@ -96,6 +97,7 @@ class DeferredBillingAllocator
     protected function loadCandidates(ClientCompany $company, Carbon $upTo): Collection
     {
         return ClientTimeEntry::query()
+            ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
             ->where('is_deferred', true)

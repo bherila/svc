@@ -34,7 +34,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',
-    'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'currency',
+    'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'billing_rate_source', 'currency',
     'status', 'approved_by_user_id', 'approved_at', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
     'subcontractor_cost_metadata',
 ])]
@@ -102,7 +102,12 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeApproved(Builder $query): Builder
     {
-        return $query->where('status', 'approved');
+        // `invoiced` counts. This schema collapsed the predecessor's separate
+        // approval_status column into `status`, and issuing an invoice rewrites
+        // approved work to `invoiced` - so reading the literal alone makes every
+        // ledger rebuild forget the work it has already billed, inflating
+        // rollover and understating the next overage.
+        return $query->whereIn('status', ['approved', 'invoiced']);
     }
 
     /**

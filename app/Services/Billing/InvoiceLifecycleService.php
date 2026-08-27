@@ -4,17 +4,22 @@ namespace App\Services\Billing;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoiceLineType;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
 final class InvoiceLifecycleService
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $attributes
@@ -123,6 +128,12 @@ final class InvoiceLifecycleService
                 throw new DomainException('The due date cannot precede the issue date.');
             }
 
+            // Credit is only spent at issue. Two drafts can each be offered the
+            // whole available pool - that is deliberate, since drafts regenerate
+            // freely and reserving against them would strand credit - so the
+            // pool is re-checked here, where the money actually leaves it.
+            $this->capOverpaymentCreditAtIssue($locked);
+
             $locked->forceFill([
                 'issue_date' => $issueDate,
                 'due_date' => $locked->due_date ?? $issueDate,
@@ -141,6 +152,51 @@ final class InvoiceLifecycleService
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
+    }
+
+    /**
+     * Trim this invoice's credit line to whatever the pool can still cover.
+     *
+     * Without this, two drafts prepared against the same overpayment can both
+     * be issued and both consume it, handing the client the credit twice. The
+     * check belongs at issue rather than in the draft calculation because issue
+     * is the first moment the spend becomes real, and it is serialized by the
+     * row lock taken above.
+     */
+    private function capOverpaymentCreditAtIssue(ClientInvoice $invoice): void
+    {
+        $creditLine = $invoice->lines()
+            ->where('type', InvoiceLineType::Credit->value)
+            ->first();
+
+        if (! $creditLine instanceof ClientInvoiceLine) {
+            return;
+        }
+
+        $company = $invoice->clientCompany;
+        if (! $company instanceof ClientCompany) {
+            return;
+        }
+
+        $applied = abs((int) $creditLine->total_amount);
+        $available = (int) round($this->overpaymentCreditService
+            ->availableCreditForCompany($company, (string) $invoice->currency) * 100);
+
+        if ($applied <= $available) {
+            return;
+        }
+
+        if ($available <= 0) {
+            $creditLine->delete();
+        } else {
+            $creditLine->forceFill([
+                'unit_amount' => -$available,
+                'total_amount' => -$available,
+            ])->save();
+        }
+
+        $invoice->refresh();
+        $invoice->recalculateTotals();
     }
 
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice

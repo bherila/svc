@@ -29,7 +29,7 @@ final class BackfillBillingLedgerCommand extends Command
 {
     protected $signature = 'svc:billing:backfill-ledger
         {--source=external : Allowlisted read-only source key from config/external-import.php}
-        {--workspace= : Restrict to ledger rows imported into one workspace public id}
+        {--workspace= : Required. Ledger rows imported into this workspace public id, and no other}
         {--dry-run : Report what would change without writing}';
 
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
@@ -45,7 +45,7 @@ final class BackfillBillingLedgerCommand extends Command
 
     private string $destination;
 
-    private ?int $workspaceId = null;
+    private int $workspaceId;
 
     public function handle(SourceGuard $guard): int
     {
@@ -64,15 +64,23 @@ final class BackfillBillingLedgerCommand extends Command
         // either find nothing or touch an unrelated database.
         $this->destination = (string) (Config::get('external-import.destination_connection') ?: Config::get('database.default'));
 
-        if (is_string($workspacePublicId = $this->option('workspace')) && $workspacePublicId !== '') {
-            $id = $this->db()->table('workspaces')->where('public_id', $workspacePublicId)->value('id');
-            if ($id === null) {
-                $this->components->error('No workspace matches that public id.');
+        // Required, not defaulted. Omitting it previously dropped every
+        // workspace predicate below, so a repair aimed at one onboarding would
+        // walk every tenant imported from the same source.
+        $workspacePublicId = $this->option('workspace');
+        if (! is_string($workspacePublicId) || $workspacePublicId === '') {
+            $this->components->error('--workspace is required; this command writes billing data and must name its tenant.');
 
-                return self::FAILURE;
-            }
-            $this->workspaceId = (int) $id;
+            return self::FAILURE;
         }
+
+        $id = $this->db()->table('workspaces')->where('public_id', $workspacePublicId)->value('id');
+        if ($id === null) {
+            $this->components->error('No workspace matches that public id.');
+
+            return self::FAILURE;
+        }
+        $this->workspaceId = (int) $id;
 
         $dryRun = (bool) $this->option('dry-run');
         $identityHash = (string) $source['identity_hash'];
@@ -133,10 +141,10 @@ final class BackfillBillingLedgerCommand extends Command
             ->where('source_identity_hash', $identityHash)
             ->where('status', 'imported')
             ->whereNotNull('target_public_id')
-            ->when($this->workspaceId !== null, fn ($query) => $query->whereIn(
+            ->whereIn(
                 'external_import_run_id',
                 $this->db()->table('external_import_runs')->where('workspace_id', $this->workspaceId)->select('id'),
-            ))
+            )
             ->get(['source_key', 'target_public_id', 'source_fingerprint']);
 
         if ($items->isEmpty()) {
@@ -145,7 +153,7 @@ final class BackfillBillingLedgerCommand extends Command
 
         $internal = $this->db()->table($destinationTable)
             ->whereIn('public_id', $items->pluck('target_public_id')->all())
-            ->when($this->workspaceId !== null, fn ($query) => $query->where('workspace_id', $this->workspaceId))
+            ->where('workspace_id', $this->workspaceId)
             ->pluck('id', 'public_id');
 
         $map = [];
@@ -227,7 +235,7 @@ final class BackfillBillingLedgerCommand extends Command
         if (! $dryRun) {
             $this->db()->table($table)
                 ->where('id', $id)
-                ->when($this->workspaceId !== null, fn ($query) => $query->where('workspace_id', $this->workspaceId))
+                ->where('workspace_id', $this->workspaceId)
                 ->update($changes);
         }
     }
