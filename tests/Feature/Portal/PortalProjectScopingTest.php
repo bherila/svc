@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Portal;
 
+use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
@@ -10,8 +11,10 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Services\Authorization\PortalAccess;
+use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 /**
@@ -200,6 +203,41 @@ final class PortalProjectScopingTest extends TestCase
         $props = $response->viewData('page')['props'];
 
         return $props;
+    }
+
+    /**
+     * The narrowing has to hold on every surface, not just the page.
+     *
+     * It was wired into the portal view and the attachment resolver and not into
+     * the read API, which authorised portal callers at company level. A user
+     * granted one project could list every client-visible project, task and
+     * approved time entry the company had - the same hole, one route across.
+     */
+    public function test_the_read_api_honours_project_scoping(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_PROJECTS);
+        $this->grantProject($user, $this->theirs);
+
+        $mine = $this->timeEntry($this->theirs, true, 'Mine', 'Mine for the client');
+        $this->timeEntry($this->someoneElses, true, 'Not mine', 'Not mine for the client');
+
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::TIME_READ, AgentApiScopes::PROJECTS_READ]);
+
+        $projects = $this->getJson("/api/v1/workspaces/{$this->workspace->public_id}/projects")
+            ->assertOk()->json('data');
+        $this->assertSame(
+            [$this->theirs->public_id],
+            array_map(static fn (array $row): string => $row['id'], $projects),
+            'The read API listed a project this user was never granted',
+        );
+
+        $entries = $this->getJson("/api/v1/workspaces/{$this->workspace->public_id}/time-entries")
+            ->assertOk()->json('data');
+        $this->assertSame(
+            [$mine->public_id],
+            array_map(static fn (array $row): string => $row['id'], $entries),
+            "The read API returned another project's time",
+        );
     }
 
     private function project(string $name): ClientProject

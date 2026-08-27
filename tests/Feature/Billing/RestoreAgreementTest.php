@@ -76,7 +76,7 @@ final class RestoreAgreementTest extends TestCase
 
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
-            '--accept-drift' => 'invoice_number',
+            '--accept-drift' => 'client_invoices.invoice_number',
         ])->assertSuccessful();
 
         $this->assertSame('cadence_period', ClientInvoice::query()->sole()->invoice_kind);
@@ -92,7 +92,7 @@ final class RestoreAgreementTest extends TestCase
 
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
-            '--accept-drift' => 'invoice_number',
+            '--accept-drift' => 'client_invoices.invoice_number',
         ])->assertFailed();
 
         $this->assertNull(

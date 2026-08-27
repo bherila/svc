@@ -176,6 +176,54 @@ final class RetainerDrawConsistencyTest extends TestCase
         ));
     }
 
+    /**
+     * The stronger guard, added after this same omission was found a fourth
+     * time.
+     *
+     * Naming the conditions on the model was not enough: a caller could still
+     * select time entries for an agreement and forget to narrow them to that
+     * agreement's project. Four sites in the monthly path had, while the ledger
+     * builder and the interim generator had not, so a project-scoped agreement
+     * picked up a sibling project's hours as its own debt.
+     *
+     * Any query that selects entries for a specific agreement has to say which
+     * agreement's work it means.
+     */
+    public function test_every_agreement_scoped_entry_query_narrows_to_the_agreement(): void
+    {
+        $offenders = [];
+
+        foreach (['ClientInvoicingService', 'InterimOverageGenerator', 'InvoiceLedgerBuilder'] as $service) {
+            $relative = "app/Services/Billing/{$service}.php";
+            $contents = file_get_contents(base_path($relative));
+            if ($contents === false) {
+                $this->fail("Could not read {$relative}");
+            }
+
+            // Each ClientTimeEntry query is one statement; split on the
+            // terminator so a query's clauses are examined together.
+            foreach (explode(';', $contents) as $statement) {
+                if (! str_contains($statement, 'ClientTimeEntry::query()')) {
+                    continue;
+                }
+                if (! str_contains($statement, 'retainerBillable()') && ! str_contains($statement, 'billableForInvoicing()')) {
+                    continue;
+                }
+                if (str_contains($statement, 'forAgreementScope(')) {
+                    continue;
+                }
+
+                $offenders[] = $relative.': '.trim(explode("\n", trim($statement))[0]);
+            }
+        }
+
+        $this->assertSame([], $offenders, sprintf(
+            "These queries select an agreement's billable work without narrowing it to that agreement.\n\n%s\n\n".
+            'Add ->forAgreementScope($agreement); a project-scoped agreement must not draw on another project.',
+            implode("\n", $offenders),
+        ));
+    }
+
     private function project(string $name): ClientProject
     {
         return ClientProject::query()->create([

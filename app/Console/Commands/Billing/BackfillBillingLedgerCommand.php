@@ -296,10 +296,24 @@ final class BackfillBillingLedgerCommand extends Command
      */
     private function verifyRestore(ConnectionInterface $legacy, string $identityHash): int
     {
+        // Accepted entries are `table.column`. A bare column name is refused
+        // rather than guessed at: it would have to mean "on every table", which
+        // is exactly the over-acceptance this qualification exists to prevent.
         $accepted = array_values(array_filter(array_map(
             trim(...),
             explode(',', (string) ($this->option('accept-drift') ?? '')),
         ), static fn (string $c): bool => $c !== ''));
+
+        $unqualified = array_values(array_filter($accepted, static fn (string $c): bool => ! str_contains($c, '.')));
+        if ($unqualified !== []) {
+            $this->components->error(sprintf(
+                'Name each accepted difference as table.column: %s. A bare column name would waive that '.
+                'column on every table, including ones carrying money.',
+                implode(', ', $unqualified),
+            ));
+
+            return self::FAILURE;
+        }
 
         $verifier = new RestoreAgreementVerifier;
         $drift = [];
@@ -323,7 +337,12 @@ final class BackfillBillingLedgerCommand extends Command
             );
             $compared += $result['compared'];
             foreach ($result['drift'] as $column => $count) {
-                $drift[$column] = ($drift[$column] ?? 0) + $count;
+                // Qualified by table. `total_amount` exists on invoices and on
+                // invoice lines, `description` on lines and on time entries, so
+                // a flat map let a harmless accepted drift on one table waive a
+                // money column on another - and this is the only gate between a
+                // rewritten source and the backfill.
+                $drift["{$table}.{$column}"] = ($drift["{$table}.{$column}"] ?? 0) + $count;
             }
         }
 

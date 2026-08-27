@@ -151,14 +151,14 @@ class ClientInvoice extends Model implements WorkspaceOwned
      */
     public function recalculateTotals(): void
     {
-        $subtotal = 0;
-        $tax = 0;
-        foreach ($this->lines()->get() as $line) {
-            $subtotal += (int) $line->total_amount;
-            $tax += (int) $line->tax_amount;
-        }
+        $totals = self::totalsFromLines(
+            (int) $this->lines()->sum('total_amount'),
+            (int) $this->lines()->sum('tax_amount'),
+        );
+        $subtotal = $totals['subtotal_amount'];
+        $tax = $totals['tax_amount'];
+        $total = $totals['total_amount'];
 
-        $total = $subtotal + $tax;
         $this->forceFill([
             'subtotal_amount' => $subtotal,
             'tax_amount' => $tax,
@@ -183,5 +183,29 @@ class ClientInvoice extends Model implements WorkspaceOwned
     public static function balanceOwed(int $total, int $paid): int
     {
         return max(0, $total - $paid);
+    }
+
+    /**
+     * An invoice's three money columns, derived from its lines.
+     *
+     * A line's `total_amount` is its full amount *including* its own
+     * `tax_amount`. That is what InvoiceLifecycleService::lineTotal() writes,
+     * and it is trivially true of every generated line, which carries no tax.
+     *
+     * Two callers instead read `total_amount` as tax-exclusive and added
+     * `tax_amount` on top, so an operator-created invoice with a taxed line had
+     * its tax billed twice the moment anything recalculated it - issuing it, or
+     * applying a credit. The derivation lives here so the two cannot disagree
+     * about what a line total means.
+     *
+     * @return array{subtotal_amount: int, tax_amount: int, total_amount: int}
+     */
+    public static function totalsFromLines(int $lineTotals, int $lineTax): array
+    {
+        return [
+            'subtotal_amount' => $lineTotals - $lineTax,
+            'tax_amount' => $lineTax,
+            'total_amount' => $lineTotals,
+        ];
     }
 }

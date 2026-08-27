@@ -30,10 +30,13 @@ final class AgentTimeEntryQuery
                     ->whereHas('project.members', fn (Builder $members) => $members
                         ->whereKey($user->id)
                         ->whereIn('client_project_memberships.role', ['owner', 'manager', 'contributor'])))
+                // A portal user narrowed to named projects must not read time
+                // for the rest of the company. Same decision as the portal page,
+                // asked the same way.
                 ->orWhere(fn (Builder $shared) => $shared
                     ->where('status', 'approved')
                     ->where('is_visible_to_client', true)
-                    ->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id)));
+                    ->whereHas('project', fn (Builder $projects) => app(PortalAccess::class)->constrainProjectQuery($projects, $user)));
         });
     }
 }

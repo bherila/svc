@@ -46,4 +46,50 @@ enum InvoiceLineType: string
             self::Subcontractor->value,
         ];
     }
+
+    /**
+     * Line types whose date says when the work happened.
+     *
+     * An invoice's service period is the window of work it reconciles, and it is
+     * widened to cover these lines. The rest are charges for a period that has
+     * not happened yet - the retainer being sold, a recurring item for the month
+     * ahead - and their dates sit in the *next* month by design.
+     *
+     * This was a denylist naming retainer and credit, so recurring items pushed
+     * the service period a month forward. The overlap guard then refused to
+     * generate that month, for good, and the failure was swallowed into
+     * `skipped`: a client silently stopped being invoiced.
+     *
+     * An allowlist is the safer shape here. A new line type that describes work
+     * shows up as a period that is too narrow, which is visible; under a
+     * denylist it lands as a period too wide, which stops billing.
+     *
+     * @return list<string>
+     */
+    public static function definingTheWorkPeriod(): array
+    {
+        return [
+            self::PriorMonthRetainer->value,
+            self::PriorMonthBillable->value,
+            self::AdditionalHours->value,
+            self::Milestone->value,
+            self::Expense->value,
+            self::Subcontractor->value,
+            self::Reconciliation->value,
+            self::Adjustment->value,
+        ];
+    }
+
+    /**
+     * The complement: charges for a period yet to come.
+     *
+     * @return list<string>
+     */
+    public static function billedInAdvance(): array
+    {
+        return array_values(array_diff(
+            array_map(static fn (self $case): string => $case->value, self::cases()),
+            self::definingTheWorkPeriod(),
+        ));
+    }
 }

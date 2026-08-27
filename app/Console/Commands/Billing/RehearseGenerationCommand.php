@@ -100,6 +100,20 @@ final class RehearseGenerationCommand extends Command
             $this->components->warn('generation failed for company '.$companyPublicId);
         }
 
+        if ($failures !== []) {
+            // Nothing generated means nothing was tested. Reporting "safe to
+            // run" because every company threw would give the reader the
+            // opposite of the truth, with the authority of a check.
+            $this->components->error(sprintf(
+                'Generation failed for %d of %d companies, so this rehearsal proves nothing about them. '.
+                'Fix the failures and run it again.',
+                count($failures),
+                $companies->count(),
+            ));
+
+            return self::FAILURE;
+        }
+
         if ($changed !== []) {
             $this->components->error(sprintf(
                 '%d settled invoice(s) would be modified by a generation run. An issued or paid invoice is a '.

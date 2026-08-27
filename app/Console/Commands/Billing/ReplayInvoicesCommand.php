@@ -574,7 +574,11 @@ final class ReplayInvoicesCommand extends Command
                 // same money is presented is worth seeing, not worth blocking.
                 'verdict' => match (true) {
                     $moneyDelta === 0 && $notes === [] => 'match',
-                    $moneyDelta === 0 => 'composition_differs',
+                    // The same integer in two currencies is not the same money,
+                    // so a currency change can never be filed as a difference of
+                    // arrangement - it would exit zero saying every invoice
+                    // reproduced to the cent.
+                    $moneyDelta === 0 && $before['currency'] === $after['currency'] => 'composition_differs',
                     default => 'money_differs',
                 },
                 'money_delta' => $moneyDelta,

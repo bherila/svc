@@ -190,16 +190,14 @@ class OverpaymentCreditService
      */
     protected function recalculateTotals(ClientInvoice $invoice): void
     {
-        $subtotal = (int) $invoice->lines()->sum('total_amount');
-        $tax = (int) $invoice->lines()->sum('tax_amount');
-        $total = $subtotal + $tax;
+        $totals = ClientInvoice::totalsFromLines(
+            (int) $invoice->lines()->sum('total_amount'),
+            (int) $invoice->lines()->sum('tax_amount'),
+        );
         $paid = (int) $invoice->paid_amount;
 
-        $invoice->forceFill([
-            'subtotal_amount' => $subtotal,
-            'tax_amount' => $tax,
-            'total_amount' => $total,
-            'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
+        $invoice->forceFill($totals + [
+            'balance_amount' => ClientInvoice::balanceOwed($totals['total_amount'], $paid),
         ])->save();
     }
 }

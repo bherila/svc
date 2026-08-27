@@ -14,6 +14,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -146,7 +147,11 @@ final class AgentReadController extends Controller
         if (! $access->isWorkspaceManager($user, $workspace)) {
             $query->whereHas('project', function (Builder $projects) use ($user): void {
                 $projects->where(fn (Builder $assigned) => $assigned->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
-                    ->orWhere(fn (Builder $clientVisible) => $clientVisible->where('is_visible_to_client', true)->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id)));
+                    // Portal access can be narrowed to named projects, so this
+                    // asks PortalAccess rather than settling for "is a portal
+                    // user of the company", which ignored the narrowing.
+                    ->orWhere(fn (Builder $clientVisible) => app(PortalAccess::class)
+                        ->constrainProjectQuery($clientVisible->where('is_visible_to_client', true), $user));
             });
         }
         $records = $this->afterCursor($query, $request)->limit($this->limit($request) + 1)->get();
@@ -237,7 +242,8 @@ final class AgentReadController extends Controller
 
         return $query->where(function (Builder $projects) use ($user): void {
             $projects->whereHas('members', fn (Builder $members) => $members->whereKey($user->id))
-                ->orWhere(fn (Builder $clients) => $clients->where('is_visible_to_client', true)->whereHas('clientCompany.portalUsers', fn (Builder $users) => $users->whereKey($user->id)));
+                ->orWhere(fn (Builder $clients) => app(PortalAccess::class)
+                    ->constrainProjectQuery($clients->where('is_visible_to_client', true), $user));
         });
     }
 

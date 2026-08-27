@@ -1091,6 +1091,7 @@ final class ClientInvoicingService
             ->where('is_billable', true)
             ->where('is_deferred', false)
             ->retainerBillable()
+            ->forAgreementScope($agreement)
             ->min('worked_on');
 
         $calculationStart = $earliestEntryDate === null
@@ -1106,6 +1107,7 @@ final class ClientInvoicingService
             // equivalent of that ledger and was missed when the other was fixed.
             ->where('is_deferred', false)
             ->retainerBillable()
+            ->forAgreementScope($agreement)
             ->where('worked_on', '<=', $periodEnd->toDateString())
             ->get()
             ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse((string) $entry->worked_on)->format('Y-m'))
@@ -1403,6 +1405,7 @@ final class ClientInvoicingService
                 ->where('is_billable', true)
                 ->billableForInvoicing()
                 ->unbilled()
+                ->forAgreementScope($agreement)
                 ->where('worked_on', '>', $terminationDate->toDateString())
                 ->pluck('worked_on')
                 ->map(fn (mixed $date): string => substr((string) $date, 0, 7))
@@ -1460,6 +1463,7 @@ final class ClientInvoicingService
             ->where('is_billable', true)
             ->billableForInvoicing()
             ->unbilled()
+            ->forAgreementScope($agreement)
             ->whereDate('worked_on', '<=', $workCycleEndDate)
             ->exists();
 
@@ -1552,9 +1556,13 @@ final class ClientInvoicingService
      */
     private function updateInvoicePeriodFromLines(ClientInvoice $invoice): void
     {
+        // Only lines that describe work done set the window of work reconciled.
+        // A recurring item is dated in the month ahead, so including it widened
+        // the service period into the next month and the overlap guard then
+        // refused to generate that month at all.
         $lines = $invoice->lines()
             ->whereNotNull('line_date')
-            ->whereNotIn('type', [InvoiceLineType::Retainer->value, InvoiceLineType::Credit->value])
+            ->whereIn('type', InvoiceLineType::definingTheWorkPeriod())
             ->get();
 
         if ($lines->isEmpty()) {
