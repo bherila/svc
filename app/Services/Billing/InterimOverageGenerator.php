@@ -316,7 +316,7 @@ final class InterimOverageGenerator
                     ->first();
 
                 if ($existingInvoice instanceof ClientInvoice
-                    && InvoiceStatus::fromStored($existingInvoice->status)->hasCharged()) {
+                    && InvoiceStatus::hasChargedValue($existingInvoice->status)) {
                     $cursor->addMonth()->startOfMonth();
 
                     continue;

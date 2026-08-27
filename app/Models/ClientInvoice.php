@@ -129,7 +129,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
         // `partially_paid` belongs here: money has changed hands, so resetting
         // the invoice to draft and rebuilding its lines would rewrite what the
         // client has already paid against.
-        return InvoiceStatus::fromStored($this->status)->isSettled();
+        return InvoiceStatus::isSettledValue($this->status);
     }
 
     /** Classification, defaulting to the ordinary full-cycle invoice. */

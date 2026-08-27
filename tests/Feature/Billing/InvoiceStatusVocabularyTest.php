@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\ClientInvoice;
 use App\Support\Billing\InvoiceStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -120,6 +121,41 @@ final class InvoiceStatusVocabularyTest extends TestCase
     {
         $this->assertSame(InvoiceStatus::Draft, InvoiceStatus::fromStored('something_new'));
         $this->assertSame(InvoiceStatus::Draft, InvoiceStatus::fromStored(null));
-        $this->assertFalse(InvoiceStatus::fromStored('nonsense')->isSettled());
+    }
+
+    /**
+     * Reading an unknown status as draft is right for display and dangerous for
+     * permission: draft is the least privileged state to read and the most
+     * permissive to write, so "is this settled?" answered through fromStored()
+     * says an invoice nobody understands may be rewritten.
+     *
+     * The safe answer is the opposite. Refusing to touch an unrecognised row
+     * costs a manual step; overwriting one could rewrite what a client has
+     * already paid against.
+     */
+    public function test_an_unrecognised_status_is_treated_as_untouchable(): void
+    {
+        $this->assertTrue(InvoiceStatus::isSettledValue('something_new'));
+        $this->assertTrue(InvoiceStatus::hasChargedValue('something_new'));
+        $this->assertTrue(InvoiceStatus::isSettledValue(null));
+
+        // Known values still answer normally.
+        $this->assertFalse(InvoiceStatus::isSettledValue('draft'));
+        $this->assertFalse(InvoiceStatus::hasChargedValue('draft'));
+        $this->assertTrue(InvoiceStatus::isSettledValue('void'));
+        $this->assertFalse(InvoiceStatus::hasChargedValue('void'));
+        $this->assertTrue(InvoiceStatus::hasChargedValue('partially_paid'));
+    }
+
+    /**
+     * The guard that matters: an invoice carrying a status this code does not
+     * know must not be rebuilt by a generation run.
+     */
+    public function test_an_invoice_with_an_unknown_status_refuses_regeneration(): void
+    {
+        $invoice = new ClientInvoice;
+        $invoice->status = 'awaiting_dispute_resolution';
+
+        $this->assertTrue($invoice->isImmutable());
     }
 }

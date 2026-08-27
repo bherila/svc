@@ -105,9 +105,42 @@ enum InvoiceStatus: string
      *
      * A row carrying something unrecognised is treated as the least privileged
      * state rather than throwing, so one bad row cannot stop a billing run.
+     *
+     * Do not use this to decide whether an invoice may be changed. Draft is the
+     * least privileged state to *read* and the most permissive to *write*, so
+     * collapsing an unknown status into it answers "may this be rewritten?" with
+     * yes - exactly backwards. {@see isSettledValue()} and {@see hasChargedValue()}
+     * ask those questions safely.
      */
     public static function fromStored(mixed $value): self
     {
         return self::tryFrom((string) $value) ?? self::Draft;
+    }
+
+    /**
+     * May a stored status no longer be rewritten?
+     *
+     * An unrecognised value answers yes. This guards regeneration, and a status
+     * this code does not understand is one it cannot show is safe to overwrite -
+     * refusing to touch it costs a manual step, and overwriting it could rewrite
+     * what a client has already paid against.
+     */
+    public static function isSettledValue(mixed $value): bool
+    {
+        $status = self::tryFrom((string) $value);
+
+        return $status === null || $status->isSettled();
+    }
+
+    /**
+     * Has a stored status charged the client?
+     *
+     * Unrecognised answers yes, for the same reason.
+     */
+    public static function hasChargedValue(mixed $value): bool
+    {
+        $status = self::tryFrom((string) $value);
+
+        return $status === null || $status->hasCharged();
     }
 }

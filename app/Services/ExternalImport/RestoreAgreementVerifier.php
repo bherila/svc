@@ -53,8 +53,11 @@ final class RestoreAgreementVerifier
                 'notes' => fn (array $r): mixed => $r['notes'] ?? null,
             ],
             'client_invoice_lines' => [
-                'description' => fn (array $r): mixed => $r['description'] ?? null,
-                'type' => fn (array $r): mixed => $r['line_type'] ?? null,
+                // These mirror the importer's defaults exactly. Without
+                // that, a source column the importer defaulted reads as
+                // null here and looks like the source has been cleared.
+                'description' => fn (array $r): mixed => $r['description'] ?? 'External invoice line',
+                'type' => fn (array $r): mixed => $r['line_type'] ?? 'adjustment',
                 'unit_amount' => fn (array $r): mixed => self::minor($r['unit_price'] ?? null),
                 'total_amount' => fn (array $r): mixed => self::minor($r['line_total'] ?? null),
                 'sort_order' => fn (array $r): mixed => $r['sort_order'] ?? null,
@@ -63,7 +66,7 @@ final class RestoreAgreementVerifier
             'client_time_entries' => [
                 'worked_on' => fn (array $r): mixed => self::date($r['date_worked'] ?? null),
                 'minutes' => fn (array $r): mixed => $r['minutes_worked'] ?? null,
-                'description' => fn (array $r): mixed => $r['name'] ?? null,
+                'description' => fn (array $r): mixed => $r['name'] ?? '',
                 'is_billable' => fn (array $r): mixed => self::bool($r['is_billable'] ?? null),
                 'is_deferred' => fn (array $r): mixed => self::bool($r['is_deferred_billing'] ?? null),
                 'job_type' => fn (array $r): mixed => $r['job_type'] ?? null,
@@ -130,10 +133,11 @@ final class RestoreAgreementVerifier
     private static function same(mixed $expected, mixed $stored): bool
     {
         if ($expected === null) {
-            // The source no longer offers a value the destination holds. That is
-            // a difference, but reporting it as one would flag every column the
-            // importer defaulted rather than copied.
-            return true;
+            // The source column is empty where the destination holds a value.
+            // That is a real difference - the source has been cleared since -
+            // and it is only reachable now that the derivers above mirror the
+            // importer's defaults. Returning true here masked it.
+            return false;
         }
 
         if (is_numeric($expected) && is_numeric($stored)) {

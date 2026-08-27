@@ -123,7 +123,7 @@ final class InvoiceLifecycleService
             $locked = $this->lockInvoice($invoice, $workspace);
 
             if ($locked->status !== 'draft') {
-                if (InvoiceStatus::fromStored($locked->status)->hasCharged()) {
+                if (InvoiceStatus::hasChargedValue($locked->status)) {
                     return $locked;
                 }
 

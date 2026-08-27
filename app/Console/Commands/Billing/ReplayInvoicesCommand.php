@@ -334,8 +334,8 @@ final class ReplayInvoicesCommand extends Command
      */
     private function supersedes(ClientInvoice $candidate, array $incumbent): bool
     {
-        $candidateSettled = InvoiceStatus::fromStored($candidate->status)->isSettled();
-        $incumbentSettled = InvoiceStatus::fromStored($incumbent['status'] ?? null)->isSettled();
+        $candidateSettled = InvoiceStatus::isSettledValue($candidate->status);
+        $incumbentSettled = InvoiceStatus::isSettledValue($incumbent['status'] ?? null);
 
         if ($candidateSettled !== $incumbentSettled) {
             return $candidateSettled;
