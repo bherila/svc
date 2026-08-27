@@ -9,6 +9,7 @@ use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -94,6 +95,33 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /** @return BelongsToMany<ClientInvoiceLine, $this> */
+    /**
+     * Approved work only.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeApproved(Builder $query): Builder
+    {
+        return $query->where('status', 'approved');
+    }
+
+    /**
+     * Work that may draw on retainer capacity.
+     *
+     * The predecessor also excluded subcontractor work billed in modes that
+     * bypass the retainer. This schema has no billing mode - the source held
+     * none - so the exclusion has nothing to act on and approval is the whole
+     * condition. Restore the mode filter here if those modes come back.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeRetainerBillable(Builder $query): Builder
+    {
+        return $query->approved();
+    }
+
     // ── Billing engine surface ───────────────────────────────────────────────
     //
     // The allocation and splitting logic was ported rather than rewritten, so
