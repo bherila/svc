@@ -36,7 +36,7 @@ places where SVC deliberately diverges.
 | Milestone billing | [milestone-billing.md](milestone-billing.md) | Implemented — the billing line is a column on the task, not a pivot, since a deliverable cannot be split |
 | Overpayment credits | [overpayment-credits.md](overpayment-credits.md) | Implemented — one currency only, and re-checked when an invoice is issued |
 | Client expenses | [overview.md](overview.md#client-expenses) | **Not implemented** — no table, and the source had no rows. The generator hook sits beside the milestone one if it returns |
-| Subcontractor billing modes | [overview.md](overview.md#subcontractors) | **Partial** — per-entry cost is stored; no billing modes |
+| Subcontractor billing modes | [overview.md](overview.md#subcontractors) | **Partial** — `subcontractor_cost_amount` is the flat-hourly signal and is billed as its own line and excluded from retainer draw; the `retainer` and `direct` modes have no representation. No source rows use any of it |
 | Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
 | Activity timeline | [overview.md](overview.md) | Storage only |
 
@@ -67,6 +67,24 @@ Code paths named in these documents describe the implementation the rules were
 written against. SVC's own layout is `app/Services/Billing/`,
 `app/Services/Engagement/`, `app/Models/`, and `resources/js/pages/`; the
 concepts map across, the namespaces do not.
+
+## What is not finished
+
+Tracked on the epic (#14) and the issues named here. Nothing below blocks the
+billing engine itself, which is implemented and green on both engines.
+
+| Remaining | Why it is open | Tracked |
+| --- | --- | --- |
+| Replay against production data | The harness (`svc:billing:replay`) is built, tested and always-rollback, and the read-only restore credentials exist. It has not been run against `bherila_legacycm`, because these branches are not deployed to web1 yet. Until it runs, "the port reproduces history" is a claim the tests support and the data has not confirmed. | #73 |
+| Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
+| Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
+| Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. | #76 |
+| Activity timeline | Rows are written; nothing reads them. | #77 |
+| Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. The drivers differ on defaults, `uuid` and JSON handling. Nothing has been attributed to it; CI matches production deliberately, so a switch has to happen in both places at once. | #78 |
+
+Interim overage invoices deserve a specific caveat: they are implemented and
+tested, and production has never produced one (75 cadence-period invoices, 3
+ad-hoc, 0 interim). The tests are the only exercise this path has ever had.
 
 ---
 
