@@ -163,7 +163,25 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'subtotal_amount' => $subtotal,
             'tax_amount' => $tax,
             'total_amount' => $total,
-            'balance_amount' => $total - (int) $this->paid_amount,
+            'balance_amount' => self::balanceOwed($total, (int) $this->paid_amount),
         ])->save();
+    }
+
+    /**
+     * What is still owed on an invoice, which is never less than nothing.
+     *
+     * `balance_amount` is an unsigned column, so a client who has paid more than
+     * the invoice asks for cannot be recorded as owing a negative amount: MySQL
+     * refuses the write outright and SQLite stores it, which is how this
+     * survived the test suite. Overpayment is a real and supported state here -
+     * the excess becomes credit, tracked by OverpaymentCreditService - so the
+     * subtraction has to be floored rather than the column widened.
+     *
+     * It lives here because three callers computed it independently and only one
+     * of them floored it.
+     */
+    public static function balanceOwed(int $total, int $paid): int
+    {
+        return max(0, $total - $paid);
     }
 }

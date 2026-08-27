@@ -8,10 +8,13 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -68,6 +71,27 @@ final class ReplayInvoicesCommand extends Command
 
     protected $description = 'Regenerate historical invoices in a rolled-back transaction and diff them against what was billed';
 
+    /**
+     * Per key, how many invoices lost to a better candidate.
+     *
+     * @var array<string, int>
+     */
+    private array $superseded = [];
+
+    /**
+     * The losers themselves, so they can be taken out of the way.
+     *
+     * @var list<int>
+     */
+    private array $supersededIds = [];
+
+    /**
+     * Why the generator declined to make an invoice, counted by reason.
+     *
+     * @var array<string, int>
+     */
+    private array $skipReasons = [];
+
     public function handle(): int
     {
         $workspacePublicId = $this->option('workspace');
@@ -106,6 +130,24 @@ final class ReplayInvoicesCommand extends Command
             $expected = $this->snapshot($workspace, $companies);
             $this->components->twoColumnDetail('invoices captured', (string) count($expected));
 
+            $supersededCount = array_sum($this->superseded);
+            if ($supersededCount > 0) {
+                $this->components->twoColumnDetail(
+                    'unsent drafts superseded',
+                    sprintf('%d across %d period(s)', $supersededCount, count($this->superseded)),
+                );
+            }
+
+            $unbilled = count(array_filter(
+                $expected,
+                static fn (array $row): bool => $row['status'] === 'draft',
+            ));
+            if ($unbilled > 0) {
+                // Worth naming: for these the comparison is engine against
+                // engine, not engine against what a client actually paid.
+                $this->components->twoColumnDetail('periods never billed, compared against the last draft', (string) $unbilled);
+            }
+
             $skippedAdHoc = count(array_filter(
                 $expected,
                 static fn (array $row): bool => $row['invoice_kind'] === InvoiceKind::AdHoc->value,
@@ -114,19 +156,35 @@ final class ReplayInvoicesCommand extends Command
                 $this->components->twoColumnDetail('ad-hoc, not machine-generated', (string) $skippedAdHoc);
             }
 
-            $asOf = $this->asOf($workspace);
-            $this->components->twoColumnDetail('replaying as of', $asOf->toDateString());
+            // Anchored per company, not per workspace. History ends on a
+            // different date for each: one client's annual retainer sold
+            // through next year dragged the whole workspace's clock forward
+            // with it, so every company whose billing had stopped earlier was
+            // walked past the end of its own history and every cycle invented
+            // there read as a divergence.
+            $anchors = [];
+            foreach ($companies as $company) {
+                $anchors[$company->id] = $this->asOf($workspace, $company);
+            }
+            $this->reportAnchors($anchors);
 
             $this->clear($workspace, $companies);
-
-            // Pinned for the duration so cycle walks stop where history does.
-            Carbon::setTestNow($asOf);
 
             try {
                 $service = app(ClientInvoicingService::class);
                 foreach ($companies as $company) {
+                    // Pinned per company so each cycle walk stops where that
+                    // company's history does.
+                    Carbon::setTestNow($anchors[$company->id]);
                     try {
-                        $service->generateAllInvoices($company);
+                        $results = $service->generateAllInvoices($company);
+                        foreach ($results['skipped'] as $skip) {
+                            // The generator already explains itself; without
+                            // this the harness reports an empty invoice and
+                            // leaves the reader to guess why nothing was made.
+                            $reason = (string) ($skip['reason_code'] ?? $skip['reason'] ?? $skip['error'] ?? 'unknown');
+                            $this->skipReasons[$reason] = ($this->skipReasons[$reason] ?? 0) + 1;
+                        }
                     } catch (Throwable $e) {
                         // One company that cannot generate must not hide the
                         // comparison for the others.
@@ -138,6 +196,17 @@ final class ReplayInvoicesCommand extends Command
             }
 
             $outcome['comparisons'] = $this->compare($expected, $this->snapshot($workspace, $companies));
+
+            if ($this->skipReasons !== []) {
+                // Only the count here. The generator's messages quote invoice
+                // numbers, which carry client identifiers - those belong in the
+                // report file on the host that already holds the data, not on a
+                // terminal that may be anywhere.
+                $this->components->twoColumnDetail(
+                    'generator declined to create an invoice',
+                    sprintf('%d time(s), %d distinct reason(s) - see the report', array_sum($this->skipReasons), count($this->skipReasons)),
+                );
+            }
         } finally {
             // Unconditional. This is the whole safety model.
             DB::rollBack();
@@ -201,7 +270,33 @@ final class ReplayInvoicesCommand extends Command
             // money difference; sort_order is compared separately by count.
             usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount']] <=> [$b['type'], $b['total_amount']]);
 
-            $rows[$this->key($invoice)] = [
+            $key = $this->key($invoice);
+
+            // One period can hold several invoices, because regenerating left
+            // the previous attempt behind rather than replacing it. Every one of
+            // those drafts is hidden from the client and carries no issue date:
+            // they were produced and never sent. What the client was actually
+            // billed is the settled invoice, so that wins; where a period was
+            // never billed at all, the newest attempt stands in for it.
+            //
+            // Overwriting blindly is what made an earlier run meaningless - 37
+            // of 78 invoices vanished before anything was compared, and an
+            // untouched invoice was measured against a sibling this harness had
+            // just blanked.
+            if (isset($rows[$key]) && ! $this->supersedes($invoice, $rows[$key])) {
+                $this->superseded[$key] = ($this->superseded[$key] ?? 0) + 1;
+                $this->supersededIds[] = (int) $invoice->id;
+
+                continue;
+            }
+
+            if (isset($rows[$key])) {
+                $this->superseded[$key] = ($this->superseded[$key] ?? 0) + 1;
+                $this->supersededIds[] = (int) $rows[$key]['id'];
+            }
+
+            $rows[$key] = [
+                'id' => (int) $invoice->id,
                 'invoice_number' => (string) $invoice->invoice_number,
                 'invoice_kind' => $invoice->invoiceKindValue(),
                 'status' => (string) $invoice->status,
@@ -219,6 +314,27 @@ final class ReplayInvoicesCommand extends Command
         return $rows;
     }
 
+    /**
+     * Does this invoice better represent what the period was billed?
+     *
+     * A settled invoice beats a draft, because money changed hands against it.
+     * Between two of the same standing, the later number wins: invoice numbers
+     * are allocated in order, so the highest is the most recent attempt.
+     *
+     * @param  array<string, mixed>  $incumbent
+     */
+    private function supersedes(ClientInvoice $candidate, array $incumbent): bool
+    {
+        $candidateSettled = InvoiceStatus::fromStored($candidate->status)->isSettled();
+        $incumbentSettled = InvoiceStatus::fromStored($incumbent['status'] ?? null)->isSettled();
+
+        if ($candidateSettled !== $incumbentSettled) {
+            return $candidateSettled;
+        }
+
+        return strcmp((string) $candidate->invoice_number, (string) ($incumbent['invoice_number'] ?? '')) > 0;
+    }
+
     private function key(ClientInvoice $invoice): string
     {
         $cycle = $invoice->cycle_start === null || $invoice->cycle_end === null
@@ -228,13 +344,18 @@ final class ReplayInvoicesCommand extends Command
         $period = ($invoice->service_period_start?->toDateString() ?? '?')
             .'..'.($invoice->service_period_end?->toDateString() ?? '?');
 
-        // A cadence invoice is identified by the cycle it sells. An interim is
-        // not: several can share one cycle, so without the period they collapse
-        // onto a single key and all but one snapshot is silently overwritten -
-        // hiding exactly the divergences this exists to find.
-        $identity = $invoice->invoiceKindValue() === InvoiceKind::InterimOverage->value
-            ? ($cycle ?? '').'@'.$period
-            : ($cycle ?? $period);
+        // Both, always. The cycle says which retainer was sold; the period says
+        // which work was reconciled, and under any cadence but monthly one
+        // cycle covers many periods - an annual agreement invoices each month
+        // against the same twelve-month cycle.
+        //
+        // Keying on the cycle alone collapsed all of them onto one entry and
+        // silently kept whichever came last. Of 78 invoices here, 47 shared a
+        // key with another and 37 were dropped before anything was compared,
+        // which is how an untouched invoice came to be measured against a
+        // sibling the harness had just blanked and reported as 125 lines
+        // becoming none.
+        $identity = ($cycle ?? '').'@'.$period;
 
         return implode('|', [
             (string) $invoice->client_company_id,
@@ -252,25 +373,45 @@ final class ReplayInvoicesCommand extends Command
      * stops: anchoring on the cycle's *end* instead leaves room for the walk to
      * roll forward one more, and the extra invoice reads as a divergence.
      */
-    private function asOf(Workspace $workspace): Carbon
+    private function asOf(Workspace $workspace, ?ClientCompany $company = null): Carbon
     {
         if (is_string($given = $this->option('as-of')) && $given !== '') {
             return Carbon::parse($given)->endOfDay();
         }
 
+        $scope = fn (): Builder => ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->when($company !== null, fn (Builder $q): Builder => $q->where('client_company_id', $company->id));
+
         // Two plain aggregates rather than GREATEST, which MySQL has and SQLite
         // does not; the harness has to run wherever the data is.
-        $newestCycleStart = ClientInvoice::query()->where('workspace_id', $workspace->id)->max('cycle_start');
+        $newestCycleStart = $scope()->max('cycle_start');
         if ($newestCycleStart !== null) {
             return Carbon::parse((string) $newestCycleStart)->subDay()->endOfDay();
         }
 
         // Older invoices predate the cycle columns and carry only a work period.
-        $newestPeriodEnd = ClientInvoice::query()->where('workspace_id', $workspace->id)->max('service_period_end');
+        $newestPeriodEnd = $scope()->max('service_period_end');
 
         return $newestPeriodEnd === null
             ? Carbon::now()
             : Carbon::parse((string) $newestPeriodEnd)->endOfDay();
+    }
+
+    /**
+     * @param  array<int, Carbon>  $anchors
+     */
+    private function reportAnchors(array $anchors): void
+    {
+        $dates = array_map(static fn (Carbon $c): string => $c->toDateString(), $anchors);
+        sort($dates);
+        $first = $dates === [] ? '-' : $dates[0];
+        $last = $dates === [] ? '-' : $dates[count($dates) - 1];
+
+        $this->components->twoColumnDetail(
+            'replaying as of',
+            $first === $last ? $first : "{$first} to {$last}, per company",
+        );
     }
 
     /**
@@ -314,6 +455,25 @@ final class ReplayInvoicesCommand extends Command
         DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
         DB::table('client_tasks')->whereIn('client_invoice_line_id', $lineIds)->update(['client_invoice_line_id' => null]);
         DB::table('client_invoice_lines')->whereIn('id', $lineIds)->delete();
+
+        // Superseded attempts go entirely, not just blank. Leaving them meant a
+        // period held several identical empty drafts, the generator refreshed
+        // whichever it reached first, and the one this harness was watching
+        // stayed empty - reported as the engine producing nothing. They are
+        // unsent drafts by construction, so nothing is lost with them.
+        if ($this->supersededIds !== []) {
+            $withPayments = DB::table('client_invoice_payments')
+                ->whereIn('client_invoice_id', $this->supersededIds)
+                ->count();
+
+            if ($withPayments > 0) {
+                // Never true for an unsent draft. If it ever is, the selection
+                // rule is wrong and deleting would be destroying history.
+                throw new RuntimeException('A superseded invoice carries payments; refusing to set it aside.');
+            }
+
+            DB::table('client_invoices')->whereIn('id', $this->supersededIds)->delete();
+        }
 
         // Back to draft so the generator is allowed to rewrite them; a settled
         // invoice refuses regeneration, which is the correct rule everywhere
@@ -474,7 +634,13 @@ final class ReplayInvoicesCommand extends Command
         }
 
         if (is_string($path = $this->option('report')) && $path !== '') {
-            file_put_contents($path, json_encode($comparisons, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            // Skip reasons go in the file rather than on stdout: the generator's
+            // messages name invoices, and the whole point of the report is that
+            // detail stays on the host that holds the data.
+            file_put_contents($path, json_encode([
+                'comparisons' => $comparisons,
+                'generator_skipped' => $this->skipReasons,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
             $this->components->info("Per-invoice detail written to {$path}.");
         } else {
             $this->components->info('Run again with --report=<path> for per-invoice detail.');

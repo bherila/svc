@@ -192,7 +192,7 @@ class OverpaymentCreditService
             'subtotal_amount' => $subtotal,
             'tax_amount' => $tax,
             'total_amount' => $total,
-            'balance_amount' => max(0, $total - $paid),
+            'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
         ])->save();
     }
 }

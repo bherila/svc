@@ -2,6 +2,7 @@
 
 namespace App\Services\ExternalImport;
 
+use App\Models\ClientInvoice;
 use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
@@ -663,7 +664,7 @@ final class ExternalImportService
             DB::connection($destinationName)->table('client_invoices')->where('id', $invoice->id)->update([
                 'status' => $status,
                 'paid_amount' => $paid,
-                'balance_amount' => $total - $paid,
+                'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
                 'is_visible_to_client' => $status !== 'draft' ? true : (bool) $invoice->is_visible_to_client,
                 'updated_at' => now(),
             ]);
