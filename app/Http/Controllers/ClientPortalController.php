@@ -5,23 +5,74 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ClientPortalController extends Controller
 {
+    /**
+     * Project ids this viewer may see, or null when no narrowing applies.
+     *
+     * Workspace members see the company's whole portal. A portal user is
+     * company-scoped unless their membership opts into project scoping, which
+     * restricts them to the projects they actually belong to.
+     *
+     * @return list<int>|null
+     */
+    private function visibleProjectIds(ClientCompany $clientCompany, ?User $viewer): ?array
+    {
+        if (! $viewer instanceof User) {
+            return [];
+        }
+
+        if ($clientCompany->workspace->memberships()->where('user_id', $viewer->id)->exists()) {
+            return null;
+        }
+
+        $membership = ClientCompanyMembership::query()
+            ->where('client_company_id', $clientCompany->id)
+            ->where('user_id', $viewer->id)
+            ->first();
+
+        if (! $membership instanceof ClientCompanyMembership
+            || $membership->access_scope !== ClientCompanyMembership::SCOPE_PROJECTS) {
+            return null;
+        }
+
+        $ids = DB::table('client_portal_project_access')
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->where('client_company_membership_id', $membership->id)
+            ->whereIn('client_project_id', ClientProject::query()
+                ->where('client_company_id', $clientCompany->id)
+                ->select('id'))
+            ->pluck('client_project_id')
+            ->all();
+
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $ids));
+    }
+
     public function show(ClientCompany $clientCompany): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
         $workspace = $clientCompany->workspace;
+        // The portal is a web surface; an agent principal never reaches it.
+        $viewer = request()->user();
+        $viewer = $viewer instanceof User ? $viewer : null;
+        $visibleProjectIds = $this->visibleProjectIds($clientCompany, $viewer);
 
-        $clientCompany->load(['projects' => function ($query) use ($clientCompany): void {
+        $clientCompany->load(['projects' => function ($query) use ($clientCompany, $visibleProjectIds): void {
             $query->where('workspace_id', $clientCompany->workspace_id)
                 ->where('is_visible_to_client', true)
+                ->when($visibleProjectIds !== null, fn ($scoped) => $scoped->whereIn('id', $visibleProjectIds))
                 ->with(['tasks' => fn ($taskQuery) => $taskQuery
                     ->where('workspace_id', $clientCompany->workspace_id)
                     ->where('is_visible_to_client', true)]);
@@ -78,6 +129,16 @@ class ClientPortalController extends Controller
                 'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
             ])->values()->all();
 
+        $timeByProject = ClientTimeEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('is_visible_to_client', true)
+            ->whereIn('client_project_id', $clientCompany->projects->pluck('id'))
+            ->orderByDesc('worked_on')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('client_project_id');
+
         $projectPayload = [];
 
         foreach ($clientCompany->projects as $project) {
@@ -98,6 +159,15 @@ class ClientPortalController extends Controller
                 'description' => $project->description,
                 'status' => $project->status,
                 'tasks' => $taskPayload,
+                // Read-only. Rates, costs, and internal descriptions never cross this line;
+                // no client-reachable route writes time.
+                'time_entries' => ($timeByProject->get($project->id) ?? collect())
+                    ->map(fn (ClientTimeEntry $entry): array => [
+                        'id' => $entry->public_id,
+                        'worked_on' => $entry->worked_on->toDateString(),
+                        'minutes' => $entry->minutes,
+                        'description' => $entry->client_visible_description ?? $entry->description,
+                    ])->values()->all(),
             ];
         }
 
