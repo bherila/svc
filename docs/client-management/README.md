@@ -12,31 +12,56 @@ and carry rules — retainer draw-down order, rollover expiry, catch-up
 thresholds, credit application order, regeneration safety — that are expensive
 to re-derive and easy to get subtly wrong.
 
-SVC implements a subset. Treat every rule here as the intended behaviour and
-check the table below before assuming the code already does it.
+SVC now implements most of it. The billing engine was ported from that
+implementation rather than rewritten, so these rules describe running code — but
+check the table below before assuming any particular one is live, and note the
+places where SVC deliberately diverges.
 
 | Capability | Rules documented in | SVC status |
 | --- | --- | --- |
 | Client companies, projects, tasks | [overview.md](overview.md) | Implemented |
-| Agreements and recurring items | [billing.md](billing.md) | Schema + lifecycle only |
+| Agreements and recurring items | [billing.md](billing.md) | Implemented |
 | Time entries (log, approve, allocate) | [overview.md](overview.md) | Write/approve exist on the agent API; no operator UI |
 | Invoice lifecycle (draft → issued → paid → void) | [billing.md](billing.md) | Implemented |
-| Invoice from selected time | [overview.md](overview.md#time-entry-splitting--allocation) | Service exists; not reachable from the web UI |
+| Invoice from selected time | [overview.md](overview.md#time-entry-splitting--allocation) | Implemented; reachable from the web UI |
 | Payments and balances | [payments.md](payments.md) | Implemented |
 | Stripe payment intents and webhooks | [stripe-billing.md](stripe-billing.md) | Implemented |
 | Invoice email delivery | [billing.md](billing.md) | Implemented |
-| Recurring billing schedules | [cadence-billing.md](cadence-billing.md) | Fixed-template schedules only |
-| Retainer draw-down | [billing.md](billing.md) | **Not implemented** — `retainer_amount` / `retainer_minutes` are stored and displayed but no billing code reads them |
-| Rollover of unused retainer hours | [billing.md](billing.md) | **Not implemented** — `rollover_policy` is stored but never read |
-| Cadence cycles and the one-cycle offset | [cadence-billing.md](cadence-billing.md) | **Not implemented** |
-| Interim overage invoices | [cadence-billing.md](cadence-billing.md) | **Not implemented** |
-| Deferred billing allocation | [deferred-billing.md](deferred-billing.md) | **Partial** — `is_deferred` is stored and blocks invoicing; no allocator |
-| Milestone billing | [milestone-billing.md](milestone-billing.md) | **Not implemented** |
-| Overpayment credits | [overpayment-credits.md](overpayment-credits.md) | **Not implemented** |
-| Client expenses | [overview.md](overview.md#client-expenses) | **Not implemented** |
+| Recurring billing schedules | [cadence-billing.md](cadence-billing.md) | Implemented |
+| Retainer draw-down | [billing.md](billing.md) | Implemented |
+| Rollover of unused retainer hours | [billing.md](billing.md) | Implemented — ages by elapsed calendar months, which the predecessor did not |
+| Cadence cycles and the one-cycle offset | [cadence-billing.md](cadence-billing.md) | Implemented |
+| Interim overage invoices | [cadence-billing.md](cadence-billing.md) | Implemented — never exercised in production, and the tests are its only exercise |
+| Deferred billing allocation | [deferred-billing.md](deferred-billing.md) | Implemented |
+| Milestone billing | [milestone-billing.md](milestone-billing.md) | Implemented — the billing line is a column on the task, not a pivot, since a deliverable cannot be split |
+| Overpayment credits | [overpayment-credits.md](overpayment-credits.md) | Implemented — one currency only, and re-checked when an invoice is issued |
+| Client expenses | [overview.md](overview.md#client-expenses) | **Not implemented** — no table, and the source had no rows. The generator hook sits beside the milestone one if it returns |
 | Subcontractor billing modes | [overview.md](overview.md#subcontractors) | **Partial** — per-entry cost is stored; no billing modes |
-| Invoice line types beyond time and manual | [billing.md](billing.md) | **Not implemented** — `type` is a free-form string with no enum |
+| Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
 | Activity timeline | [overview.md](overview.md) | Storage only |
+
+### Where SVC deliberately differs
+
+Four behaviours were corrected rather than reproduced, because the
+implementation these documents were written against had them wrong. Each moves
+money, so they are named here rather than left to be rediscovered:
+
+- **Rollover expiry** ages by elapsed calendar months. The original counted
+  stored non-zero balances, so a month that used its whole retainer was
+  invisible to the ageing and older hours stayed spendable past their window.
+- **Deferred time** does not draw on the retainer pool until the allocator
+  actually bills it. Counting it up front consumed capacity nothing had taken
+  and produced catch-up charges to restore it.
+- **A project-scoped agreement** counts only its own project's work. The
+  original pooled the whole company, so two project agreements each counted the
+  other's hours.
+- **A recurring item's start-date fallback** applies only in the item's own first
+  month. The original applied it whenever a cycle opened mid-month, re-billing an
+  anchor the previous cycle had already charged.
+
+Also absent by choice: `first_cycle_proration` governs how the opening cycle is
+*priced*, not where its boundaries fall — the active-date anchor wins on
+boundaries, as the original's own tests assert.
 
 Code paths named in these documents describe the implementation the rules were
 written against. SVC's own layout is `app/Services/Billing/`,

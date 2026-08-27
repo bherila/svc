@@ -219,14 +219,18 @@ class RolloverCalculator
                 $unusedByMonth = [];
             }
 
-            // Build previous months unused array (indexed by months ago)
+            // Age each stored balance by elapsed calendar months, not by its
+            // position in this map. A month that ended with nothing unused is
+            // never stored, so counting entries would treat a January balance as
+            // one month old in March whenever February happened to be fully
+            // consumed - and hours would stay spendable past their expiry.
+            // Kept oldest-first so the deduction below stays FIFO.
             $previousMonthsUnused = [];
             $monthKeys = array_keys($unusedByMonth);
-            $monthCount = count($monthKeys);
 
-            for ($i = 0; $i < $monthCount; $i++) {
-                $monthsAgo = $monthCount - $i; // 1 = most recent, 2 = second most recent, etc.
-                $previousMonthsUnused[$monthsAgo] = $unusedByMonth[$monthKeys[$i]];
+            foreach ($monthKeys as $key) {
+                $monthsAgo = $this->monthsBetween((string) $key, $yearMonth);
+                $previousMonthsUnused[$monthsAgo] = ($previousMonthsUnused[$monthsAgo] ?? 0.0) + $unusedByMonth[$key];
             }
 
             // Get negative balance from previous month if any
@@ -253,12 +257,12 @@ class RolloverCalculator
             $usedRollover = $summary->closing->hoursUsedFromRollover;
             if ($usedRollover > 0) {
                 // Re-implementation of deduction logic using monthKeys
-                foreach ($monthKeys as $i => $key) {
+                foreach ($monthKeys as $key) {
                     if ($usedRollover <= 0) {
                         break;
                     }
 
-                    $monthsAgo = $monthCount - $i;
+                    $monthsAgo = $this->monthsBetween((string) $key, $yearMonth);
                     if ($monthsAgo <= $rolloverMonths) {
                         // This entry contributed to rollover
                         $amount = $unusedByMonth[$key];
@@ -282,14 +286,33 @@ class RolloverCalculator
                 $unusedByMonth[$yearMonth] = $summary->closing->unusedHours;
             }
 
-            // Remove expired months from tracking (beyond rollover window)
-            // We keep rollover_months + 1 to properly report expired hours in the next month
-            if (count($unusedByMonth) > $rolloverMonths + 1) {
-                $unusedByMonth = array_slice($unusedByMonth, -($rolloverMonths + 1), null, true);
+            // Drop balances that can no longer be spent. Pruned by calendar
+            // distance for the same reason as above; one extra month is kept so
+            // the next month can still report what expired.
+            foreach (array_keys($unusedByMonth) as $key) {
+                if ($this->monthsBetween((string) $key, $yearMonth) > $rolloverMonths + 1) {
+                    unset($unusedByMonth[$key]);
+                }
             }
         }
 
         return $results;
+    }
+
+    /**
+     * Whole calendar months from one `Y-m` key to another.
+     *
+     * Falls back to zero for anything unparseable rather than throwing: a
+     * malformed key should not take down a billing run, and treating it as the
+     * current month keeps it spendable, which is the conservative direction.
+     */
+    private function monthsBetween(string $from, string $to): int
+    {
+        if (preg_match('/^(\d{4})-(\d{2})$/', $from, $a) !== 1 || preg_match('/^(\d{4})-(\d{2})$/', $to, $b) !== 1) {
+            return 0;
+        }
+
+        return ((int) $b[1] * 12 + (int) $b[2]) - ((int) $a[1] * 12 + (int) $a[2]);
     }
 
     /**

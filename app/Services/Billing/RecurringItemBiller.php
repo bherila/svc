@@ -92,7 +92,7 @@ class RecurringItemBiller
         $effectiveEnd = ($itemEnd !== null && $itemEnd->lt($rangeEnd)) ? $itemEnd : $rangeEnd;
 
         return match ($item->charge_cadence) {
-            ChargeCadence::Monthly => $this->monthlyIncidences($anchorDay, $effectiveStart, $effectiveEnd),
+            ChargeCadence::Monthly => $this->monthlyIncidences($anchorDay, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::Quarterly => $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::SemiAnnual => $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::Annual => $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
@@ -106,13 +106,19 @@ class RecurringItemBiller
     /**
      * Monthly incidences: one per month where the anchor day falls in range.
      *
-     * For the first month where the computed anchor date is before the effective
-     * start, the effective start date is used as the incidence date instead, so
-     * the first billing always falls on or after item start_date.
+     * The item's own opening month is special. If it begins on the 10th with an
+     * anchor of the 1st, there is no 1st left to bill, so the start date stands
+     * in for it and the first charge lands on the 10th.
+     *
+     * That only applies to the item's genuine first month. Applying it whenever
+     * the *window* opens mid-month re-bills an anchor an earlier cycle already
+     * covered: an item running since January, billed on a 15 May - 14 August
+     * cycle, would charge 15 May for a 1 May incidence that the previous cycle
+     * had already issued.
      *
      * @return Carbon[]
      */
-    private function monthlyIncidences(int $anchorDay, Carbon $start, Carbon $end): array
+    private function monthlyIncidences(int $anchorDay, Carbon $start, Carbon $end, Carbon $itemStart): array
     {
         $incidences = [];
         $cursor = $start->copy()->startOfMonth();
@@ -122,9 +128,9 @@ class RecurringItemBiller
             $day = min($anchorDay, (int) $cursor->daysInMonth);
             $date = $cursor->copy()->setDay($day)->startOfDay();
 
-            // For the first incidence, if the anchor date is before the item's
-            // effective start, bill on the start date instead.
-            if ($isFirst && $date->lt($start)) {
+            // Only when this window opens on the item's own start date is the
+            // fallback the item's first charge rather than a repeat of one.
+            if ($isFirst && $date->lt($start) && $start->isSameDay($itemStart)) {
                 $date = $start->copy();
             }
 

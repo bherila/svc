@@ -48,7 +48,19 @@ class InvoiceLedgerBuilder
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
+            // Deferred work draws on the retainer only when the allocator finds
+            // the whole entry fits. Counting it here consumes pool it may never
+            // take, which manufactures a negative balance and bills catch-up
+            // hours for capacity nothing actually used.
+            ->where('is_deferred', false)
             ->retainerBillable()
+            // An agreement scoped to one project has its own retainer, and the
+            // company's other projects draw on theirs. Pooling them makes each
+            // ledger count work the other is paying for.
+            ->when(
+                $agreement->client_project_id !== null,
+                fn ($query) => $query->where('client_project_id', $agreement->client_project_id),
+            )
             ->whereBetween('worked_on', [$activeDate, $ledgerEnd])
             ->get();
 
