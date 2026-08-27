@@ -166,6 +166,32 @@ final class GenerationGuardsTest extends TestCase
         );
     }
 
+    /**
+     * A partially paid retainer period must not be sold a second time.
+     *
+     * The guard listed issued, paid and void by hand and omitted
+     * partially_paid, so a cycle the client had begun paying for was offered
+     * again on the next generation run.
+     */
+    public function test_a_partially_paid_cycle_is_not_sold_again(): void
+    {
+        $this->agreement();
+        $this->entry('2024-02-14', 60);
+
+        $first = $this->generate('2024-02-01', '2024-02-29');
+        $first->forceFill(['status' => 'partially_paid'])->save();
+
+        $results = app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+
+        $sold = ClientInvoice::query()
+            ->where('client_company_id', $this->company->id)
+            ->whereDate('cycle_start', '2024-03-01')
+            ->count();
+
+        $this->assertSame(1, $sold, 'The March retainer was already sold and part-paid');
+        $this->assertNotSame([], $results['skipped'], 'The run should report the cycle as skipped');
+    }
+
     private function generate(string $from, string $to): ClientInvoice
     {
         return app(ClientInvoicingService::class)->generateInvoice(

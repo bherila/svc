@@ -7,6 +7,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -128,7 +129,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
         // `partially_paid` belongs here: money has changed hands, so resetting
         // the invoice to draft and rebuilding its lines would rewrite what the
         // client has already paid against.
-        return in_array((string) $this->status, ['issued', 'partially_paid', 'paid', 'void'], true);
+        return InvoiceStatus::fromStored($this->status)->isSettled();
     }
 
     /** Classification, defaulting to the ordinary full-cycle invoice. */

@@ -19,6 +19,7 @@ use App\Support\Billing\FirstCycleProration;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -1356,7 +1357,7 @@ final class ClientInvoicingService
             ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
             ->whereDate('cycle_start', $retainerPeriod->start->toDateString())
             ->whereDate('cycle_end', $retainerPeriod->end->toDateString())
-            ->whereIn('status', ['issued', 'paid', 'void'])
+            ->whereIn('status', InvoiceStatus::settled())
             ->first();
     }
 

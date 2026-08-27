@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Services\Billing\Balances\OverpaymentLedger;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 
 /**
  * Tracks overpayment-derived credits for a client company and applies them
@@ -167,7 +168,7 @@ class OverpaymentCreditService
             ->where('client_invoices.workspace_id', $company->workspace_id)
             ->where('client_invoices.client_company_id', $company->id)
             ->where('client_invoices.currency', $currency)
-            ->whereIn('client_invoices.status', ['issued', 'partially_paid', 'paid'])
+            ->whereIn('client_invoices.status', InvoiceStatus::charged())
             ->where('client_invoice_lines.type', InvoiceLineType::Credit->value)
             ->sum('client_invoice_lines.total_amount');
 

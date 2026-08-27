@@ -13,6 +13,7 @@ use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -118,7 +119,7 @@ final class InterimOverageGenerator
             ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
 
             $issuedCycleInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::CadencePeriod, $cycle)
-                ->whereIn('status', ['issued', 'paid'])
+                ->whereIn('status', InvoiceStatus::charged())
                 ->lockForUpdate()
                 ->first();
 
@@ -143,7 +144,7 @@ final class InterimOverageGenerator
             $cumulativeExcessHours = $this->cumulativeInterimExcessHoursThrough($agreement, $immediateLedger, $cycle, $periodEnd);
             $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
                 ->whereDate('service_period_end', '<', $periodStart->toDateString())
-                ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+                ->whereIn('status', InvoiceStatus::charged())
                 ->sum('hours_billed_at_rate');
 
             $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
@@ -312,7 +313,7 @@ final class InterimOverageGenerator
                     ->first();
 
                 if ($existingInvoice instanceof ClientInvoice
-                    && in_array((string) $existingInvoice->status, ['issued', 'paid'], true)) {
+                    && InvoiceStatus::fromStored($existingInvoice->status)->hasCharged()) {
                     $cursor->addMonth()->startOfMonth();
 
                     continue;
@@ -352,7 +353,7 @@ final class InterimOverageGenerator
             // Only what was actually charged. A draft has billed nothing, so
             // counting it tells the cadence invoice those hours are settled and
             // the client is never charged for them at all.
-            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
+            ->whereIn('status', InvoiceStatus::charged())
             ->sum('hours_billed_at_rate'), 4);
     }
 

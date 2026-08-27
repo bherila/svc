@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -122,7 +123,7 @@ final class InvoiceLifecycleService
             $locked = $this->lockInvoice($invoice, $workspace);
 
             if ($locked->status !== 'draft') {
-                if ($locked->status === 'issued' || $locked->status === 'partially_paid' || $locked->status === 'paid') {
+                if (InvoiceStatus::fromStored($locked->status)->hasCharged()) {
                     return $locked;
                 }
 
