@@ -143,6 +143,7 @@ final class BackfillBillingLedgerTest extends TestCase
         $source->statement('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, line_date TEXT, hours TEXT, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER)');
         $source->statement('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, catch_up_threshold_hours TEXT, rollover_months INTEGER, initial_rollover_hours TEXT, bill_overage_interim INTEGER, first_cycle_proration TEXT, agreement_link TEXT)');
         $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT)');
+        $source->statement('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, job_type TEXT)');
 
         $source->table('client_invoices')->insert([
             'client_invoice_id' => 501, 'invoice_kind' => 'cadence_period',
@@ -160,6 +161,7 @@ final class BackfillBillingLedgerTest extends TestCase
             'first_cycle_proration' => 'prorate_hours', 'agreement_link' => 'https://example.com/agreement',
         ]);
         $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50']);
+        $source->table('client_time_entries')->insert(['id' => 601, 'job_type' => 'Support']);
     }
 
     /** @return array{ClientInvoice, ClientInvoiceLine, ClientAgreement, ClientTask} */

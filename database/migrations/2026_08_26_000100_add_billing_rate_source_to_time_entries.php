@@ -21,13 +21,16 @@ return new class extends Migration
     {
         Schema::table('client_time_entries', function (Blueprint $table): void {
             $table->string('billing_rate_source', 20)->nullable()->after('billing_rate_amount');
+            // How the work is classified. The source carries five distinct values
+            // across its entries, so this is a real dimension, not a constant.
+            $table->string('job_type', 100)->nullable()->after('description');
         });
     }
 
     public function down(): void
     {
         Schema::table('client_time_entries', function (Blueprint $table): void {
-            $table->dropColumn('billing_rate_source');
+            $table->dropColumn(['billing_rate_source', 'job_type']);
         });
     }
 };

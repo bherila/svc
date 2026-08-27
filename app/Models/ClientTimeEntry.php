@@ -33,7 +33,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',
-    'worked_on', 'minutes', 'description', 'client_visible_description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'currency',
+    'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'currency',
     'status', 'approved_by_user_id', 'approved_at', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
     'subcontractor_cost_metadata',
 ])]
@@ -91,6 +91,52 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by_user_id');
+    }
+
+    /** @return BelongsToMany<ClientInvoiceLine, $this> */
+    // ── Billing engine surface ───────────────────────────────────────────────
+    //
+    // The allocation and splitting logic was ported rather than rewritten, so
+    // the model presents the names that arithmetic reads. See ClientAgreement
+    // for the same seam on retainer terms.
+
+    /** The engine's name for duration. */
+    public function getMinutesWorkedAttribute(): int
+    {
+        return (int) $this->minutes;
+    }
+
+    /** The engine's name for the work date. */
+    public function getDateWorkedAttribute(): ?CarbonImmutable
+    {
+        return $this->worked_on;
+    }
+
+    /** The engine's name for the work description. */
+    public function getNameAttribute(): string
+    {
+        return (string) $this->description;
+    }
+
+    /**
+     * The invoice line this entry is billed on, if any.
+     *
+     * The predecessor stored this as a column on the entry. Here it is a pivot,
+     * constrained to one line per entry, so the single row is the equivalent.
+     * Eager-load `invoiceLines` when allocating in bulk or this costs a query
+     * per entry.
+     */
+    public function getClientInvoiceLineIdAttribute(): ?int
+    {
+        if ($this->relationLoaded('invoiceLines')) {
+            $line = $this->invoiceLines->first();
+
+            return $line instanceof ClientInvoiceLine ? $line->id : null;
+        }
+
+        $id = $this->invoiceLines()->value('client_invoice_lines.id');
+
+        return $id === null ? null : (int) $id;
     }
 
     /** @return BelongsToMany<ClientInvoiceLine, $this> */

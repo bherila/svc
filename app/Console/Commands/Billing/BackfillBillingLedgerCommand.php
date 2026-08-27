@@ -40,6 +40,7 @@ final class BackfillBillingLedgerCommand extends Command
         'client_invoice_lines' => 'client_invoice_line_id',
         'client_agreements' => 'id',
         'client_tasks' => 'id',
+        'client_time_entries' => 'id',
     ];
 
     private string $destination;
@@ -83,6 +84,7 @@ final class BackfillBillingLedgerCommand extends Command
             'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
             'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
             'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
+            'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
         ] as $label => $step) {
             $result = $step();
             $totals[$label] = $result;
@@ -352,6 +354,28 @@ final class BackfillBillingLedgerCommand extends Command
                     'milestone_price_amount' => ($price === null || (float) $price <= 0.0)
                         ? null
                         : (int) round((float) $price * 100),
+                ], $dryRun, $counters);
+            }
+        });
+
+        return $counters;
+    }
+
+    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    private function backfillTimeEntries(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
+    {
+        $counters = $this->counters();
+        $map = $this->idMap('client_time_entries', 'client_time_entries', $identityHash);
+
+        $legacy->table('client_time_entries')->orderBy('id')->chunk(500, function ($rows) use ($map, $dryRun, &$counters): void {
+            foreach ($rows as $row) {
+                $id = $this->resolve($map, $row, 'id', $counters);
+                if ($id === null) {
+                    continue;
+                }
+
+                $this->applyRow('client_time_entries', $id, [
+                    'job_type' => $row->job_type ?? null,
                 ], $dryRun, $counters);
             }
         });
