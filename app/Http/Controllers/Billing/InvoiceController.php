@@ -12,6 +12,7 @@ use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
@@ -43,11 +44,22 @@ class InvoiceController extends Controller
         return $request->expectsJson() ? response()->json(['data' => $invoices]) : view('invoices.index', compact('workspace', 'invoices'));
     }
 
-    public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
+    public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service, InvoiceFromTimeService $fromTime): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
-        $invoice = $service->createDraft($workspace, $clientCompany, $request->validated(), $request->validated('lines'));
+
+        $attributes = $request->validated();
+        $timeEntryIds = array_values($attributes['time_entry_ids'] ?? []);
+        $lines = $attributes['lines'] ?? [];
+        unset($attributes['time_entry_ids'], $attributes['lines']);
+
+        // Selecting time routes through the service that owns allocation: it locks the
+        // entries, refuses ones already billed, and records the link. The plain
+        // lifecycle path stays for invoices built only from manual lines.
+        $invoice = $timeEntryIds === []
+            ? $service->createDraft($workspace, $clientCompany, $attributes, $lines)
+            : $fromTime->create($workspace, $clientCompany, $attributes, $timeEntryIds, $lines);
 
         return $request->expectsJson()
             ? response()->json(['data' => $invoice], 201)
