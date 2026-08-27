@@ -2,11 +2,13 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
@@ -91,6 +93,13 @@ final class ReplayInvoicesCommand extends Command
      * @var array<string, int>
      */
     private array $skipReasons = [];
+
+    /**
+     * Facts are per agreement and period, and many invoices share them.
+     *
+     * @var array<string, array{rollover_months:int, project_scoped:bool, other_project_work:bool, deferred_work:bool, recurring_items:bool, cycle_opens_mid_month:bool}>
+     */
+    private array $factCache = [];
 
     public function handle(): int
     {
@@ -483,6 +492,17 @@ final class ReplayInvoicesCommand extends Command
             'subtotal_amount' => 0,
             'tax_amount' => 0,
             'total_amount' => 0,
+            // Zeroed with the total, not left behind. A blanked invoice that
+            // still claims to have been paid looks overpaid by the whole amount,
+            // so the credit service invented a credit line on the next invoice
+            // for every settled invoice in history - reported as the engine
+            // producing credits that never existed.
+            //
+            // The payment rows themselves survive, and those are what credit is
+            // actually derived from; this column is a denormalised total the
+            // generator recomputes.
+            'paid_amount' => 0,
+            'balance_amount' => 0,
         ]);
     }
 
@@ -601,6 +621,73 @@ final class ReplayInvoicesCommand extends Command
         return $notes;
     }
 
+    /**
+     * Decide whether a divergence is one of the four this port makes on purpose.
+     *
+     * The predicates are narrow by design: a correction explains a divergence
+     * only when every changed line type is within its reach and the conditions
+     * that trigger it hold for this agreement and period. Anything looser would
+     * quietly absorb a regression, and the unexplained count is the only number
+     * here worth reading.
+     *
+     * @param  array<string, mixed>  $comparison
+     * @return array<string, mixed>
+     */
+    private function attribute(array $comparison): array
+    {
+        if ($comparison['verdict'] !== 'money_differs') {
+            return $comparison;
+        }
+
+        $changed = [];
+        foreach ((array) ($comparison['notes'] ?? []) as $note) {
+            if (preg_match('/^([a-z_]+) /', (string) $note, $matches) === 1) {
+                $changed[] = $matches[1];
+            }
+        }
+        $changed = array_values(array_unique(array_diff($changed, ['line'])));
+
+        $comparison['explained_by'] = DeliberateCorrections::explaining($changed, $this->facts($comparison['key']));
+
+        return $comparison;
+    }
+
+    /**
+     * What is true of the agreement and period behind a comparison key.
+     *
+     * @return array{rollover_months:int, project_scoped:bool, other_project_work:bool, deferred_work:bool, recurring_items:bool, cycle_opens_mid_month:bool}
+     */
+    private function facts(string $key): array
+    {
+        if (isset($this->factCache[$key])) {
+            return $this->factCache[$key];
+        }
+
+        [$companyId, $agreementId, , $identity] = array_pad(explode('|', $key, 4), 4, '');
+        $agreement = $agreementId === 'none' ? null : ClientAgreement::query()->find((int) $agreementId);
+
+        [$cycle, $period] = array_pad(explode('@', $identity, 2), 2, '');
+        [$periodStart, $periodEnd] = array_pad(explode('..', $period, 2), 2, '');
+        $cycleStart = explode('..', $cycle, 2)[0];
+
+        $entries = ClientTimeEntry::query()
+            ->where('client_company_id', (int) $companyId)
+            ->when($periodStart !== '' && $periodStart !== '?', fn ($q) => $q->where('worked_on', '>=', $periodStart))
+            ->when($periodEnd !== '' && $periodEnd !== '?', fn ($q) => $q->where('worked_on', '<=', $periodEnd));
+
+        $facts = [
+            'rollover_months' => (int) ($agreement->rollover_months ?? 0),
+            'project_scoped' => $agreement?->client_project_id !== null,
+            'other_project_work' => $agreement?->client_project_id !== null
+                && (clone $entries)->where('client_project_id', '!=', $agreement->client_project_id)->exists(),
+            'deferred_work' => (clone $entries)->where('is_deferred', true)->exists(),
+            'recurring_items' => $agreement !== null && $agreement->recurringItems()->exists(),
+            'cycle_opens_mid_month' => $cycleStart !== '' && Carbon::parse($cycleStart)->day !== 1,
+        ];
+
+        return $this->factCache[$key] = $facts;
+    }
+
     private function show(mixed $value): string
     {
         return $value === null ? 'null' : (string) $value;
@@ -613,21 +700,41 @@ final class ReplayInvoicesCommand extends Command
     {
         $comparisons = $outcome['comparisons'];
 
+        $comparisons = array_map($this->attribute(...), $comparisons);
+        $outcome['comparisons'] = $comparisons;
+
         $matched = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match');
         $differs = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'money_differs');
+        $explained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) !== []);
+        $unexplained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
         $missing = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'missing');
         $extra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
         $hourOnly = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match' && ($c['hour_notes'] ?? []) !== []);
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green>money identical</>', (string) count($matched));
-        $this->components->twoColumnDetail('<fg=red>money differs</>', (string) count($differs));
+        $this->components->twoColumnDetail(
+            '<fg=yellow>differs, explained by a deliberate correction</>',
+            (string) count($explained),
+        );
+        $this->components->twoColumnDetail('<fg=red>differs, unexplained</>', (string) count($unexplained));
+
+        $byCorrection = [];
+        foreach ($explained as $c) {
+            foreach ($c['explained_by'] as $reason) {
+                $byCorrection[$reason['key']] = ($byCorrection[$reason['key']] ?? 0) + 1;
+            }
+        }
+        arsort($byCorrection);
+        foreach ($byCorrection as $key => $count) {
+            $this->components->twoColumnDetail('  '.$key, (string) $count);
+        }
         $this->components->twoColumnDetail('<fg=red>not generated</>', (string) count($missing));
         $this->components->twoColumnDetail('<fg=red>generated with no counterpart</>', (string) count($extra));
         $this->components->twoColumnDetail('<fg=yellow>hours differ only</>', (string) count($hourOnly));
 
-        $absolute = array_sum(array_map(static fn (array $c): int => abs((int) $c['money_delta']), [...$differs, ...$missing, ...$extra]));
-        $this->components->twoColumnDetail('absolute money divergence (minor units)', (string) $absolute);
+        $absolute = array_sum(array_map(static fn (array $c): int => abs((int) $c['money_delta']), [...$unexplained, ...$missing, ...$extra]));
+        $this->components->twoColumnDetail('unexplained money divergence (minor units)', (string) $absolute);
 
         foreach ($outcome['generation'] as $failure) {
             $this->components->warn('generation failed - '.$failure);
@@ -646,7 +753,10 @@ final class ReplayInvoicesCommand extends Command
             $this->components->info('Run again with --report=<path> for per-invoice detail.');
         }
 
-        $failed = count($differs) + count($missing) + count($extra);
+        // A divergence a known correction accounts for is the port working as
+        // intended; failing on it would ask the engine to reproduce bugs it was
+        // fixed not to have. The whole value of this run is the other number.
+        $failed = count($unexplained) + count($missing) + count($extra);
 
         if ($failed > 0 || $outcome['generation'] !== []) {
             $this->components->error(sprintf('%d invoice(s) did not reproduce. Money must match exactly.', $failed));
