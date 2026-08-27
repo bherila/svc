@@ -125,9 +125,12 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
+      # No --prefer-dist: the private bridge dependency is authorised by the SSH
+      # agent above, and a dist install would fetch it from the GitHub API
+      # zipball instead, which that key does not authenticate.
       - name: Install Composer dependencies
         run: |
-          composer install --no-interaction --prefer-dist
+          composer install --no-interaction
           test -f .env || cp .env.example .env
 
       # No lint or static analysis here; `ci` already runs those and they say
