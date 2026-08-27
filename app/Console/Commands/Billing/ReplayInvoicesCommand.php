@@ -341,7 +341,11 @@ final class ReplayInvoicesCommand extends Command
             return $candidateSettled;
         }
 
-        return strcmp((string) $candidate->invoice_number, (string) ($incumbent['invoice_number'] ?? '')) > 0;
+        // Row id, not invoice number. Allocator numbers are zero-padded and
+        // imported ones keep the source system's format, so `1042` sorted below
+        // `999` as a string. The id is monotonic and says which row was written
+        // later, which is what "the most recent attempt" means here.
+        return (int) $candidate->id > (int) ($incumbent['id'] ?? 0);
     }
 
     private function key(ClientInvoice $invoice): string

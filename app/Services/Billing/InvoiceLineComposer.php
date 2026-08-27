@@ -259,6 +259,19 @@ class InvoiceLineComposer
 
             $name = $sample->user->name;
 
+            // The same check the recurring-item path makes, for the same
+            // reason: the cost is stored in minor units of its own currency, so
+            // billing it unconverted turns an EUR rate into that many USD cents.
+            $costCurrency = (string) ($sample->subcontractor_cost_currency ?? '');
+            if ($costCurrency !== '' && $costCurrency !== (string) $invoice->currency) {
+                throw new RuntimeException(sprintf(
+                    'Subcontractor time is costed in %s but invoice %s is in %s; convert it before billing.',
+                    $costCurrency,
+                    (string) $invoice->invoice_number,
+                    (string) $invoice->currency,
+                ));
+            }
+
             $line = ClientInvoiceLine::create([
                 'workspace_id' => $invoice->workspace_id,
                 'client_invoice_id' => $invoice->id,

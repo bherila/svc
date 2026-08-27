@@ -94,11 +94,9 @@ class InvoiceLedgerBuilder
             $monthEnd = $cursor->copy()->endOfMonth()->startOfDay();
             $monthKey = $monthStart->format('Y-m');
             $monthEntries = $entriesByMonth->get($monthKey, collect());
-            $retainerMultiplier = $this->retainerCalculator->monthRetainerMultiplier($agreement, $monthStart, $monthEnd);
-
             $months[] = [
                 'year_month' => $monthKey,
-                'retainer_hours' => round((float) $agreement->monthly_retainer_hours * $retainerMultiplier, 4),
+                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($agreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
                 'reset_rollover' => false,
             ];

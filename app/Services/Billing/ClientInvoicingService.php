@@ -482,7 +482,13 @@ final class ClientInvoicingService
                 'client_agreement_id' => $agreement->id,
                 'service_period_start' => $periodStart,
                 'service_period_end' => $periodEnd,
-                'retainer_hours_included' => $isRetainerMonthPostTermination ? 0.0 : $agreement->monthly_retainer_hours,
+                'retainer_hours_included' => $isRetainerMonthPostTermination
+                    ? 0.0
+                    : $this->retainerCalculator->retainerHoursForMonth(
+                        $agreement,
+                        $retainerMonthStart,
+                        $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
+                    ),
                 'rollover_hours_used' => $workMonthBalance?->closing->hoursUsedFromRollover ?? 0,
                 'unused_hours_balance' => $netWorkPeriodUnused,
                 'negative_hours_balance' => $netWorkPeriodNegative,
@@ -521,7 +527,15 @@ final class ClientInvoicingService
 
             $priorMonthBalance = $this->balanceForMonth($allBalances, $periodEnd->format('Y-m'));
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
-            $currentMonthCapacity = $isRetainerMonthPostTermination ? 0.0 : $agreement->monthly_retainer_hours;
+            // Prorated like the fee. Granting a whole month's pool against a
+            // half month's charge understates every overage that follows.
+            $currentMonthCapacity = $isRetainerMonthPostTermination
+                ? 0.0
+                : $this->retainerCalculator->retainerHoursForMonth(
+                    $agreement,
+                    $retainerMonthStart,
+                    $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
+                );
             // No minimum availability to maintain once the agreement has ended.
             $catchUpThreshold = $isRetainerMonthPostTermination ? 0.0 : $agreement->catch_up_threshold_hours;
 
@@ -1138,7 +1152,13 @@ final class ClientInvoicingService
             // the retainer they have now - or trigger catch-up billing for it.
             $months[] = [
                 'year_month' => $monthKey,
-                'retainer_hours' => ($isPreAgreement || $isPostTermination) ? 0.0 : $agreement->monthly_retainer_hours,
+                'retainer_hours' => ($isPreAgreement || $isPostTermination)
+                    ? 0.0
+                    : $this->retainerCalculator->retainerHoursForMonth(
+                        $agreement,
+                        Carbon::parse($monthKey.'-01')->startOfDay(),
+                        Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
+                    ),
                 'hours_worked' => $isPreAgreement ? 0.0 : ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
                 'reset_rollover' => $resetRollover,
             ];

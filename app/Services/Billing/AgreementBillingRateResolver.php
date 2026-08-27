@@ -37,8 +37,14 @@ final class AgreementBillingRateResolver
                 }
                 // Prefer an agreement still running over one already ended, then
                 // the latest start, so a renewal wins over the term it replaced.
-                $leftOpen = $left->status !== 'terminated';
-                $rightOpen = $right->status !== 'terminated';
+                //
+                // "Still running" is `active`, not "not terminated": the status
+                // filter above widened to admit paused and expired agreements
+                // because they were in force on the work date, and an expired
+                // one counting as open let it beat a live agreement on a later
+                // start and stamp its rate on the entry.
+                $leftOpen = $left->status === 'active';
+                $rightOpen = $right->status === 'active';
                 if ($leftOpen !== $rightOpen) {
                     return $leftOpen ? -1 : 1;
                 }

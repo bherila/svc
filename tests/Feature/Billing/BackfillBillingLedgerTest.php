@@ -57,9 +57,9 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame('2026-03-01', $invoice->cycle_start?->toDateString());
         $this->assertSame('2026-03-31', $invoice->cycle_end?->toDateString());
         $this->assertSame('2026-04-09', $invoice->paid_on?->toDateString());
-        $this->assertSame('10.00', (string) $invoice->retainer_hours_included);
-        $this->assertSame('12.50', (string) $invoice->hours_worked);
-        $this->assertSame('1.50', (string) $invoice->hours_billed_at_rate);
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
+        $this->assertSame('12.5000', (string) $invoice->hours_worked);
+        $this->assertSame('1.5000', (string) $invoice->hours_billed_at_rate);
 
         $line->refresh();
         // 1.7500h is not a whole number of minutes; it must survive exactly.
@@ -79,7 +79,7 @@ final class BackfillBillingLedgerTest extends TestCase
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
         $invoice->refresh();
-        $this->assertSame('10.00', (string) $invoice->retainer_hours_included);
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
     public function test_dry_run_writes_nothing(): void

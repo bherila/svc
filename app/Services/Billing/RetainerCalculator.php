@@ -92,6 +92,23 @@ class RetainerCalculator
         return $effectiveDays / $naturalDays;
     }
 
+    /**
+     * How many retainer hours a month actually grants.
+     *
+     * The fee for a partly-covered month is prorated, and so is the ledger's
+     * capacity - but the monthly generation path read `monthly_retainer_hours`
+     * straight off the agreement in three places, so an agreement starting on
+     * the 15th was charged half a retainer and granted a whole month's pool.
+     * Both questions have one answer now.
+     */
+    public function retainerHoursForMonth(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
+    {
+        return round(
+            (float) $agreement->monthly_retainer_hours * $this->monthRetainerMultiplier($agreement, $monthStart, $monthEnd),
+            4,
+        );
+    }
+
     public function monthRetainerMultiplier(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
         $activeDate = Carbon::parse($agreement->starts_on)->startOfDay();

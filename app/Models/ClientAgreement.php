@@ -8,12 +8,12 @@ use App\Models\Concerns\HasPublicId;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\FirstCycleProration;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use InvalidArgumentException;
 
 /**
  * @property CarbonImmutable|null $starts_on
@@ -195,7 +195,7 @@ class ClientAgreement extends Model implements WorkspaceOwned
      * Rejected on save rather than tolerated, because the symptom - a client
      * billed extra every single cycle - reads as a pricing decision.
      *
-     * @throws InvalidArgumentException
+     * @throws DomainException
      */
     public function assertCatchUpThresholdFitsRetainer(): void
     {
@@ -203,7 +203,10 @@ class ClientAgreement extends Model implements WorkspaceOwned
         $retainerHours = $this->periodRetainerHours();
 
         if ($threshold < 0 || $threshold > $retainerHours) {
-            throw new InvalidArgumentException(
+            // DomainException, not InvalidArgumentException: bootstrap/app.php
+            // renders the former as a 422 and has no handler for the latter, so
+            // a bad value reached the client as a 500.
+            throw new DomainException(
                 "catch_up_threshold_hours must be between 0 and period retainer hours ({$retainerHours}). Got: {$threshold}",
             );
         }
@@ -212,6 +215,15 @@ class ClientAgreement extends Model implements WorkspaceOwned
     protected static function booted(): void
     {
         static::saving(static function (self $agreement): void {
+            // Only when the terms this constrains actually moved. Rows imported
+            // through raw inserts bypass this hook, so an unrelated later save -
+            // activating or terminating the agreement - was the first thing to
+            // run it, and threw over values that save never touched.
+            if ($agreement->exists
+                && ! $agreement->isDirty(['catch_up_threshold_minutes', 'retainer_minutes', 'billing_cadence'])) {
+                return;
+            }
+
             $agreement->assertCatchUpThresholdFitsRetainer();
         });
     }

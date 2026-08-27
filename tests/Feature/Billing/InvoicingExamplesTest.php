@@ -11,8 +11,8 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use InvalidArgumentException;
 use Tests\TestCase;
 
 /**
@@ -179,7 +179,7 @@ final class InvoicingExamplesTest extends TestCase
      */
     public function test_a_threshold_larger_than_the_retainer_is_rejected(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException(DomainException::class);
         $this->expectExceptionMessage('catch_up_threshold_hours must be between 0 and period retainer hours');
 
         $this->agreement(retainerMinutes: 300, thresholdMinutes: 600, hourlyRate: 15000, retainerAmount: 75000);
