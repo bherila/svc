@@ -5,59 +5,18 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
-use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use App\Services\Authorization\PortalAccess;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ClientPortalController extends Controller
 {
-    /**
-     * Project ids this viewer may see, or null when no narrowing applies.
-     *
-     * Workspace members see the company's whole portal. A portal user is
-     * company-scoped unless their membership opts into project scoping, which
-     * restricts them to the projects they actually belong to.
-     *
-     * @return list<int>|null
-     */
-    private function visibleProjectIds(ClientCompany $clientCompany, ?User $viewer): ?array
-    {
-        if (! $viewer instanceof User) {
-            return [];
-        }
-
-        if ($clientCompany->workspace->memberships()->where('user_id', $viewer->id)->exists()) {
-            return null;
-        }
-
-        $membership = ClientCompanyMembership::query()
-            ->where('client_company_id', $clientCompany->id)
-            ->where('user_id', $viewer->id)
-            ->first();
-
-        if (! $membership instanceof ClientCompanyMembership
-            || $membership->access_scope !== ClientCompanyMembership::SCOPE_PROJECTS) {
-            return null;
-        }
-
-        $ids = DB::table('client_portal_project_access')
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->where('client_company_membership_id', $membership->id)
-            ->whereIn('client_project_id', ClientProject::query()
-                ->where('client_company_id', $clientCompany->id)
-                ->select('id'))
-            ->pluck('client_project_id')
-            ->all();
-
-        return array_values(array_map(static fn (mixed $id): int => (int) $id, $ids));
-    }
+    public function __construct(private readonly PortalAccess $portalAccess) {}
 
     public function show(ClientCompany $clientCompany): Response
     {
@@ -67,7 +26,7 @@ class ClientPortalController extends Controller
         // The portal is a web surface; an agent principal never reaches it.
         $viewer = request()->user();
         $viewer = $viewer instanceof User ? $viewer : null;
-        $visibleProjectIds = $this->visibleProjectIds($clientCompany, $viewer);
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
 
         $clientCompany->load(['projects' => function ($query) use ($clientCompany, $visibleProjectIds): void {
             $query->where('workspace_id', $clientCompany->workspace_id)
@@ -166,7 +125,10 @@ class ClientPortalController extends Controller
                         'id' => $entry->public_id,
                         'worked_on' => $entry->worked_on->toDateString(),
                         'minutes' => $entry->minutes,
-                        'description' => $entry->client_visible_description ?? $entry->description,
+                        // No fallback to the internal description. A row without a
+                        // client-safe description has not been cleared for the
+                        // client, and the internal note may say anything.
+                        'description' => $entry->client_visible_description,
                     ])->values()->all(),
             ];
         }

@@ -87,6 +87,7 @@ final class TimeEntryMutationService
                     'approved_by_user_id' => $actor->id,
                     'approved_at' => now(),
                     'billing_rate_amount' => $rate['amount'],
+                    'billing_rate_source' => $rate['source'],
                     'currency' => $rate['currency'],
                     'lock_version' => $entry->lock_version + 1,
                 ])->save();
@@ -96,12 +97,12 @@ final class TimeEntryMutationService
 
     /**
      * @param  array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}  $item
-     * @return array{amount:int|null,currency:string|null}
+     * @return array{amount:int|null,currency:string|null,source:string|null}
      */
     private function approvalRate(ClientTimeEntry $entry, array $item): array
     {
         if (! $entry->is_billable) {
-            return ['amount' => null, 'currency' => $entry->currency];
+            return ['amount' => null, 'currency' => $entry->currency, 'source' => null];
         }
 
         $hasAmount = array_key_exists('billing_rate_amount', $item);
@@ -110,13 +111,14 @@ final class TimeEntryMutationService
             return [
                 'amount' => MoneyService::nonNegativeInteger($item['billing_rate_amount'], 'billing_rate_amount'),
                 'currency' => MoneyService::currency($item['currency']),
+                'source' => 'explicit',
             ];
         }
         if ($hasAmount || $hasCurrency) {
             throw new DomainException('A billing-rate override requires both amount and currency.');
         }
 
-        return $this->rates->resolve($entry);
+        return $this->rates->resolve($entry) + ['source' => 'agreement'];
     }
 
     private function assertDraftEditable(Workspace $workspace, ClientTimeEntry $entry, User $actor): void

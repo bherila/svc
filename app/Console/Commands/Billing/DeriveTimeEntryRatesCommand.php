@@ -28,7 +28,7 @@ use Illuminate\Console\Command;
 final class DeriveTimeEntryRatesCommand extends Command
 {
     protected $signature = 'svc:billing:derive-time-rates
-        {--workspace= : Restrict to one workspace public id}
+        {--workspace= : Workspace public id to repair (required; rates are never derived across tenants)}
         {--include-deferred : Also resolve deferred entries, which cannot be invoiced until released}
         {--dry-run : Report what would change without writing}';
 
@@ -48,15 +48,22 @@ final class DeriveTimeEntryRatesCommand extends Command
             $query->where('is_deferred', false);
         }
 
-        if (is_string($workspacePublicId = $this->option('workspace')) && $workspacePublicId !== '') {
-            $workspace = Workspace::query()->where('public_id', $workspacePublicId)->first();
-            if (! $workspace instanceof Workspace) {
-                $this->components->error('No workspace matches that public id.');
+        // Deliberately required. Repairing one onboarding must never reach into
+        // another tenant's billing data.
+        $workspacePublicId = $this->option('workspace');
+        if (! is_string($workspacePublicId) || $workspacePublicId === '') {
+            $this->components->error('A --workspace is required so rates are never derived across tenants.');
 
-                return self::FAILURE;
-            }
-            $query->where('workspace_id', $workspace->id);
+            return self::FAILURE;
         }
+
+        $workspace = Workspace::query()->where('public_id', $workspacePublicId)->first();
+        if (! $workspace instanceof Workspace) {
+            $this->components->error('No workspace matches that public id.');
+
+            return self::FAILURE;
+        }
+        $query->where('workspace_id', $workspace->id);
 
         $eligible = (clone $query)->count();
         if ($eligible === 0) {
@@ -88,10 +95,13 @@ final class DeriveTimeEntryRatesCommand extends Command
 
                 $resolved++;
                 if (! $dryRun) {
+                    // Amount and currency are resolved as one pair. Keeping the
+                    // entry's old currency beside the agreement's amount would
+                    // mislabel the money and invoice it in the wrong currency.
                     $entry->forceFill([
                         'billing_rate_amount' => $rate['amount'],
                         'billing_rate_source' => 'agreement',
-                        'currency' => $entry->currency ?? $rate['currency'],
+                        'currency' => $rate['currency'],
                     ])->save();
                 }
             }

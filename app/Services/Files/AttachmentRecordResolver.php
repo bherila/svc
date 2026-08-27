@@ -12,11 +12,14 @@ use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\PortalAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 final class AttachmentRecordResolver
 {
+    public function __construct(private readonly PortalAccess $portalAccess) {}
+
     /** @var array<string, class-string<Model>> */
     private const RECORD_CLASSES = [
         'company' => ClientCompany::class,
@@ -66,8 +69,13 @@ final class AttachmentRecordResolver
 
         return match (true) {
             $record instanceof ClientCompany => false,
-            $record instanceof ClientProject => $record->is_visible_to_client,
-            $record instanceof ClientTask => $record->is_visible_to_client && $record->project->is_visible_to_client,
+            // Visibility is not enough: a project-scoped user must also have been
+            // granted this project, or a held attachment URL still resolves.
+            $record instanceof ClientProject => $record->is_visible_to_client
+                && $this->portalAccess->canViewProject($user, $record),
+            $record instanceof ClientTask => $record->is_visible_to_client
+                && $record->project->is_visible_to_client
+                && $this->portalAccess->canViewProject($user, $record->project),
             $record instanceof ClientProposal => $record->is_visible_to_client
                 && in_array($record->status, ['sent', 'accepted'], true),
             $record instanceof ClientAgreement => $record->is_visible_to_client

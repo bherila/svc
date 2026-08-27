@@ -41,7 +41,7 @@ final class OverpaymentCreditServiceTest extends TestCase
         // Billed 100.00, paid 150.00.
         $this->invoice('SVC-1', 'paid', 10000, paid: 15000);
 
-        $this->assertSame(50.0, $this->service()->availableCreditForCompany($this->company));
+        $this->assertSame(50.0, $this->service()->availableCreditForCompany($this->company, 'USD'));
     }
 
     public function test_underpayment_and_exact_payment_create_no_credit(): void
@@ -49,7 +49,7 @@ final class OverpaymentCreditServiceTest extends TestCase
         $this->invoice('SVC-1', 'partially_paid', 10000, paid: 4000);
         $this->invoice('SVC-2', 'paid', 10000, paid: 10000);
 
-        $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company));
+        $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company, 'USD'));
     }
 
     public function test_a_draft_receives_a_negative_credit_line(): void
@@ -110,7 +110,40 @@ final class OverpaymentCreditServiceTest extends TestCase
         $this->line($issued, InvoiceLineType::Credit->value, -3000);
 
         // 50.00 overpaid, 30.00 already taken, so 20.00 remains.
-        $this->assertSame(20.0, $this->service()->availableCreditForCompany($this->company));
+        $this->assertSame(20.0, $this->service()->availableCreditForCompany($this->company, 'USD'));
+    }
+
+    public function test_a_refunded_or_unsettled_payment_is_not_credit(): void
+    {
+        $invoice = $this->invoice('SVC-1', 'paid', 10000, paid: 15000);
+        // The overpayment was refunded, so there is no money to spend.
+        $invoice->payments()->first()->forceFill(['refunded_amount' => 5000])->save();
+
+        $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company, 'USD'));
+
+        $pending = $this->invoice('SVC-2', 'issued', 10000);
+        $pending->payments()->create([
+            'workspace_id' => $this->workspace->id, 'status' => 'pending', 'amount' => 20000,
+            'currency' => 'USD', 'method' => 'ach', 'received_on' => '2026-03-01',
+        ]);
+
+        $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company, 'USD'));
+    }
+
+    public function test_credit_never_crosses_currencies(): void
+    {
+        $usd = $this->invoice('SVC-1', 'paid', 10000, paid: 15000);
+        $this->assertSame('USD', $usd->currency);
+
+        $draft = $this->invoice('SVC-2', 'draft', 8000);
+        $draft->forceFill(['currency' => 'EUR'])->save();
+        $this->line($draft, 'service', 8000);
+
+        $this->service()->applyCreditsToDraftInvoice($draft);
+
+        // A dollar overpayment is not euros and must not be subtracted from one.
+        $this->assertSame(0, $draft->lines()->where('type', InvoiceLineType::Credit->value)->count());
+        $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company, 'EUR'));
     }
 
     private function service(): OverpaymentCreditService

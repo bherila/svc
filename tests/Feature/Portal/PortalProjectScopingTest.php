@@ -9,6 +9,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Authorization\PortalAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -89,7 +90,7 @@ final class PortalProjectScopingTest extends TestCase
     public function test_client_visible_time_is_shown_without_rates(): void
     {
         $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
-        $this->timeEntry($this->theirs, visible: true, description: 'Shown to the client');
+        $this->timeEntry($this->theirs, visible: true, description: 'Internal note', clientDescription: 'Shown to the client');
         $this->timeEntry($this->theirs, visible: false, description: 'Internal only');
 
         $project = collect($this->portalProps($user)['company']['projects'])
@@ -99,6 +100,19 @@ final class PortalProjectScopingTest extends TestCase
         $this->assertSame('Shown to the client', $project['time_entries'][0]['description']);
         $this->assertArrayNotHasKey('billing_rate_amount', $project['time_entries'][0]);
         $this->assertArrayNotHasKey('subcontractor_cost_amount', $project['time_entries'][0]);
+    }
+
+    public function test_time_without_a_client_safe_description_is_withheld(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
+        // Marked visible, but nobody wrote a client-facing description. The
+        // internal note may say anything, so it must not stand in for one.
+        $this->timeEntry($this->theirs, visible: true, description: 'Chasing their unpaid invoice');
+
+        $project = collect($this->portalProps($user)['company']['projects'])
+            ->firstWhere('name', 'Theirs');
+
+        $this->assertNull($project['time_entries'][0]['description']);
     }
 
     public function test_a_client_cannot_write_time(): void
@@ -111,6 +125,60 @@ final class PortalProjectScopingTest extends TestCase
         )->assertForbidden();
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    public function test_an_operator_can_narrow_and_restore_portal_access(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
+
+        $this->artisan('svc:portal:project-access', [
+            'company' => $this->company->public_id,
+            'email' => $user->email,
+            '--project' => [$this->theirs->public_id],
+        ])->assertSuccessful();
+
+        $this->assertSame(['Theirs'], $this->projectNamesFor($user));
+
+        $this->artisan('svc:portal:project-access', [
+            'company' => $this->company->public_id,
+            'email' => $user->email,
+            '--company-wide' => true,
+        ])->assertSuccessful();
+
+        $this->assertEqualsCanonicalizing(['Theirs', 'Someone Elses'], $this->projectNamesFor($user));
+    }
+
+    public function test_an_operator_cannot_grant_another_companys_project(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
+
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $elsewhereCompany = ClientCompany::query()->create([
+            'workspace_id' => $elsewhere->id, 'name' => 'Elsewhere Client', 'slug' => 'elsewhere-client',
+        ]);
+        $foreign = ClientProject::query()->create([
+            'workspace_id' => $elsewhere->id, 'client_company_id' => $elsewhereCompany->id,
+            'name' => 'Foreign', 'is_visible_to_client' => true,
+        ]);
+
+        $this->artisan('svc:portal:project-access', [
+            'company' => $this->company->public_id,
+            'email' => $user->email,
+            '--project' => [$foreign->public_id],
+        ])->assertFailed();
+    }
+
+    public function test_a_project_scoped_client_cannot_reach_an_ungranted_projects_attachment(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_PROJECTS);
+        $this->grantProject($user, $this->theirs);
+
+        $access = app(PortalAccess::class);
+
+        // Scoping the page is not enough: a held attachment URL resolves through
+        // this path, so the same decision has to hold here.
+        $this->assertTrue($access->canViewProject($user, $this->theirs));
+        $this->assertFalse($access->canViewProject($user, $this->someoneElses));
     }
 
     /** @return list<string> */
@@ -173,7 +241,7 @@ final class PortalProjectScopingTest extends TestCase
         ]);
     }
 
-    private function timeEntry(ClientProject $project, bool $visible, string $description): ClientTimeEntry
+    private function timeEntry(ClientProject $project, bool $visible, string $description, ?string $clientDescription = null): ClientTimeEntry
     {
         return ClientTimeEntry::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -183,6 +251,7 @@ final class PortalProjectScopingTest extends TestCase
             'worked_on' => '2026-03-14',
             'minutes' => 60,
             'description' => $description,
+            'client_visible_description' => $clientDescription,
             'is_billable' => true,
             'is_visible_to_client' => $visible,
             'status' => 'approved',

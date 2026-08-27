@@ -161,6 +161,17 @@ class TimeEntrySplitter
                 'status' => $entry->status,
                 'billing_rate_amount' => $entry->billing_rate_amount,
                 'currency' => $entry->currency,
+                // Everything that describes the work or its money travels with
+                // the fragment. Dropping any of it would leave two rows that no
+                // longer represent the same piece of work - subcontractor cost
+                // vanishing from the overflow, or an approval losing its author.
+                'billing_rate_source' => $entry->billing_rate_source,
+                'client_visible_description' => $entry->client_visible_description,
+                'subcontractor_cost_amount' => $entry->subcontractor_cost_amount,
+                'subcontractor_cost_currency' => $entry->subcontractor_cost_currency,
+                'subcontractor_cost_metadata' => $entry->subcontractor_cost_metadata,
+                'approved_by_user_id' => $entry->approved_by_user_id,
+                'approved_at' => $entry->approved_at,
                 // The overflow starts unbilled. Here that is the absence of a pivot
                 // row rather than a null column, so there is nothing to set.
             ]);

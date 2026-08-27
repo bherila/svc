@@ -236,12 +236,68 @@ class RecurringItemBillerTest extends TestCase
         // `line_type` is `type` here, and money is integer minor units.
         $this->assertEquals('recurring_item', $attrs['type']);
         $this->assertEquals('Web hosting', $attrs['description']);
-        $this->assertEquals('1', $attrs['quantity']);
+        $this->assertEquals('1.000', $attrs['quantity']);
         $this->assertSame(5000, $attrs['unit_amount']);
         $this->assertSame(5000, $attrs['total_amount']);
         $this->assertEquals('2024-03-01', $attrs['line_date']);
         $this->assertEquals(42, $attrs['client_agreement_recurring_item_id']);
         $this->assertEquals(3, $attrs['sort_order']);
+    }
+
+    public function test_build_line_bills_every_unit_of_a_multi_unit_item(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null);
+        $item->id = 43;
+        $item->quantity = 3;
+
+        $line = $this->biller->buildLine([
+            'item' => $item,
+            'line_date' => Carbon::parse('2024-03-01'),
+            'amount' => 50.00,
+            'description' => 'Seats',
+        ], 0);
+
+        $attrs = $line->getAttributes();
+        $this->assertSame(5000, $attrs['unit_amount']);
+        $this->assertSame(15000, $attrs['total_amount']);
+        $this->assertEquals('3.000', $attrs['quantity']);
+    }
+
+    public function test_a_deactivated_item_stops_charging(): void
+    {
+        $agreement = new ClientAgreement;
+        $agreement->setRawAttributes(['starts_on' => '2024-01-01', 'billing_cadence' => 'monthly']);
+        $agreement->syncOriginal();
+
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null);
+        $item->is_active = false;
+        $agreement->setRelation('recurringItems', collect([$item]));
+
+        $this->assertSame([], $this->biller->linesForCycle(
+            $agreement,
+            Carbon::parse('2024-03-01'),
+            Carbon::parse('2024-03-31'),
+        ));
+    }
+
+    public function test_an_item_without_an_effective_date_starts_with_the_agreement(): void
+    {
+        $agreement = new ClientAgreement;
+        $agreement->setRawAttributes(['starts_on' => '2024-03-01', 'billing_cadence' => 'monthly']);
+        $agreement->syncOriginal();
+
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null);
+        $item->effective_on = null;
+        $item->is_active = true;
+        $agreement->setRelation('recurringItems', collect([$item]));
+
+        $lines = $this->biller->linesForCycle(
+            $agreement,
+            Carbon::parse('2024-03-01'),
+            Carbon::parse('2024-03-31'),
+        );
+
+        $this->assertCount(1, $lines);
     }
 
     // =========================================================================
@@ -269,6 +325,8 @@ class RecurringItemBillerTest extends TestCase
             'effective_on' => $startDate,
             'expires_on' => $endDate,
             'is_taxable' => false,
+            'is_active' => true,
+            'quantity' => 1,
         ]);
         $item->syncOriginal();
 

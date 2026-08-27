@@ -15,7 +15,10 @@ final class AgreementBillingRateResolver
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $entry->workspace_id)
             ->where('client_company_id', $entry->client_company_id)
-            ->where('status', 'active')
+            // An agreement that has since ended was still in force on the day the
+            // work happened, so eligibility is the effective date range, not the
+            // current lifecycle status. Only a draft was never in force at all.
+            ->where('status', '!=', 'draft')
             ->where(function ($query) use ($entry): void {
                 $query->whereNull('client_project_id')->orWhere('client_project_id', $entry->client_project_id);
             })
@@ -32,6 +35,14 @@ final class AgreementBillingRateResolver
                 if ($leftSpecific !== $rightSpecific) {
                     return $leftSpecific ? -1 : 1;
                 }
+                // Prefer an agreement still running over one already ended, then
+                // the latest start, so a renewal wins over the term it replaced.
+                $leftOpen = $left->status !== 'terminated';
+                $rightOpen = $right->status !== 'terminated';
+                if ($leftOpen !== $rightOpen) {
+                    return $leftOpen ? -1 : 1;
+                }
+
                 $leftStart = $left->starts_on?->format('Y-m-d') ?? '';
                 $rightStart = $right->starts_on?->format('Y-m-d') ?? '';
 

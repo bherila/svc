@@ -38,8 +38,16 @@ class RecurringItemBiller
 
         /** @var ClientAgreementRecurringItem $item */
         foreach ($agreement->recurringItems as $item) {
-            $itemStart = Carbon::instance($item->start_date)->startOfDay();
-            $itemEnd = $item->end_date ? Carbon::instance($item->end_date)->startOfDay() : null;
+            // A deactivated item stops charging. The predecessor soft-deleted
+            // instead, so it had nothing equivalent to check.
+            if ($item->is_active === false) {
+                continue;
+            }
+
+            // An item accepted from a proposal carries no effective date; it
+            // starts when the agreement it belongs to starts.
+            $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on ?? $cycleStart)->startOfDay();
+            $itemEnd = $item->end_date !== null ? Carbon::instance($item->end_date)->startOfDay() : null;
 
             // Skip if item is entirely outside the cycle
             if ($itemStart->gt($cycleEnd)) {
@@ -49,7 +57,7 @@ class RecurringItemBiller
                 continue;
             }
 
-            $incidences = $this->incidencesInRange($item, $cycleStart, $cycleEnd);
+            $incidences = $this->incidencesInRange($item, $cycleStart, $cycleEnd, $itemStart);
 
             foreach ($incidences as $incidenceDate) {
                 $lines[] = [
@@ -74,11 +82,11 @@ class RecurringItemBiller
     private function incidencesInRange(
         ClientAgreementRecurringItem $item,
         Carbon $rangeStart,
-        Carbon $rangeEnd
+        Carbon $rangeEnd,
+        Carbon $itemStart
     ): array {
         $anchorDay = max(1, min(28, $item->anchor_day ?? 1));
-        $itemStart = Carbon::instance($item->start_date)->startOfDay();
-        $itemEnd = $item->end_date ? Carbon::instance($item->end_date)->startOfDay() : null;
+        $itemEnd = $item->end_date !== null ? Carbon::instance($item->end_date)->startOfDay() : null;
 
         $effectiveStart = $rangeStart->gt($itemStart) ? $rangeStart : $itemStart;
         $effectiveEnd = ($itemEnd !== null && $itemEnd->lt($rangeEnd)) ? $itemEnd : $rangeEnd;
@@ -217,7 +225,11 @@ class RecurringItemBiller
         // Column names and units differ from the predecessor here because this
         // builds a real line: amounts are integer minor units, and the type
         // column is `type`. The incidence arithmetic above is untouched.
-        $amount = (int) round($lineData['amount'] * 100);
+        $unitAmount = (int) round($lineData['amount'] * 100);
+        // A three-unit charge must bill three units. The predecessor's items had
+        // no quantity, so it hard-coded one.
+        $quantity = (float) ($item->quantity ?? 1);
+        $totalAmount = (int) round($unitAmount * $quantity);
 
         $line = new ClientInvoiceLine;
         $line->setRawAttributes([
@@ -226,11 +238,11 @@ class RecurringItemBiller
             'client_agreement_recurring_item_id' => $item->id,
             'description' => $lineData['description'],
             'type' => 'recurring_item',
-            'quantity' => '1',
+            'quantity' => number_format($quantity, 3, '.', ''),
             'hours' => null,
-            'unit_amount' => $amount,
+            'unit_amount' => $unitAmount,
             'tax_amount' => 0,
-            'total_amount' => $amount,
+            'total_amount' => $totalAmount,
             'line_date' => $lineData['line_date']->toDateString(),
             'sort_order' => $sortOrder,
         ]);

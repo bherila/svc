@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'public_id', 'workspace_id', 'client_agreement_id', 'description', 'cadence', 'anchor_month', 'anchor_day',
-    'effective_on', 'expires_on', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
+    'effective_on', 'expires_on', 'quantity', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_agreement_id'])]
 /**

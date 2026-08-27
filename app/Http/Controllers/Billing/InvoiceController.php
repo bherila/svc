@@ -57,9 +57,10 @@ class InvoiceController extends Controller
         // Selecting time routes through the service that owns allocation: it locks the
         // entries, refuses ones already billed, and records the link. The plain
         // lifecycle path stays for invoices built only from manual lines.
-        $invoice = $timeEntryIds === []
-            ? $service->createDraft($workspace, $clientCompany, $attributes, $lines)
-            : $fromTime->create($workspace, $clientCompany, $attributes, $timeEntryIds, $lines);
+        // Always through the service that normalises manual lines, so a line's
+        // project association does not depend on whether time happens to be
+        // selected alongside it.
+        $invoice = $fromTime->create($workspace, $clientCompany, $attributes, $timeEntryIds, $lines);
 
         return $request->expectsJson()
             ? response()->json(['data' => $invoice], 201)

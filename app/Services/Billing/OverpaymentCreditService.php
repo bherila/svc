@@ -26,9 +26,9 @@ class OverpaymentCreditService
      *
      * Drafts don't count as "consumed" since they regenerate freely.
      */
-    public function availableCreditForCompany(ClientCompany $company): float
+    public function availableCreditForCompany(ClientCompany $company, string $currency): float
     {
-        $ledger = $this->buildLedger($company);
+        $ledger = $this->buildLedger($company, $currency);
 
         return $ledger->totalRemaining;
     }
@@ -36,24 +36,34 @@ class OverpaymentCreditService
     /**
      * Itemised view of overpayment credits for UI + debugging.
      */
-    public function buildLedger(ClientCompany $company): OverpaymentLedger
+    public function buildLedger(ClientCompany $company, string $currency): OverpaymentLedger
     {
+        // Credit never crosses currencies. A pool built from every invoice would
+        // let a USD overpayment be subtracted numerically from a EUR invoice.
         $invoices = ClientInvoice::query()
+            ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
+            ->where('currency', $currency)
             ->whereNotIn('status', ['void'])
             ->with('payments')
             ->get();
         // The engine reasons in whole currency units; this schema stores minor
         // units. Convert at the boundary, never inside the arithmetic.
 
-        $totalConsumed = $this->totalConsumed($company);
+        $totalConsumed = $this->totalConsumed($company, $currency);
         $totalOverpaid = 0.0;
 
         /** @var list<array{invoice_id: int, invoice_number: string|null, overpaid: float, consumed: float, remaining: float}> $entries */
         $entries = [];
 
         foreach ($invoices as $invoice) {
-            $paymentsTotal = ((int) $invoice->payments->sum('amount')) / 100;
+            // Only settled money, net of refunds. A pending, failed, disputed or
+            // refunded payment is not collected cash and must not become credit
+            // the client can spend.
+            $settled = $invoice->payments
+                ->where('status', 'succeeded')
+                ->sum(fn ($payment): int => (int) $payment->amount - (int) $payment->refunded_amount);
+            $paymentsTotal = ((int) $settled) / 100;
             $invoiceTotal = ((int) $invoice->total_amount) / 100;
             $overpaid = round(max(0.0, $paymentsTotal - $invoiceTotal), 2);
             if ($overpaid <= 0.0) {
@@ -110,7 +120,7 @@ class OverpaymentCreditService
         // Remove any stale credit lines from a previous regeneration pass.
         $invoice->lines()->where('type', InvoiceLineType::Credit->value)->delete();
 
-        $available = $this->availableCreditForCompany($company);
+        $available = $this->availableCreditForCompany($company, (string) $invoice->currency);
         if ($available <= 0.0) {
             return;
         }
@@ -150,11 +160,13 @@ class OverpaymentCreditService
      * Sum of absolute credit amounts on all non-draft, non-void invoices for a
      * company. Only these count as "consumed" because drafts regenerate freely.
      */
-    protected function totalConsumed(ClientCompany $company): float
+    protected function totalConsumed(ClientCompany $company, string $currency): float
     {
         $sum = (int) ClientInvoiceLine::query()
             ->join('client_invoices', 'client_invoices.id', '=', 'client_invoice_lines.client_invoice_id')
+            ->where('client_invoices.workspace_id', $company->workspace_id)
             ->where('client_invoices.client_company_id', $company->id)
+            ->where('client_invoices.currency', $currency)
             ->whereIn('client_invoices.status', ['issued', 'partially_paid', 'paid'])
             ->where('client_invoice_lines.type', InvoiceLineType::Credit->value)
             ->sum('client_invoice_lines.total_amount');
