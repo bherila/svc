@@ -10,6 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Restores columns an earlier import discarded, reading from the same guarded
@@ -25,13 +26,18 @@ use Illuminate\Support\Facades\DB;
  * Safe to re-run: it only ever writes a column that is still empty, so it cannot
  * overwrite a value the destination has since decided, and a partial run simply
  * resumes.
+ *
+ * Unlike the replay and the rehearsal, this one does write - that is its
+ * purpose. It writes only under `--apply`, and only if every check passes: the
+ * whole repair is one transaction, so a source it decides not to trust leaves
+ * the ledger exactly as it found it.
  */
 final class BackfillBillingLedgerCommand extends Command
 {
     protected $signature = 'svc:billing:backfill-ledger
         {--source=external : Allowlisted read-only source key from config/external-import.php}
         {--workspace= : Required. Ledger rows imported into this workspace public id, and no other}
-        {--dry-run : Report what would change without writing}
+        {--apply : Write the repairs. Without it the command reports what would change and writes nothing}
         {--accept-drift= : Comma-separated destination columns allowed to differ from the source, for a declared restore that kept being used}';
 
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
@@ -94,9 +100,15 @@ final class BackfillBillingLedgerCommand extends Command
         }
         $this->workspaceId = (int) $id;
 
-        $dryRun = (bool) $this->option('dry-run');
+        // Reporting is the default and writing is the flag, not the other way
+        // round. This command points at production data, and a run that was
+        // meant to be a look should not become a write because an operator
+        // forgot an option.
+        $dryRun = ! (bool) $this->option('apply');
         $identityHash = (string) $source['identity_hash'];
-        $this->components->info($dryRun ? 'Dry run - nothing will be written.' : 'Backfilling from the external source.');
+        $this->components->info($dryRun
+            ? 'Reporting only - nothing will be written. Pass --apply to write.'
+            : 'Backfilling from the external source.');
 
         // Say it plainly when the source is standing in for another. An
         // operator reading this output should never have to check the
@@ -121,21 +133,57 @@ final class BackfillBillingLedgerCommand extends Command
             }
         }
 
-        $totals = [];
-        foreach ([
-            'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
-            'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
-            'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
-            'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
-            'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
-        ] as $label => $step) {
-            $result = $step();
-            $totals[$label] = $result;
-            $this->components->twoColumnDetail(
-                $label,
-                sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
-            );
+        // One transaction over every table. The unmatched and fingerprint
+        // checks below can only be answered after the whole source has been
+        // walked, and both of them mean "do not repair this ledger" - so the
+        // writes have to still be undoable when they are asked. Without this
+        // the command committed the tables it had finished, then returned
+        // failure, leaving a ledger half repaired from a source it had just
+        // decided not to trust.
+        $this->db()->beginTransaction();
+
+        try {
+            $totals = [];
+            foreach ([
+                'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
+                'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
+                'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
+                'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
+                'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
+            ] as $label => $step) {
+                $result = $step();
+                $totals[$label] = $result;
+                $this->components->twoColumnDetail(
+                    $label,
+                    sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
+                );
+            }
+
+            $verdict = $this->verdictFor($totals, $declaredRestore);
+        } catch (Throwable $e) {
+            $this->db()->rollBack();
+
+            throw $e;
         }
+
+        if ($dryRun || $verdict !== self::SUCCESS) {
+            $this->db()->rollBack();
+
+            return $verdict;
+        }
+
+        $this->db()->commit();
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Whether what was found justifies keeping the repairs.
+     *
+     * @param  array<string, array{matched:int, written:int, unmatched:int, changed:int}>  $totals
+     */
+    private function verdictFor(array $totals, ?string $declaredRestore): int
+    {
 
         $unmatched = array_sum(array_column($totals, 'unmatched'));
         if ($unmatched > 0) {
@@ -318,6 +366,7 @@ final class BackfillBillingLedgerCommand extends Command
         $verifier = new RestoreAgreementVerifier;
         $drift = [];
         $compared = 0;
+        $missing = [];
 
         foreach (RestoreAgreementVerifier::comparableColumns() as $table => $_) {
             $idMap = array_map(static fn (array $m): int => $m['id'], $this->idMap($table, $table, $identityHash));
@@ -336,6 +385,10 @@ final class BackfillBillingLedgerCommand extends Command
                 $idMap,
             );
             $compared += $result['compared'];
+            if ($result['missing'] > 0) {
+                $missing[$table] = $result['missing'];
+            }
+
             foreach ($result['drift'] as $column => $count) {
                 // Qualified by table. `total_amount` exists on invoices and on
                 // invoice lines, `description` on lines and on time entries, so
@@ -347,6 +400,19 @@ final class BackfillBillingLedgerCommand extends Command
         }
 
         $this->components->twoColumnDetail('rows verified against the import', (string) $compared);
+
+        if ($missing !== []) {
+            foreach ($missing as $table => $count) {
+                $this->components->twoColumnDetail("  {$table}", sprintf('%d imported row(s) absent from the restore', $count));
+            }
+
+            $this->components->error(
+                'The restore is missing rows the ledger says were imported from this source. It is not the '.
+                'same data, so nothing it agrees with proves anything; restore the full source and run again.',
+            );
+
+            return self::FAILURE;
+        }
 
         $unexpected = array_diff_key($drift, array_flip($accepted));
 

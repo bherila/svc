@@ -46,7 +46,16 @@ final class InvoiceLifecycleService
                 // invoice, which makes the replay try to reproduce something an
                 // operator typed and lets it block cadence generation through
                 // the overlap guard that deliberately exempts ad-hoc work.
-                'invoice_kind' => $attributes['invoice_kind'] ?? InvoiceKind::AdHoc->value,
+                // Ad hoc is the operator default, not a universal one. A
+                // billing schedule creates machine-generated recurring
+                // invoices through this same method, and classifying those as
+                // ad hoc made the cadence overlap guard and the replay ignore
+                // them - so a second invoice could be generated for the same
+                // agreement and period.
+                'invoice_kind' => $attributes['invoice_kind']
+                    ?? (($attributes['client_billing_schedule_id'] ?? null) === null
+                        ? InvoiceKind::AdHoc->value
+                        : InvoiceKind::CadencePeriod->value),
                 'issue_date' => $attributes['issue_date'] ?? null,
                 'due_date' => $attributes['due_date'] ?? null,
                 'service_period_start' => $attributes['service_period_start'] ?? null,

@@ -101,17 +101,21 @@ class InvoiceLineComposer
         Carbon $periodEnd,
         int &$sortOrder
     ): void {
-        $projectId = $this->agreementProjectId($invoice);
-
         $tasks = ClientTask::query()
             ->where('workspace_id', $company->workspace_id)
             ->whereHas('project', fn ($q) => $q->where('client_company_id', $company->id))
-            ->when($projectId !== null, fn ($q) => $q->where('client_project_id', $projectId))
+            ->forAgreementScope($this->agreementFor($invoice))
             ->where('milestone_price_amount', '>', 0)
             ->whereNotNull('completed_at')
             ->whereNull('client_invoice_line_id')
             ->where('completed_at', '<=', $periodEnd->copy()->endOfDay())
             ->orderBy('completed_at')
+            // Two agreements under one company generate under separate
+            // agreement locks, which do not serialise each other. Both could
+            // read the same unclaimed task, both create a milestone line, and
+            // the second claim would overwrite the first - two invoices
+            // charging one deliverable, with only one of them traceable.
+            ->lockForUpdate()
             ->get();
 
         foreach ($tasks as $task) {
@@ -130,7 +134,21 @@ class InvoiceLineComposer
                 'sort_order' => $sortOrder++,
             ]);
 
-            $task->update(['client_invoice_line_id' => $line->id]);
+            // Conditional, so the claim itself decides the race rather than
+            // whichever write lands last. The row lock above should already
+            // have settled it; this holds on an engine or isolation level
+            // where it does not.
+            $claimed = ClientTask::query()
+                ->whereKey($task->getKey())
+                ->whereNull('client_invoice_line_id')
+                ->update(['client_invoice_line_id' => $line->id]);
+
+            if ($claimed === 0) {
+                // Someone else billed this deliverable first. Leaving the line
+                // would charge it twice; the gap it leaves in `sort_order` is
+                // only an ordering hint and costs nothing.
+                $line->delete();
+            }
         }
     }
 
@@ -235,12 +253,15 @@ class InvoiceLineComposer
         // keeps the per-entry cost but not the mode, so the cost being present
         // is the whole signal. Restoring modes means restoring that column and
         // narrowing this query again.
-        $projectId = $this->agreementProjectId($invoice);
+        $agreement = $this->agreementFor($invoice);
 
         $entries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->when($projectId !== null, fn ($q) => $q->where('client_project_id', $projectId))
+            ->when(
+                $agreement instanceof ClientAgreement,
+                fn ($q) => $q->forAgreementScope($agreement),
+            )
             ->whereDoesntHave('invoiceLines')
             ->where('is_billable', true)
             ->where('is_deferred', false)
@@ -404,7 +425,7 @@ class InvoiceLineComposer
     }
 
     /**
-     * The project an invoice's agreement is confined to, if any.
+     * The agreement an invoice bills under, if any.
      *
      * Ordinary time was project-scoped through `forAgreementScope()`, but the
      * supplemental sources - milestones and flat-hourly subcontractor work -
@@ -415,7 +436,7 @@ class InvoiceLineComposer
      * Read from the invoice rather than taken as an argument, because an
      * argument is the thing four callers already forgot to pass.
      */
-    private function agreementProjectId(ClientInvoice $invoice): ?int
+    private function agreementFor(ClientInvoice $invoice): ?ClientAgreement
     {
         if ($invoice->client_agreement_id === null) {
             return null;
@@ -424,6 +445,6 @@ class InvoiceLineComposer
         return ClientAgreement::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->whereKey($invoice->client_agreement_id)
-            ->value('client_project_id');
+            ->first();
     }
 }

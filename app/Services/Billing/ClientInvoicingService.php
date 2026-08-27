@@ -406,20 +406,21 @@ final class ClientInvoicingService
     }
 
     /**
-     * Generate or refresh a monthly invoice reconciling one work period.
+     * The monthly cadence invoice this run may refresh, if one exists.
+     *
+     * Found by the cycle it sells, not by the work period. The period is
+     * widened by a carried-forward milestone dated outside the cycle, and
+     * looking it up by the widened value finds nothing - then the overlap guard
+     * rejects the draft it just failed to find.
      */
-    private function generateMonthlyInvoiceForWorkPeriod(
+    private function findRefreshableMonthlyInvoice(
         ClientCompany $company,
+        ClientAgreement $agreement,
         Carbon $periodStart,
         Carbon $periodEnd,
-        ClientAgreement $agreement,
-    ): ClientInvoice {
-        // Found by the cycle it sells, not by the work period. The period is
-        // widened by a carried-forward milestone dated outside the cycle, and
-        // looking it up by the widened value finds nothing - then the overlap
-        // guard rejects the draft it just failed to find.
-        $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
-        $invoice = $this->scopedInvoices($company)
+        Carbon $retainerMonthStart,
+    ): ?ClientInvoice {
+        return $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
             ->where(function ($query) use ($periodStart, $periodEnd, $retainerMonthStart): void {
                 // The exact period, as written.
@@ -437,19 +438,49 @@ final class ClientInvoicingService
                             ->whereDate('service_period_end', '>=', $periodEnd->toDateString());
                     });
             })
+            // A cadence refresh must not pick up an operator's ad-hoc
+            // invoice, rewrite its kind and reset its lines. A null kind is
+            // read as cadence, as it is everywhere else.
+            ->where(function ($query): void {
+                $query->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
+            })
             ->where('status', '!=', 'void')
+            ->lockForUpdate()
             ->first();
+    }
 
-        if ($invoice instanceof ClientInvoice && $invoice->isImmutable()) {
-            throw new RuntimeException(
-                "A settled invoice (#{$invoice->invoice_number}) already exists for this period and cannot be modified.",
-            );
-        }
+    /**
+     * Generate or refresh a monthly invoice reconciling one work period.
+     */
+    private function generateMonthlyInvoiceForWorkPeriod(
+        ClientCompany $company,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        ClientAgreement $agreement,
+    ): ClientInvoice {
+        $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
 
-        $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
-
-        return DB::transaction(function () use ($company, $agreement, $periodStart, $periodEnd, $invoice): ClientInvoice {
+        return DB::transaction(function () use ($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart): ClientInvoice {
             ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
+
+            // Looked up under the lock, not before it. Two workers generating
+            // the same month could both read `null` outside the transaction;
+            // the agreement lock then serialised them, but the second still
+            // held its stale result and created a duplicate cadence invoice
+            // after the first committed. The non-monthly path already does the
+            // lookup inside. There is no unique constraint on (agreement,
+            // kind, cycle) to reject the second write, so the ordering is the
+            // whole guard.
+            $invoice = $this->findRefreshableMonthlyInvoice($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart);
+
+            if ($invoice instanceof ClientInvoice && $invoice->isImmutable()) {
+                throw new RuntimeException(
+                    "A settled invoice (#{$invoice->invoice_number}) already exists for this period and cannot be modified.",
+                );
+            }
+
+            $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
 
             $terminationDate = $this->agreementEnd($agreement);
             $terminationMonthKey = $terminationDate?->format('Y-m');
@@ -1438,7 +1469,26 @@ final class ClientInvoicingService
                 ->map(fn (mixed $date): string => substr((string) $date, 0, 7))
                 ->all();
 
-            $monthsWithUnbilledPostTermination = array_fill_keys(array_unique($workMonths), true);
+            // A priced deliverable completed after the final invoice leaves no
+            // time entry behind. Reading time alone skipped the cycle before
+            // the composer could carry the task forward, and the milestone was
+            // then never invoiced at all.
+            $milestoneMonths = ClientTask::query()
+                ->where('workspace_id', $company->workspace_id)
+                ->whereHas('project', fn ($q) => $q->where('client_company_id', $company->id))
+                ->forAgreementScope($agreement)
+                ->where('milestone_price_amount', '>', 0)
+                ->whereNull('client_invoice_line_id')
+                ->whereNotNull('completed_at')
+                ->where('completed_at', '>', $terminationDate->toDateString())
+                ->pluck('completed_at')
+                ->map(fn (mixed $date): string => substr((string) $date, 0, 7))
+                ->all();
+
+            $monthsWithUnbilledPostTermination = array_fill_keys(
+                array_unique(array_merge($workMonths, $milestoneMonths)),
+                true,
+            );
         }
 
         $cursor = $workCycle->start->copy()->startOfMonth();

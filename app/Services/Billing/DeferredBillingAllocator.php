@@ -77,7 +77,13 @@ class DeferredBillingAllocator
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
             ->where('is_deferred', true)
-            ->retainerBillable()
+            // Approved, not retainer-billable. Flat-hourly subcontractor work
+            // is excluded from the retainer everywhere - rightly, it is billed
+            // additively - and the subcontractor composer excludes everything
+            // deferred. An entry that is both belonged to neither path and
+            // stayed unbilled for good. Termination is the sweep that must
+            // leave nothing behind, so it is the one that owns the overlap.
+            ->approved()
             ->whereDoesntHave('invoiceLines')
             ->orderBy('worked_on', 'asc')
             ->orderBy('id', 'asc');

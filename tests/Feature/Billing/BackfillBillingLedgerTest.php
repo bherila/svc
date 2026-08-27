@@ -50,7 +50,7 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         [$invoice, $line, $agreement, $task] = $this->buildDestination();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $invoice->refresh();
         $this->assertSame('cadence_period', $invoice->invoice_kind);
@@ -77,16 +77,16 @@ final class BackfillBillingLedgerTest extends TestCase
         // Source decimal currency becomes integer minor units.
         $this->assertSame(18750, $task->milestone_price_amount);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
         $invoice->refresh();
         $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
-    public function test_dry_run_writes_nothing(): void
+    public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--dry-run' => true])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -96,7 +96,7 @@ final class BackfillBillingLedgerTest extends TestCase
         [$invoice] = $this->buildDestination();
         $invoice->forceFill(['invoice_kind' => 'corrected_by_hand'])->save();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $this->assertSame('corrected_by_hand', $invoice->refresh()->invoice_kind);
     }
@@ -111,7 +111,7 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('client_invoice_id', 501)
             ->update(['hours_worked' => '99.00']);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertFailed();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertFailed();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -124,7 +124,7 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('source_table', 'client_invoices')
             ->update(['source_identity_hash' => str_repeat('f', 64)]);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -133,7 +133,7 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         Config::set('external-import.sources.external.read_only', false);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertFailed();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertFailed();
     }
 
     private function buildSource(): void
@@ -180,7 +180,7 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         $this->buildDestination();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => 'no-such-workspace'])->assertFailed();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => 'no-such-workspace', '--apply' => true])->assertFailed();
     }
 
     private function workspacePublicId(): string

@@ -143,17 +143,29 @@ other engine. The `mariadb` CI job exists because of this and deploy waits on it
 
 ### Rehearsing against real data
 
-Three commands run against production data and none of them writes. Each is
-always-rollback, and each is tested to be:
+Three commands run against production data. Two of them cannot write at all;
+the third writes only when told to, and only if every check passes.
 
 - `svc:billing:replay` regenerates history and classifies every divergence.
+  Always-rollback, and tested to be.
 - `svc:billing:rehearse-generation` answers the operational question directly —
   would running generation change anything a client has already been charged
   for? It fingerprints every column and every line of every settled invoice
   before and after. On production data it watched 25 and found none altered.
-- `svc:billing:backfill-ledger` repairs columns an earlier import dropped, and
-  refuses unless the source still agrees with what was imported, column by
-  column, with every difference accepted by name.
+  Always-rollback, and tested to be.
+- `svc:billing:backfill-ledger` **writes** — that is its purpose. It repairs
+  columns an earlier import dropped, and refuses unless the source still agrees
+  with what was imported, column by column, with every difference accepted by
+  name. Reporting is the default and `--apply` is the flag, so a run meant as a
+  look cannot become a write. The whole repair is one transaction: the checks
+  that decide whether to trust the source can only be answered after the entire
+  source has been walked, and it used to commit the tables it had finished
+  before returning failure — leaving a ledger half repaired from a source it had
+  just decided not to trust.
+
+An earlier version of this section said all three were always-rollback. That was
+wrong about the third, and it is the kind of wrong that matters: the sentence was
+the reason to believe the command was safe to point at production.
 
 ## What is not finished
 
@@ -169,7 +181,7 @@ lines exposing internal ids, and the `one_time` cadence billing monthly. Merge
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | **Ran, and does not yet reproduce.** Of 42 comparable invoices: 4 exact, 8 the same total through differently arranged lines, 10 explained by a deliberate correction, 15 unexplained, 5 structural. Only the unexplained count fails a run — demanding an exact match asks the engine to reproduce bugs it was fixed not to have. Fixing four genuine mis-billing defects did not move these counts at all, which is itself unexplained. | #73 |
+| Replay against production data | **Ran, and the last classification of its result was wrong.** Of 42 comparable invoices the run reported 4 exact, 8 the same total through differently arranged lines, 10 explained by a deliberate correction, 15 unexplained, 5 structural — and two independent reviews found the same load-bearing error in it. `retainer` sat in the capacity-dependent allowlist, so ten whole-invoice disappearances were waived as deliberate on the strength of `rollover_months > 0`. No capacity correction can move a contracted fee. The classifier is narrower now and those ten are unresolved again. The harness itself also needs work before its numbers mean anything: it preserves payment rows while zeroing invoice totals, so the credit ledger reads every historical payment as an overpayment and manufactures the credits that make up eight of the fifteen. Counts here are not a verdict. | #73 |
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. Flat-hourly work is excluded from retainer draw and billed as its own line, and a cost in another currency is refused rather than billed unconverted. | #76 |

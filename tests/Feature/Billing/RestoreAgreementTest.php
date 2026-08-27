@@ -56,7 +56,7 @@ final class RestoreAgreementTest extends TestCase
     {
         $this->scenario();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
             ->expectsOutputToContain('matches what was imported')
             ->assertSuccessful();
     }
@@ -65,7 +65,7 @@ final class RestoreAgreementTest extends TestCase
     {
         $this->scenario(['invoice_number' => 'RENUMBERED-1']);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
             ->expectsOutputToContain('invoice_number')
             ->assertFailed();
     }
@@ -76,6 +76,7 @@ final class RestoreAgreementTest extends TestCase
 
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
             '--accept-drift' => 'client_invoices.invoice_number',
         ])->assertSuccessful();
 
@@ -92,6 +93,7 @@ final class RestoreAgreementTest extends TestCase
 
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
             '--accept-drift' => 'client_invoices.invoice_number',
         ])->assertFailed();
 

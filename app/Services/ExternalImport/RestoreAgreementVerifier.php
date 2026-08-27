@@ -76,7 +76,7 @@ final class RestoreAgreementVerifier
 
     /**
      * @param  array<string, int>  $idMap  source key => destination row id
-     * @return array{compared: int, skipped: int, drift: array<string, int>}
+     * @return array{compared: int, skipped: int, missing: int, drift: array<string, int>}
      */
     public function verify(
         ConnectionInterface $source,
@@ -88,7 +88,7 @@ final class RestoreAgreementVerifier
     ): array {
         $columns = self::comparableColumns()[$destinationTable] ?? [];
         if ($columns === []) {
-            return ['compared' => 0, 'skipped' => 0, 'drift' => []];
+            return ['compared' => 0, 'skipped' => 0, 'missing' => 0, 'drift' => []];
         }
 
         $stored = DB::connection($destinationConnection)
@@ -100,6 +100,12 @@ final class RestoreAgreementVerifier
         $compared = 0;
         $skipped = 0;
         $drift = [];
+        // Every row the ledger says was imported from here. Walking the source
+        // alone meant a restore that had lost rows produced no drift at all -
+        // the missing ones were simply never compared, and the backfill then
+        // walked the same shortened source and reported nothing unmatched. A
+        // partial restore read exactly like a faithful one.
+        $expected = array_fill_keys(array_keys($idMap), true);
 
         foreach ($source->table($sourceTable)->orderBy($sourceKey)->cursor() as $row) {
             $arr = (array) $row;
@@ -108,6 +114,8 @@ final class RestoreAgreementVerifier
             if ($id === null || ! isset($stored[$id])) {
                 continue;
             }
+
+            unset($expected[$key]);
 
             $destination = (array) $stored[$id];
             $compared++;
@@ -127,7 +135,12 @@ final class RestoreAgreementVerifier
             }
         }
 
-        return ['compared' => $compared, 'skipped' => $skipped, 'drift' => $drift];
+        return [
+            'compared' => $compared,
+            'skipped' => $skipped,
+            'missing' => count($expected),
+            'drift' => $drift,
+        ];
     }
 
     private static function same(mixed $expected, mixed $stored): bool
