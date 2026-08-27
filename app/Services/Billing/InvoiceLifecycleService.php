@@ -9,6 +9,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -40,6 +41,11 @@ final class InvoiceLifecycleService
                 'client_billing_schedule_id' => $attributes['client_billing_schedule_id'] ?? null,
                 'invoice_number' => $this->requiredString($attributes['invoice_number'] ?? null, 'invoice_number'),
                 'status' => 'draft',
+                // Recorded rather than inferred. A null kind reads as a cadence
+                // invoice, which makes the replay try to reproduce something an
+                // operator typed and lets it block cadence generation through
+                // the overlap guard that deliberately exempts ad-hoc work.
+                'invoice_kind' => $attributes['invoice_kind'] ?? InvoiceKind::AdHoc->value,
                 'issue_date' => $attributes['issue_date'] ?? null,
                 'due_date' => $attributes['due_date'] ?? null,
                 'service_period_start' => $attributes['service_period_start'] ?? null,
@@ -98,7 +104,7 @@ final class InvoiceLifecycleService
                 throw new DomainException('Only a draft invoice can be discarded.');
             }
 
-            $this->releaseTimeAllocations($locked);
+            $this->releaseAllocations($locked);
             $locked->forceFill([
                 'status' => 'void',
                 'voided_at' => now(),
@@ -132,6 +138,11 @@ final class InvoiceLifecycleService
             // whole available pool - that is deliberate, since drafts regenerate
             // freely and reserving against them would strand credit - so the
             // pool is re-checked here, where the money actually leaves it.
+            //
+            // The invoice row lock is not enough: two different drafts lock two
+            // different rows, so both could read the same unconsumed pool. The
+            // company is what the pool belongs to, so that is what serializes.
+            ClientCompany::query()->whereKey($locked->client_company_id)->lockForUpdate()->first();
             $this->capOverpaymentCreditAtIssue($locked);
 
             $locked->forceFill([
@@ -217,7 +228,7 @@ final class InvoiceLifecycleService
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
             }
 
-            $this->releaseTimeAllocations($locked);
+            $this->releaseAllocations($locked);
             $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'void_reason' => $reason, 'balance_amount' => 0])->save();
 
             return $locked->fresh(['lines', 'clientCompany']);
@@ -415,7 +426,7 @@ final class InvoiceLifecycleService
         }
     }
 
-    private function releaseTimeAllocations(ClientInvoice $invoice): void
+    private function releaseAllocations(ClientInvoice $invoice): void
     {
         $lineIds = $invoice->lines()->pluck('id');
         if ($lineIds->isEmpty()) {
@@ -432,6 +443,12 @@ final class InvoiceLifecycleService
             ]);
         }
         DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
+
+        // A milestone's claim is a column on the task, not a pivot row, so it
+        // survives everything above. Left set, the task stays attached to a void
+        // invoice and the generator - which only picks up unclaimed tasks - omits
+        // the milestone from the replacement invoice permanently.
+        DB::table('client_tasks')->whereIn('client_invoice_line_id', $lineIds)->update(['client_invoice_line_id' => null]);
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice

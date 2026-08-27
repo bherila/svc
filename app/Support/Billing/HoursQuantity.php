@@ -11,6 +11,23 @@ namespace App\Support\Billing;
  */
 final class HoursQuantity
 {
+    /**
+     * Hours as a decimal string for the `quantity` column.
+     *
+     * The predecessor stored `quantity` as a varchar and put `h:mm` straight in
+     * it - there is a migration in that codebase changing the column from
+     * decimal to varchar for exactly that purpose. This schema kept it decimal,
+     * so writing `1:30` here is rejected by MySQL in strict mode. SQLite accepts
+     * it, which is why a full green test suite proved nothing about production.
+     *
+     * The readable form belongs in the description, where it already appears.
+     */
+    public static function decimal(float $hours): string
+    {
+        return number_format(round($hours, 4), 4, '.', '');
+    }
+
+    /** Hours as `h:mm`, for descriptions and anything a person reads. */
     public static function format(float $hours): string
     {
         $totalMinutes = (int) round($hours * 60);

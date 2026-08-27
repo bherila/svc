@@ -4,7 +4,6 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
-use App\Support\Billing\BillingCadence;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -55,13 +54,11 @@ final class AgreementSelector
 
         $agreements = $company->agreements()
             ->where('status', '!=', 'draft')
-            ->where(function ($query) use ($now): void {
-                $query->where('starts_on', '<=', $now->toDateString())
-                    ->orWhere(function ($query) use ($now): void {
-                        $query->where('billing_cadence', '!=', BillingCadence::Monthly->value)
-                            ->where('starts_on', '<=', $now->addMonth()->toDateString());
-                    });
-            })
+            // Every cadence bills its opening retainer in advance, monthly
+            // included, so an agreement starting next month is selected now.
+            // Excluding monthly here made exactly those first invoices late
+            // while quarterly and annual ones arrived on time.
+            ->where('starts_on', '<=', $now->addMonth()->toDateString())
             ->orderBy('starts_on')
             ->orderBy('id')
             ->get();

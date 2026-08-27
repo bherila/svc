@@ -15,6 +15,7 @@ use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
+use App\Support\Billing\FirstCycleProration;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -198,6 +199,13 @@ final class ClientInvoicingService
         $agreement ??= $company->activeAgreement();
         if (! $agreement instanceof ClientAgreement) {
             throw new RuntimeException('No active agreement found for this client company.');
+        }
+
+        // A caller-supplied agreement is not automatically this company's. Left
+        // unchecked, the invoice is written under one tenant while its terms and
+        // rates come from another.
+        if ($agreement->workspace_id !== $company->workspace_id || $agreement->client_company_id !== $company->id) {
+            throw new RuntimeException('That agreement belongs to a different client company.');
         }
 
         $workCycle = $this->billingCycleResolver->cycleContaining($agreement, $periodStart);
@@ -386,10 +394,29 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         ClientAgreement $agreement,
     ): ClientInvoice {
+        // Found by the cycle it sells, not by the work period. The period is
+        // widened by a carried-forward milestone dated outside the cycle, and
+        // looking it up by the widened value finds nothing - then the overlap
+        // guard rejects the draft it just failed to find.
+        $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
         $invoice = $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
-            ->whereDate('service_period_start', $periodStart->toDateString())
-            ->whereDate('service_period_end', $periodEnd->toDateString())
+            ->where(function ($query) use ($periodStart, $periodEnd, $retainerMonthStart): void {
+                // The exact period, as written.
+                $query->where(function ($query) use ($periodStart, $periodEnd): void {
+                    $query->whereDate('service_period_start', $periodStart->toDateString())
+                        ->whereDate('service_period_end', $periodEnd->toDateString());
+                })
+                    // Or the same cycle with a period that has since been
+                    // widened to cover it. Containment matters: two different
+                    // work periods can share a retainer month, and matching on
+                    // the cycle alone would treat one as a refresh of the other.
+                    ->orWhere(function ($query) use ($periodStart, $periodEnd, $retainerMonthStart): void {
+                        $query->whereDate('cycle_start', $retainerMonthStart->toDateString())
+                            ->whereDate('service_period_start', '<=', $periodStart->toDateString())
+                            ->whereDate('service_period_end', '>=', $periodEnd->toDateString());
+                    });
+            })
             ->where('status', '!=', 'void')
             ->first();
 
@@ -469,7 +496,7 @@ final class ClientInvoicingService
             // as several smaller entries.
             $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
 
-            $priorMonthEntries = $this->unbilledEntriesBetween($company, $periodStart, $periodEnd);
+            $priorMonthEntries = $this->unbilledEntriesBetween($company, $agreement, $periodStart, $periodEnd);
 
             $priorMonthBalance = $this->balanceForMonth($allBalances, $periodEnd->format('Y-m'));
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
@@ -566,11 +593,24 @@ final class ClientInvoicingService
 
             if (! $isRetainerMonthPostTermination) {
                 $retainerMonthEnd = $retainerMonthStart->copy()->endOfMonth();
+                // A month the agreement only partly covers is billed for the
+                // part it covers. The cadence path already asks the calculator
+                // for this; the monthly path used to charge a full retainer for
+                // an agreement that started or ended mid-month, overcharging the
+                // client and granting a full pool against a partial term.
+                $multiplier = $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod
+                    ? 1.0
+                    : $this->retainerCalculator->monthRetainerMultiplier(
+                        $agreement,
+                        $retainerMonthStart->copy()->startOfDay(),
+                        $retainerMonthEnd->copy()->startOfDay(),
+                    );
+
                 $this->createRetainerFeeLine(
                     $invoice,
                     $agreement,
-                    $agreement->periodRetainerHours(),
-                    $agreement->periodRetainerFee(),
+                    round($agreement->periodRetainerHours() * $multiplier, 4),
+                    round($agreement->periodRetainerFee() * $multiplier, 2),
                     $retainerMonthStart,
                     $retainerMonthEnd,
                     $sortOrder,
@@ -726,7 +766,7 @@ final class ClientInvoicingService
                 ? 0.0
                 : $this->interimOverageGenerator->interimOverageHoursForCycle($agreement, $workCycle);
 
-            $entries = $this->unbilledEntriesBetween($company, $periodStart, $periodEnd);
+            $entries = $this->unbilledEntriesBetween($company, $agreement, $periodStart, $periodEnd);
 
             // The retainer being sold is priced from its own cycle's ledger, not
             // the work cycle's - proration depends on where the agreement starts
@@ -782,7 +822,7 @@ final class ClientInvoicingService
                     'client_invoice_id' => $invoice->id,
                     'client_agreement_id' => $agreement->id,
                     'description' => 'Already billed in this cycle via interim overage invoices',
-                    'quantity' => HoursQuantity::format($interimBilledHours),
+                    'quantity' => HoursQuantity::decimal($interimBilledHours),
                     'unit_amount' => 0,
                     'tax_amount' => 0,
                     'total_amount' => 0,
@@ -915,7 +955,7 @@ final class ClientInvoicingService
             'client_invoice_id' => $invoice->id,
             'client_agreement_id' => $agreement->id,
             'description' => $description,
-            'quantity' => HoursQuantity::format($hours),
+            'quantity' => HoursQuantity::decimal($hours),
             'unit_amount' => $rateAmount,
             'tax_amount' => 0,
             'total_amount' => $minutes > 0 ? MoneyService::hourlyAmount($minutes, $rateAmount) : 0,
@@ -983,8 +1023,11 @@ final class ClientInvoicingService
                     ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
             })
             ->where(function ($query) use ($periodStart, $periodEnd): void {
-                $query->where('service_period_start', '<', $periodEnd->toDateString())
-                    ->where('service_period_end', '>', $periodStart->toDateString());
+                // Inclusive on both ends, matching how entries are selected:
+                // a strict comparison lets a new period start on an existing
+                // invoice's last billed day, so that day belongs to two.
+                $query->where('service_period_start', '<=', $periodEnd->toDateString())
+                    ->where('service_period_end', '>=', $periodStart->toDateString());
             })
             ->when($invoice instanceof ClientInvoice, function ($query) use ($invoice): void {
                 $query->whereKeyNot($invoice->id);
@@ -1025,6 +1068,7 @@ final class ClientInvoicingService
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
+            ->where('is_deferred', false)
             ->retainerBillable()
             ->min('worked_on');
 
@@ -1036,6 +1080,10 @@ final class ClientInvoicingService
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
+            // Same rule as InvoiceLedgerBuilder: deferred work draws on the pool
+            // only once the allocator bills it. This path is the monthly
+            // equivalent of that ledger and was missed when the other was fixed.
+            ->where('is_deferred', false)
             ->retainerBillable()
             ->where('worked_on', '<=', $periodEnd->toDateString())
             ->get()
@@ -1061,10 +1109,14 @@ final class ClientInvoicingService
                 $firstPostTerminationSeen = true;
             }
 
+            // Pre-agreement months exist only to place the window; they have no
+            // retainer, so recording their hours would carry the whole lot in as
+            // debt and let work done before the client had an agreement consume
+            // the retainer they have now - or trigger catch-up billing for it.
             $months[] = [
                 'year_month' => $monthKey,
                 'retainer_hours' => ($isPreAgreement || $isPostTermination) ? 0.0 : $agreement->monthly_retainer_hours,
-                'hours_worked' => ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
+                'hours_worked' => $isPreAgreement ? 0.0 : ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
                 'reset_rollover' => $resetRollover,
             ];
 
@@ -1176,19 +1228,36 @@ final class ClientInvoicingService
     }
 
     /**
-     * Unbilled, non-deferred, approved billable time inside a period.
+     * Work this agreement's retainer may draw on, inside a period.
      *
      * @return Collection<int, ClientTimeEntry>
      */
-    private function unbilledEntriesBetween(ClientCompany $company, Carbon $from, Carbon $to): Collection
-    {
+    private function unbilledEntriesBetween(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        Carbon $from,
+        Carbon $to,
+    ): Collection {
         return ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->unbilled()
             ->where('is_billable', true)
             ->where('is_deferred', false)
+            // Flat-hourly subcontractor work is billed additively by the
+            // composer at the rate snapshotted on the entry. Letting the
+            // retainer allocator claim it first leaves the composer nothing to
+            // bill, so the work is absorbed by the retainer or charged at the
+            // agreement rate instead of the contractor's.
+            ->whereNull('subcontractor_cost_amount')
             ->retainerBillable()
+            // An agreement scoped to one project allocates only that project's
+            // work. Otherwise whichever agreement generates first claims every
+            // project's time and the rest find nothing left to bill.
+            ->when(
+                $agreement->client_project_id !== null,
+                fn ($query) => $query->where('client_project_id', $agreement->client_project_id),
+            )
             ->whereBetween('worked_on', [$from->toDateString(), $to->toDateString()])
             ->orderBy('worked_on')
             ->orderBy('id')

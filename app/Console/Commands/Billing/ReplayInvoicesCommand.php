@@ -103,7 +103,7 @@ final class ReplayInvoicesCommand extends Command
         DB::beginTransaction();
 
         try {
-            $expected = $this->snapshot($workspace);
+            $expected = $this->snapshot($workspace, $companies);
             $this->components->twoColumnDetail('invoices captured', (string) count($expected));
 
             $skippedAdHoc = count(array_filter(
@@ -117,7 +117,7 @@ final class ReplayInvoicesCommand extends Command
             $asOf = $this->asOf($workspace);
             $this->components->twoColumnDetail('replaying as of', $asOf->toDateString());
 
-            $this->clear($workspace);
+            $this->clear($workspace, $companies);
 
             // Pinned for the duration so cycle walks stop where history does.
             Carbon::setTestNow($asOf);
@@ -137,7 +137,7 @@ final class ReplayInvoicesCommand extends Command
                 Carbon::setTestNow();
             }
 
-            $outcome['comparisons'] = $this->compare($expected, $this->snapshot($workspace));
+            $outcome['comparisons'] = $this->compare($expected, $this->snapshot($workspace, $companies));
         } finally {
             // Unconditional. This is the whole safety model.
             DB::rollBack();
@@ -168,14 +168,19 @@ final class ReplayInvoicesCommand extends Command
      * unexpected. The cycle a retainer was sold for, or failing that the work
      * period reconciled, is what actually identifies an invoice.
      *
+     * @param  Collection<int, ClientCompany>  $companies
      * @return array<string, array<string, mixed>>
      */
-    private function snapshot(Workspace $workspace): array
+    private function snapshot(Workspace $workspace, Collection $companies): array
     {
         $rows = [];
 
+        // Narrowed to the companies being replayed. Snapshotting the whole
+        // workspace while regenerating one company reports every other
+        // company's invoice as missing.
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_id', $companies->pluck('id'))
             ->with('lines')
             ->orderBy('id')
             ->get();
@@ -223,11 +228,19 @@ final class ReplayInvoicesCommand extends Command
         $period = ($invoice->service_period_start?->toDateString() ?? '?')
             .'..'.($invoice->service_period_end?->toDateString() ?? '?');
 
+        // A cadence invoice is identified by the cycle it sells. An interim is
+        // not: several can share one cycle, so without the period they collapse
+        // onto a single key and all but one snapshot is silently overwritten -
+        // hiding exactly the divergences this exists to find.
+        $identity = $invoice->invoiceKindValue() === InvoiceKind::InterimOverage->value
+            ? ($cycle ?? '').'@'.$period
+            : ($cycle ?? $period);
+
         return implode('|', [
             (string) $invoice->client_company_id,
             (string) ($invoice->client_agreement_id ?? 'none'),
             $invoice->invoiceKindValue(),
-            $cycle ?? $period,
+            $identity,
         ]);
     }
 
@@ -261,12 +274,27 @@ final class ReplayInvoicesCommand extends Command
     }
 
     /**
-     * Remove every invoice and put its time back, so generation starts from the
-     * same state the original run saw.
+     * Strip every invoice back to an empty draft and release its time.
+     *
+     * Deliberately not a delete. Deleting cascades to
+     * `client_invoice_payments`, and those payments are what
+     * `OverpaymentCreditService` derives credit from - so a replay that removed
+     * them would regenerate every credit-bearing invoice without its credit and
+     * report a false divergence on each one.
+     *
+     * Blanking in place also matches what regeneration does in production: the
+     * row, its number and its payment history survive, and the generator
+     * refreshes it. Numbers stay stable, so the counter needs no rewind either.
+     *
+     * @param  Collection<int, ClientCompany>  $companies
      */
-    private function clear(Workspace $workspace): void
+    private function clear(Workspace $workspace, Collection $companies): void
     {
-        $invoiceIds = ClientInvoice::query()->where('workspace_id', $workspace->id)->pluck('id');
+        $invoiceIds = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_id', $companies->pluck('id'))
+            ->pluck('id');
+
         if ($invoiceIds->isEmpty()) {
             return;
         }
@@ -286,11 +314,16 @@ final class ReplayInvoicesCommand extends Command
         DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
         DB::table('client_tasks')->whereIn('client_invoice_line_id', $lineIds)->update(['client_invoice_line_id' => null]);
         DB::table('client_invoice_lines')->whereIn('id', $lineIds)->delete();
-        DB::table('client_invoices')->whereIn('id', $invoiceIds)->delete();
 
-        // The counter must rewind too, or every regenerated invoice differs by
-        // its number alone and the run reports noise.
-        DB::table('workspace_invoice_counters')->where('workspace_id', $workspace->id)->delete();
+        // Back to draft so the generator is allowed to rewrite them; a settled
+        // invoice refuses regeneration, which is the correct rule everywhere
+        // except inside this rolled-back sandbox.
+        DB::table('client_invoices')->whereIn('id', $invoiceIds)->update([
+            'status' => 'draft',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
     }
 
     /**
@@ -323,6 +356,12 @@ final class ReplayInvoicesCommand extends Command
 
             $notes = [];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
+
+            if ($after['currency'] !== $before['currency']) {
+                // The same integer in two currencies is not the same money, and
+                // the delta alone would read as an exact match.
+                $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
+            }
 
             if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
                 $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);

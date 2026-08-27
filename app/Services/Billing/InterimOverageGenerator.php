@@ -143,12 +143,20 @@ final class InterimOverageGenerator
             $cumulativeExcessHours = $this->cumulativeInterimExcessHoursThrough($agreement, $immediateLedger, $cycle, $periodEnd);
             $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
                 ->whereDate('service_period_end', '<', $periodStart->toDateString())
-                ->where('status', '!=', 'void')
+                ->whereIn('status', ['issued', 'partially_paid', 'paid'])
                 ->sum('hours_billed_at_rate');
 
             $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
             if ($targetOverageHours <= 0.0) {
                 return null;
+            }
+
+            // An existing draft still owns its time through the pivot, so
+            // selecting unbilled entries before releasing it finds nothing and
+            // the refresh silently returns the stale amount. Release first, then
+            // look - the same order the cadence generator uses.
+            if ($existingInvoice instanceof ClientInvoice) {
+                $this->invoiceLineComposer->resetSystemGeneratedLines($existingInvoice);
             }
 
             $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
@@ -181,7 +189,7 @@ final class InterimOverageGenerator
                     'invoice_kind' => InvoiceKind::InterimOverage->value,
                     'status' => 'draft',
                 ]);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice);
+                // Lines were already released above, before entries were selected.
             } else {
                 // Allocated only on create. The predecessor re-derived the number
                 // on every refresh; this counter is monotonic per workspace, so
@@ -219,7 +227,7 @@ final class InterimOverageGenerator
                 'client_invoice_id' => $invoice->id,
                 'client_agreement_id' => $agreement->id,
                 'description' => 'Interim overage hours for '.$periodStart->format('F Y'),
-                'quantity' => HoursQuantity::format($overageHours),
+                'quantity' => HoursQuantity::decimal($overageHours),
                 'unit_amount' => $rateAmount,
                 'tax_amount' => 0,
                 'total_amount' => MoneyService::hourlyAmount($overageMinutes, $rateAmount),
@@ -341,7 +349,10 @@ final class InterimOverageGenerator
             ->where('invoice_kind', InvoiceKind::InterimOverage->value)
             ->whereDate('cycle_start', $cycle->start->toDateString())
             ->whereDate('cycle_end', $cycle->end->toDateString())
-            ->where('status', '!=', 'void')
+            // Only what was actually charged. A draft has billed nothing, so
+            // counting it tells the cadence invoice those hours are settled and
+            // the client is never charged for them at all.
+            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
             ->sum('hours_billed_at_rate'), 4);
     }
 

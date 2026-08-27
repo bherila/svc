@@ -14,6 +14,7 @@ use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class InvoiceLineComposer
 {
@@ -54,6 +55,21 @@ class InvoiceLineComposer
         $agreement->loadMissing('recurringItems');
 
         foreach ($this->recurringItemBiller->linesForCycle($agreement, $periodStart, $periodEnd) as $lineData) {
+            // The item carries its own currency and the line carries only a
+            // number. Copying one into the other silently relabels the charge -
+            // an imported EUR item becomes the same count of USD minor units -
+            // so a mismatch stops here rather than reaching an invoice.
+            $itemCurrency = (string) $lineData['item']->currency;
+            if ($itemCurrency !== '' && $itemCurrency !== (string) $invoice->currency) {
+                throw new RuntimeException(sprintf(
+                    'Recurring item %s is priced in %s but invoice %s is in %s; convert it before billing.',
+                    $lineData['item']->public_id,
+                    (string) $itemCurrency,
+                    (string) $invoice->invoice_number,
+                    (string) $invoice->currency,
+                ));
+            }
+
             $line = $this->recurringItemBiller->buildLine($lineData, $sortOrder++);
             // The biller builds the line without knowing which invoice it lands
             // on. `associate` sets the key through the relation, which types it
@@ -176,7 +192,7 @@ class InvoiceLineComposer
                 HoursQuantity::format($hours),
                 $this->formatMoney($rateAmount, (string) $invoice->currency),
             ),
-            'quantity' => HoursQuantity::format($hours),
+            'quantity' => HoursQuantity::decimal($hours),
             'unit_amount' => $rateAmount,
             'tax_amount' => 0,
             'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
@@ -254,7 +270,7 @@ class InvoiceLineComposer
                     HoursQuantity::format($hours),
                     $this->formatMoney($rateAmount, (string) $invoice->currency),
                 ),
-                'quantity' => HoursQuantity::format($hours),
+                'quantity' => HoursQuantity::decimal($hours),
                 'unit_amount' => $rateAmount,
                 'tax_amount' => 0,
                 'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
