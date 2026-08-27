@@ -485,7 +485,7 @@ export default function Portal({ company }: { company: PortalCompany }) {
                                                             {entry.description ??
                                                                 'Work performed'}
                                                         </span>
-                                                        <span className="shrink-0 tabular-nums text-slate-400">
+                                                        <span className="shrink-0 text-slate-400 tabular-nums">
                                                             {displayDate(
                                                                 entry.worked_on,
                                                             )}{' '}
