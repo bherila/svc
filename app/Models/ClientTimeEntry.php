@@ -34,7 +34,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',
-    'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'currency',
+    'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'billing_rate_source', 'currency',
     'status', 'approved_by_user_id', 'approved_at', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
     'subcontractor_cost_metadata',
 ])]
@@ -94,7 +94,6 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         return $this->belongsTo(User::class, 'approved_by_user_id');
     }
 
-    /** @return BelongsToMany<ClientInvoiceLine, $this> */
     /**
      * Approved work only.
      *
@@ -103,23 +102,115 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeApproved(Builder $query): Builder
     {
-        return $query->where('status', 'approved');
+        // `invoiced` counts. This schema collapsed the predecessor's separate
+        // approval_status column into `status`, and issuing an invoice rewrites
+        // approved work to `invoiced` - so reading the literal alone makes every
+        // ledger rebuild forget the work it has already billed, inflating
+        // rollover and understating the next overage.
+        return $query->whereIn('status', ['approved', 'invoiced']);
     }
 
     /**
      * Work that may draw on retainer capacity.
      *
-     * The predecessor also excluded subcontractor work billed in modes that
-     * bypass the retainer. This schema has no billing mode - the source held
-     * none - so the exclusion has nothing to act on and approval is the whole
-     * condition. Restore the mode filter here if those modes come back.
+     * The predecessor excluded subcontractor work billed in modes that bypass
+     * the retainer, and did it here - so all seven of its call sites got the
+     * exclusion for free. This port dropped it, reasoning that the schema has
+     * no `subcontractor_billing_mode` column. That was true of the column and
+     * false of the concept: `subcontractor_cost_amount` is the flat-hourly
+     * signal in this schema, and InvoiceLineComposer already bills off it.
+     *
+     * With the exclusion gone from here it was added back one caller at a time,
+     * and reached only one of the three. The ledger and the interim generator
+     * were still letting flat-hourly hours consume retainer pool that the
+     * composer then billed again as its own line - charged once to the pool and
+     * once on the invoice.
+     *
+     * It belongs here, where a caller cannot forget it.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
     public function scopeRetainerBillable(Builder $query): Builder
     {
+        return $query->approved()->whereNull('subcontractor_cost_amount');
+    }
+
+    /**
+     * Narrow to the work a given agreement is entitled to draw on.
+     *
+     * An agreement scoped to one project has its own retainer, and the
+     * company's other projects draw on theirs. Pooling them makes each ledger
+     * count work the other is paying for, and lets whichever agreement
+     * generates first claim every project's time.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeForAgreementScope(Builder $query, ClientAgreement $agreement): Builder
+    {
+        return $query->when(
+            $agreement->client_project_id !== null,
+            fn (Builder $scoped): Builder => $scoped->where('client_project_id', $agreement->client_project_id),
+        );
+    }
+
+    /**
+     * Work whose hours have actually drawn on the retainer.
+     *
+     * Deferred work draws only once the allocator bills it, so a deferred entry
+     * still waiting is excluded - counting it consumes pool nothing has taken,
+     * manufactures a negative balance, and bills catch-up hours to restore
+     * capacity that was never used.
+     *
+     * The subtlety is the other half: allocation attaches the entry to a
+     * zero-value retainer line and never clears `is_deferred`. Four ledger
+     * queries wrote `where('is_deferred', false)` by hand, so once the invoice
+     * was issued those hours vanished from every later rebuild, the same pool
+     * rolled forward a second time, and the overage that followed was
+     * understated. Billed is billed, whatever the flag still says.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeDeferredOnlyOnceAllocated(Builder $query): Builder
+    {
+        return $query->where(
+            fn (Builder $entry): Builder => $entry
+                ->where('is_deferred', false)
+                ->orWhereHas('invoiceLines'),
+        );
+    }
+
+    /**
+     * Work that may appear on an invoice at all.
+     *
+     * Distinct from {@see scopeRetainerBillable()} in the predecessor, where it
+     * excluded only directly-billed subcontractor work. This schema records no
+     * billing mode, so the two currently coincide; they stay separate because
+     * the generator asks two different questions of them.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeBillableForInvoicing(Builder $query): Builder
+    {
         return $query->approved();
+    }
+
+    /**
+     * Work not yet attached to any invoice line.
+     *
+     * The predecessor tested a null column; here the absence of a pivot row is
+     * the equivalent, and the unique index on the pivot is what makes "no row"
+     * and "not billed" the same statement.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeUnbilled(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('invoiceLines');
     }
 
     // ── Billing engine surface ───────────────────────────────────────────────

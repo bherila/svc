@@ -76,13 +76,39 @@ final class AttachmentRecordResolver
             $record instanceof ClientTask => $record->is_visible_to_client
                 && $record->project->is_visible_to_client
                 && $this->portalAccess->canViewProject($user, $record->project),
+            // A proposal or agreement scoped to a project is reachable only by
+            // someone granted that project; one with no project belongs to the
+            // company and stays company-wide.
             $record instanceof ClientProposal => $record->is_visible_to_client
-                && in_array($record->status, ['sent', 'accepted'], true),
+                && in_array($record->status, ['sent', 'accepted'], true)
+                && $this->portalCanReachProjectOf($user, $record->clientCompany, $record->client_project_id),
             $record instanceof ClientAgreement => $record->is_visible_to_client
-                && in_array($record->status, ['active', 'paused', 'terminated', 'expired'], true),
+                && in_array($record->status, ['active', 'paused', 'terminated', 'expired'], true)
+                && $this->portalCanReachProjectOf($user, $record->clientCompany, $record->client_project_id),
             $record instanceof ClientInvoice => $record->is_visible_to_client
                 && in_array($record->status, ['issued', 'partially_paid', 'paid'], true),
             default => false,
         };
+    }
+
+    /**
+     * Can this portal user reach a record tied to this project?
+     *
+     * Null project means the record belongs to the company rather than to any
+     * one project, and stays visible to every portal user of that company.
+     */
+    private function portalCanReachProjectOf(?User $user, ?ClientCompany $company, ?int $projectId): bool
+    {
+        if ($projectId === null) {
+            return true;
+        }
+
+        if (! $company instanceof ClientCompany) {
+            return false;
+        }
+
+        $allowed = $this->portalAccess->visibleProjectIds($company, $user);
+
+        return $allowed === null || in_array($projectId, $allowed, true);
     }
 }

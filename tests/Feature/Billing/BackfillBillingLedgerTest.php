@@ -50,16 +50,16 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         [$invoice, $line, $agreement, $task] = $this->buildDestination();
 
-        $this->artisan('svc:billing:backfill-ledger')->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $invoice->refresh();
         $this->assertSame('cadence_period', $invoice->invoice_kind);
         $this->assertSame('2026-03-01', $invoice->cycle_start?->toDateString());
         $this->assertSame('2026-03-31', $invoice->cycle_end?->toDateString());
         $this->assertSame('2026-04-09', $invoice->paid_on?->toDateString());
-        $this->assertSame('10.00', (string) $invoice->retainer_hours_included);
-        $this->assertSame('12.50', (string) $invoice->hours_worked);
-        $this->assertSame('1.50', (string) $invoice->hours_billed_at_rate);
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
+        $this->assertSame('12.5000', (string) $invoice->hours_worked);
+        $this->assertSame('1.5000', (string) $invoice->hours_billed_at_rate);
 
         $line->refresh();
         // 1.7500h is not a whole number of minutes; it must survive exactly.
@@ -77,16 +77,16 @@ final class BackfillBillingLedgerTest extends TestCase
         // Source decimal currency becomes integer minor units.
         $this->assertSame(18750, $task->milestone_price_amount);
 
-        $this->artisan('svc:billing:backfill-ledger')->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
         $invoice->refresh();
-        $this->assertSame('10.00', (string) $invoice->retainer_hours_included);
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
-    public function test_dry_run_writes_nothing(): void
+    public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();
 
-        $this->artisan('svc:billing:backfill-ledger', ['--dry-run' => true])->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -96,7 +96,7 @@ final class BackfillBillingLedgerTest extends TestCase
         [$invoice] = $this->buildDestination();
         $invoice->forceFill(['invoice_kind' => 'corrected_by_hand'])->save();
 
-        $this->artisan('svc:billing:backfill-ledger')->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $this->assertSame('corrected_by_hand', $invoice->refresh()->invoice_kind);
     }
@@ -111,7 +111,7 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('client_invoice_id', 501)
             ->update(['hours_worked' => '99.00']);
 
-        $this->artisan('svc:billing:backfill-ledger')->assertFailed();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertFailed();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -124,7 +124,7 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('source_table', 'client_invoices')
             ->update(['source_identity_hash' => str_repeat('f', 64)]);
 
-        $this->artisan('svc:billing:backfill-ledger')->assertSuccessful();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
 
         $this->assertNull($invoice->refresh()->invoice_kind);
     }
@@ -133,7 +133,7 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         Config::set('external-import.sources.external.read_only', false);
 
-        $this->artisan('svc:billing:backfill-ledger')->assertFailed();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertFailed();
     }
 
     private function buildSource(): void
@@ -162,6 +162,30 @@ final class BackfillBillingLedgerTest extends TestCase
         ]);
         $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50']);
         $source->table('client_time_entries')->insert(['id' => 601, 'job_type' => 'Support']);
+    }
+
+    /**
+     * The command writes billing data, so it must name the tenant it is
+     * repairing. Without this it silently walked every workspace imported from
+     * the same source.
+     */
+    public function test_it_refuses_to_run_without_a_workspace(): void
+    {
+        $this->buildDestination();
+
+        $this->artisan('svc:billing:backfill-ledger')->assertFailed();
+    }
+
+    public function test_it_refuses_an_unknown_workspace(): void
+    {
+        $this->buildDestination();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => 'no-such-workspace', '--apply' => true])->assertFailed();
+    }
+
+    private function workspacePublicId(): string
+    {
+        return (string) Workspace::query()->where('slug', 'ledger')->value('public_id');
     }
 
     /** @return array{ClientInvoice, ClientInvoiceLine, ClientAgreement, ClientTask} */

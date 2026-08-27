@@ -2,10 +2,13 @@
 
 namespace App\Services\Authorization;
 
+use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -65,6 +68,69 @@ final class PortalAccess
             ->all();
 
         return array_values(array_map(static fn (mixed $id): int => (int) $id, $ids));
+    }
+
+    /**
+     * Narrow a project query to what a portal user may see.
+     *
+     * The same decision as {@see canViewProject()}, expressed where a list is
+     * built rather than where one record is checked. Without it the read API
+     * authorised portal users company-wide - a user narrowed to one project
+     * could list every client-visible project, task and time entry the company
+     * had, which is the hole the narrowing exists to close, on another surface.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $projects  a query over `client_projects`
+     * @param  User|AgentPrincipal|null  $viewer  null sees nothing
+     * @return Builder<TModel>
+     */
+    public function constrainProjectQuery(Builder $projects, User|AgentPrincipal|null $viewer): Builder
+    {
+        if ($viewer === null) {
+            return $projects->whereRaw('1 = 0');
+        }
+
+        // Portal users reach the read API through an agent principal, which
+        // carries the acting user's key. Matching on the key rather than the
+        // class is what the surrounding authorization already does; requiring a
+        // User here returned nothing for every real portal caller.
+        $viewerId = $viewer->getAuthIdentifier();
+
+        // Deliberately not a visibility check. This answers "which projects has
+        // this portal user been granted", and each caller adds the visibility
+        // rule that belongs to what it is listing - a project or task is shown
+        // when the project is client-visible, a time entry when the entry is.
+        // Folding visibility in here silently narrowed time entries to
+        // client-visible projects, which was never the rule.
+        return $projects
+            ->whereHas('clientCompany.portalUsers', fn (Builder $users): Builder => $users->whereKey($viewerId))
+            ->where(function (Builder $scope) use ($viewerId): void {
+                // Unrestricted membership: the whole company's portal.
+                $scope->whereExists(function (QueryBuilder $sub) use ($viewerId): void {
+                    $sub->selectRaw('1')
+                        ->from('client_company_memberships')
+                        ->whereColumn('client_company_memberships.client_company_id', 'client_projects.client_company_id')
+                        ->where('client_company_memberships.user_id', $viewerId)
+                        ->where(function (QueryBuilder $unrestricted): void {
+                            $unrestricted->whereNull('client_company_memberships.access_scope')
+                                ->orWhere('client_company_memberships.access_scope', '!=', ClientCompanyMembership::SCOPE_PROJECTS);
+                        });
+                })
+                    // Or narrowed, and this project is one of the grants.
+                    ->orWhereExists(function (QueryBuilder $sub) use ($viewerId): void {
+                        $sub->selectRaw('1')
+                            ->from('client_portal_project_access')
+                            ->join(
+                                'client_company_memberships',
+                                'client_company_memberships.id',
+                                '=',
+                                'client_portal_project_access.client_company_membership_id',
+                            )
+                            ->whereColumn('client_portal_project_access.client_project_id', 'client_projects.id')
+                            ->where('client_company_memberships.user_id', $viewerId);
+                    });
+            });
     }
 
     /**

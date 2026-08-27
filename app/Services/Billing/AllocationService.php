@@ -98,6 +98,11 @@ final class AllocationService
 
         // Fragments start identical. If one has since been approved, deferred, or
         // made billable on its own, it is no longer the same piece of work.
+        // Every field merge() would discard belongs here. It keeps the
+        // survivor's values and deletes the rest, so a fragment edited on its
+        // own - a corrected date, a rewritten description, a reassignment -
+        // would have that edit silently thrown away and its minutes folded in
+        // under the survivor's version.
         $signature = fn (ClientTimeEntry $entry): string => implode('|', [
             $entry->status,
             (int) $entry->is_billable,
@@ -105,6 +110,13 @@ final class AllocationService
             (int) $entry->is_visible_to_client,
             $entry->billing_rate_amount ?? 'null',
             $entry->currency ?? 'null',
+            (string) $entry->worked_on,
+            (string) $entry->description,
+            (string) $entry->client_visible_description,
+            $entry->client_project_id ?? 'null',
+            $entry->client_task_id ?? 'null',
+            $entry->user_id ?? 'null',
+            $entry->subcontractor_cost_amount ?? 'null',
         ]);
 
         $first = $signature($group->first());

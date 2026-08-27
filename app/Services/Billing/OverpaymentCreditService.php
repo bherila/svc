@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Services\Billing\Balances\OverpaymentLedger;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 
 /**
  * Tracks overpayment-derived credits for a client company and applies them
@@ -120,8 +121,13 @@ class OverpaymentCreditService
         // Remove any stale credit lines from a previous regeneration pass.
         $invoice->lines()->where('type', InvoiceLineType::Credit->value)->delete();
 
+        // The stored totals were reduced by the credit line just deleted, and
+        // issue() trusts them. Recalculate on every path out of here, not only
+        // the one that writes a replacement.
         $available = $this->availableCreditForCompany($company, (string) $invoice->currency);
         if ($available <= 0.0) {
+            $this->recalculateTotals($invoice);
+
             return;
         }
 
@@ -131,6 +137,8 @@ class OverpaymentCreditService
         $subtotal = ((int) $invoice->lines()->sum('total_amount')) / 100;
         $applied = round(min($available, max(0.0, $subtotal)), 2);
         if ($applied <= 0.0) {
+            $this->recalculateTotals($invoice);
+
             return;
         }
 
@@ -167,7 +175,7 @@ class OverpaymentCreditService
             ->where('client_invoices.workspace_id', $company->workspace_id)
             ->where('client_invoices.client_company_id', $company->id)
             ->where('client_invoices.currency', $currency)
-            ->whereIn('client_invoices.status', ['issued', 'partially_paid', 'paid'])
+            ->whereIn('client_invoices.status', InvoiceStatus::charged())
             ->where('client_invoice_lines.type', InvoiceLineType::Credit->value)
             ->sum('client_invoice_lines.total_amount');
 
@@ -182,16 +190,14 @@ class OverpaymentCreditService
      */
     protected function recalculateTotals(ClientInvoice $invoice): void
     {
-        $subtotal = (int) $invoice->lines()->sum('total_amount');
-        $tax = (int) $invoice->lines()->sum('tax_amount');
-        $total = $subtotal + $tax;
+        $totals = ClientInvoice::totalsFromLines(
+            (int) $invoice->lines()->sum('total_amount'),
+            (int) $invoice->lines()->sum('tax_amount'),
+        );
         $paid = (int) $invoice->paid_amount;
 
-        $invoice->forceFill([
-            'subtotal_amount' => $subtotal,
-            'tax_amount' => $tax,
-            'total_amount' => $total,
-            'balance_amount' => max(0, $total - $paid),
+        $invoice->forceFill($totals + [
+            'balance_amount' => ClientInvoice::balanceOwed($totals['total_amount'], $paid),
         ])->save();
     }
 }

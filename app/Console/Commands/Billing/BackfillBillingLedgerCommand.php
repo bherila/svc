@@ -3,12 +3,14 @@
 namespace App\Console\Commands\Billing;
 
 use App\Services\ExternalImport\Fingerprint;
+use App\Services\ExternalImport\RestoreAgreementVerifier;
 use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Restores columns an earlier import discarded, reading from the same guarded
@@ -24,13 +26,19 @@ use Illuminate\Support\Facades\DB;
  * Safe to re-run: it only ever writes a column that is still empty, so it cannot
  * overwrite a value the destination has since decided, and a partial run simply
  * resumes.
+ *
+ * Unlike the replay and the rehearsal, this one does write - that is its
+ * purpose. It writes only under `--apply`, and only if every check passes: the
+ * whole repair is one transaction, so a source it decides not to trust leaves
+ * the ledger exactly as it found it.
  */
 final class BackfillBillingLedgerCommand extends Command
 {
     protected $signature = 'svc:billing:backfill-ledger
         {--source=external : Allowlisted read-only source key from config/external-import.php}
-        {--workspace= : Restrict to ledger rows imported into one workspace public id}
-        {--dry-run : Report what would change without writing}';
+        {--workspace= : Required. Ledger rows imported into this workspace public id, and no other}
+        {--apply : Write the repairs. Without it the command reports what would change and writes nothing}
+        {--accept-drift= : Comma-separated destination columns allowed to differ from the source, for a declared restore that kept being used}';
 
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
 
@@ -45,7 +53,17 @@ final class BackfillBillingLedgerCommand extends Command
 
     private string $destination;
 
-    private ?int $workspaceId = null;
+    private int $workspaceId;
+
+    /**
+     * A declared restore is verified column by column instead.
+     *
+     * The whole-row hash cannot distinguish a renumbering from a rewrite, so
+     * against a source that kept being used it rejects everything. The column
+     * comparison answers the same question with names attached, and runs once
+     * up front rather than per row.
+     */
+    private bool $skipRowFingerprint = false;
 
     public function handle(SourceGuard $guard): int
     {
@@ -64,38 +82,126 @@ final class BackfillBillingLedgerCommand extends Command
         // either find nothing or touch an unrelated database.
         $this->destination = (string) (Config::get('external-import.destination_connection') ?: Config::get('database.default'));
 
-        if (is_string($workspacePublicId = $this->option('workspace')) && $workspacePublicId !== '') {
-            $id = $this->db()->table('workspaces')->where('public_id', $workspacePublicId)->value('id');
-            if ($id === null) {
-                $this->components->error('No workspace matches that public id.');
+        // Required, not defaulted. Omitting it previously dropped every
+        // workspace predicate below, so a repair aimed at one onboarding would
+        // walk every tenant imported from the same source.
+        $workspacePublicId = $this->option('workspace');
+        if (! is_string($workspacePublicId) || $workspacePublicId === '') {
+            $this->components->error('--workspace is required; this command writes billing data and must name its tenant.');
 
-                return self::FAILURE;
-            }
-            $this->workspaceId = (int) $id;
+            return self::FAILURE;
         }
 
-        $dryRun = (bool) $this->option('dry-run');
+        $id = $this->db()->table('workspaces')->where('public_id', $workspacePublicId)->value('id');
+        if ($id === null) {
+            $this->components->error('No workspace matches that public id.');
+
+            return self::FAILURE;
+        }
+        $this->workspaceId = (int) $id;
+
+        // Reporting is the default and writing is the flag, not the other way
+        // round. This command points at production data, and a run that was
+        // meant to be a look should not become a write because an operator
+        // forgot an option.
+        $dryRun = ! (bool) $this->option('apply');
         $identityHash = (string) $source['identity_hash'];
-        $this->components->info($dryRun ? 'Dry run - nothing will be written.' : 'Backfilling from the external source.');
+        $this->components->info($dryRun
+            ? 'Reporting only - nothing will be written. Pass --apply to write.'
+            : 'Backfilling from the external source.');
 
-        $totals = [];
-        foreach ([
-            'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
-            'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
-            'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
-            'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
-            'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
-        ] as $label => $step) {
-            $result = $step();
-            $totals[$label] = $result;
-            $this->components->twoColumnDetail(
-                $label,
-                sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
-            );
+        // Say it plainly when the source is standing in for another. An
+        // operator reading this output should never have to check the
+        // environment to learn which database the rows are being matched to.
+        // SourceGuard normalises an empty declaration to null, so presence is
+        // the whole test.
+        $declaredRestore = $source['declared_restore_of'] ?? null;
+        if ($declaredRestore !== null) {
+            $this->components->warn(sprintf(
+                'Reading %s, declared a restore of %s. Ledger rows are matched as if they came from %s, '.
+                'and the restore is compared column by column against what the importer wrote.',
+                (string) ($source['config']['database'] ?? '?'),
+                $declaredRestore,
+                $declaredRestore,
+            ));
         }
+
+        if ($declaredRestore !== null) {
+            $verdict = $this->verifyRestore($legacy, $identityHash);
+            if ($verdict !== self::SUCCESS) {
+                return $verdict;
+            }
+        }
+
+        // One transaction over every table. The unmatched and fingerprint
+        // checks below can only be answered after the whole source has been
+        // walked, and both of them mean "do not repair this ledger" - so the
+        // writes have to still be undoable when they are asked. Without this
+        // the command committed the tables it had finished, then returned
+        // failure, leaving a ledger half repaired from a source it had just
+        // decided not to trust.
+        $this->db()->beginTransaction();
+
+        try {
+            $totals = [];
+            foreach ([
+                'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
+                'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
+                'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
+                'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
+                'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
+            ] as $label => $step) {
+                $result = $step();
+                $totals[$label] = $result;
+                $this->components->twoColumnDetail(
+                    $label,
+                    sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
+                );
+            }
+
+            $verdict = $this->verdictFor($totals, $declaredRestore);
+        } catch (Throwable $e) {
+            $this->db()->rollBack();
+
+            throw $e;
+        }
+
+        if ($dryRun || $verdict !== self::SUCCESS) {
+            $this->db()->rollBack();
+
+            return $verdict;
+        }
+
+        $this->db()->commit();
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Whether what was found justifies keeping the repairs.
+     *
+     * @param  array<string, array{matched:int, written:int, unmatched:int, changed:int}>  $totals
+     */
+    private function verdictFor(array $totals, ?string $declaredRestore): int
+    {
 
         $unmatched = array_sum(array_column($totals, 'unmatched'));
         if ($unmatched > 0) {
+            // A partial source is ordinary - an onboarding may import a subset.
+            // A partial *restore* is not: declaring one asserts it holds the
+            // rows the ledger recorded, so a gap means the declaration is
+            // wrong, and repairing half a ledger from it would be worse than
+            // repairing none.
+            if ($declaredRestore !== null) {
+                $this->components->error(
+                    "{$unmatched} source rows had no ledger mapping. A database declared a restore of ".
+                    "{$declaredRestore} must contain every row the ledger recorded; this one does not, ".
+                    'so the declaration does not hold.'
+                );
+
+                return self::FAILURE;
+            }
+
             $this->components->warn("{$unmatched} source rows had no ledger mapping for this source and were skipped.");
         }
 
@@ -133,10 +239,10 @@ final class BackfillBillingLedgerCommand extends Command
             ->where('source_identity_hash', $identityHash)
             ->where('status', 'imported')
             ->whereNotNull('target_public_id')
-            ->when($this->workspaceId !== null, fn ($query) => $query->whereIn(
+            ->whereIn(
                 'external_import_run_id',
                 $this->db()->table('external_import_runs')->where('workspace_id', $this->workspaceId)->select('id'),
-            ))
+            )
             ->get(['source_key', 'target_public_id', 'source_fingerprint']);
 
         if ($items->isEmpty()) {
@@ -145,7 +251,7 @@ final class BackfillBillingLedgerCommand extends Command
 
         $internal = $this->db()->table($destinationTable)
             ->whereIn('public_id', $items->pluck('target_public_id')->all())
-            ->when($this->workspaceId !== null, fn ($query) => $query->where('workspace_id', $this->workspaceId))
+            ->where('workspace_id', $this->workspaceId)
             ->pluck('id', 'public_id');
 
         $map = [];
@@ -182,7 +288,7 @@ final class BackfillBillingLedgerCommand extends Command
             return null;
         }
 
-        if (Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
+        if (! $this->skipRowFingerprint && Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
             $counters['changed']++;
 
             return null;
@@ -227,9 +333,117 @@ final class BackfillBillingLedgerCommand extends Command
         if (! $dryRun) {
             $this->db()->table($table)
                 ->where('id', $id)
-                ->when($this->workspaceId !== null, fn ($query) => $query->where('workspace_id', $this->workspaceId))
+                ->where('workspace_id', $this->workspaceId)
                 ->update($changes);
         }
+    }
+
+    /**
+     * Compare the declared restore against what the importer wrote, and refuse
+     * unless every difference has been named.
+     */
+    private function verifyRestore(ConnectionInterface $legacy, string $identityHash): int
+    {
+        // Accepted entries are `table.column`. A bare column name is refused
+        // rather than guessed at: it would have to mean "on every table", which
+        // is exactly the over-acceptance this qualification exists to prevent.
+        $accepted = array_values(array_filter(array_map(
+            trim(...),
+            explode(',', (string) ($this->option('accept-drift') ?? '')),
+        ), static fn (string $c): bool => $c !== ''));
+
+        $unqualified = array_values(array_filter($accepted, static fn (string $c): bool => ! str_contains($c, '.')));
+        if ($unqualified !== []) {
+            $this->components->error(sprintf(
+                'Name each accepted difference as table.column: %s. A bare column name would waive that '.
+                'column on every table, including ones carrying money.',
+                implode(', ', $unqualified),
+            ));
+
+            return self::FAILURE;
+        }
+
+        $verifier = new RestoreAgreementVerifier;
+        $drift = [];
+        $compared = 0;
+        $missing = [];
+
+        foreach (RestoreAgreementVerifier::comparableColumns() as $table => $_) {
+            $idMap = array_map(static fn (array $m): int => $m['id'], $this->idMap($table, $table, $identityHash));
+            if ($idMap === []) {
+                // The ledger recorded nothing from this table, so there is
+                // nothing to compare and no reason to touch it in the source.
+                continue;
+            }
+
+            $result = $verifier->verify(
+                $legacy,
+                $table,
+                self::SOURCE_KEYS[$table],
+                $table,
+                $this->destination,
+                $idMap,
+            );
+            $compared += $result['compared'];
+            if ($result['missing'] > 0) {
+                $missing[$table] = $result['missing'];
+            }
+
+            foreach ($result['drift'] as $column => $count) {
+                // Qualified by table. `total_amount` exists on invoices and on
+                // invoice lines, `description` on lines and on time entries, so
+                // a flat map let a harmless accepted drift on one table waive a
+                // money column on another - and this is the only gate between a
+                // rewritten source and the backfill.
+                $drift["{$table}.{$column}"] = ($drift["{$table}.{$column}"] ?? 0) + $count;
+            }
+        }
+
+        $this->components->twoColumnDetail('rows verified against the import', (string) $compared);
+
+        if ($missing !== []) {
+            foreach ($missing as $table => $count) {
+                $this->components->twoColumnDetail("  {$table}", sprintf('%d imported row(s) absent from the restore', $count));
+            }
+
+            $this->components->error(
+                'The restore is missing rows the ledger says were imported from this source. It is not the '.
+                'same data, so nothing it agrees with proves anything; restore the full source and run again.',
+            );
+
+            return self::FAILURE;
+        }
+
+        $unexpected = array_diff_key($drift, array_flip($accepted));
+
+        foreach ($drift as $column => $count) {
+            $this->components->twoColumnDetail(
+                "  {$column}",
+                sprintf('%d row(s) differ%s', $count, in_array($column, $accepted, true) ? ' - accepted' : ''),
+            );
+        }
+
+        if ($unexpected !== []) {
+            $this->components->error(sprintf(
+                'The restore no longer agrees with what was imported, in %s. Money and dates are '.
+                'compared here, so review these before deciding. If the change is intended, re-run with '.
+                '--accept-drift=%s.',
+                implode(', ', array_keys($unexpected)),
+                implode(',', array_keys($unexpected)),
+            ));
+
+            return self::FAILURE;
+        }
+
+        if ($drift === []) {
+            $this->components->info('The restore matches what was imported on every compared column.');
+        }
+
+        // Verified by comparison; the whole-row hash would now only re-reject
+        // the drift that has just been examined and accepted.
+        $this->skipRowFingerprint = true;
+
+        return self::SUCCESS;
     }
 
     /** @return array{matched:int,written:int,unmatched:int,changed:int} */
@@ -263,6 +477,8 @@ final class BackfillBillingLedgerCommand extends Command
                     'unused_hours_balance' => $row->unused_hours_balance ?? null,
                     'negative_hours_balance' => $row->negative_hours_balance ?? null,
                     'hours_billed_at_rate' => $row->hours_billed_at_rate ?? null,
+                    'starting_unused_hours' => $row->starting_unused_hours ?? null,
+                    'starting_negative_hours' => $row->starting_negative_hours ?? null,
                 ], $dryRun, $counters);
             }
         });

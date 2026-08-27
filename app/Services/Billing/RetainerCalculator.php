@@ -92,6 +92,23 @@ class RetainerCalculator
         return $effectiveDays / $naturalDays;
     }
 
+    /**
+     * How many retainer hours a month actually grants.
+     *
+     * The fee for a partly-covered month is prorated, and so is the ledger's
+     * capacity - but the monthly generation path read `monthly_retainer_hours`
+     * straight off the agreement in three places, so an agreement starting on
+     * the 15th was charged half a retainer and granted a whole month's pool.
+     * Both questions have one answer now.
+     */
+    public function retainerHoursForMonth(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
+    {
+        return round(
+            $agreement->retainerHoursPerMonth() * $this->monthRetainerMultiplier($agreement, $monthStart, $monthEnd),
+            4,
+        );
+    }
+
     public function monthRetainerMultiplier(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
         $activeDate = Carbon::parse($agreement->starts_on)->startOfDay();
@@ -117,7 +134,17 @@ class RetainerCalculator
             return 1.0;
         }
 
-        if ($agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod) {
+        // FirstCycleProration says what happens to the *first* cycle. Applying
+        // it to any partial month also grants a full month's capacity in a
+        // termination month, which understates the overage the client owes.
+        $agreementStart = $agreement->starts_on === null
+            ? null
+            : Carbon::parse((string) $agreement->starts_on)->startOfDay();
+
+        $isOpeningMonth = $agreementStart !== null
+            && $agreementStart->betweenIncluded($monthStart, $monthEnd);
+
+        if ($isOpeningMonth && $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod) {
             return 1.0;
         }
 

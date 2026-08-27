@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoiceStatus;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -19,7 +20,7 @@ final class InvoiceEmailService
         if ($workspace !== null && ! $this->workspaceAuthorization->isOwnedBy($workspace, $invoice)) {
             throw new DomainException('Invoice does not belong to this workspace.');
         }
-        if (! in_array($invoice->status, ['issued', 'partially_paid'], true)) {
+        if (! in_array($invoice->status, InvoiceStatus::collectible(), true)) {
             throw new DomainException('Only collectible issued invoices can be emailed.');
         }
         $recipients = array_values(array_unique(array_filter(array_map('trim', $recipients))));

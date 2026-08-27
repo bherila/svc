@@ -42,6 +42,15 @@ class ClientPortalController extends Controller
             ->where('client_company_id', $clientCompany->id)
             ->where('is_visible_to_client', true)
             ->whereIn('status', ['sent', 'accepted'])
+            // Proposals and agreements carry a project too, so a user narrowed
+            // to one project must not read another's rates, retainer or terms -
+            // nor accept a proposal that was never theirs.
+            ->when(
+                $visibleProjectIds !== null,
+                fn ($query) => $query->where(fn ($scope) => $scope
+                    ->whereNull('client_project_id')
+                    ->orWhereIn('client_project_id', $visibleProjectIds ?? [])),
+            )
             ->with(['items' => fn ($query) => $query->orderBy('sort_order')->orderBy('id')])
             ->latest('id')
             ->get();
@@ -51,6 +60,12 @@ class ClientPortalController extends Controller
             ->where('client_company_id', $clientCompany->id)
             ->where('is_visible_to_client', true)
             ->where('status', '!=', 'draft')
+            ->when(
+                $visibleProjectIds !== null,
+                fn ($query) => $query->where(fn ($scope) => $scope
+                    ->whereNull('client_project_id')
+                    ->orWhereIn('client_project_id', $visibleProjectIds ?? [])),
+            )
             ->latest('id')
             ->get();
 
@@ -92,6 +107,10 @@ class ClientPortalController extends Controller
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
             ->where('is_visible_to_client', true)
+            // Visibility is the worker's intent; approval is the gate. An entry
+            // is created as a draft, so filtering on visibility alone showed
+            // clients work nobody had approved - and work later rejected.
+            ->approved()
             ->whereIn('client_project_id', $clientCompany->projects->pluck('id'))
             ->orderByDesc('worked_on')
             ->orderByDesc('id')

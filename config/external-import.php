@@ -15,6 +15,14 @@ return [
         'external' => [
             'connection' => env('EXTERNAL_IMPORT_CONNECTION', 'external'),
             'read_only' => env('EXTERNAL_IMPORT_READ_ONLY', false),
+
+            // Set only when this database is a restore of a source that has
+            // moved or been emptied, naming the database the import ledger
+            // recorded. It changes the identity used to match ledger rows and
+            // nothing about which database is read. Never inferred: a source
+            // substitution has to be stated, and it is still checked row by row
+            // against the fingerprints taken at import.
+            'restore_of_database' => env('EXTERNAL_IMPORT_RESTORE_OF_DATABASE'),
             'config' => [
                 'driver' => env('EXTERNAL_IMPORT_DRIVER', 'mysql'),
                 'host' => env('EXTERNAL_IMPORT_HOST'),

@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoiceStatus;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -38,7 +39,7 @@ final class StripePaymentIntentService
     /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
     private function createLocked(ClientInvoice $invoice, ?Workspace $workspace, ?string $paymentMethodId, string $idempotencyKey): array
     {
-        if (! in_array($invoice->status, ['issued', 'partially_paid'], true)) {
+        if (! in_array($invoice->status, InvoiceStatus::collectible(), true)) {
             throw new DomainException('Stripe payment intents require an issued invoice with a balance.');
         }
         if ($invoice->balance_amount <= 0) {

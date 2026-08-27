@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -51,5 +52,58 @@ class ClientCompany extends Model implements WorkspaceOwned
     public function projects(): HasMany
     {
         return $this->hasMany(ClientProject::class);
+    }
+
+    /** @return HasMany<ClientAgreement, $this> */
+    public function agreements(): HasMany
+    {
+        return $this->hasMany(ClientAgreement::class);
+    }
+
+    /** @return HasMany<ClientInvoice, $this> */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(ClientInvoice::class);
+    }
+
+    /** @return HasMany<ClientTimeEntry, $this> */
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(ClientTimeEntry::class);
+    }
+
+    /**
+     * The agreement in force today, if any.
+     *
+     * "Active" means status plus dates: a row can be marked active and still be
+     * outside its own term, and invoice generation must not bill against one
+     * that has ended.
+     */
+    public function activeAgreement(): ?ClientAgreement
+    {
+        $today = CarbonImmutable::now()->startOfDay();
+
+        return $this->agreements()
+            ->where('workspace_id', $this->workspace_id)
+            ->where('status', 'active')
+            ->where(fn ($query) => $query->whereNull('starts_on')->orWhere('starts_on', '<=', $today->toDateString()))
+            ->where(fn ($query) => $query->whereNull('ends_on')->orWhere('ends_on', '>=', $today->toDateString()))
+            ->orderByDesc('starts_on')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * The most recent agreement of any state, used as the fallback so trailing
+     * post-termination work can still be invoiced after the term has ended.
+     */
+    public function mostRecentAgreement(): ?ClientAgreement
+    {
+        return $this->agreements()
+            ->where('workspace_id', $this->workspace_id)
+            ->where('status', '!=', 'draft')
+            ->orderByDesc('starts_on')
+            ->orderByDesc('id')
+            ->first();
     }
 }
