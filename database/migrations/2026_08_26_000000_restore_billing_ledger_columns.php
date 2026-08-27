@@ -46,6 +46,12 @@ return new class extends Migration
 
         Schema::table('client_agreements', function (Blueprint $table): void {
             $table->unsignedInteger('catch_up_threshold_minutes')->nullable()->after('retainer_minutes');
+            // Period-level overrides: the retainer for one whole billing cycle, used
+            // in preference to the monthly figure times the cycle length. Six of the
+            // nine source agreements set the hours override, so this is the ordinary
+            // path, not an edge case.
+            $table->unsignedInteger('period_retainer_minutes')->nullable()->after('catch_up_threshold_minutes');
+            $table->unsignedBigInteger('period_retainer_amount')->nullable()->after('period_retainer_minutes');
             $table->unsignedInteger('rollover_months')->nullable()->after('rollover_policy');
             $table->unsignedInteger('initial_rollover_minutes')->nullable()->after('rollover_months');
             // Nullable, not false-by-default: a backfill has to tell an unset flag from a
@@ -68,7 +74,8 @@ return new class extends Migration
 
         Schema::table('client_agreements', function (Blueprint $table): void {
             $table->dropColumn([
-                'catch_up_threshold_minutes', 'rollover_months', 'initial_rollover_minutes',
+                'catch_up_threshold_minutes', 'period_retainer_minutes', 'period_retainer_amount',
+                'rollover_months', 'initial_rollover_minutes',
                 'bill_overage_interim', 'first_cycle_proration', 'agreement_link',
             ]);
         });

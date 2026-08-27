@@ -314,6 +314,8 @@ final class BackfillBillingLedgerCommand extends Command
                     // Hours here are whole or half hours in practice; minutes is exact
                     // for them and matches how the schema stores retainer_minutes.
                     'catch_up_threshold_minutes' => $this->minutes($row->catch_up_threshold_hours ?? null),
+                    'period_retainer_minutes' => $this->minutes($row->retainer_hours ?? null),
+                    'period_retainer_amount' => isset($row->retainer_fee) ? (int) round((float) $row->retainer_fee * 100) : null,
                     'rollover_months' => isset($row->rollover_months) ? (int) $row->rollover_months : null,
                     'initial_rollover_minutes' => $this->minutes($row->initial_rollover_hours ?? null),
                     // Nullable on purpose: an unset flag has to stay distinguishable
