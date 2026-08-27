@@ -24,6 +24,12 @@ See [the architecture](docs/architecture.md), [the product roadmap](docs/onboard
 [the private file storage plan](docs/file-storage-plan.md), and
 [the external data import contract](docs/external-data-import.md).
 
+For the billing rules themselves — retainer draw-down, rollover, cadence
+cycles, deferred allocation, milestones, and overpayment credits — see
+[client management and invoicing](docs/client-management/README.md). That
+reference states the intended behaviour and marks which parts SVC implements
+today.
+
 ## Local development
 
 ```bash
