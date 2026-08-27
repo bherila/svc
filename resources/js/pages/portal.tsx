@@ -85,11 +85,24 @@ type PortalCompany = {
             description: string | null;
             status: string;
         }>;
+        time_entries: Array<{
+            id: string;
+            worked_on: string;
+            minutes: number;
+            description: string | null;
+        }>;
     }>;
 };
 
 const displayDate = (value: string | null) =>
     value ? value.slice(0, 10) : '—';
+
+const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+
+    return hours > 0 ? `${hours}h ${rest}m` : `${rest}m`;
+};
 
 const displayMoney = (amount: number | null, currency: string) =>
     amount === null
@@ -456,6 +469,37 @@ export default function Portal({ company }: { company: PortalCompany }) {
                                         </li>
                                     ))}
                                 </ul>
+                                {project.time_entries.length > 0 && (
+                                    <div className="mt-6 border-t border-white/10 pt-5">
+                                        <h3 className="text-sm font-semibold text-slate-300">
+                                            Time on this project
+                                        </h3>
+                                        <ul className="mt-3 space-y-2">
+                                            {project.time_entries.map(
+                                                (entry) => (
+                                                    <li
+                                                        key={entry.id}
+                                                        className="flex justify-between gap-4 text-sm"
+                                                    >
+                                                        <span className="text-slate-300">
+                                                            {entry.description ??
+                                                                'Work performed'}
+                                                        </span>
+                                                        <span className="shrink-0 text-slate-400 tabular-nums">
+                                                            {displayDate(
+                                                                entry.worked_on,
+                                                            )}{' '}
+                                                            ·{' '}
+                                                            {formatDuration(
+                                                                entry.minutes,
+                                                            )}
+                                                        </span>
+                                                    </li>
+                                                ),
+                                            )}
+                                        </ul>
+                                    </div>
+                                )}
                             </article>
                         ))}
                     </section>

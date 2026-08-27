@@ -35,6 +35,7 @@ class ClientTask extends Model implements WorkspaceOwned
         return [
             'is_visible_to_client' => 'boolean',
             'completed_at' => 'immutable_datetime',
+            'milestone_price_amount' => 'integer',
         ];
     }
 

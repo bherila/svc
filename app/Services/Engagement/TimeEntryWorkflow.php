@@ -48,6 +48,8 @@ class TimeEntryWorkflow
             'is_billable' => $attributes['is_billable'] ?? true,
             'is_deferred' => $attributes['is_deferred'] ?? false,
             'billing_rate_amount' => $attributes['billing_rate_amount'] ?? null,
+            // A rate supplied at creation is recorded, not inferred.
+            'billing_rate_source' => isset($attributes['billing_rate_amount']) ? 'explicit' : null,
             'currency' => isset($attributes['currency']) ? strtoupper($attributes['currency']) : null,
             'status' => 'draft',
         ]);

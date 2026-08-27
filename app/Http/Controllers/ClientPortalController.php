@@ -7,21 +7,31 @@ use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
+use App\Services\Authorization\PortalAccess;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ClientPortalController extends Controller
 {
+    public function __construct(private readonly PortalAccess $portalAccess) {}
+
     public function show(ClientCompany $clientCompany): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
         $workspace = $clientCompany->workspace;
+        // The portal is a web surface; an agent principal never reaches it.
+        $viewer = request()->user();
+        $viewer = $viewer instanceof User ? $viewer : null;
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
 
-        $clientCompany->load(['projects' => function ($query) use ($clientCompany): void {
+        $clientCompany->load(['projects' => function ($query) use ($clientCompany, $visibleProjectIds): void {
             $query->where('workspace_id', $clientCompany->workspace_id)
                 ->where('is_visible_to_client', true)
+                ->when($visibleProjectIds !== null, fn ($scoped) => $scoped->whereIn('id', $visibleProjectIds))
                 ->with(['tasks' => fn ($taskQuery) => $taskQuery
                     ->where('workspace_id', $clientCompany->workspace_id)
                     ->where('is_visible_to_client', true)]);
@@ -78,6 +88,16 @@ class ClientPortalController extends Controller
                 'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
             ])->values()->all();
 
+        $timeByProject = ClientTimeEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('is_visible_to_client', true)
+            ->whereIn('client_project_id', $clientCompany->projects->pluck('id'))
+            ->orderByDesc('worked_on')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('client_project_id');
+
         $projectPayload = [];
 
         foreach ($clientCompany->projects as $project) {
@@ -98,6 +118,18 @@ class ClientPortalController extends Controller
                 'description' => $project->description,
                 'status' => $project->status,
                 'tasks' => $taskPayload,
+                // Read-only. Rates, costs, and internal descriptions never cross this line;
+                // no client-reachable route writes time.
+                'time_entries' => ($timeByProject->get($project->id) ?? collect())
+                    ->map(fn (ClientTimeEntry $entry): array => [
+                        'id' => $entry->public_id,
+                        'worked_on' => $entry->worked_on->toDateString(),
+                        'minutes' => $entry->minutes,
+                        // No fallback to the internal description. A row without a
+                        // client-safe description has not been cleared for the
+                        // client, and the internal note may say anything.
+                        'description' => $entry->client_visible_description,
+                    ])->values()->all(),
             ];
         }
 
