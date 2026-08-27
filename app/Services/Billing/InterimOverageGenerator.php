@@ -169,6 +169,9 @@ final class InterimOverageGenerator
                 ->where('is_billable', true)
                 ->where('is_deferred', false)
                 ->retainerBillable()
+                // Missing here until now: an interim overage drew on every
+                // project's time even when the agreement covered only one.
+                ->forAgreementScope($agreement)
                 ->whereBetween('worked_on', [$periodStart->toDateString(), $periodEnd->toDateString()])
                 ->orderBy('worked_on')
                 ->orderBy('id')

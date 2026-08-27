@@ -1245,20 +1245,11 @@ final class ClientInvoicingService
             ->unbilled()
             ->where('is_billable', true)
             ->where('is_deferred', false)
-            // Flat-hourly subcontractor work is billed additively by the
-            // composer at the rate snapshotted on the entry. Letting the
-            // retainer allocator claim it first leaves the composer nothing to
-            // bill, so the work is absorbed by the retainer or charged at the
-            // agreement rate instead of the contractor's.
-            ->whereNull('subcontractor_cost_amount')
+            // Both conditions live on the model now. They were written out here
+            // and nowhere else, which is exactly how the interim generator and
+            // the ledger ended up without them.
             ->retainerBillable()
-            // An agreement scoped to one project allocates only that project's
-            // work. Otherwise whichever agreement generates first claims every
-            // project's time and the rest find nothing left to bill.
-            ->when(
-                $agreement->client_project_id !== null,
-                fn ($query) => $query->where('client_project_id', $agreement->client_project_id),
-            )
+            ->forAgreementScope($agreement)
             ->whereBetween('worked_on', [$from->toDateString(), $to->toDateString()])
             ->orderBy('worked_on')
             ->orderBy('id')

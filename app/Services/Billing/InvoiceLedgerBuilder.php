@@ -54,13 +54,7 @@ class InvoiceLedgerBuilder
             // hours for capacity nothing actually used.
             ->where('is_deferred', false)
             ->retainerBillable()
-            // An agreement scoped to one project has its own retainer, and the
-            // company's other projects draw on theirs. Pooling them makes each
-            // ledger count work the other is paying for.
-            ->when(
-                $agreement->client_project_id !== null,
-                fn ($query) => $query->where('client_project_id', $agreement->client_project_id),
-            )
+            ->forAgreementScope($agreement)
             ->whereBetween('worked_on', [$activeDate, $ledgerEnd])
             ->get();
 

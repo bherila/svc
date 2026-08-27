@@ -113,17 +113,46 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     /**
      * Work that may draw on retainer capacity.
      *
-     * The predecessor also excluded subcontractor work billed in modes that
-     * bypass the retainer. This schema has no billing mode - the source held
-     * none - so the exclusion has nothing to act on and approval is the whole
-     * condition. Restore the mode filter here if those modes come back.
+     * The predecessor excluded subcontractor work billed in modes that bypass
+     * the retainer, and did it here - so all seven of its call sites got the
+     * exclusion for free. This port dropped it, reasoning that the schema has
+     * no `subcontractor_billing_mode` column. That was true of the column and
+     * false of the concept: `subcontractor_cost_amount` is the flat-hourly
+     * signal in this schema, and InvoiceLineComposer already bills off it.
+     *
+     * With the exclusion gone from here it was added back one caller at a time,
+     * and reached only one of the three. The ledger and the interim generator
+     * were still letting flat-hourly hours consume retainer pool that the
+     * composer then billed again as its own line - charged once to the pool and
+     * once on the invoice.
+     *
+     * It belongs here, where a caller cannot forget it.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
     public function scopeRetainerBillable(Builder $query): Builder
     {
-        return $query->approved();
+        return $query->approved()->whereNull('subcontractor_cost_amount');
+    }
+
+    /**
+     * Narrow to the work a given agreement is entitled to draw on.
+     *
+     * An agreement scoped to one project has its own retainer, and the
+     * company's other projects draw on theirs. Pooling them makes each ledger
+     * count work the other is paying for, and lets whichever agreement
+     * generates first claim every project's time.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeForAgreementScope(Builder $query, ClientAgreement $agreement): Builder
+    {
+        return $query->when(
+            $agreement->client_project_id !== null,
+            fn (Builder $scoped): Builder => $scoped->where('client_project_id', $agreement->client_project_id),
+        );
     }
 
     /**
