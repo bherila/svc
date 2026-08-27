@@ -102,4 +102,6 @@ documents below predate that convention and refer to bare integer keys.
   `app/Services/Billing/MoneyService.php`. The documents below were written
   against decimal-cast columns and quote dollar amounts accordingly.
 - Identifiers: external surfaces use `public_id` (UUID), never the integer key.
-- Testing: PHPUnit for backend, Vitest for frontend.
+- Testing: PHPUnit for backend. There is no frontend test runner in the
+  repository yet; the component tests these documents refer to were not
+  carried across.
