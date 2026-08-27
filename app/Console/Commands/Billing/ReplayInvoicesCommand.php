@@ -567,7 +567,16 @@ final class ReplayInvoicesCommand extends Command
             $comparisons[] = [
                 'key' => $key,
                 'invoice_number' => $before['invoice_number'],
-                'verdict' => $moneyDelta === 0 && $notes === [] ? 'match' : 'money_differs',
+                // Three outcomes, not two. An invoice whose total is identical
+                // but whose lines are arranged differently has not mis-billed
+                // anyone - the client owes the same amount - so it is reported
+                // and not failed. The agreed bar is that money is exact; how the
+                // same money is presented is worth seeing, not worth blocking.
+                'verdict' => match (true) {
+                    $moneyDelta === 0 && $notes === [] => 'match',
+                    $moneyDelta === 0 => 'composition_differs',
+                    default => 'money_differs',
+                },
                 'money_delta' => $moneyDelta,
                 'notes' => $notes,
                 'hour_notes' => $hourNotes,
@@ -586,7 +595,76 @@ final class ReplayInvoicesCommand extends Command
             }
         }
 
-        return $comparisons;
+        return $this->reconcileLegacyPeriods($comparisons);
+    }
+
+    /**
+     * Pair up invoices the two conventions disagree about the *period* of.
+     *
+     * History was written when an invoice's work period was the same as the
+     * cycle it sold. This engine applies the one-cycle offset, so its service
+     * period is the previous cycle's work - the same invoice, describing the
+     * same retainer, labelled a period earlier. Against production data that
+     * turned five invoices into five "not generated" plus five "no
+     * counterpart", which reads as ten failures and is none.
+     *
+     * The generator already recognises the older convention when it looks for an
+     * existing invoice; this teaches the comparison the same thing. Pairing is
+     * on the cycle, which is what actually identifies what was sold, and only
+     * where exactly one unmatched invoice sits on each side of it - anything
+     * more and the pairing would be a guess.
+     *
+     * @param  list<array<string, mixed>>  $comparisons
+     * @return list<array<string, mixed>>
+     */
+    private function reconcileLegacyPeriods(array $comparisons): array
+    {
+        $cycleOf = static function (string $key): string {
+            [$company, $agreement, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
+            $cycle = explode('@', $identity, 2)[0];
+
+            return implode('|', [$company, $agreement, $kind, $cycle]);
+        };
+
+        $missing = [];
+        $extra = [];
+        foreach ($comparisons as $index => $comparison) {
+            if ($comparison['verdict'] === 'missing') {
+                $missing[$cycleOf((string) $comparison['key'])][] = $index;
+            } elseif ($comparison['verdict'] === 'unexpected') {
+                $extra[$cycleOf((string) $comparison['key'])][] = $index;
+            }
+        }
+
+        foreach ($missing as $cycle => $missingIndexes) {
+            if (! isset($extra[$cycle]) || count($missingIndexes) !== 1 || count($extra[$cycle]) !== 1) {
+                continue;
+            }
+
+            $historical = $comparisons[$missingIndexes[0]];
+            $generated = $comparisons[$extra[$cycle][0]];
+
+            // money_delta on a missing row is the negated historical total; on
+            // an unexpected row it is the generated total. Their sum is what the
+            // engine over- or under-billed for the cycle.
+            $delta = (int) $historical['money_delta'] + (int) $generated['money_delta'];
+
+            $comparisons[$missingIndexes[0]] = [
+                'key' => $historical['key'],
+                'invoice_number' => $historical['invoice_number'],
+                'verdict' => $delta === 0 ? 'match_legacy_period' : 'money_differs',
+                'money_delta' => $delta,
+                'notes' => array_merge(
+                    ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
+                    $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
+                ),
+                'hour_notes' => [],
+            ];
+
+            unset($comparisons[$extra[$cycle][0]]);
+        }
+
+        return array_values($comparisons);
     }
 
     /**
@@ -704,15 +782,25 @@ final class ReplayInvoicesCommand extends Command
         $outcome['comparisons'] = $comparisons;
 
         $matched = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match');
+        $composition = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'composition_differs');
+        $legacyPeriod = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match_legacy_period');
         $differs = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'money_differs');
         $explained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) !== []);
         $unexplained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
         $missing = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'missing');
         $extra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
-        $hourOnly = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match' && ($c['hour_notes'] ?? []) !== []);
+        $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green>money identical</>', (string) count($matched));
+        $this->components->twoColumnDetail(
+            '<fg=green>identical once the legacy period convention is allowed for</>',
+            (string) count($legacyPeriod),
+        );
+        $this->components->twoColumnDetail(
+            '<fg=yellow>same total, lines arranged differently</>',
+            (string) count($composition),
+        );
         $this->components->twoColumnDetail(
             '<fg=yellow>differs, explained by a deliberate correction</>',
             (string) count($explained),

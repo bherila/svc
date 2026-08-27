@@ -88,7 +88,7 @@ billing engine itself, which is implemented and green on both engines.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | **Ran.** 4 reproduce exactly, 10 differ in ways a deliberate correction accounts for, 18 are unexplained. The harness now classifies each divergence against the four corrections listed below, because demanding an exact match asks the engine to reproduce bugs it was fixed not to have; only the unexplained count fails a run. | #73 |
+| Replay against production data | **Ran.** Of 42 comparable invoices: 4 reproduce exactly, 8 bill the same total through differently arranged lines, 10 differ in ways a deliberate correction accounts for, and 15 are unexplained, with 5 structural. Demanding an exact match asks the engine to reproduce bugs it was fixed not to have, so the harness classifies instead and only the unexplained count fails a run. | #73 |
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. | #76 |
