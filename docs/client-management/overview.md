@@ -394,7 +394,7 @@ Location: `resources/js/client-management/components/portal/`
   - **Table of entries**: Date, Description (including job type, status badges, and project badge), User (abbreviated), and Time
   - **Closing Balance**: Unused hours available to roll over, excess hours to be invoiced
 - **UI Features**:
-    - Abbreviated user names (e.g., "Ben Herila" → "Ben H.")
+    - Abbreviated user names (e.g., "Jordan Rivera" → "Jordan R.")
     - Consolidation of repeated dates (only shows date on first row of the day)
     - Action column with Edit button (Pencil icon) for admins
     - Clean, borderless card layout with lightened table borders
@@ -431,7 +431,7 @@ Location: `resources/js/client-management/components/portal/`
 - **Features**:
   - Displays time entry with date, description, user, and time
   - Shows job type, billable/invoiced status badges, and project badge
-  - Abbreviated user names (e.g., "Ben Herila" → "Ben H.")
+  - Abbreviated user names (e.g., "Jordan Rivera" → "Jordan R.")
   - Click-to-edit functionality for admins (non-invoiced entries only)
   - Edit button with pencil icon (visible on hover)
   - Invoiced entries link to their invoice page
@@ -472,7 +472,7 @@ Location: `resources/js/client-management/components/portal/`
 
 ### Styling
 - Uses shadcn/ui components with Tailwind CSS
-- Follows existing finance module patterns
+- Follows the conventions already used elsewhere in the application
 - Responsive design with container max-width
 - Consistent with mockup layout:
   - Company cards with name and user badges
@@ -546,7 +546,7 @@ See [Billing overview](billing.md) for how these interact with the retainer ledg
 ## File Storage System
 
 ### Overview
-The file storage system enables uploading, downloading, and managing files associated with client management entities (companies, projects, agreements, tasks) and financial accounts. Files are stored in S3-compatible storage with signed URLs for secure access.
+The file storage system enables uploading, downloading, and managing files associated with client management entities (companies, projects, agreements, tasks). Files are stored in S3-compatible storage with signed URLs for secure access.
 
 ### Database Schema
 
@@ -576,7 +576,6 @@ Files can be attached to:
 - **Projects**: Project-specific documents (`/api/client/portal/{slug}/projects/{projectSlug}/files`)
 - **Agreements**: Agreement documents (`/api/files/agreements/{id}`)
 - **Tasks**: Task attachments (`/api/files/tasks/{id}`)
-- **Financial Accounts**: Statement files (`/api/files/fin_accounts/{id}`)
 
 ### Frontend Components
 
@@ -1113,7 +1112,7 @@ When adding a payment via UI, the amount field defaults to the remaining balance
 ### Overview
 The Expenses feature allows admin users to track reimbursable and non-reimbursable expenses for client companies. Expenses can be optionally linked to:
 - A specific project within the client company
-- A FinAccount line item (for financial tracking integration)
+- An external finance transaction, through the reconciliation adapter
 
 ### Database Schema
 
@@ -1121,7 +1120,10 @@ The Expenses feature allows admin users to track reimbursable and non-reimbursab
 - `id`: Primary key (auto-increment)
 - `client_company_id`: Foreign key to `client_companies` (cascade on delete)
 - `project_id`: Foreign key to `client_projects` (set null on delete, nullable)
-- `fin_line_item_id`: Foreign key to `fin_account_line_items.t_id` (set null on delete, nullable)
+- `external_finance_transaction_uuid`: Opaque identifier of the reconciled
+  transaction in the external finance application (nullable). SVC stores the
+  identifier only; it never holds the transaction itself. See
+  [the finance reconciliation API](../finance-api.md).
 - `description`: Expense description (required)
 - `amount`: Expense amount (decimal 12,2)
 - `expense_date`: Date of expense (required)
@@ -1146,8 +1148,8 @@ GET    /api/client/mgmt/companies/{company}/expenses/{expense}    → Get single
 PUT    /api/client/mgmt/companies/{company}/expenses/{expense}    → Update expense
 DELETE /api/client/mgmt/companies/{company}/expenses/{expense}    → Delete expense
 POST   /api/client/mgmt/companies/{company}/expenses/{expense}/mark-reimbursed  → Mark as reimbursed
-POST   /api/client/mgmt/companies/{company}/expenses/{expense}/link-finance     → Link to finance line item
-DELETE /api/client/mgmt/companies/{company}/expenses/{expense}/link-finance     → Unlink from finance line item
+POST   .../expenses/{expense}/reconcile   → Attach an external finance transaction UUID
+DELETE .../expenses/{expense}/reconcile   → Detach it
 ```
 
 ### Web Routes for Expenses
@@ -1164,7 +1166,7 @@ Location: `resources/js/client-management/components/portal/ClientPortalExpenses
 Features:
 - Summary cards showing total, reimbursable, pending, and non-reimbursable amounts
 - Sortable table of all expenses
-- Link to FinAccount transaction when linked (admin only visible)
+- Reconciliation state when an external finance transaction is attached (internal users only)
 - Mark expense as reimbursed action
 - Click row to edit expense
 
@@ -1174,21 +1176,25 @@ Location: `resources/js/client-management/components/portal/NewExpenseModal.tsx`
 Features:
 - Create and edit expenses
 - Select project from dropdown
-- Enter FinAccount line item ID (t_id) to link
+- Attach an external finance transaction UUID
 - Toggle reimbursable/reimbursed status
 - Category selection from preset list
 
-### FinAccount Integration
+### External finance reconciliation
 
-When an expense is linked to a FinAccount line item:
-1. The expense stores the `fin_line_item_id` (t_id from `fin_account_line_items`)
-2. The Expenses page shows a link to the transaction in the Finance module
-3. The Finance TransactionsTable shows a "Client" column with a link back to the client portal
+An expense may carry the UUID of a transaction in a separate finance
+application. SVC stores that identifier and nothing else — no banking data, no
+transaction records, no ledger. The coupling is deliberately one-directional
+and opaque so the finance side stays a replaceable adapter.
 
-This bidirectional linking allows:
-- Viewing which personal expenses are billed to clients
-- Navigating from client expenses to the actual financial transaction
-- Tracking reimbursement status
+This is the same boundary the payment path already uses:
+`client_invoice_payments.external_finance_transaction_uuid`, reconciled through
+[the finance reconciliation API](../finance-api.md) under the `finance.read` and
+`finance.reconcile` abilities.
+
+Holding the identifier is enough to answer "which client was this expense
+billed to?" from either side, without either system reading the other's
+database.
 
 ### Time Entry Invoiced Status
 
