@@ -48,7 +48,9 @@ return new class extends Migration
             $table->unsignedInteger('catch_up_threshold_minutes')->nullable()->after('retainer_minutes');
             $table->unsignedInteger('rollover_months')->nullable()->after('rollover_policy');
             $table->unsignedInteger('initial_rollover_minutes')->nullable()->after('rollover_months');
-            $table->boolean('bill_overage_interim')->default(false)->after('initial_rollover_minutes');
+            // Nullable, not false-by-default: a backfill has to tell an unset flag from a
+            // deliberate false, or a re-run revives a policy an operator turned off.
+            $table->boolean('bill_overage_interim')->nullable()->after('initial_rollover_minutes');
             $table->string('first_cycle_proration', 30)->nullable()->after('bill_overage_interim');
             $table->string('agreement_link', 2048)->nullable()->after('agreement_text');
         });

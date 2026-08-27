@@ -9,6 +9,8 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\Workspace;
+use App\Services\ExternalImport\Fingerprint;
+use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +101,34 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame('corrected_by_hand', $invoice->refresh()->invoice_kind);
     }
 
+    public function test_it_refuses_rows_that_changed_since_they_were_imported(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        // A delta pass moved the source row on; splicing its current values onto a
+        // record built from the old snapshot would mix two snapshots together.
+        DB::connection('synthetic')->table('client_invoices')
+            ->where('client_invoice_id', 501)
+            ->update(['hours_worked' => '99.00']);
+
+        $this->artisan('svc:billing:backfill-ledger')->assertFailed();
+
+        $this->assertNull($invoice->refresh()->invoice_kind);
+    }
+
+    public function test_it_ignores_ledger_rows_belonging_to_another_source(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoices')
+            ->update(['source_identity_hash' => str_repeat('f', 64)]);
+
+        $this->artisan('svc:billing:backfill-ledger')->assertSuccessful();
+
+        $this->assertNull($invoice->refresh()->invoice_kind);
+    }
+
     public function test_it_refuses_a_source_that_is_not_declared_read_only(): void
     {
         Config::set('external-import.sources.external.read_only', false);
@@ -172,16 +202,36 @@ final class BackfillBillingLedgerTest extends TestCase
         DB::table('external_import_items')->insert([
             'external_import_run_id' => $this->runId(),
             'source_connection' => 'synthetic',
-            'source_identity_hash' => str_repeat('a', 64),
+            'source_identity_hash' => $this->identityHash(),
             'source_table' => $sourceTable,
             'source_key' => $sourceKey,
             'target_type' => $targetType,
             'target_public_id' => $publicId,
-            'source_fingerprint' => str_repeat('b', 64),
+            'source_fingerprint' => $this->sourceFingerprint($sourceTable, $sourceKey),
             'status' => 'imported',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    /** The identity the guard derives for the configured source. */
+    private function identityHash(): string
+    {
+        return (string) app(SourceGuard::class)->resolve('external')['identity_hash'];
+    }
+
+    /** The fingerprint the importer would have recorded for this source row. */
+    private function sourceFingerprint(string $sourceTable, string $sourceKey): string
+    {
+        $key = match ($sourceTable) {
+            'client_invoices' => 'client_invoice_id',
+            'client_invoice_lines' => 'client_invoice_line_id',
+            default => 'id',
+        };
+
+        $row = DB::connection('synthetic')->table($sourceTable)->where($key, $sourceKey)->firstOrFail();
+
+        return Fingerprint::row((array) $row);
     }
 
     private ?int $runId = null;
