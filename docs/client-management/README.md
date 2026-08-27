@@ -75,7 +75,7 @@ billing engine itself, which is implemented and green on both engines.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | The harness (`svc:billing:replay`) is built, tested and always-rollback, and the read-only restore credentials exist. It has not been run against `bherila_legacycm`, because these branches are not deployed to web1 yet. Until it runs, "the port reproduces history" is a claim the tests support and the data has not confirmed. | #73 |
+| Replay against production data | Attempted. Blocked: the replay needs `invoice_kind` and `cycle_start`/`cycle_end`, which the ledger backfill populates, and the backfill cannot verify the restore. See #73 - the source identity now resolves, but two thirds of source rows no longer reproduce the fingerprints taken at import. Until that is explained, "the port reproduces history" is a claim the tests support and the data cannot yet confirm. | #73 |
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. | #76 |

@@ -86,6 +86,22 @@ final class BackfillBillingLedgerCommand extends Command
         $identityHash = (string) $source['identity_hash'];
         $this->components->info($dryRun ? 'Dry run - nothing will be written.' : 'Backfilling from the external source.');
 
+        // Say it plainly when the source is standing in for another. An
+        // operator reading this output should never have to check the
+        // environment to learn which database the rows are being matched to.
+        // SourceGuard normalises an empty declaration to null, so presence is
+        // the whole test.
+        $declaredRestore = $source['declared_restore_of'] ?? null;
+        if ($declaredRestore !== null) {
+            $this->components->warn(sprintf(
+                'Reading %s, declared a restore of %s. Ledger rows are matched as if they came from %s, '.
+                'and every row is verified against the fingerprint taken at import.',
+                (string) ($source['config']['database'] ?? '?'),
+                $declaredRestore,
+                $declaredRestore,
+            ));
+        }
+
         $totals = [];
         foreach ([
             'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
@@ -104,6 +120,21 @@ final class BackfillBillingLedgerCommand extends Command
 
         $unmatched = array_sum(array_column($totals, 'unmatched'));
         if ($unmatched > 0) {
+            // A partial source is ordinary - an onboarding may import a subset.
+            // A partial *restore* is not: declaring one asserts it holds the
+            // rows the ledger recorded, so a gap means the declaration is
+            // wrong, and repairing half a ledger from it would be worse than
+            // repairing none.
+            if ($declaredRestore !== null) {
+                $this->components->error(
+                    "{$unmatched} source rows had no ledger mapping. A database declared a restore of ".
+                    "{$declaredRestore} must contain every row the ledger recorded; this one does not, ".
+                    'so the declaration does not hold.'
+                );
+
+                return self::FAILURE;
+            }
+
             $this->components->warn("{$unmatched} source rows had no ledger mapping for this source and were skipped.");
         }
 
