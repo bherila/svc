@@ -14,6 +14,7 @@ use App\Services\Billing\ClientInvoicingService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -130,6 +131,77 @@ final class ReplayInvoicesTest extends TestCase
         $this->artisan('svc:billing:replay', ['--workspace' => $this->workspace->public_id])
             ->expectsOutputToContain('ad-hoc')
             ->assertSuccessful();
+    }
+
+    /**
+     * The harness must not invent the divergences it reports.
+     *
+     * `OverpaymentCreditService` derives credit from payment rows measured
+     * against `total_amount`. Blanking the totals for regeneration while
+     * leaving the payments made every settled invoice in history look overpaid
+     * by its full amount, and the regenerated invoices then drew on a credit
+     * pool that had never existed.
+     */
+    public function test_a_paid_invoice_does_not_become_credit_for_the_invoice_replacing_it(): void
+    {
+        $invoice = $this->generatedHistory();
+        $invoice->forceFill([
+            'status' => 'paid',
+            'paid_amount' => $invoice->total_amount,
+            'balance_amount' => 0,
+        ])->save();
+
+        DB::table('client_invoice_payments')->insert([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'public_id' => (string) Str::uuid(),
+            'amount' => (int) $invoice->total_amount,
+            'currency' => 'USD',
+            'status' => 'succeeded',
+            'received_on' => '2024-02-05',
+            'method' => 'bank_transfer',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('svc:billing:replay', ['--workspace' => $this->workspace->public_id])
+            ->doesntExpectOutputToContain('credit')
+            ->assertSuccessful();
+    }
+
+    /**
+     * An ad-hoc invoice is excluded from the comparison and never regenerated,
+     * so releasing its claims handed already-billed work to the cadence
+     * generator and reported the second charge as a divergence.
+     */
+    public function test_an_ad_hoc_invoices_milestone_claim_survives_the_replay(): void
+    {
+        $this->generatedHistory();
+
+        $adHoc = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'SVC-ADHOC-2',
+            'currency' => 'USD',
+            'status' => 'issued',
+            'invoice_kind' => 'ad_hoc',
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+            'subtotal_amount' => 50000,
+            'tax_amount' => 0,
+            'total_amount' => 50000,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $adHoc->id,
+            'type' => 'milestone', 'description' => 'Billed ad hoc', 'quantity' => '1',
+            'unit_amount' => 50000, 'tax_amount' => 0, 'total_amount' => 50000, 'sort_order' => 0,
+        ]);
+
+        $this->artisan('svc:billing:replay', ['--workspace' => $this->workspace->public_id])->assertSuccessful();
+
+        $this->assertDatabaseHas('client_invoice_lines', ['id' => $line->id]);
+        $this->assertSame(50000, (int) $adHoc->refresh()->total_amount, 'An ad-hoc invoice is left alone entirely');
     }
 
     /**

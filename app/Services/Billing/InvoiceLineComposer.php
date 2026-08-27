@@ -371,14 +371,20 @@ class InvoiceLineComposer
             $totalMinutes = $entry->minutes_worked;
             $processedMinutes = 0;
 
-            foreach ($splits as $i => $split) {
+            foreach ($splits as $split) {
                 $minutesForThisSplit = min($split['minutes'], $totalMinutes - $processedMinutes);
 
                 if ($minutesForThisSplit <= 0) {
                     break;
                 }
 
-                $isLastSplit = ($i == count($splits) - 1) || ($processedMinutes + $minutesForThisSplit >= $totalMinutes);
+                // "Last" has to mean "takes what is left", not "last in the
+                // list". An interim overage passes a single fragment covering
+                // only the part of an entry that exceeded capacity, leaving the
+                // covered part for cadence reconciliation - and being the only
+                // split, it was treated as the last one and attached the whole
+                // entry, so the covered portion was never billed by anything.
+                $isLastSplit = $processedMinutes + $minutesForThisSplit >= $totalMinutes;
 
                 if ($isLastSplit) {
                     $this->attachToLineId($split['line_id'], $remainingEntry);

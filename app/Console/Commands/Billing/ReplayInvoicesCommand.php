@@ -446,9 +446,19 @@ final class ReplayInvoicesCommand extends Command
      */
     private function clear(Workspace $workspace, Collection $companies): void
     {
+        // Machine-generated invoices only. An ad-hoc invoice is excluded from
+        // the comparison and never regenerated, so clearing it released its
+        // time-entry pivots, milestone claims and recurring incidences to the
+        // cadence generator - which then billed work that had already been
+        // billed ad hoc and reported the result as the engine inventing a
+        // charge. Leave them, and their claims, exactly as they are.
         $invoiceIds = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companies->pluck('id'))
+            ->where(function ($query): void {
+                $query->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+            })
             ->pluck('id');
 
         if ($invoiceIds->isEmpty()) {
@@ -490,6 +500,29 @@ final class ReplayInvoicesCommand extends Command
             DB::table('client_invoices')->whereIn('id', $this->supersededIds)->delete();
         }
 
+        // The payments go with the totals.
+        //
+        // `OverpaymentCreditService` derives credit from the payment rows
+        // against `total_amount`, not from `paid_amount`. Zeroing the column
+        // and leaving the rows was therefore no fix at all: every settled
+        // invoice in history became a payment against a zero-value invoice,
+        // which is the definition of an overpayment. Every regenerated invoice
+        // then drew on a credit pool the harness had manufactured, and eight of
+        // the divergences this command reported were its own doing.
+        //
+        // Deleting them makes this a comparison of *gross billing* - what the
+        // engine charges, before settlement. That is the question the replay
+        // can actually answer. Replaying settlement needs an immutable, dated
+        // ledger of payments and consumed credits so that no invoice can be
+        // funded by a payment made after it, which is a different harness and
+        // is tracked separately. Nothing is lost: the outer transaction is
+        // rolled back unconditionally.
+        //
+        // A historical credit line that was genuinely earned will now show as a
+        // divergence rather than being masked by a manufactured one. That is
+        // the right direction to fail in.
+        DB::table('client_invoice_payments')->whereIn('client_invoice_id', $invoiceIds)->delete();
+
         // Back to draft so the generator is allowed to rewrite them; a settled
         // invoice refuses regeneration, which is the correct rule everywhere
         // except inside this rolled-back sandbox.
@@ -498,15 +531,6 @@ final class ReplayInvoicesCommand extends Command
             'subtotal_amount' => 0,
             'tax_amount' => 0,
             'total_amount' => 0,
-            // Zeroed with the total, not left behind. A blanked invoice that
-            // still claims to have been paid looks overpaid by the whole amount,
-            // so the credit service invented a credit line on the next invoice
-            // for every settled invoice in history - reported as the engine
-            // producing credits that never existed.
-            //
-            // The payment rows themselves survive, and those are what credit is
-            // actually derived from; this column is a denormalised total the
-            // generator recomputes.
             'paid_amount' => 0,
             'balance_amount' => 0,
         ]);
