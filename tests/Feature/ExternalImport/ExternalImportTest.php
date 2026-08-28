@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ExternalImportTest extends TestCase
@@ -1436,6 +1437,60 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(0, $summary['link_counts']['recovered']);
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Every generated slot is a formatter's output, so a value that formatter
+     * cannot produce is somebody's own text - and the figure in it may be what
+     * tells two allocations apart.
+     */
+    #[DataProvider('malformedGeneratedShapes')]
+    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string}> */
+    public static function malformedGeneratedShapes(): array
+    {
+        return [
+            'sixty-nine minutes' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (9:99)',
+                'Deferred work items applied to retainer (10:99)',
+            ],
+            'a ninety-ninth month' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-99 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-99 cycle)',
+            ],
+            'a month that is not one' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Foo 1, 2026 through Foo 2, 2026',
+                'Monthly Retainer (10:00 hours) - Foo 1, 2026 through Foo 2, 2026',
+            ],
+            'a pool that is not a month' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (9:55 applied to Gold 2026 pool)',
+                'Work items applied to retainer (10:00 applied to Gold 2026 pool)',
+            ],
+            'grouping number_format cannot write' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 1,2.00 USD/hr)',
+            ],
+        ];
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void

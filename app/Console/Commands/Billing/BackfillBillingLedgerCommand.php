@@ -378,8 +378,12 @@ final class BackfillBillingLedgerCommand extends Command
         // race means the same thing the reader would have found a moment
         // later: the line is spoken for and this row is not the repair's to
         // make.
+        // Inside a savepoint, because on some engines a failed statement
+        // poisons the surrounding transaction: catching the violation would
+        // leave every later repair in this run writing into an aborted one.
+        // Nesting a transaction here is what Laravel turns into a savepoint.
         try {
-            $written = $query->update($changes);
+            $written = $this->db()->transaction(static fn (): int => $query->update($changes));
         } catch (UniqueConstraintViolationException) {
             $counters['unresolved']++;
 
@@ -680,7 +684,11 @@ final class BackfillBillingLedgerCommand extends Command
                 // operator's correction is not competing for anything, and
                 // refusing costs the milestone price applyRow() could still
                 // restore without touching that link.
+                // Workspace-scoped, not left implicit in the mapping that
+                // produced the id: this is a tenant-owned read, and every one
+                // of them says so on its own.
                 $fillsItsLink = $this->db()->table('client_tasks')
+                    ->where('workspace_id', $this->workspaceId)
                     ->where('id', $id)
                     ->whereNull('client_invoice_line_id')
                     ->exists();

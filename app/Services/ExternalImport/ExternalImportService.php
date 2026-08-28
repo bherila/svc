@@ -118,13 +118,19 @@ final class ExternalImportService
      * @var array<string, bool>
      */
     /** What HoursQuantity::format writes, and nothing else: H:MM, signed. */
-    private const HOURS = '-?\d+:\d{2}';
+    private const HOURS = '-?\d+:[0-5]\d';
 
     /** What PeriodLabel writes: 2026-01, 2026-Q1, 2026, or a range of the first. */
-    private const PERIOD_LABEL = '(?:\d{4}(?:-(?:\d{2}|Q[1-4]))?(?:\.\.\d{4}-\d{2})?)';
+    private const PERIOD_LABEL = '(?:\d{4}(?:-(?:0[1-9]|1[0-2]|Q[1-4]))?(?:\.\.\d{4}-(?:0[1-9]|1[0-2]))?)';
 
     /** What Carbon's "M j, Y" writes. */
-    private const SHORT_DATE = '[A-Z][a-z]{2} \d{1,2}, \d{4}';
+    private const SHORT_DATE = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}';
+
+    /** What Carbon's "F Y" writes. */
+    private const POOL_MONTH = '(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}';
+
+    /** What formatMoney writes: number_format's grouping beside a currency code. */
+    private const MONEY = '\d{1,3}(?:,\d{3})*\.\d{2} [A-Z]{3}';
 
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         // Every one anchored end to end, not by its opening. A prefix is
@@ -139,10 +145,10 @@ final class ExternalImportService
         // currency code, and it is spelled out rather than left as prose: that
         // template replaces its whole group, so anything it wrongly matches
         // loses the text that told two allocations apart.
-        '/^Work items applied to retainer \('.self::HOURS.' applied to [A-Z][a-z]+ \d{4} pool\)$/' => false,
+        '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => false,
         '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \('.self::HOURS.' applied to '.self::PERIOD_LABEL.' cycle\)$/' => false,
         '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => false,
-        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
+        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ '.self::MONEY.'\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
         '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => false,
     ];
@@ -1331,16 +1337,14 @@ final class ExternalImportService
             $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+            $recovering = false;
 
             // An entry naming a line the source has superseded is billed work,
             // not unbilled work, so follow the claim to the line that replaced
             // it rather than dropping it and letting it be charged again.
             if ($timeId !== null && $lineId === null) {
                 $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache);
-
-                if ($lineId !== null) {
-                    $linkCounts['recovered']++;
-                }
+                $recovering = $lineId !== null;
             }
 
             if ($timeId === null || $lineId === null) {
@@ -1449,6 +1453,13 @@ final class ExternalImportService
             }
 
             $linkCounts['inserted']++;
+
+            // Counted here rather than where the candidate was found: a claim
+            // that was identified and then lost the pivot, or whose line went
+            // before the insert, was not recovered.
+            if ($recovering) {
+                $linkCounts['recovered']++;
+            }
         }
 
         $linkCounts['rejected'] += $this->vanishedLinkCount('client_time_entries', $seen, $counts, 'time_link_vanished');
