@@ -59,7 +59,7 @@ final class ExternalImportService
     /**
      * linkedSourceKeys inverted, built once per run.
      *
-     * @var array<string, int>|null
+     * @var array<string, array<string, int>>|null
      */
     private ?array $observedClaimsByLine = null;
 
@@ -784,7 +784,11 @@ final class ExternalImportService
      * them to a single entry made that look unambiguous, and reconciliation
      * would then hand the survivor to whichever task came first by id.
      *
-     * @return array<string, int>
+     * Kept per claimant table as well as in total, because the two questions
+     * asked of it are different: whether any claim competes for a line, and
+     * whether more than one exclusive claimant named it.
+     *
+     * @return array<string, array<string, int>>
      */
     private function observedClaimsByLine(): array
     {
@@ -792,10 +796,12 @@ final class ExternalImportService
             return $this->observedClaimsByLine;
         }
 
-        $byLine = [];
+        $byLine = ['*' => []];
         foreach (['client_time_entries', 'client_tasks'] as $table) {
+            $byLine[$table] = [];
             foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
-                $byLine[$lineKey] = ($byLine[$lineKey] ?? 0) + 1;
+                $byLine['*'][$lineKey] = ($byLine['*'][$lineKey] ?? 0) + 1;
+                $byLine[$table][$lineKey] = ($byLine[$table][$lineKey] ?? 0) + 1;
             }
         }
 
@@ -851,7 +857,7 @@ final class ExternalImportService
             // Walking it per (invoice, type) meant every regenerated invoice
             // scanning every billed row in the source, which is quadratic in
             // exactly the history this exists to repair.
-            $claimants = $this->observedClaimsByLine();
+            $claimants = $this->observedClaimsByLine()['*'];
 
             foreach ($superseded as $key) {
                 if (isset($claimants[(string) $key])) {
@@ -1018,11 +1024,16 @@ final class ExternalImportService
         // nothing here says which it billed - handing the survivor to whichever
         // task is processed first would mark the other billed for good.
         //
-        // Counted in the source unfiltered rather than among what this run
-        // observed: a rival deleted before the run began was never observed,
-        // and it may well be the deliverable the old line billed.
-        if ($exclusiveClaimantTable !== null
-            && $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $supersededKey)->count() > 1) {
+        // Counted both ways, because each misses what the other sees. A rival
+        // deleted before the run began was never observed, so the snapshot does
+        // not know about it; a rival deleted between the two reads is gone from
+        // the source, so a count taken now does not either. Either one being
+        // more than one means the old line had two deliverables to choose
+        // between, and nothing here says which it billed.
+        if ($exclusiveClaimantTable !== null && max(
+            $this->observedClaimsByLine()[$exclusiveClaimantTable][$supersededKey] ?? 0,
+            $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $supersededKey)->count(),
+        ) > 1) {
             return null;
         }
 
