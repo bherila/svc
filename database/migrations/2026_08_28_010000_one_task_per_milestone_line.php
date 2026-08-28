@@ -28,12 +28,17 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $duplicates = DB::table('client_tasks')
-            ->select('client_invoice_line_id')
-            ->whereNotNull('client_invoice_line_id')
-            ->groupBy('client_invoice_line_id')
-            ->havingRaw('count(*) > 1')
-            ->count();
+        // Counted as groups, not as a group's size: count() on a grouped query
+        // returns the first group's tally, which for three tasks on one line
+        // would report three duplicated lines.
+        $duplicates = DB::query()->fromSub(
+            DB::table('client_tasks')
+                ->select('client_invoice_line_id')
+                ->whereNotNull('client_invoice_line_id')
+                ->groupBy('client_invoice_line_id')
+                ->havingRaw('count(*) > 1'),
+            'contested',
+        )->count();
 
         // Said plainly rather than left to the index to reject. A deployment
         // stopping here means two tasks already share a line, and that has to

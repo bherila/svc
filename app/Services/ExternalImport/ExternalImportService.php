@@ -110,6 +110,12 @@ final class ExternalImportService
      *
      * @var array<string, bool>
      */
+    /** What PeriodLabel writes: 2026-01, 2026-Q1, 2026, or a range of the first. */
+    private const PERIOD_LABEL = '(?:\d{4}(?:-(?:\d{2}|Q[1-4]))?(?:\.\.\d{4}-\d{2})?)';
+
+    /** What Carbon's "M j, Y" writes. */
+    private const SHORT_DATE = '[A-Z][a-z]{2} \d{1,2}, \d{4}';
+
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         // Every one anchored end to end, not by its opening. A prefix is
         // something an operator can write too, and matching on one lets this
@@ -123,12 +129,12 @@ final class ExternalImportService
         // currency code, and it is spelled out rather than left as prose: that
         // template replaces its whole group, so anything it wrongly matches
         // loses the text that told two allocations apart.
-        '/^Work items applied to retainer \([\d.,:]+ applied to .+ pool\)$/' => false,
-        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,:]+ applied to .+ cycle\)$/' => false,
+        '/^Work items applied to retainer \([\d.,:]+ applied to [A-Z][a-z]+ \d{4} pool\)$/' => false,
+        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,:]+ applied to '.self::PERIOD_LABEL.' cycle\)$/' => false,
         '/^Deferred work items applied to retainer \([\d.,:]+\)$/' => false,
         '/^Deferred work items billed on agreement termination \([\d.,:]+ @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
-        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([\d.,:]+ hours\) - .+ through .+$/' => false,
+        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([\d.,:]+ hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => false,
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [

@@ -230,6 +230,49 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertNull($other->refresh()->client_invoice_line_id);
     }
 
+    /**
+     * A line already held here is not free just because the source says
+     * nothing about it. An operator can have reconciled it by hand.
+     */
+    public function test_a_line_another_task_already_holds_here_is_reported_not_taken(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $holder = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'Reconciled by hand',
+            'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame((int) $line->id, (int) $holder->refresh()->client_invoice_line_id);
+    }
+
+    /**
+     * Two tasks from another tenant's onboarding arguing over a line is not
+     * this repair's business - resolve() would skip them a moment later, and
+     * counting them unresolved rolls back a workspace that is fine.
+     */
+    public function test_contested_claims_outside_this_workspace_do_not_stop_the_repair(): void
+    {
+        $this->buildDestination();
+
+        // Two source tasks the ledger never mapped, both naming line 901.
+        foreach ([801, 802] as $key) {
+            DB::connection('synthetic')->table('client_tasks')->insert(['id' => $key, 'milestone_price' => '100.00']);
+            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 901]);
+        }
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();

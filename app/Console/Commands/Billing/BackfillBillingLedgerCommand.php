@@ -8,6 +8,7 @@ use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -383,6 +384,18 @@ final class BackfillBillingLedgerCommand extends Command
         $counters['written']++;
     }
 
+    /** Whether the source records which line billed a milestone at all. */
+    private function sourceRecordsTaskLinks(ConnectionInterface $legacy): bool
+    {
+        try {
+            $legacy->table('client_tasks')->select('client_invoice_line_id')->limit(1)->get();
+
+            return true;
+        } catch (QueryException) {
+            return false;
+        }
+    }
+
     /**
      * Compare the declared restore against what the importer wrote, and refuse
      * unless every difference has been named.
@@ -608,12 +621,24 @@ final class BackfillBillingLedgerCommand extends Command
         // row would give the line to whichever task came first and then take
         // the constraint violation on the next - failing a repair that has
         // nothing wrong with it except the rows it cannot decide between.
+        // Scoped to the ledger's own rows, because a source can hold another
+        // tenant's onboarding as readily as this one's, and two of their tasks
+        // arguing over a line is not this repair's business - resolve() would
+        // have skipped them a moment later anyway.
+        //
+        // Read only when the source records claims at all: a table without the
+        // column is a schema the row loop below tolerates, and a prepass that
+        // queried it regardless would fail the whole command instead.
         $contested = [];
-        foreach ($legacy->table('client_tasks')->whereNotNull('client_invoice_line_id')
-            ->pluck('client_invoice_line_id') as $claim) {
-            $contested[(string) $claim] = ($contested[(string) $claim] ?? 0) + 1;
+        if ($map !== [] && $this->sourceRecordsTaskLinks($legacy)) {
+            foreach ($legacy->table('client_tasks')->whereNotNull('client_invoice_line_id')
+                ->whereIn('id', array_keys($map))
+                ->pluck('client_invoice_line_id') as $claim) {
+                $contested[(string) $claim] = ($contested[(string) $claim] ?? 0) + 1;
+            }
+
+            $contested = array_filter($contested, static fn (int $count): bool => $count > 1);
         }
-        $contested = array_filter($contested, static fn (int $count): bool => $count > 1);
 
         $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, $contested, &$counters): void {
             foreach ($rows as $row) {
@@ -636,6 +661,19 @@ final class BackfillBillingLedgerCommand extends Command
                 }
 
                 $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
+
+                // Or already held here. An operator can have reconciled that
+                // line by hand, and the source knowing nothing about it does
+                // not make the line free.
+                if ($resolvedLink !== null && $this->db()->table('client_tasks')
+                    ->where('workspace_id', $this->workspaceId)
+                    ->where('client_invoice_line_id', $resolvedLink)
+                    ->where('id', '!=', $id)
+                    ->exists()) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
 
                 // The source says this milestone was billed and this repair
                 // cannot say by what. Writing null would leave it reading as

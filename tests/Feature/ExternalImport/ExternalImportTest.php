@@ -849,8 +849,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - 2024-02-01 through 2024-02-29' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.00 hours) - 2025-02-01 through 2025-02-28' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.00 hours) - Feb 1, 2025 through Feb 28, 2025' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -870,8 +870,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - 2024-02-01 through 2024-02-29' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.50 hours) - 2024-02-01 through 2024-02-29' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.50 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
