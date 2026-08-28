@@ -172,6 +172,36 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertNull($otherTask->client_invoice_line_id);
     }
 
+    /**
+     * A task already carrying its link has no hole to fill, so a source line
+     * this workspace never imported is nothing to refuse over - and failing
+     * would roll back every other row the repair had to offer.
+     */
+    public function test_an_unresolvable_source_link_is_ignored_when_the_task_is_already_linked(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        // Already decided here, by an earlier repair or by an operator.
+        $task->forceFill(['client_invoice_line_id' => $line->id])->save();
+
+        // And the source names a line this workspace has no mapping for.
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '901')
+            ->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $task->refresh();
+        $invoice->refresh();
+        $this->assertSame($line->id, $task->client_invoice_line_id);
+        // The rest of the repair still happened rather than being rolled back.
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();

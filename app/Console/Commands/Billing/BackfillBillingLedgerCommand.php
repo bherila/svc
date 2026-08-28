@@ -621,7 +621,17 @@ final class BackfillBillingLedgerCommand extends Command
                 // cannot say by what. Writing null would leave it reading as
                 // unbilled, which is how it gets charged a second time - so the
                 // repair reports rather than quietly filling in nothing.
-                if ($sourceLink !== null && $resolvedLink === null) {
+                //
+                // Unless the destination already holds a link. Then there is no
+                // hole to fill, nothing can be double-billed, and failing the
+                // whole repair over a line this workspace never imported would
+                // roll back every other row for no gain.
+                if ($sourceLink !== null && $resolvedLink === null
+                    && $this->db()->table('client_tasks')
+                        ->where('id', $id)
+                        ->where('workspace_id', $this->workspaceId)
+                        ->whereNull('client_invoice_line_id')
+                        ->exists()) {
                     $counters['unresolved']++;
 
                     continue;

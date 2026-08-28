@@ -640,10 +640,15 @@ class ExternalImportTest extends TestCase
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, subcontractor_hourly_rate TEXT, currency TEXT)');
         $pdo->exec("INSERT INTO client_time_entries VALUES (41, 13, 11, NULL, 7, 'Synthetic subcontracted work', 60, '2026-02-02', 1, 0, 'approved', '80.00', 'EUR')");
+        // A blank currency is worse than a missing one: the composer skips its
+        // cross-currency refusal when the cost currency is empty, so a rate of
+        // unknown denomination would bill as though it were the invoice's.
+        $pdo->exec("INSERT INTO client_time_entries VALUES (42, 13, 11, NULL, 7, 'Synthetic blank-currency work', 60, '2026-02-03', 1, 0, 'approved', '90.00', '')");
 
         app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
-        $entry = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())->first();
+        $entry = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())
+            ->where('description', 'Synthetic subcontracted work')->first();
 
         // InvoiceLineComposer refuses a cross-currency cost only when this field
         // is set. Left null, an EUR rate bills as that many USD cents and the
@@ -651,6 +656,12 @@ class ExternalImportTest extends TestCase
         $this->assertNotNull($entry);
         $this->assertSame(8000, (int) $entry->subcontractor_cost_amount);
         $this->assertSame('EUR', $entry->subcontractor_cost_currency);
+
+        $blank = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())
+            ->where('description', 'Synthetic blank-currency work')->first();
+        $this->assertNotNull($blank);
+        $this->assertNotSame('', (string) $blank->subcontractor_cost_currency);
+        $this->assertNotSame('', (string) $blank->currency);
     }
 
     public function test_a_milestone_link_already_decided_here_is_not_repointed(): void
