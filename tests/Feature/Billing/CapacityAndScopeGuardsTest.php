@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\AgreementSelector;
+use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
@@ -282,6 +283,225 @@ final class CapacityAndScopeGuardsTest extends TestCase
             $this->company,
             Carbon::parse('2024-02-01'),
             $foreign,
+        );
+    }
+
+    /**
+     * A migrated invoice carries no `invoice_kind`, and a null kind reads as
+     * cadence everywhere else. Excluding it here made the sold-cycle guard
+     * blind to exactly the data it most needs to see.
+     */
+    public function test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->agreement();
+        $this->entry($project, '2024-02-05', 120);
+
+        $sold = $this->invoice($agreement);
+        $sold->forceFill([
+            'invoice_kind' => null,
+            'cycle_start' => '2024-02-01',
+            'cycle_end' => '2024-02-29',
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+        ])->save();
+        $sold->lines()->create([
+            'workspace_id' => $this->workspace->id, 'type' => 'retainer', 'description' => 'Retainer',
+            'quantity' => '1', 'unit_amount' => 150000, 'total_amount' => 150000, 'tax_amount' => 0, 'sort_order' => 1,
+        ]);
+
+        $correction = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-15'),
+        )->refresh();
+
+        $this->assertSame(
+            0,
+            $correction->lines()->where('type', 'retainer')->count(),
+            'The migrated invoice sold this cycle even though it carries no kind',
+        );
+    }
+
+    /**
+     * An unrecognised status is one this code cannot show is safe to rewrite.
+     * `NOT IN (settled)` reads it as releasable, which is the opposite.
+     */
+    public function test_an_interim_invoice_with_an_unknown_status_is_not_released(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $interim = $this->invoice($agreement);
+        $interim->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'awaiting_dispute_resolution',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+        ])->save();
+        $interim->lines()->create([
+            'workspace_id' => $this->workspace->id, 'type' => 'additional_hours', 'description' => 'Overage',
+            'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
+        ]);
+
+        app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        $this->assertSame(1, $interim->refresh()->lines()->count(), 'A status this code does not know is left alone');
+    }
+
+    /**
+     * Releasing deletes the lines. Leaving the stored totals behind means the
+     * draft displays a charge it no longer has, and `issue()` would send it.
+     */
+    public function test_releasing_an_interim_draft_leaves_its_totals_consistent(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $interim = $this->invoice($agreement);
+        $interim->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'subtotal_amount' => 20000, 'total_amount' => 20000, 'balance_amount' => 20000,
+        ])->save();
+        $interim->lines()->create([
+            'workspace_id' => $this->workspace->id, 'type' => 'additional_hours', 'description' => 'Overage',
+            'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
+        ]);
+
+        app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        $interim->refresh();
+        $this->assertSame(0, $interim->lines()->count());
+        $this->assertSame(0, (int) $interim->total_amount, 'An emptied draft must not still claim a charge');
+        $this->assertSame(0, (int) $interim->balance_amount);
+    }
+
+    /**
+     * The release runs a tenant-owned query and then deletes rows. A malformed
+     * row carrying this company's id under another workspace must not be
+     * reachable through it.
+     */
+    public function test_releasing_interim_claims_cannot_reach_another_tenants_invoice(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-interim']);
+        $foreign = ClientInvoice::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,   // malformed: our company, their tenant
+            'client_agreement_id' => $agreement->id,     // and our agreement
+            'invoice_number' => 'X-'.uniqid(),
+            'status' => 'draft',
+            'currency' => 'USD',
+            'invoice_kind' => 'interim_overage',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+        $foreign->lines()->create([
+            'workspace_id' => $otherWorkspace->id, 'type' => 'additional_hours', 'description' => 'Theirs',
+            'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
+        ]);
+
+        app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        $this->assertSame(1, $foreign->refresh()->lines()->count(), "Another tenant's invoice is untouched");
+    }
+
+    /**
+     * A correction range lands on a cycle an earlier invoice already sold.
+     *
+     * Billing 1-15 February as a correction derives the February cycle that
+     * January's ordinary invoice sold. The service-period overlap guard cannot
+     * see it - the periods genuinely do not overlap - so the retainer and every
+     * recurring item were charged a second time.
+     */
+    public function test_a_correction_range_does_not_resell_a_cycle_already_sold(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->agreement();
+        $this->entry($project, '2024-01-10', 120);
+        $this->entry($project, '2024-02-05', 120);
+
+        $service = app(ClientInvoicingService::class);
+
+        // January's work sells the February retainer.
+        $ordinary = $service->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            Carbon::parse('2024-01-31'),
+        )->refresh();
+
+        $this->assertSame('2024-02-01', Carbon::parse((string) $ordinary->cycle_start)->toDateString());
+        $this->assertSame(1, $ordinary->lines()->where('type', 'retainer')->count());
+
+        // A correction covering part of February derives the same cycle.
+        $correction = $service->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-15'),
+        )->refresh();
+
+        $this->assertSame(
+            0,
+            $correction->lines()->where('type', 'retainer')->count(),
+            'The February retainer was sold by the January invoice and must not be sold again',
+        );
+        $this->assertSame(0, $correction->lines()->where('type', 'recurring_item')->count());
+    }
+
+    /**
+     * An interim draft claims its entries immediately, but only a charged
+     * interim counts toward the cadence reconciliation - so work held by a
+     * draft was invisible to the selector and absent from the reconciliation,
+     * and nothing billed it.
+     */
+    public function test_an_uncharged_interim_draft_gives_its_work_back(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        // Comfortably over the quarter's retainer, in a completed month.
+        $this->entry($project, '2024-01-15', 1800);
+
+        $interim = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $interim);
+        $this->assertSame('draft', (string) $interim->status);
+        $this->assertGreaterThan(0, $interim->lines()->count());
+
+        $released = app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        $this->assertSame(1, $released);
+        $this->assertSame(0, $interim->refresh()->lines()->count(), 'The draft no longer holds the work');
+        // The interim split the entry into a billed fragment and a covered one,
+        // so the row count is not the invariant. Every worked minute being
+        // available again is.
+        $this->assertSame(
+            1800,
+            (int) ClientTimeEntry::query()
+                ->where('client_company_id', $this->company->id)
+                ->unbilled()
+                ->sum('minutes'),
+            'Every minute is available to the cadence invoice again',
         );
     }
 

@@ -426,7 +426,15 @@ final class ClientInvoicingService
     ): bool {
         return $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
-            ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+            // A null kind reads as cadence here exactly as it does in
+            // `findRefreshableMonthlyInvoice()` and on the model. Excluding it
+            // meant a migrated invoice, which carries no kind, was invisible to
+            // this guard - so a correction against imported data would resell
+            // its cycle, which is the whole defect this exists to stop.
+            ->where(function (Builder $query): void {
+                $query->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
+            })
             ->whereDate('cycle_start', $retainerMonthStart->toDateString())
             ->where('status', '!=', 'void')
             ->when(

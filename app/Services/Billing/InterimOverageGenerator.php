@@ -380,16 +380,39 @@ final class InterimOverageGenerator
         ClientAgreement $agreement,
         BillingCycle $cycle,
     ): int {
+        // Named, not "everything that is not settled". `NOT IN` reads a status
+        // this code does not recognise as releasable, which is the opposite of
+        // the rule everywhere else here: an unrecognised status is one this
+        // code cannot show is safe to rewrite, and it may already have charged
+        // someone.
         $drafts = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
-            ->whereNotIn('status', InvoiceStatus::settled())
+            ->where('status', InvoiceStatus::Draft->value)
+            // Locked and rechecked. The cadence path holds the agreement, and
+            // `InvoiceLifecycleService::issue()` locks the invoice and the
+            // company - so nothing stops an operator issuing this draft between
+            // the read and the delete, and the lines would then be stripped from
+            // an invoice that had just been sent.
+            ->lockForUpdate()
             ->get();
 
+        $released = 0;
+
         foreach ($drafts as $draft) {
+            $draft->refresh();
+
+            if (InvoiceStatus::isSettledValue($draft->status)) {
+                continue;
+            }
+
             $this->invoiceLineComposer->resetSystemGeneratedLines($draft);
             $draft->update(['hours_billed_at_rate' => 0]);
+            // The lines are gone, so the stored totals describe a charge that no
+            // longer exists - and `issue()` would send that number.
+            $draft->refresh()->recalculateTotals();
+            $released++;
         }
 
-        return $drafts->count();
+        return $released;
     }
 
     public function interimOverageHoursForCycle(ClientAgreement $agreement, BillingCycle $cycle): float
