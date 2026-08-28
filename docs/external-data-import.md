@@ -63,6 +63,15 @@ that source-side integer IDs can be reused.
    whose description cannot settle it even so are refused: a subcontractor
    charge is one line per rate group and the rate is a figure, and a milestone,
    a recurring item and an adjustment are each one item among several.
+
+   One limit is known and not closed. The superseded line is deleted at the
+   source, so it was never ledgered and no fingerprint can tell whether it
+   changed between the read that observed the claim and the read that follows
+   it. What bounds the exposure is everything around it: the claimant and the
+   replacement are both fingerprint-checked, and the replacement must be in this
+   workspace, of the same type, and say the same thing. Closing it needs a
+   consistent snapshot across both reads, which a source connection does not
+   offer.
    Anything less than certain is refused and reported:
    attaching work to a line that did not bill it suppresses a charge that is
    owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -
