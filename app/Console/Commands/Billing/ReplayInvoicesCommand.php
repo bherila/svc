@@ -935,13 +935,14 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['identity_hash'],
         ]);
 
-        // Just what the charge is. Used only for what the first pass could not
-        // pair, so a charge that moves project and reprices at the same time
-        // still finds its counterpart instead of vanishing into the move.
-        $identity = static fn (array $line): string => implode('|', [
-            (string) $line['recurring_item_id'],
-            (string) $line['identity_hash'],
-        ]);
+        // Just what the charge is - its wording, with the amounts taken out,
+        // and nothing else. Used only for what the first pass could not pair,
+        // so a charge that reprices while its filing moves still finds its
+        // counterpart instead of vanishing into the move. The recurring item a
+        // line belongs to is filing like any other, and a line that moves
+        // between items is exactly the case the recurring-item correction is
+        // about - so it must not be able to hide a repricing.
+        $identity = static fn (array $line): string => (string) $line['identity_hash'];
 
         $priceTuple = static fn (array $line): string => sprintf(
             'unit %d qty %s tax %d total %d',

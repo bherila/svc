@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
@@ -585,6 +586,66 @@ final class ReplayInvoicesTest extends TestCase
         $b->forceFill(['client_project_id' => $beyond->id] + $carry)->save();
 
         $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * Which recurring item a line belongs to is filing, like its project or its
+     * date. A charge that moves between items while its price changes must
+     * still be recognised as the same charge repriced - moving between items is
+     * exactly what the recurring-item correction is about, so letting the move
+     * hide the repricing would hand it the one thing it must never waive.
+     */
+    public function test_a_charge_that_moves_between_recurring_items_is_not_filed_as_a_move(): void
+    {
+        $invoice = $this->generatedHistory();
+        $agreement = ClientAgreement::query()->firstOrFail();
+
+        $item = ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => 'Somewhere to move to',
+            'cadence' => 'monthly',
+            'quantity' => '1.0000',
+            'amount' => 1000,
+            'currency' => 'USD',
+            'is_active' => false,
+        ]);
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('total_amount')->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Filed under a recurring item the engine does not use, at half the
+        // price and twice the quantity, so the invoice total never moves.
+        $line->forceFill([
+            'client_agreement_recurring_item_id' => $item->id,
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $row = array_column($detail['comparisons'], null, 'invoice_number')[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The move must not absorb the repricing.');
+        $this->assertNull($row['explained_by'] ?? null);
     }
 
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
