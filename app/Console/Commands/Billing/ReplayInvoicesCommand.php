@@ -1151,9 +1151,35 @@ final class ReplayInvoicesCommand extends Command
                 return $left;
             };
 
-            $beforeResidual = $pricesBy($residual($before, $after), $identity);
-            $afterResidual = $pricesBy($residual($after, $before), $identity);
-            $repriced = $comparePrices($beforeResidual, $afterResidual);
+            $beforeLeft = $residual($before, $after);
+            $afterLeft = $residual($after, $before);
+
+            // A recurring item's id survives its description being rewritten,
+            // which wording cannot. Where both sides still carry the same item,
+            // that is an unambiguous link and worth asking before falling back
+            // to what the charge says it is.
+            $itemOf = static fn (array $line): string => (string) $line['recurring_item_id'];
+            $carriesItem = static fn (array $lines): array => array_values(array_filter(
+                $lines,
+                static fn (array $line): bool => (string) $line['recurring_item_id'] !== '',
+            ));
+
+            $beforeItems = $pricesBy($carriesItem($beforeLeft), $itemOf);
+            $afterItems = $pricesBy($carriesItem($afterLeft), $itemOf);
+            $repriced = $comparePrices($beforeItems, $afterItems);
+
+            // Whatever the item id could not pair - a line carrying none, or
+            // one whose item the other side no longer has - falls through to
+            // the wording.
+            $unpairedByItem = static fn (array $lines, array $otherItems): array => array_values(array_filter(
+                $lines,
+                static fn (array $line): bool => (string) $line['recurring_item_id'] === ''
+                    || ! isset($otherItems[(string) $line['recurring_item_id']]),
+            ));
+
+            $beforeResidual = $pricesBy($unpairedByItem($beforeLeft, $afterItems), $identity);
+            $afterResidual = $pricesBy($unpairedByItem($afterLeft, $beforeItems), $identity);
+            $repriced = $repriced || $comparePrices($beforeResidual, $afterResidual);
 
             // Fail closed where pairing cannot decide. If several charges share
             // this looser identity and carry different prices, their filing has

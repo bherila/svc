@@ -844,6 +844,54 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertTrue($row['line_repriced']);
     }
 
+    /**
+     * A recurring item keeps its id when its description is rewritten. Nothing
+     * about the wording links the two versions, but the item does - and without
+     * asking it, an item renamed and repriced in one edit pairs with nothing
+     * and the repricing reads as a line removed and another added.
+     */
+    public function test_a_renamed_recurring_item_is_still_paired_by_its_id(): void
+    {
+        // The engine bills this item, so both sides carry its id.
+        $this->generatedHistory(function (ClientAgreement $agreement): void {
+            ClientAgreementRecurringItem::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_agreement_id' => $agreement->id,
+                'description' => 'Support plan',
+                'cadence' => 'monthly',
+                'quantity' => '1.0000',
+                'amount' => 5000,
+                'currency' => 'USD',
+                'effective_on' => '2024-01-01',
+                'is_active' => true,
+            ]);
+        });
+
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->whereNotNull('client_agreement_recurring_item_id')->orderBy('id')->first();
+        if (! $line instanceof ClientInvoiceLine) {
+            $this->markTestSkipped('This fixture did not produce a recurring-item line.');
+        }
+
+        $invoice = $line->invoice()->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertGreaterThan(0, $unit);
+
+        // History worded the charge differently and priced it differently, with
+        // a compensating quantity so the invoice total never moves. The item id
+        // is the only thing the two versions share.
+        $line->forceFill([
+            'description' => 'Support plan, renamed since',
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The item id links the two versions when the wording cannot.');
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();
@@ -1142,9 +1190,14 @@ final class ReplayInvoicesTest extends TestCase
         return implode('|', $parts);
     }
 
-    private function generatedHistory(): ClientInvoice
+    /**
+     * @param  (callable(ClientAgreement): void)|null  $beforeGenerating
+     *                                                                    Run once the agreement exists and before any invoice is produced, for
+     *                                                                    the cases that need the engine itself to bill something extra.
+     */
+    private function generatedHistory(?callable $beforeGenerating = null): ClientInvoice
     {
-        ClientAgreement::query()->create([
+        $agreement = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'title' => 'Retainer',
@@ -1176,6 +1229,10 @@ final class ReplayInvoicesTest extends TestCase
         // The whole history, as the original system would have produced it -
         // one hand-made invoice would leave every later cycle looking like a
         // divergence the moment the replay walked past it.
+        if ($beforeGenerating !== null) {
+            $beforeGenerating($agreement);
+        }
+
         Carbon::setTestNow(Carbon::parse('2024-06-15'));
         try {
             app(ClientInvoicingService::class)->generateAllInvoices($this->company);
