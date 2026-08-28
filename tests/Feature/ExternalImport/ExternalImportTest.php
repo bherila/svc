@@ -827,10 +827,10 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * The read before the insert narrows the window; it cannot close it. The
-     * constraint is the arbiter, and losing to it means what the read meant.
+     * Losing the race to a writer that claimed the entry for a different line
+     * means what the read before the insert would have meant.
      */
-    public function test_losing_the_pivot_constraint_is_reported_rather_than_thrown(): void
+    public function test_losing_the_pivot_constraint_to_another_line_is_reported_rather_than_thrown(): void
     {
         $user = User::factory()->create();
         Config::set('external-import.user_bindings.7', $user->public_id);
@@ -839,6 +839,50 @@ class ExternalImportTest extends TestCase
 
         // Between the read that finds no pivot and the insert that follows it,
         // somebody else claims the entry.
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                return;
+            }
+            $done = true;
+            $entryId = ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->value('id');
+            $invoiceId = ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id');
+            if ($entryId === null || $invoiceId === null) {
+                return;
+            }
+            $elsewhere = ClientInvoiceLine::query()->create([
+                'workspace_id' => $workspace->getKey(), 'client_invoice_id' => $invoiceId,
+                'type' => 'adjustment', 'description' => 'Billed by somebody else', 'quantity' => '1.0000',
+                'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+            ]);
+            DB::table('client_invoice_line_time_entries')->insert([
+                'workspace_id' => $workspace->getKey(),
+                'client_invoice_line_id' => $elsewhere->id,
+                'client_time_entry_id' => $entryId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The run completes rather than throwing, and says what happened.
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Losing the race to a writer that wrote the very row this was about to
+     * does not mean the same thing. Reporting a skip there would end an
+     * otherwise reconciled run with skips over work that was in fact done.
+     */
+    public function test_losing_the_pivot_constraint_to_the_same_line_is_idempotent(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
         DB::listen(function ($query) use ($workspace): void {
             static $done = false;
             if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
@@ -861,9 +905,61 @@ class ExternalImportTest extends TestCase
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
-        // The run completes rather than throwing, and says what happened.
-        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
-        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->count());
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame(0, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, $summary['link_counts']['idempotent']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * The column is indexed but not constrained, so nothing below the
+     * application stops two tasks holding one milestone line. A reader that
+     * found it free a statement earlier can be overtaken, so the write asks.
+     */
+    public function test_a_milestone_line_taken_between_the_check_and_the_write_is_not_taken_twice(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (19, 13, 'The task that gets there first', 'Assigned mid-run', NULL, '2026-01-05', '2026-01-06', NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (181, 11, NULL, 'SYN-181', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (182, 181, NULL, NULL, 'Superseded line for task 14', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (183, 181, NULL, NULL, 'The one line that survived', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 182, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        // Somebody assigns the surviving line to task 19 at the moment the
+        // availability check has just found it free, so only the write itself
+        // can still catch it.
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'exists')
+                || ! str_contains($query->sql, 'client_tasks')
+                || ! str_contains($query->sql, 'client_invoice_line_id')) {
+                return;
+            }
+            $done = true;
+            $line = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
+            $other = ClientTask::query()->where('workspace_id', $workspace->getKey())
+                ->whereNull('client_invoice_line_id')->orderByDesc('id')->value('id');
+            if ($line !== null && $other !== null) {
+                DB::table('client_tasks')->where('id', $other)->update(['client_invoice_line_id' => $line]);
+            }
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_taken_by_another_task'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(
+            1,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+            'One deliverable, one line, one holder',
+        );
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void

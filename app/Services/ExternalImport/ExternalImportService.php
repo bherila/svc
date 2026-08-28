@@ -1166,6 +1166,21 @@ final class ExternalImportService
                     'updated_at' => now(),
                 ]);
             } catch (UniqueConstraintViolationException) {
+                // Losing the race does not say what won it. The other writer
+                // may have written the very row this was about to, and
+                // reporting a skip then would end an otherwise reconciled run
+                // with skips over work that was in fact done.
+                $winner = DB::connection($destinationName)->table('client_invoice_line_time_entries')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('client_time_entry_id', $timeId)
+                    ->value('client_invoice_line_id');
+
+                if ($winner !== null && (int) $winner === $lineId) {
+                    $linkCounts['idempotent']++;
+
+                    continue;
+                }
+
                 $linkCounts['rejected']++;
                 $counts['skipped']++;
                 $counts['failure_reasons']['time_link_destination_claims_another_line'] = ($counts['failure_reasons']['time_link_destination_claims_another_line'] ?? 0) + 1;
@@ -1273,14 +1288,43 @@ final class ExternalImportService
             // two would otherwise have their link replaced by this one. Leaving
             // updated_at alone keeps the source date attributes() imported -
             // reconstructing a link is not the source editing the row.
+            // A milestone line stands for one deliverable, and the schema
+            // indexes the column without constraining it, so nothing below the
+            // application stops two tasks holding one line. The availability
+            // question is therefore asked by the write rather than before it:
+            // a reader that answered it a statement earlier can be overtaken.
             $updated = DB::connection($destinationName)->table('client_tasks')
                 ->where('workspace_id', $run->workspace_id)
                 ->where('id', $taskId)
                 ->whereNull('client_invoice_line_id')
+                ->whereNotExists(fn ($query) => $query->selectRaw('1')->fromSub(
+                    DB::connection($destinationName)->table('client_tasks')
+                        ->select('id')
+                        ->where('workspace_id', $run->workspace_id)
+                        ->where('client_invoice_line_id', $lineId)
+                        ->where('id', '!=', $taskId),
+                    'holders',
+                ))
                 ->update(['client_invoice_line_id' => $lineId]);
 
             if ($updated === 0) {
-                $milestoneCounts['idempotent']++;
+                // Nothing written, for one of two reasons: this task already
+                // had a link, or somebody else took the line. They are not the
+                // same outcome and must not report as one.
+                $current = DB::connection($destinationName)->table('client_tasks')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('id', $taskId)
+                    ->value('client_invoice_line_id');
+
+                if ($current !== null) {
+                    $milestoneCounts['idempotent']++;
+
+                    continue;
+                }
+
+                $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_taken_by_another_task'] = ($counts['failure_reasons']['milestone_link_taken_by_another_task'] ?? 0) + 1;
 
                 continue;
             }
