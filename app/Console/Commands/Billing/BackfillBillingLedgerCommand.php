@@ -603,9 +603,29 @@ final class BackfillBillingLedgerCommand extends Command
         $map = $this->idMap('client_tasks', 'client_tasks', $identityHash);
         $lines = $this->idMap('client_invoice_lines', 'client_invoice_lines', $identityHash);
 
-        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, &$counters): void {
+        // Which lines more than one source task claims. A milestone line bills
+        // one deliverable, and the schema now says so, so applying these row by
+        // row would give the line to whichever task came first and then take
+        // the constraint violation on the next - failing a repair that has
+        // nothing wrong with it except the rows it cannot decide between.
+        $contested = [];
+        foreach ($legacy->table('client_tasks')->whereNotNull('client_invoice_line_id')
+            ->pluck('client_invoice_line_id') as $claim) {
+            $contested[(string) $claim] = ($contested[(string) $claim] ?? 0) + 1;
+        }
+        $contested = array_filter($contested, static fn (int $count): bool => $count > 1);
+
+        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, $contested, &$counters): void {
             foreach ($rows as $row) {
                 $sourceLink = $row->client_invoice_line_id ?? null;
+
+                // Nothing here says which of them the line billed, so neither
+                // gets it and both are reported.
+                if ($sourceLink !== null && isset($contested[(string) $sourceLink])) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
 
                 // Writing which line billed a milestone is writing a financial
                 // relationship, so this row has to be the row that was

@@ -128,7 +128,7 @@ final class ExternalImportService
         '/^Deferred work items applied to retainer \([\d.,:]+\)$/' => false,
         '/^Deferred work items billed on agreement termination \([\d.,:]+ @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
-        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
+        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([\d.,:]+ hours\) - .+ through .+$/' => false,
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [

@@ -202,6 +202,34 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
+    /**
+     * A milestone line bills one deliverable and the schema now says so, so two
+     * source tasks naming one line cannot both be applied. Deciding between
+     * them is not a repair's business - but neither is failing over it, which
+     * would roll back every other row.
+     */
+    public function test_two_source_tasks_claiming_one_line_are_reported_not_fatal(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $other = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'The other deliverable',
+        ]);
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 702, 'milestone_price' => '250.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 702)->update(['client_invoice_line_id' => 901]);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 701)->update(['client_invoice_line_id' => 901]);
+        $this->ledger('client_tasks', '702', 'task', $other->public_id);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        // Reported as unresolved rather than thrown, and neither task took it.
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertNull($other->refresh()->client_invoice_line_id);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();
