@@ -1526,6 +1526,11 @@ class ExternalImportTest extends TestCase
                 'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
             ],
+            'a termination line of no decimal hours' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (0.0000 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (0.0000 @ 200.00 USD/hr)',
+            ],
             'a termination line of no hours' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (0:00 @ 100.00 USD/hr)',
@@ -1590,6 +1595,28 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(0, $summary['link_counts']['recovered']);
         $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
+    /**
+     * The predecessor writes the same quantity as a decimal on its fee lines -
+     * 197 of them in the migrated data against 5 in H:MM - and these
+     * descriptions are its, not the composer's. A pattern taken from the
+     * composer alone refuses every claim on such a line.
+     */
+    public function test_a_decimal_quantity_is_a_quantity_too(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (9.9168 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.0000 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void

@@ -51,17 +51,28 @@ return new class extends Migration
             );
         }
 
+        // The unique index first, the old one after. A duplicate acquired
+        // between the diagnostic above and the DDL makes this fail, as it
+        // should - but on MySQL each statement commits as it runs, so dropping
+        // first would leave the table with neither index and the deployment
+        // stopped.
+        Schema::table('client_tasks', function (Blueprint $table): void {
+            $table->unique('client_invoice_line_id', 'task_invoice_line_once');
+        });
+
         Schema::table('client_tasks', function (Blueprint $table): void {
             $table->dropIndex('task_invoice_line_idx');
-            $table->unique('client_invoice_line_id', 'task_invoice_line_once');
         });
     }
 
     public function down(): void
     {
         Schema::table('client_tasks', function (Blueprint $table): void {
-            $table->dropUnique('task_invoice_line_once');
             $table->index(['workspace_id', 'client_invoice_line_id'], 'task_invoice_line_idx');
+        });
+
+        Schema::table('client_tasks', function (Blueprint $table): void {
+            $table->dropUnique('task_invoice_line_once');
         });
     }
 };

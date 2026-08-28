@@ -119,13 +119,17 @@ final class ExternalImportService
      * @var array<string, bool>
      */
     /**
-     * What HoursQuantity::format writes, and nothing else: H:MM, signed.
+     * A quantity either system writes into a description.
      *
-     * It builds the hour with %d, so there is no leading zero to allow - and
-     * allowing one would let "09:55" and "010:00" pass as two generations of
-     * one line.
+     * HoursQuantity::format builds H:MM with %d, so there is no leading zero to
+     * allow - "09:55" and "010:00" are not two generations of one line. The
+     * source writes the same quantity as a decimal on its retainer fee lines,
+     * 197 of them against 5 in H:MM, so both forms are quantities here. These
+     * descriptions come from the predecessor, and only some of its wording
+     * survived into the composer; deriving the figures from the composer alone
+     * refused every claim on a fee line.
      */
-    private const HOURS = '-?(?:0|[1-9]\d*):[0-5]\d';
+    private const HOURS = '-?(?:0|[1-9]\d*)(?::[0-5]\d|\.\d+)';
 
     /**
      * Hours above zero, for the one template whose line cannot exist below it.
@@ -135,7 +139,7 @@ final class ExternalImportService
      * and that template replaces its whole group, so a false match there costs
      * the text that identified the charge.
      */
-    private const POSITIVE_HOURS = '(?:0:(?:0[1-9]|[1-5]\d)|[1-9]\d*:[0-5]\d)';
+    private const POSITIVE_HOURS = '(?:[1-9]\d*(?::[0-5]\d|\.\d+)|0:(?:0[1-9]|[1-5]\d)|0\.\d*[1-9]\d*)';
 
     /** A month as PeriodLabel writes one. */
     private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
@@ -1258,13 +1262,21 @@ final class ExternalImportService
         }
 
         $publicId = $this->resolveParentId('client_invoice_lines', $replacementKey, $ledgerItems, $queryCache);
-        $lineId = $this->internalId($destinationName, 'client_invoice_lines', $publicId);
 
-        if ($lineId === null || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, $workspaceId)) {
+        if ($publicId === null) {
             return null;
         }
 
-        return $lineId;
+        // Resolved inside the workspace rather than resolved and then checked:
+        // a ledger mapping that names another tenant's line has no answer here,
+        // and asking for one and rejecting it afterwards leaves a row this run
+        // had no business reading in a variable.
+        $lineId = DB::connection($destinationName)->table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->where('public_id', $publicId)
+            ->value('id');
+
+        return $lineId === null ? null : (int) $lineId;
     }
 
     /**
