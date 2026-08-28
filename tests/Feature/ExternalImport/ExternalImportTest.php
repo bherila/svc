@@ -1296,6 +1296,49 @@ class ExternalImportTest extends TestCase
         );
     }
 
+    /**
+     * An operator's parenthetical can open with a number that names the thing
+     * rather than prices it, and two of those are two allocations. Only what a
+     * billing service wrote is normalised.
+     */
+    public function test_an_operator_parenthetical_is_not_read_as_an_amount(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Support package (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Support package (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A time entry deleted before the run was never observed, so only the
+     * source unfiltered knows its line was claimed - and a survivor beside a
+     * claimed line is not the unambiguous replacement it looks like.
+     */
+    public function test_a_deleted_time_entry_claim_still_makes_the_replacement_ambiguous(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, unclaimedEarlierGenerations: 1);
+        $pdo->exec('ALTER TABLE client_time_entries ADD COLUMN deleted_at TEXT');
+        // Claims the earlier generation, and is deleted, so this run never sees it.
+        $pdo->exec("INSERT INTO client_time_entries VALUES (127, 13, 11, NULL, 7, 'Deleted but it claimed one', 30, '2026-01-22', 1, 0, 'approved', 200, '2026-01-25 09:00:00')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();

@@ -86,6 +86,23 @@ final class ExternalImportService
      *
      * @var list<string>
      */
+    /**
+     * Descriptions a billing service writes, anchored to their openings.
+     *
+     * Deliberately literal. A shape like "something in parentheses" would match
+     * an operator's text as readily as a generated line, and the whole point of
+     * the list is to tell those apart.
+     *
+     * @var list<string>
+     */
+    private const GENERATED_DESCRIPTION_TEMPLATES = [
+        '/^Work items applied to retainer \(/',
+        '/^Deferred work items applied to retainer \(/',
+        '/^Interim overage hours /',
+        '/^Subcontractor: /',
+        '/^.+ Retainer \(/',
+    ];
+
     private const IDENTIFIABLE_BY_DESCRIPTION = [
         'retainer',
         'prior_month_retainer',
@@ -735,6 +752,13 @@ final class ExternalImportService
      * that leading figure is set aside. Everything else, inside the group or
      * out, names the charge and has to match exactly.
      *
+     * And only where a billing service wrote the description. Anchoring to its
+     * templates is what stops "Support package (2025 tier)" being read as a
+     * generated line with a figure in front: an operator's parenthetical can
+     * start with a number that names the thing rather than prices it, and two
+     * of those are two allocations. Anything that does not match a template is
+     * compared exactly.
+     *
      * A figure written anywhere else is therefore treated as identifying, and a
      * line that moves one is refused rather than recovered. That is the safe
      * direction: a refusal leaves work looking unbilled and reported, where a
@@ -742,11 +766,17 @@ final class ExternalImportService
      */
     private static function descriptionShape(mixed $description): string
     {
-        return (string) preg_replace(
-            '/\((\s*)\d[\d.,:]*/',
-            '($1#',
-            trim((string) ($description ?? '')),
-        );
+        $text = trim((string) ($description ?? ''));
+
+        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template) {
+            if (preg_match($template, $text) === 1) {
+                // The first group only. A later one is prose the service did
+                // not write and has no claim to being an amount.
+                return (string) preg_replace('/\((\s*)\d[\d.,:]*/', '($1#', $text, 1);
+            }
+        }
+
+        return $text;
     }
 
     /**
@@ -848,20 +878,32 @@ final class ExternalImportService
         $claimed = [];
 
         if (count($superseded) > 1) {
-            // The claims this run observed, not the ones the source still
-            // shows. A competitor deleted or cleared between the two reads
-            // would otherwise disappear from the count and leave the survivor
-            // looking unambiguous - and vanishedLinkCount() reports that
-            // afterwards without undoing a link written on the strength of it.
-            // Indexed by line once per run rather than walked per question.
-            // Walking it per (invoice, type) meant every regenerated invoice
-            // scanning every billed row in the source, which is quadratic in
-            // exactly the history this exists to repair.
+            // Both what this run observed and what the source holds now, for
+            // the reason the exclusive check needs both: a claimant deleted
+            // between the two reads is gone from the source, and one deleted
+            // before the run began was never observed. Either way its line had
+            // a claim on it, and a survivor beside it is not the unambiguous
+            // replacement it looks like.
+            // The observed side is indexed once per run rather than walked per
+            // question. Walking it per (invoice, type) meant every regenerated
+            // invoice scanning every billed row in the source, which is
+            // quadratic in exactly the history this exists to repair.
             $claimants = $this->observedClaimsByLine()['*'];
 
             foreach ($superseded as $key) {
                 if (isset($claimants[(string) $key])) {
                     $claimed[(string) $key] = true;
+                }
+            }
+
+            foreach (['client_time_entries', 'client_tasks'] as $table) {
+                if (! in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $table, $queryCache), true)) {
+                    continue;
+                }
+
+                foreach ($source->table($table)->whereIn('client_invoice_line_id', $superseded)
+                    ->pluck('client_invoice_line_id') as $claim) {
+                    $claimed[(string) $claim] = true;
                 }
             }
         }
