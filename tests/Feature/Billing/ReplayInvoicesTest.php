@@ -376,6 +376,85 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * A charge repriced onto an amount the invoice already states changes only
+     * how many times that amount appears. No total moves, no line count moves,
+     * and if the wording moved with the price there is nothing to pair either -
+     * one count falling while another rises is the whole signal.
+     */
+    public function test_a_repricing_onto_an_existing_amount_still_gates(): void
+    {
+        $this->generatedHistory();
+
+        $invoiceId = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->value('client_invoice_id');
+        $lines = ClientInvoiceLine::query()->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count());
+
+        /** @var ClientInvoiceLine $a */
+        $a = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $lines->last();
+
+        // History priced this charge exactly like the other one, and worded it
+        // differently too, so pairing has no counterpart to compare against.
+        $a->forceFill([
+            'description' => 'A charge worded nothing like the engine words it',
+            'unit_amount' => (int) $b->unit_amount,
+            'quantity' => (string) $b->quantity,
+            'total_amount' => (int) $a->total_amount,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A correction that removes one charge and adds another moves money in
+     * aggregate without repricing anything. The money must still be reported,
+     * but the correction has to remain able to account for it - otherwise the
+     * corrections this port makes on purpose can never explain their own work.
+     */
+    public function test_a_charge_replaced_by_another_stays_explainable(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
+
+        // Different wording and different amounts: nothing to pair against, so
+        // this is one charge gone and another arrived rather than a repricing.
+        $line->forceFill([
+            'description' => 'A charge the engine replaced with a different one',
+            'unit_amount' => 2500,
+            'quantity' => '1.0000',
+        ])->save();
+
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $row = array_column($detail['comparisons'], null, 'invoice_number')[$invoiceNumber] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertFalse($row['line_repriced'], 'Nothing was repriced; a charge was replaced.');
+        // Refusing attribution on any line-money movement would make
+        // composition permanently unexplainable, which is the opposite of what
+        // the deliberate corrections are for.
+        $this->assertNotNull($row['explained_by'] ?? null);
+    }
+
+    /**
      * A charge that moves project and changes price at the same time. Filing
      * the move under attribution must not take the repricing with it.
      */

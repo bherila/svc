@@ -639,7 +639,8 @@ final class ReplayInvoicesCommand extends Command
             // even when the invoice total lands in the same place. The agreed
             // bar is that money is exact; a charge the client did not have is
             // not the same money differently arranged.
-            $lineMoneyDiffers = $this->lineMultisetDifferences($before['lines'], $after['lines'])['money_differs'];
+            $lineComparison = $this->lineMultisetDifferences($before['lines'], $after['lines']);
+            $lineMoneyDiffers = $lineComparison['money_differs'];
 
             $hourNotes = [];
             foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
@@ -669,6 +670,7 @@ final class ReplayInvoicesCommand extends Command
                 'notes' => $notes,
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
+                'line_repriced' => $lineComparison['repriced'],
             ];
         }
 
@@ -751,11 +753,18 @@ final class ReplayInvoicesCommand extends Command
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
                 'invoice_number' => $historical['invoice_number'],
-                'verdict' => $delta === 0 && ! $lineComparison['money_differs']
-                    ? 'match_legacy_period'
-                    : 'money_differs',
+                // Identical only when the lines say so too. Equal cycle totals
+                // with different charges underneath is a composition
+                // difference, and counting it green would report the pair as
+                // reproducing when it did not.
+                'verdict' => match (true) {
+                    $delta !== 0 || $lineComparison['money_differs'] => 'money_differs',
+                    $lineComparison['notes'] !== [] => 'composition_differs',
+                    default => 'match_legacy_period',
+                },
                 'money_delta' => $delta,
                 'line_money_differs' => $lineComparison['money_differs'],
+                'line_repriced' => $lineComparison['repriced'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
@@ -878,7 +887,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  list<array<string, mixed>>  $before
      * @param  list<array<string, mixed>>  $after
-     * @return array{notes: list<string>, money_differs: bool}
+     * @return array{notes: list<string>, money_differs: bool, repriced: bool}
      */
     private function lineMultisetDifferences(array $before, array $after): array
     {
@@ -960,28 +969,44 @@ final class ReplayInvoicesCommand extends Command
         // say. Comparing the distinct amounts the invoice states catches that
         // without counting them, so a line merely added or removed at an amount
         // still present elsewhere stays composition.
-        $distinctPrices = static function (array $lines) use ($priceTuple): array {
-            $seen = [];
+        // Two questions, and conflating them is what made every earlier shape of
+        // this wrong in one direction or the other.
+        //
+        // Did the money move? That is the multiset of amounts the two invoices
+        // state, counts included - a charge repriced onto an amount another
+        // line already carries changes only a count. It decides the verdict.
+        //
+        // Was an existing charge repriced? That is the pairing above and only
+        // it. A line removed and another added is composition however it looks
+        // in aggregate, and composition is what the four corrections exist to
+        // explain, so only a repricing refuses attribution.
+        $amounts = static function (array $lines) use ($priceTuple): array {
+            $counts = [];
             foreach ($lines as $line) {
-                $seen[$priceTuple($line)] = true;
+                $tuple = $priceTuple($line);
+                $counts[$tuple] = ($counts[$tuple] ?? 0) + 1;
             }
-            ksort($seen);
+            ksort($counts);
 
-            return $seen;
+            return $counts;
         };
 
-        // Only a substitution. An amount that leaves with nothing arriving in
-        // its place is a line removed, and one that arrives with nothing
-        // leaving is a line added - both composition, and both things a
-        // deliberate correction is entitled to explain. An amount leaving while
-        // another arrives is a charge repriced under wording that changed with
-        // it, which no correction speaks for.
-        $beforeOnly = array_diff_key($distinctPrices($before), $distinctPrices($after));
-        $afterOnly = array_diff_key($distinctPrices($after), $distinctPrices($before));
-
-        if ($beforeOnly !== [] && $afterOnly !== []) {
-            $repriced = true;
+        // A substitution at the level of amounts: one goes down in count while
+        // another goes up. That is a charge repriced onto an amount the invoice
+        // already stated, which the pairing above cannot see when the wording
+        // moved with it. Counts that only fall are lines removed, counts that
+        // only rise are lines added - composition, and explainable.
+        $beforeAmounts = $amounts($before);
+        $afterAmounts = $amounts($after);
+        $rose = false;
+        $fell = false;
+        foreach (array_unique([...array_keys($beforeAmounts), ...array_keys($afterAmounts)]) as $tuple) {
+            $delta = ($afterAmounts[$tuple] ?? 0) - ($beforeAmounts[$tuple] ?? 0);
+            $rose = $rose || $delta > 0;
+            $fell = $fell || $delta < 0;
         }
+
+        $moneyMoved = $repriced || ($rose && $fell);
 
         $beforeCounts = $tally($before);
         $afterCounts = $tally($after);
@@ -1000,7 +1025,7 @@ final class ReplayInvoicesCommand extends Command
             $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
         }
 
-        return ['notes' => $notes, 'money_differs' => $repriced];
+        return ['notes' => $notes, 'money_differs' => $moneyMoved, 'repriced' => $repriced];
     }
 
     /**
@@ -1026,7 +1051,7 @@ final class ReplayInvoicesCommand extends Command
         // names, and the per-line notes are type-prefixed too - so without this
         // a repriced additional_hours line would be waived by the very
         // correction that explains why additional_hours moved at all.
-        if (($comparison['line_money_differs'] ?? false) === true) {
+        if (($comparison['line_repriced'] ?? false) === true) {
             $comparison['explained_by'] = null;
 
             return $comparison;
@@ -1217,6 +1242,17 @@ final class ReplayInvoicesCommand extends Command
 
         $absolute = array_sum(array_map(static fn (array $c): int => abs((int) $c['money_delta']), [...$unexplained, ...$missing, ...$extra]));
         $this->components->twoColumnDetail('unexplained money divergence (minor units)', (string) $absolute);
+
+        // A line repriced with a compensating quantity moves no net total, so
+        // the figure above can read zero on a run that failed. Saying so here
+        // keeps the summary honest without opening the detail report.
+        $sameTotal = count(array_filter($unexplained, static fn (array $c): bool => (int) $c['money_delta'] === 0));
+        if ($sameTotal > 0) {
+            $this->components->twoColumnDetail(
+                '<fg=red>of which charge the same total by different lines</>',
+                (string) $sameTotal,
+            );
+        }
 
         foreach ($outcome['generation'] as $failure) {
             $this->components->warn('generation failed - '.$failure);
