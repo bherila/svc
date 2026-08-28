@@ -894,6 +894,32 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertNull($row['explained_by'] ?? null);
     }
 
+    /**
+     * A charge reclassified between capacity types, at a different amount. That
+     * is one of the four things this port does on purpose, and it is a charge
+     * removed and another added rather than one charge repriced - so the money
+     * is reported and the correction is still allowed to account for it.
+     */
+    public function test_a_reclassified_charge_stays_explainable(): void
+    {
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertSame('additional_hours', (string) $overage->type);
+
+        // History billed this as prior-month work, and for a different amount.
+        $overage->forceFill([
+            'type' => 'prior_month_billable',
+            'unit_amount' => (int) $overage->unit_amount + 2500,
+            'total_amount' => (int) $overage->total_amount + 2500,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertFalse($row['line_repriced'], 'A charge of another kind is not the same charge repriced.');
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();

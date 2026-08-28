@@ -1033,7 +1033,16 @@ final class ReplayInvoicesCommand extends Command
         // line belongs to is filing like any other, and a line that moves
         // between items is exactly the case the recurring-item correction is
         // about - so it must not be able to hide a repricing.
-        $identity = static fn (array $line): string => (string) $line['identity_hash'];
+        // Type belongs here, though the rest of the filing does not. Where a
+        // line moves project or date it is the same charge filed elsewhere;
+        // where its type changes it is a different kind of charge, and
+        // reclassifying between the capacity types is one of the four things
+        // this port does on purpose. Pairing across a type change would call
+        // that correction's own work a repricing and refuse to explain it.
+        $identity = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (string) $line['identity_hash'],
+        ]);
 
         $priceTuple = static fn (array $line): string => sprintf(
             'unit %d qty %s tax %d total %d',
