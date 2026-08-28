@@ -361,6 +361,60 @@ final class InterimOverageGenerator
      * Hours already billed interim inside a cycle, so the cadence invoice can
      * show them as reconciled rather than charge for them again.
      */
+    /**
+     * Give back the work an uncharged interim draft is holding.
+     *
+     * An interim draft pivot-links its overage entries the moment it is
+     * created, but {@see interimOverageHoursForCycle()} counts only invoices
+     * that actually charged someone. So a draft interim held work the cadence
+     * selector could no longer see - `unbilled()` skips a linked entry - while
+     * contributing nothing to the reconciliation that would have billed it.
+     * The hours belonged to neither invoice and the client was charged for
+     * them by neither.
+     *
+     * A draft has charged nobody, which is the rule everywhere else here, so
+     * the cadence invoice takes the work. Anything issued keeps its claim.
+     */
+    public function releaseUnchargedInterimClaims(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        BillingCycle $cycle,
+    ): int {
+        // Named, not "everything that is not settled". `NOT IN` reads a status
+        // this code does not recognise as releasable, which is the opposite of
+        // the rule everywhere else here: an unrecognised status is one this
+        // code cannot show is safe to rewrite, and it may already have charged
+        // someone.
+        $drafts = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+            ->where('status', InvoiceStatus::Draft->value)
+            // Locked and rechecked. The cadence path holds the agreement, and
+            // `InvoiceLifecycleService::issue()` locks the invoice and the
+            // company - so nothing stops an operator issuing this draft between
+            // the read and the delete, and the lines would then be stripped from
+            // an invoice that had just been sent.
+            ->lockForUpdate()
+            ->get();
+
+        $released = 0;
+
+        foreach ($drafts as $draft) {
+            $draft->refresh();
+
+            if (InvoiceStatus::isSettledValue($draft->status)) {
+                continue;
+            }
+
+            $this->invoiceLineComposer->resetSystemGeneratedLines($draft);
+            $draft->update(['hours_billed_at_rate' => 0]);
+            // The lines are gone, so the stored totals describe a charge that no
+            // longer exists - and `issue()` would send that number.
+            $draft->refresh()->recalculateTotals();
+            $released++;
+        }
+
+        return $released;
+    }
+
     public function interimOverageHoursForCycle(ClientAgreement $agreement, BillingCycle $cycle): float
     {
         return round((float) ClientInvoice::query()
