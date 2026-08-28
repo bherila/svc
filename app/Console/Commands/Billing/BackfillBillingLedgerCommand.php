@@ -382,12 +382,20 @@ final class BackfillBillingLedgerCommand extends Command
         // poisons the surrounding transaction: catching the violation would
         // leave every later repair in this run writing into an aborted one.
         // Nesting a transaction here is what Laravel turns into a savepoint.
-        try {
-            $written = $this->db()->transaction(static fn (): int => $query->update($changes));
-        } catch (UniqueConstraintViolationException) {
-            $counters['unresolved']++;
+        //
+        // Only for the one column that can collide. Every other repair here
+        // writes something no constraint contests, and a savepoint per row
+        // across a whole ledger is a cost with nothing behind it.
+        if (! array_key_exists('client_invoice_line_id', $changes)) {
+            $written = $query->update($changes);
+        } else {
+            try {
+                $written = $this->db()->transaction(static fn (): int => $query->update($changes));
+            } catch (UniqueConstraintViolationException) {
+                $counters['unresolved']++;
 
-            return;
+                return;
+            }
         }
 
         if ($written === 0) {
@@ -690,10 +698,15 @@ final class BackfillBillingLedgerCommand extends Command
                 // operator's correction is not competing for anything, and
                 // refusing costs the milestone price applyRow() could still
                 // restore without touching that link.
+                // Only asked when the source names a line. Nothing that
+                // consumes this runs otherwise, and applyRow() asks the same
+                // question again in the write - so for the many tasks with no
+                // claim at all this was a query per row for nothing.
+                //
                 // Workspace-scoped, not left implicit in the mapping that
                 // produced the id: this is a tenant-owned read, and every one
                 // of them says so on its own.
-                $fillsItsLink = $this->db()->table('client_tasks')
+                $fillsItsLink = $sourceLink !== null && $this->db()->table('client_tasks')
                     ->where('workspace_id', $this->workspaceId)
                     ->where('id', $id)
                     ->whereNull('client_invoice_line_id')

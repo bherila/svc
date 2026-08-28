@@ -144,15 +144,6 @@ final class ExternalImportService
     /** A month as PeriodLabel writes one. */
     private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
 
-    /**
-     * What PeriodLabel writes: a month, a quarter, a year, or a month range.
-     *
-     * The range form takes months on both sides - it is built from two
-     * format('Y-m') calls - so a year or a quarter on either end is somebody
-     * else's text.
-     */
-    private const PERIOD_LABEL = '(?:'.self::PERIOD_MONTH.'\.\.'.self::PERIOD_MONTH.'|'.self::PERIOD_MONTH.'|\d{4}-Q[1-4]|\d{4})';
-
     /** What Carbon's "M j, Y" writes. */
     private const SHORT_DATE = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}';
 
@@ -174,7 +165,20 @@ final class ExternalImportService
         '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
-        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \('.self::HOURS.' applied to '.self::PERIOD_LABEL.' cycle\)$/' => [
+        // One entry per cadence, because PeriodLabel writes a different shape
+        // for each: a month for monthly, a quarter for quarterly, a year for
+        // annual, and a month range for the six-month span. Accepting any
+        // label after any cadence let "quarterly ... 2026 cycle" through.
+        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Work items applied to quarterly retainer \('.self::HOURS.' applied to \d{4}-Q[1-4] cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Work items applied to annual retainer \('.self::HOURS.' applied to \d{4} cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Work items applied to semiannual retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.'\.\.'.self::PERIOD_MONTH.' cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
         '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => [
@@ -922,7 +926,12 @@ final class ExternalImportService
      */
     private static function descriptionShape(mixed $description, string $lineType): string
     {
-        $text = trim((string) ($description ?? ''));
+        // Trimmed only to recognise a template. Whatever no template claims is
+        // returned exactly as the source holds it: the importer preserves a
+        // description's whitespace, so two custom lines differing only there
+        // are two descriptions and not one.
+        $raw = (string) ($description ?? '');
+        $text = trim($raw);
 
         foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $rule) {
             // Bound to the type it belongs to. A service writes each of these
@@ -952,7 +961,7 @@ final class ExternalImportService
             );
         }
 
-        return $text;
+        return $raw;
     }
 
     /**

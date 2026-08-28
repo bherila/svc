@@ -1541,6 +1541,16 @@ class ExternalImportTest extends TestCase
                 'Monthly Retainer (9:55 hours) - Jan 31, 2026 through Jan 1, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 31, 2026 through Jan 1, 2026',
             ],
+            'a cadence with a period it cannot produce' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026 cycle)',
+            ],
+            'custom wording differing only in whitespace' => [
+                'prior_month_retainer',
+                ' Support package ',
+                'Support package',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
