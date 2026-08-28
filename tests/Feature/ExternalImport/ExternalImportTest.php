@@ -1253,6 +1253,49 @@ class ExternalImportTest extends TestCase
         );
     }
 
+    /**
+     * An operator can bill the deliverable on a different line between the two
+     * reads. The import leaves that alone, but it has not reconciled the claim
+     * and must not report as if it had.
+     */
+    public function test_a_milestone_billed_elsewhere_here_is_reported_not_counted_idempotent(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (231, 11, NULL, 'SYN-231', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (232, 231, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (233, 231, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 232, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The operator moves it onto a line of their own after the import.
+        $elsewhere = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id'),
+            'type' => 'adjustment', 'description' => 'Billed by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+        ]);
+        ClientTask::query()->where('workspace_id', $workspace->getKey())
+            ->update(['client_invoice_line_id' => $elsewhere->id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(
+            (int) $elsewhere->id,
+            (int) ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'),
+            'The operator decision stands',
+        );
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();
@@ -1504,8 +1547,14 @@ class ExternalImportTest extends TestCase
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
-        $this->assertSame(1, $summary['milestone_link_counts']['idempotent']);
+        // The correction stands, which is what this test is for. It is counted
+        // as a refusal rather than as nothing to do, because the source and the
+        // destination disagree about what billed this deliverable and a run
+        // that reports clean over that has not reconciled the claim.
         $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(0, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(1, $summary['milestone_link_counts']['rejected']);
+        $this->assertNotSame('completed', $summary['status']);
         $this->assertSame((int) $correctedLineId, (int) DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
     }
 

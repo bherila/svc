@@ -1460,7 +1460,21 @@ final class ExternalImportService
                     ->value('client_invoice_line_id');
 
                 if ($current !== null) {
-                    $milestoneCounts['idempotent']++;
+                    if ((int) $current === $lineId) {
+                        $milestoneCounts['idempotent']++;
+
+                        continue;
+                    }
+
+                    // The destination says this deliverable was billed on some
+                    // other line. Leaving it alone is right - repointing a
+                    // billed row is not an import's decision - but the run has
+                    // not reconciled the claim and must not report as if it
+                    // had, which is how the time-entry pass reads the same
+                    // disagreement.
+                    $milestoneCounts['rejected']++;
+                    $counts['skipped']++;
+                    $counts['failure_reasons']['milestone_link_destination_claims_another_line'] = ($counts['failure_reasons']['milestone_link_destination_claims_another_line'] ?? 0) + 1;
 
                     continue;
                 }
