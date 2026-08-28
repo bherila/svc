@@ -433,6 +433,18 @@ final class ClientInvoicingService
                 $invoice instanceof ClientInvoice,
                 fn (Builder $query): Builder => $query->whereKeyNot($invoice->getKey()),
             )
+            // Sold means a charge exists, not merely that a row does. The first
+            // version of this asked only whether another invoice claimed the
+            // cycle, which is true of an empty draft - and a regeneration pass
+            // blanks every invoice before rebuilding it, so each one in turn saw
+            // its neighbours as having already sold what none of them had yet.
+            // Three cycles lost their retainer that way.
+            ->whereHas('lines', function (Builder $lines): void {
+                $lines->whereIn('type', [
+                    InvoiceLineType::Retainer->value,
+                    InvoiceLineType::RecurringItem->value,
+                ]);
+            })
             ->exists();
     }
 
