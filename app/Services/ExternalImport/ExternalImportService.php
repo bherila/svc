@@ -151,27 +151,30 @@ final class ExternalImportService
      * number_format does not pad the leading group, so "00.00" and
      * "000,100.00" are not amounts it could have produced.
      */
-    private const MONEY = '(?:0|[1-9]\d{0,2})(?:,\d{3})*\.\d{2} [A-Z]{3}';
+    private const MONEY = '(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2} [A-Z]{3}';
 
+    /**
+     * @var array<string, array{whole: bool, types: list<string>}>
+     */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
-        // Every one anchored end to end, not by its opening. A prefix is
-        // something an operator can write too, and matching on one lets this
-        // strip a figure that names the allocation rather than prices it.
-        //
-        // The figure class admits a colon because the source writes hours as
-        // H:MM - the migrated retainer draws read "(9:55)" and "(10:00)", not
-        // "(9.9168)". Anchoring without it matched nothing there at all.
-        //
-        // The termination rate is formatMoney()'s output, a decimal beside a
-        // currency code, and it is spelled out rather than left as prose: that
-        // template replaces its whole group, so anything it wrongly matches
-        // loses the text that told two allocations apart.
-        '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => false,
-        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \('.self::HOURS.' applied to '.self::PERIOD_LABEL.' cycle\)$/' => false,
-        '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => false,
-        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ '.self::MONEY.'\/hr\)$/' => true,
-        '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
-        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => false,
+        '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \('.self::HOURS.' applied to '.self::PERIOD_LABEL.' cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
+            'whole' => true, 'types' => ['additional_hours'],
+        ],
+        '/^Interim overage hours for '.self::POOL_MONTH.'$/' => [
+            'whole' => false, 'types' => ['additional_hours'],
+        ],
+        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'],
+        ],
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [
@@ -880,11 +883,21 @@ final class ExternalImportService
      * direction: a refusal leaves work looking unbilled and reported, where a
      * wrong match marks it billed silently.
      */
-    private static function descriptionShape(mixed $description): string
+    private static function descriptionShape(mixed $description, string $lineType): string
     {
         $text = trim((string) ($description ?? ''));
 
-        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $wholeGroup) {
+        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $rule) {
+            // Bound to the type it belongs to. A service writes each of these
+            // for one kind of line, so the same words on another kind are
+            // somebody quoting them - and the termination template erases its
+            // whole group, which is a costly thing to do to a line it does not
+            // describe.
+            if (! in_array($lineType, $rule['types'], true)) {
+                continue;
+            }
+
+            $wholeGroup = $rule['whole'];
             if (preg_match($template, $text) !== 1
                 || ! self::datesAreReal($text)
                 || ! self::periodRangesAreReal($text)) {
@@ -1132,7 +1145,7 @@ final class ExternalImportService
         // enough. A milestone establishes identity another way, through an
         // exclusive claimant and an unheld line, so demanding a column it never
         // reads would only disable a recovery that is sound without it.
-        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description'] as $required) {
+        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description', 'client_agreement_id'] as $required) {
             if (! in_array($required, $columns, true)) {
                 return null;
             }
@@ -1187,10 +1200,10 @@ final class ExternalImportService
         // between generations of one line. Not every number, though: a retainer
         // description carries the cycle it is for, and February 2024 is not
         // February 2025.
-        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null);
+        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType);
 
         if ($supersededShape === ''
-            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null)) {
+            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType)) {
             return null;
         }
 
@@ -1199,8 +1212,7 @@ final class ExternalImportService
         // same way - the words describe the work, not which contract it fell
         // under. This is the one piece of identity the source records as a
         // reference rather than as prose, so it is used where it exists.
-        if (in_array('client_agreement_id', $columns, true)
-            && (string) ($supersededRow['client_agreement_id'] ?? '') !== (string) ($replacement['client_agreement_id'] ?? '')) {
+        if ((string) ($supersededRow['client_agreement_id'] ?? '') !== (string) ($replacement['client_agreement_id'] ?? '')) {
             return null;
         }
 

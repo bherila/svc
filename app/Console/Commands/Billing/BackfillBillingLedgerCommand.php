@@ -654,13 +654,19 @@ final class BackfillBillingLedgerCommand extends Command
         // queried it regardless would fail the whole command instead.
         $contested = [];
         if ($lines !== [] && $this->sourceRecordsTaskLinks($legacy)) {
-            foreach ($legacy->table('client_tasks')
-                ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
-                ->whereIn('client_invoice_line_id', array_keys($lines))
-                ->groupBy('client_invoice_line_id')
-                ->havingRaw('count(*) > 1')
-                ->get() as $row) {
-                $contested[(string) $row->line_key] = (int) $row->claims;
+            // Chunked, because this binds one placeholder per mapped line and
+            // a workspace with a long invoice history has more of them than a
+            // driver will accept in one statement - the task pass below is
+            // chunked for the same reason.
+            foreach (array_chunk(array_keys($lines), 500) as $chunk) {
+                foreach ($legacy->table('client_tasks')
+                    ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
+                    ->whereIn('client_invoice_line_id', $chunk)
+                    ->groupBy('client_invoice_line_id')
+                    ->havingRaw('count(*) > 1')
+                    ->get() as $row) {
+                    $contested[(string) $row->line_key] = (int) $row->claims;
+                }
             }
         }
 
