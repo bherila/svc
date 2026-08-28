@@ -590,6 +590,10 @@ class ExternalImportTest extends TestCase
         // reads from the same permissive source and lands in the same strict
         // destination.
         $pdo->exec("UPDATE client_tasks SET completed_at = '0000-00-00 00:00:00' WHERE id = 14");
+        // An agreement reads its status from these dates the same way, and a
+        // zero termination date would retire an agreement that is still live.
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, active_date TEXT, termination_date TEXT, monthly_retainer_hours TEXT, hourly_rate TEXT, billing_cadence TEXT)');
+        $pdo->exec("INSERT INTO client_agreements VALUES (51, 11, '2026-01-01', '0000-00-00 00:00:00', '10', '150.00', 'monthly')");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -601,7 +605,14 @@ class ExternalImportTest extends TestCase
         $this->assertStringStartsNotWith('0000-00-00', (string) $project->created_at);
         // The task below it still arrived, which is what a failed parent costs.
         $this->assertSame(1, DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->count());
-        $this->assertNull(DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('completed_at'));
+        $task = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->first();
+        $this->assertNotNull($task);
+        $this->assertNull($task->completed_at);
+        // A zero date is a non-empty string, so anything reading the raw value
+        // as a yes/no reads yes - and the row ends up saying it completed on no
+        // date at all.
+        $this->assertSame('open', $task->status);
+        $this->assertSame('active', DB::table('client_agreements')->where('workspace_id', $workspace->getKey())->value('status'));
     }
 
     public function test_imported_rows_keep_the_dates_the_source_recorded(): void
