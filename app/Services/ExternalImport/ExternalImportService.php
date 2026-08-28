@@ -786,6 +786,27 @@ final class ExternalImportService
     }
 
     /**
+     * Whether every period range here is one PeriodLabel would write.
+     *
+     * It writes a range only when the two ends are not the same month - a span
+     * inside one month collapses to that month, and a backwards span is not a
+     * span - so "2026-01..2026-01" is somebody's own text however well it
+     * matches the grammar.
+     */
+    private static function periodRangesAreReal(string $text): bool
+    {
+        preg_match_all('/(\d{4}-\d{2})\.\.(\d{4}-\d{2})/', $text, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $range) {
+            if ($range[1] >= $range[2]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Whether every date-shaped run in this text is a date Carbon could write.
      *
      * A pattern can say "Jan" and two digits; it cannot say that January has no
@@ -844,7 +865,9 @@ final class ExternalImportService
         $text = trim((string) ($description ?? ''));
 
         foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $wholeGroup) {
-            if (preg_match($template, $text) !== 1 || ! self::datesAreReal($text)) {
+            if (preg_match($template, $text) !== 1
+                || ! self::datesAreReal($text)
+                || ! self::periodRangesAreReal($text)) {
                 continue;
             }
 
