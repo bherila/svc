@@ -49,8 +49,19 @@ not have is not the same money differently arranged. What stays reported rather
 than blocking is the same money attributed differently - a changed service date,
 project, or recurring item with every amount identical.
 
+A line's *type* is on the reporting side too. A charge reclassified from one
+category to another with every amount identical is the same money under a
+different name, and reclassification between the capacity-dependent types is
+one of the things this port changes on purpose.
+
 Hours are the documented exception and still never gate: the source stored
 fractional hours and this schema derives them from whole minutes.
+
+The four deliberate corrections can waive a divergence in *which* line types a
+period carries. They never waive a difference in what a line of a given type
+costs - a correction is a claim about composition, not about price, and the
+per-line notes are type-prefixed, so without that rule a repriced line would be
+excused by the very correction that explains why its type moved at all.
 
 ### Generation never touches a settled invoice
 

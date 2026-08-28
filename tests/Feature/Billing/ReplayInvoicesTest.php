@@ -134,6 +134,49 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * The deliberate corrections say which line types a period should carry.
+     * They say nothing about what a line of that type costs, so a repriced line
+     * must not be waived by the correction that explains why its type moved.
+     */
+    public function test_a_repriced_line_is_not_waived_by_a_correction_that_covers_its_type(): void
+    {
+        $this->generatedHistory();
+
+        // prior_month_retainer is one of the capacity-dependent types, so this
+        // is the invoice a correction could otherwise excuse. Only the unit
+        // price moves: the invoice total is untouched, so nothing above the
+        // line level has anything to notice.
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line->forceFill(['unit_amount' => (int) $line->unit_amount + 5000])->save();
+
+        $invoice = $line->invoice()->firstOrFail();
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->assertFailed();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $rows = array_column($detail['comparisons'], null, 'invoice_number');
+        $row = $rows[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertSame(0, $row['money_delta']);
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.

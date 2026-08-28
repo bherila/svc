@@ -660,6 +660,7 @@ final class ReplayInvoicesCommand extends Command
                 'money_delta' => $moneyDelta,
                 'notes' => $notes,
                 'hour_notes' => $hourNotes,
+                'line_money_differs' => $lineMoneyDiffers,
             ];
         }
 
@@ -746,6 +747,7 @@ final class ReplayInvoicesCommand extends Command
                     ? 'match_legacy_period'
                     : 'money_differs',
                 'money_delta' => $delta,
+                'line_money_differs' => $lineComparison['money_differs'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
@@ -872,9 +874,13 @@ final class ReplayInvoicesCommand extends Command
         $money = static function (array $lines): array {
             $counts = [];
             foreach ($lines as $line) {
+                // Type is deliberately absent. A line reclassified from one
+                // category to another with every amount identical is the same
+                // money under a different name, which belongs on the reporting
+                // side of the split - and reclassification between the capacity
+                // types is one of the things this port changes on purpose.
                 $signature = sprintf(
-                    '%s unit %d qty %s tax %d total %d',
-                    (string) $line['type'],
+                    'unit %d qty %s tax %d total %d',
                     (int) $line['unit_amount'],
                     (string) $line['quantity'],
                     (int) $line['tax_amount'],
@@ -921,6 +927,17 @@ final class ReplayInvoicesCommand extends Command
     private function attribute(array $comparison): array
     {
         if ($comparison['verdict'] !== 'money_differs') {
+            return $comparison;
+        }
+
+        // A correction is a claim about which line types a period should carry,
+        // never about what a line of that type costs. Attribution works on type
+        // names, and the per-line notes are type-prefixed too - so without this
+        // a repriced additional_hours line would be waived by the very
+        // correction that explains why additional_hours moved at all.
+        if (($comparison['line_money_differs'] ?? false) === true) {
+            $comparison['explained_by'] = null;
+
             return $comparison;
         }
 
