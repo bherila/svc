@@ -5,6 +5,7 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
@@ -277,8 +278,17 @@ final class ReplayInvoicesCommand extends Command
             ->orderBy('id')
             ->get();
 
+        // Which deliverable each milestone line billed. A task's title and
+        // price are both editable, so the wording and the amount can change
+        // together and leave nothing linking the two versions - but the claim
+        // itself survives, and this command releases and recreates it.
+        $claimedBy = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereNotNull('client_invoice_line_id')
+            ->pluck('public_id', 'client_invoice_line_id');
+
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -294,6 +304,7 @@ final class ReplayInvoicesCommand extends Command
                 $agreementId = $line->client_agreement_id === null
                     ? ''
                     : (string) (int) $line->client_agreement_id;
+                $claim = (string) ($claimedBy[$line->id] ?? '');
 
                 $lines[] = [
                     'type' => (string) $line->type,
@@ -312,6 +323,7 @@ final class ReplayInvoicesCommand extends Command
                     // not visible in any other field here.
                     'project_id' => $projectId,
                     'agreement_id' => $agreementId,
+                    'claimed_by' => $claim,
                     // A description is the one field here that can carry a
                     // client's name, and this output is meant to be readable
                     // outside the host. Digested under a per-run key, so two
@@ -1122,6 +1134,36 @@ final class ReplayInvoicesCommand extends Command
                 if ($rose && $fell && $money) {
                     return true;
                 }
+
+                // One occurrence repriced while another arrives at the price it
+                // left leaves that price's count where it was, so only the new
+                // one rises and nothing looks like a substitution. It is
+                // indistinguishable from a line simply being added - so where a
+                // shared key holds charged lines on both sides and their prices
+                // are not the same set, this refuses to certify rather than
+                // read it the generous way.
+                //
+                // A judgement call, and it costs a report on a correction that
+                // adds or removes a charge beside one that is already there.
+                // The other way round hides a repricing, and money exact is the
+                // rule this command is held to.
+                $chargedBefore = array_filter($prices, static fn (string $tuple): bool => isset($charged[$tuple]), ARRAY_FILTER_USE_KEY);
+                $chargedAfter = array_filter($afterMap[$key], static fn (string $tuple): bool => isset($charged[$tuple]), ARRAY_FILTER_USE_KEY);
+
+                // Every price that was here is still here, and a new one has
+                // joined them. That is a line added - and equally, one of the
+                // originals repriced onto the new price while another arrived
+                // at the price it left. The two are the same data.
+                //
+                // Deliberately one-directional: a price *leaving* while the
+                // others stay is a line removed, which is what the
+                // recurring-item correction does, and refusing to explain that
+                // would deny the correction its own work.
+                if ($chargedBefore !== []
+                    && array_diff_key($chargedBefore, $chargedAfter) === []
+                    && array_diff_key($chargedAfter, $chargedBefore) !== []) {
+                    return true;
+                }
             }
 
             return false;
@@ -1188,10 +1230,17 @@ final class ReplayInvoicesCommand extends Command
             // which wording cannot. Where both sides still carry the same item,
             // that is an unambiguous link and worth asking before falling back
             // to what the charge says it is.
-            $itemOf = static fn (array $line): string => (string) $line['recurring_item_id'];
+            // The two stable links a charge can carry: the recurring item it
+            // bills, or the deliverable that claimed it. Both survive their
+            // wording and their price being rewritten together, which is
+            // exactly when nothing else can pair the two versions.
+            $stableLink = static fn (array $line): string => (string) $line['recurring_item_id'] !== ''
+                ? 'item:'.$line['recurring_item_id']
+                : 'task:'.$line['claimed_by'];
+            $itemOf = static fn (array $line): string => $stableLink($line);
             $carriesItem = static fn (array $lines): array => array_values(array_filter(
                 $lines,
-                static fn (array $line): bool => (string) $line['recurring_item_id'] !== '',
+                static fn (array $line): bool => (string) $line['recurring_item_id'] !== '' || (string) $line['claimed_by'] !== '',
             ));
 
             $beforeItems = $pricesBy($carriesItem($beforeLeft), $itemOf);
@@ -1203,8 +1252,8 @@ final class ReplayInvoicesCommand extends Command
             // the wording.
             $unpairedByItem = static fn (array $lines, array $otherItems): array => array_values(array_filter(
                 $lines,
-                static fn (array $line): bool => (string) $line['recurring_item_id'] === ''
-                    || ! isset($otherItems[(string) $line['recurring_item_id']]),
+                static fn (array $line): bool => ((string) $line['recurring_item_id'] === '' && (string) $line['claimed_by'] === '')
+                    || ! isset($otherItems[$stableLink($line)]),
             ));
 
             $beforeResidual = $pricesBy($unpairedByItem($beforeLeft, $afterItems), $identity);

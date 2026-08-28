@@ -9,6 +9,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -920,6 +921,69 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertFalse($row['line_repriced'], 'A charge of another kind is not the same charge repriced.');
     }
 
+    /**
+     * A charge repriced while another arrives at the price it left. That price
+     * never moves in count, so nothing looks like a substitution and the new
+     * one reads as a plain addition - which it is, and equally is not. Where a
+     * pairing cannot tell, it must not certify.
+     */
+    public function test_an_addition_that_could_be_masking_a_repricing_is_not_certified(): void
+    {
+        [$kept, $dropped] = $this->twoChargesUnderOneFiling();
+        $invoice = $kept->invoice()->firstOrFail();
+
+        // History held only one of the two charges the engine produces, so the
+        // engine's extra one arrives beside a price that never moved.
+        $dropped->delete();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'A pairing that cannot decide must not certify.');
+    }
+
+    /**
+     * A milestone's title and price are both editable, so rewriting them
+     * together leaves nothing in the wording linking the two versions. The
+     * claim the task holds on its invoice line does link them, and this command
+     * releases and recreates exactly that claim.
+     */
+    public function test_a_retitled_milestone_is_still_paired_by_its_claim(): void
+    {
+        $task = null;
+        $this->generatedHistory(function (ClientAgreement $agreement) use (&$task): void {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Deliverables',
+            ]);
+
+            $task = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+                'status' => 'completed',
+                'completed_at' => '2024-02-20',
+                'milestone_price_amount' => 250000,
+            ]);
+        });
+
+        $this->assertInstanceOf(ClientTask::class, $task);
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'milestone')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must bill a milestone.');
+        $invoice = $line->invoice()->firstOrFail();
+
+        // The engine bills from the task's current title and price, so changing
+        // both leaves the two versions with nothing in common but the claim.
+        $task->forceFill(['title' => 'Phase one, retitled', 'milestone_price_amount' => 275000])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The claim links the two versions when the wording cannot.');
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();
@@ -1095,6 +1159,53 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /**
+     * Two charges the engine files under one key.
+     *
+     * One worker, one project, two rates: the composer writes a line each, and
+     * their wording differs only in the rate it quotes - which identity
+     * normalises away, leaving the same filing for both.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine}
+     */
+    private function twoChargesUnderOneFiling(): array
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'One project',
+        ]);
+
+        foreach ([6000, 9000] as $rate) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two charges under one filing.');
+
+        /** @var ClientInvoiceLine $first */
+        $first = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $last */
+        $last = $lines->last();
+
+        return [$first, $last];
+    }
+
     /**
      * History whose overage is actually charged for.
      *
