@@ -717,6 +717,34 @@ final class ExternalImportService
     }
 
     /**
+     * A line description with its mutable figures set aside.
+     *
+     * Regenerating a line rewrites the hours and money in its description while
+     * the words stay put, so what is left is what two generations of one line
+     * have in common and two different lines of a type do not.
+     *
+     * Dates are not mutable figures. A retainer description carries the cycle
+     * it is for, and February 2024 is not February 2025 - deleting every number
+     * would say they were the same charge. So years and ISO dates survive and
+     * everything else numeric does not.
+     *
+     * The replay normalises the same descriptions for a different question -
+     * whether a line it generated is the line that was billed - and answers it
+     * by template, stripping the whole parenthetical the composer appends. That
+     * is right there and wrong here: the parenthetical is where a retainer draw
+     * names its pool, so stripping it would merge the two lines this has to
+     * keep apart.
+     */
+    private static function descriptionShape(mixed $description): string
+    {
+        return (string) preg_replace_callback(
+            '/\d{4}-\d{2}-\d{2}|\d+(?:[.,:]\d+)*/',
+            static fn (array $m): string => preg_match('/^(?:\d{4}-\d{2}-\d{2}|(?:19|20)\d{2})$/', $m[0]) === 1 ? $m[0] : 'N',
+            trim((string) ($description ?? '')),
+        );
+    }
+
+    /**
      * Every line this run observed a claim on, indexed by the line's source key.
      *
      * @return array<string, true>
@@ -735,18 +763,6 @@ final class ExternalImportService
         }
 
         return $this->observedClaimsByLine = $byLine;
-    }
-
-    /**
-     * A line description with its numbers set aside.
-     *
-     * Regenerating a line rewrites the figures in its description while the
-     * words stay put, so this is what two generations of one line have in
-     * common and two different lines of a type do not.
-     */
-    private static function descriptionShape(mixed $description): string
-    {
-        return (string) preg_replace('/\d[\d.,:]*/', 'N', trim((string) ($description ?? '')));
     }
 
     /**
@@ -921,8 +937,10 @@ final class ExternalImportService
 
         // Same type is not the same line. Two retainer draws on one invoice are
         // two pools, and only the words say which - so the words have to agree,
-        // with the numbers in them set aside because those move between
-        // generations of the same line.
+        // with the figures the composer fills in set aside because those move
+        // between generations of one line. Not every number, though: a retainer
+        // description carries the cycle it is for, and February 2024 is not
+        // February 2025.
         if ($exclusiveClaimantTable === null
             && self::descriptionShape($supersededRow['description'] ?? null) !== self::descriptionShape($replacement['description'] ?? null)) {
             return null;

@@ -1036,6 +1036,48 @@ class ExternalImportTest extends TestCase
         );
     }
 
+    /**
+     * A retainer description carries the cycle it is for. Deleting every number
+     * would make February 2024 and February 2025 the same charge, and attach a
+     * stale claim to the wrong year's line.
+     */
+    public function test_a_replacement_for_a_different_cycle_is_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'February 2024 Retainer (10.00) - 2024-02-01 to 2024-02-29' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'February 2025 Retainer (12.00) - 2025-02-01 to 2025-02-28' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The same cycle with different hours is the same line regenerated, and
+     * must still be recognised as one.
+     */
+    public function test_a_replacement_for_the_same_cycle_is_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'February 2024 Retainer (10.00) - 2024-02-01 to 2024-02-29' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'February 2024 Retainer (12.50) - 2024-02-01 to 2024-02-29' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();
