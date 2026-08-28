@@ -1485,6 +1485,16 @@ class ExternalImportTest extends TestCase
                 'Work items applied to retainer (9:55 applied to Gold 2026 pool)',
                 'Work items applied to retainer (10:00 applied to Gold 2026 pool)',
             ],
+            'a day January does not have' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 99, 2026 through Jan 99, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 99, 2026 through Jan 99, 2026',
+            ],
+            'a day February does not have' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Feb 31, 2026 through Feb 31, 2026',
+                'Monthly Retainer (10:00 hours) - Feb 31, 2026 through Feb 31, 2026',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',

@@ -7,6 +7,7 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -785,6 +786,29 @@ final class ExternalImportService
     }
 
     /**
+     * Whether every date-shaped run in this text is a date Carbon could write.
+     *
+     * A pattern can say "Jan" and two digits; it cannot say that January has no
+     * ninety-ninth. Only the formatter settles that, so the candidates are
+     * handed back to it and required to come out unchanged. A description with
+     * an impossible day is somebody's own text, and its figures stay put.
+     */
+    private static function datesAreReal(string $text): bool
+    {
+        preg_match_all('/'.self::SHORT_DATE.'/', $text, $matches);
+
+        foreach ($matches[0] as $candidate) {
+            $parsed = Carbon::createFromFormat('M j, Y', $candidate);
+
+            if ($parsed === null || $parsed->format('M j, Y') !== $candidate) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * A line description with the composer's own figures set aside.
      *
      * Regenerating a line rewrites the hours and money it quotes while the
@@ -820,7 +844,7 @@ final class ExternalImportService
         $text = trim((string) ($description ?? ''));
 
         foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $wholeGroup) {
-            if (preg_match($template, $text) !== 1) {
+            if (preg_match($template, $text) !== 1 || ! self::datesAreReal($text)) {
                 continue;
             }
 
@@ -1415,7 +1439,11 @@ final class ExternalImportService
                 // duplicate. It means the parent is missing, which is what this
                 // run would have reported had it looked a moment later.
                 if (! $exception instanceof UniqueConstraintViolationException) {
+                    // Scoped, like every other tenant-owned read here: a row
+                    // this workspace does not own is not this run's parent,
+                    // whatever the ownership check a moment earlier concluded.
                     $lineStillThere = DB::connection($destinationName)->table('client_invoice_lines')
+                        ->where('workspace_id', $run->workspace_id)
                         ->where('id', $lineId)
                         ->exists();
 
@@ -1588,7 +1616,10 @@ final class ExternalImportService
                 // The line can go between the checks above and this write, the
                 // way it can on the time-entry side, and that arrives as a
                 // foreign key failure. It means the parent is missing.
-                if (DB::connection($destinationName)->table('client_invoice_lines')->where('id', $lineId)->exists()) {
+                if (DB::connection($destinationName)->table('client_invoice_lines')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('id', $lineId)
+                    ->exists()) {
                     throw $exception;
                 }
 
