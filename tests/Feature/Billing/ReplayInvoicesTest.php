@@ -468,9 +468,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
-        if ($subcontracted->count() < 2) {
-            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
-        }
+        $this->assertGreaterThanOrEqual(2, $subcontracted->count(), 'The fixture must produce two concurrent subcontractor lines.');
 
         /** @var ClientInvoiceLine $a */
         $a = $subcontracted->firstOrFail();
@@ -535,9 +533,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
-        if ($subcontracted->count() < 2) {
-            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
-        }
+        $this->assertGreaterThanOrEqual(2, $subcontracted->count(), 'The fixture must produce two concurrent subcontractor lines.');
 
         $elsewhere = ClientProject::query()->create([
             'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Elsewhere',
@@ -754,9 +750,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
-        if ($lines->count() < 2) {
-            $this->markTestSkipped('This fixture did not produce two charges under one filing.');
-        }
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two charges under one filing.');
 
         /** @var ClientInvoiceLine $a */
         $a = $lines->firstOrFail();
@@ -801,9 +795,7 @@ final class ReplayInvoicesTest extends TestCase
 
         $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
             ->whereNotNull('client_agreement_recurring_item_id')->orderBy('id')->first();
-        if (! $line instanceof ClientInvoiceLine) {
-            $this->markTestSkipped('This fixture did not produce a recurring-item line.');
-        }
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must produce a recurring-item line.');
 
         $invoice = $line->invoice()->firstOrFail();
         $unit = (int) $line->unit_amount;
@@ -878,6 +870,28 @@ final class ReplayInvoicesTest extends TestCase
         // And attribution has to hear that this type was involved, or a
         // correction covering the rest of the invoice waives these away.
         $this->assertContains('adjustment', $row['changed_tokens']);
+    }
+
+    /**
+     * A charge that becomes a line charging nothing. Only a change between two
+     * amounts that charge nobody is representation - money left here, and the
+     * pairing has to still see the two as one charge to say so.
+     */
+    public function test_a_charge_falling_to_nothing_is_a_repricing(): void
+    {
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertNotSame(0, (int) $overage->total_amount);
+
+        // History charged for this; the engine no longer does, at the same
+        // wording and the same filing.
+        $overage->forceFill(['unit_amount' => 0, 'total_amount' => 0])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'A charge falling to nothing is the same charge at a different price.');
+        $this->assertNull($row['explained_by'] ?? null);
     }
 
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
@@ -1087,16 +1101,15 @@ final class ReplayInvoicesTest extends TestCase
 
         $overage = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
             ->where('type', 'additional_hours')->where('total_amount', '!=', 0)->orderBy('id')->first();
-        if (! $overage instanceof ClientInvoiceLine) {
-            $this->markTestSkipped('This fixture did not charge for its overage.');
-        }
+        // Asserted, not skipped: this is a deterministic local fixture, and
+        // five tests are meaningless without it. A skip would take them out of
+        // the run and report nothing.
+        $this->assertInstanceOf(ClientInvoiceLine::class, $overage, 'The fixture must charge for its overage.');
 
         $retainer = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
             ->where('client_invoice_id', $overage->client_invoice_id)
             ->where('type', 'retainer')->orderBy('id')->first();
-        if (! $retainer instanceof ClientInvoiceLine) {
-            $this->markTestSkipped('This fixture did not put a retainer beside the overage.');
-        }
+        $this->assertInstanceOf(ClientInvoiceLine::class, $retainer, 'The fixture must put a retainer beside the overage.');
 
         return [$overage, $retainer];
     }
@@ -1139,9 +1152,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
-        if ($lines->count() < 2) {
-            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
-        }
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two concurrent subcontractor lines.');
 
         /** @var ClientInvoiceLine $first */
         $first = $lines->firstOrFail();

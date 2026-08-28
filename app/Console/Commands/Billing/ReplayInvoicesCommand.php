@@ -1069,7 +1069,20 @@ final class ReplayInvoicesCommand extends Command
         // the sets whole would call a charge that merely moved onto an occupied
         // key a repricing, because the destination set gains a price without
         // anything being repriced.
-        $comparePrices = static function (array $beforeMap, array $afterMap): bool {
+        // Which amounts charge somebody. A line whose total is zero charges
+        // nobody - the reconciliation line mirrors interim hours in its
+        // quantity at a unit and total of zero - so a change between two such
+        // amounts is representation, which this command reports and never
+        // gates on. A change from one to the other is not: money either
+        // arrived or left.
+        $charged = [];
+        foreach ([...$before, ...$after] as $line) {
+            if ((int) $line['total_amount'] !== 0) {
+                $charged[$priceTuple($line)] = true;
+            }
+        }
+
+        $comparePrices = static function (array $beforeMap, array $afterMap) use ($charged): bool {
             foreach ($beforeMap as $key => $prices) {
                 if (! isset($afterMap[$key])) {
                     // A key on one side alone is a line added or removed -
@@ -1080,16 +1093,20 @@ final class ReplayInvoicesCommand extends Command
                 // One price losing an occurrence while another gains one, under
                 // a single key: the same charge at a different price. Counts
                 // that only fall are a line removed from under that key, and
-                // counts that only rise are one added.
+                // counts that only rise are one added. At least one of the
+                // amounts involved has to charge somebody, or this is two ways
+                // of writing nothing.
                 $rose = false;
                 $fell = false;
+                $money = false;
                 foreach (array_unique([...array_keys($prices), ...array_keys($afterMap[$key])]) as $tuple) {
                     $delta = ($afterMap[$key][$tuple] ?? 0) - ($prices[$tuple] ?? 0);
                     $rose = $rose || $delta > 0;
                     $fell = $fell || $delta < 0;
+                    $money = $money || ($delta !== 0 && isset($charged[$tuple]));
                 }
 
-                if ($rose && $fell) {
+                if ($rose && $fell && $money) {
                     return true;
                 }
             }
@@ -1097,20 +1114,8 @@ final class ReplayInvoicesCommand extends Command
             return false;
         };
 
-        // Every money question below is asked only of lines that carry money. A
-        // line whose total is zero charges nobody - the reconciliation line
-        // mirrors interim hours in its quantity at a unit and total of zero -
-        // so a change to its quantity is representation, which this command
-        // reports and never gates on.
-        $carriesMoney = static fn (array $lines): array => array_values(array_filter(
-            $lines,
-            static fn (array $line): bool => (int) $line['total_amount'] !== 0,
-        ));
-        $beforeCharged = $carriesMoney($before);
-        $afterCharged = $carriesMoney($after);
-
-        $beforeFiled = $pricesBy($beforeCharged, $filedAs);
-        $afterFiled = $pricesBy($afterCharged, $filedAs);
+        $beforeFiled = $pricesBy($before, $filedAs);
+        $afterFiled = $pricesBy($after, $filedAs);
         $repriced = $comparePrices($beforeFiled, $afterFiled);
 
         if (! $repriced) {
@@ -1163,8 +1168,8 @@ final class ReplayInvoicesCommand extends Command
                 return $left;
             };
 
-            $beforeLeft = $residual($beforeCharged, $afterCharged);
-            $afterLeft = $residual($afterCharged, $beforeCharged);
+            $beforeLeft = $residual($before, $after);
+            $afterLeft = $residual($after, $before);
 
             // A recurring item's id survives its description being rewritten,
             // which wording cannot. Where both sides still carry the same item,
@@ -1201,13 +1206,19 @@ final class ReplayInvoicesCommand extends Command
             // costs a report on the narrow case where several identically
             // worded charges move at once.
             if (! $repriced) {
-                foreach ([$beforeResidual, $afterResidual] as $side) {
-                    foreach ($side as $prices) {
-                        if (count($prices) > 1) {
-                            $repriced = true;
+                foreach ($beforeResidual as $key => $prices) {
+                    // Only where both sides still hold something under this
+                    // identity. A group on one side alone is unambiguously
+                    // lines added or removed, and refusing to certify that
+                    // would deny the corrections that add and remove lines.
+                    if (! isset($afterResidual[$key])) {
+                        continue;
+                    }
 
-                            break 2;
-                        }
+                    if (count($prices) > 1 || count($afterResidual[$key]) > 1) {
+                        $repriced = true;
+
+                        break;
                     }
                 }
             }
@@ -1249,23 +1260,22 @@ final class ReplayInvoicesCommand extends Command
         // costs the client nothing, so it appearing or disappearing is
         // arrangement; a line with a total is a charge, and one arriving or
         // leaving is money whether or not something offsets it.
-        $beforeAmounts = $amounts($beforeCharged);
-        $afterAmounts = $amounts($afterCharged);
-        $rose = false;
-        $fell = false;
+        $beforeAmounts = $amounts($before);
+        $afterAmounts = $amounts($after);
         $chargeCountMoved = false;
         foreach (array_unique([...array_keys($beforeAmounts), ...array_keys($afterAmounts)]) as $tuple) {
-            $delta = ($afterAmounts[$tuple] ?? 0) - ($beforeAmounts[$tuple] ?? 0);
-            $rose = $rose || $delta > 0;
-            $fell = $fell || $delta < 0;
-            $chargeCountMoved = $chargeCountMoved || $delta !== 0;
+            if (($afterAmounts[$tuple] ?? 0) !== ($beforeAmounts[$tuple] ?? 0) && isset($charged[$tuple])) {
+                $chargeCountMoved = true;
+
+                break;
+            }
         }
 
-        // Two charges dropped whose totals cancel leave every count falling and
-        // none rising, and the invoice total where it was. Requiring a
-        // substitution would call that an arrangement of the same money, when
-        // neither charge was reproduced at all.
-        $moneyMoved = $repriced || ($rose && $fell) || $chargeCountMoved;
+        // An amount that charges somebody, stated a different number of times.
+        // That covers a charge repriced onto an amount already present, and two
+        // charges dropped whose totals cancel - neither of which moves a total,
+        // a line count, or the set of amounts on the invoice.
+        $moneyMoved = $repriced || $chargeCountMoved;
 
         $beforeCounts = $tally($before);
         $afterCounts = $tally($after);
