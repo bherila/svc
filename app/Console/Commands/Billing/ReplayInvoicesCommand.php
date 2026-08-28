@@ -278,7 +278,7 @@ final class ReplayInvoicesCommand extends Command
             ->get();
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -288,6 +288,12 @@ final class ReplayInvoicesCommand extends Command
                 $projectId = $line->client_project_id === null
                     ? ''
                     : (string) (int) $line->client_project_id;
+                // Stored per line and restored per source row, so it is not
+                // guaranteed to match the invoice's own agreement - a charge
+                // reattributed to another agreement changes nothing else.
+                $agreementId = $line->client_agreement_id === null
+                    ? ''
+                    : (string) (int) $line->client_agreement_id;
 
                 $lines[] = [
                     'type' => (string) $line->type,
@@ -305,6 +311,7 @@ final class ReplayInvoicesCommand extends Command
                     // line carries one, and moving a charge between projects is
                     // not visible in any other field here.
                     'project_id' => $projectId,
+                    'agreement_id' => $agreementId,
                     // A description is the one field here that can carry a
                     // client's name, and this output is meant to be readable
                     // outside the host. Digested under a per-run key, so two
@@ -847,20 +854,26 @@ final class ReplayInvoicesCommand extends Command
      */
     private static function withoutAmounts(string $description): string
     {
-        // Only the shapes a composer emits from an amount: a currency figure, a
-        // duration, and a spelled-out hour count. Removing every digit would
-        // make "Phase 1" and "Phase 2" the same charge, and a swap of their
-        // prices would then compare as no difference at all.
-        return (string) preg_replace(
-            [
-                // What InvoiceLineComposer::formatMoney() actually writes: a
-                // plain decimal beside its currency code, never a symbol.
-                '/\b[\d,]+\.\d{2}\s+[A-Z]{3}\b/',
-                '/[$£€]\s?[\d,]+(?:\.\d+)?/u',
-                '/\b\d+:\d{2}\b/',
-                '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i',
-            ],
-            ['#', '#', '#', '#'],
+        // Every amount a composer writes goes in a trailing parenthetical -
+        // "(1:00 @ 60.00 USD/hr)", "(12.5 hours)" - and the one description
+        // built from user text, "Milestone: <title>", appends that title
+        // without one. So only the parenthetical is normalised: a milestone
+        // called "Package $100" keeps the figure that names it, and two such
+        // milestones stay different charges.
+        return (string) preg_replace_callback(
+            '/\(([^()]*)\)\s*$/',
+            static fn (array $m): string => '('.preg_replace(
+                [
+                    // What InvoiceLineComposer::formatMoney() writes: a plain
+                    // decimal beside its currency code, never a symbol.
+                    '/\b[\d,]+\.\d{2}\s+[A-Z]{3}\b/',
+                    '/[$£€]\s?[\d,]+(?:\.\d+)?/u',
+                    '/\b\d+:\d{2}\b/',
+                    '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i',
+                ],
+                ['#', '#', '#', '#'],
+                $m[1],
+            ).')',
             $description,
         );
     }
@@ -900,13 +913,14 @@ final class ReplayInvoicesCommand extends Command
             $counts = [];
             foreach ($lines as $line) {
                 $signature = sprintf(
-                    '%s unit %d qty %s tax %d total %d project %s on %s item %s desc %s',
+                    '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s desc %s',
                     (string) $line['type'],
                     (int) $line['unit_amount'],
                     (string) $line['quantity'],
                     (int) $line['tax_amount'],
                     (int) $line['total_amount'],
                     ((string) $line['project_id']) === '' ? 'none' : (string) $line['project_id'],
+                    ((string) $line['agreement_id']) === '' ? 'none' : (string) $line['agreement_id'],
                     ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
                     ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
                     (string) $line['description_hash'],
@@ -932,6 +946,7 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['line_date'],
             (string) $line['recurring_item_id'],
             (string) $line['project_id'],
+            (string) $line['agreement_id'],
             (string) $line['identity_hash'],
         ]);
 
@@ -989,13 +1004,34 @@ final class ReplayInvoicesCommand extends Command
             // Whatever the first pass could not pair, tried again on what the
             // charge is alone. A line that both moved and was repriced is
             // unpaired above and paired here.
-            $residual = static fn (array $lines, array $ownMap, array $otherMap): array => array_values(array_filter(
-                $lines,
-                static fn (array $line): bool => ! isset($otherMap[$filedAs($line)]),
-            ));
+            // One occurrence consumed per match, not every line sharing a key.
+            // A charge misfiled onto a key the other side already uses would
+            // otherwise take that side's genuine line out of the residual with
+            // it, and both would disappear from the comparison together.
+            $residual = static function (array $lines, array $otherLines) use ($filedAs): array {
+                $available = [];
+                foreach ($otherLines as $other) {
+                    $key = $filedAs($other);
+                    $available[$key] = ($available[$key] ?? 0) + 1;
+                }
 
-            $beforeResidual = $pricesBy($residual($before, $beforeFiled, $afterFiled), $identity);
-            $afterResidual = $pricesBy($residual($after, $afterFiled, $beforeFiled), $identity);
+                $left = [];
+                foreach ($lines as $line) {
+                    $key = $filedAs($line);
+                    if (($available[$key] ?? 0) > 0) {
+                        $available[$key]--;
+
+                        continue;
+                    }
+
+                    $left[] = $line;
+                }
+
+                return $left;
+            };
+
+            $beforeResidual = $pricesBy($residual($before, $after), $identity);
+            $afterResidual = $pricesBy($residual($after, $before), $identity);
             $repriced = $comparePrices($beforeResidual, $afterResidual);
 
             // Fail closed where pairing cannot decide. If several charges share

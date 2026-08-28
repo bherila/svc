@@ -285,6 +285,14 @@ final class ReplayInvoicesTest extends TestCase
         $phaseTwo = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 2');
         $this->assertNotSame($phaseOne, $phaseTwo);
 
+        // A milestone title is user text appended whole, so a figure in it
+        // names the charge rather than pricing it. Only the trailing
+        // parenthetical a composer writes is normalised.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $100'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $200'),
+        );
+
         // The amounts, though, have to go: the composer writes them from the
         // very price and quantity the comparison exists to detect.
         $this->assertSame(
@@ -648,6 +656,95 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertNull($row['explained_by'] ?? null);
     }
 
+    /**
+     * A charge misfiled onto a key the other side already uses. Dropping every
+     * line that shares a key would take the other side's genuine line out with
+     * it, and both would leave the comparison together.
+     */
+    public function test_a_charge_misfiled_onto_an_occupied_key_is_still_paired(): void
+    {
+        $here = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
+        ]);
+        $there = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
+        ]);
+
+        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        if ($subcontracted->count() < 2) {
+            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
+        }
+
+        /** @var ClientInvoiceLine $a */
+        $a = $subcontracted->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $subcontracted->last();
+
+        // History filed this charge under the other project - where a charge
+        // already sits - and repriced it to match.
+        $a->forceFill([
+            'client_project_id' => $b->client_project_id,
+            'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount,
+            'description' => (string) $b->description,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The collision must not take the genuine line out of the pairing.');
+    }
+
+    /**
+     * A line stores its own agreement, restored per source row, so it need not
+     * match the invoice's. Reattributing a charge to another agreement changes
+     * nothing else about it and must not read as an exact reproduction.
+     */
+    public function test_a_line_reattributed_to_another_agreement_is_not_a_match(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        $other = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Another agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2024-01-01',
+            'retainer_minutes' => 0,
+            'retainer_amount' => 0,
+            'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
+            'rollover_months' => 0,
+        ]);
+
+        ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('total_amount')->firstOrFail()
+            ->forceFill(['client_agreement_id' => $other->id])->save();
+
+        $this->assertSame('composition_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();
@@ -823,6 +920,32 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /**
+     * The whole comparison row the replay records for one invoice.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function comparisonFor(string $invoiceNumber): ?array
+    {
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        return array_column($detail['comparisons'], null, 'invoice_number')[$invoiceNumber] ?? null;
+    }
+
     /** The verdict the replay records for one invoice, via its report file. */
     private function verdictFor(string $invoiceNumber): ?string
     {
