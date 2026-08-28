@@ -167,6 +167,72 @@ class ExternalImportTest extends TestCase
         $this->assertSame('synthetic.user@example.test', $existing->fresh()->email);
     }
 
+    /**
+     * The predecessor soft-deletes, and the import read every row regardless.
+     *
+     * Of 78 invoices in the migrated source it brought across 49 deleted ones,
+     * and of 822 invoice lines it brought across 764. Deleted lines were then
+     * counted into invoice totals, which made 14 invoices disagree with the sum
+     * of their own lines - read twice, by two reviewers, as corruption in the
+     * source. The source is consistent; the import was not.
+     */
+    public function test_a_soft_deleted_source_row_is_not_imported(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (51, 11, NULL, 'SYN-LIVE', 'paid', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL, NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (52, 11, NULL, 'SYN-DELETED', 'draft', '2026-01-11', '2026-02-11', '250.00', 'USD', NULL, '2026-03-01 10:00:00')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $this->assertDatabaseHas('client_invoices', [
+            'workspace_id' => $workspace->getKey(),
+            'invoice_number' => 'SYN-LIVE',
+        ]);
+        $this->assertDatabaseMissing('client_invoices', [
+            'workspace_id' => $workspace->getKey(),
+            'invoice_number' => 'SYN-DELETED',
+        ]);
+
+        // The inventory has to agree with what was written, or the backfill's
+        // unmatched check reads a row it was never going to import as a gap.
+        $this->assertSame(1, $summary['inventory']['client_invoices']['row_count']);
+    }
+
+    /**
+     * A row imported by an earlier pass and deleted at the source afterwards.
+     *
+     * Filtering it out of the read means its ledger item is never examined, so
+     * the destination keeps a live copy of something the source no longer has
+     * while the run reports clean. The delete is not propagated - that row may
+     * since have been issued or paid against, and an import pass should not make
+     * that call - but the run must say so.
+     */
+    public function test_a_row_deleted_after_import_is_reported_rather_than_ignored(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (61, 11, NULL, 'SYN-61', 'paid', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL, NULL)");
+
+        $first = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $first['counts']['deleted_at_source']);
+        $this->assertDatabaseHas('client_invoices', ['workspace_id' => $workspace->getKey(), 'invoice_number' => 'SYN-61']);
+
+        // The source deletes it after the first pass.
+        $pdo->exec("UPDATE client_invoices SET deleted_at = '2026-03-01 10:00:00' WHERE client_invoice_id = 61");
+
+        $second = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $second['counts']['deleted_at_source']);
+        $this->assertNotSame('completed', $second['status'], 'A run that left an orphaned copy behind has not completed cleanly');
+
+        // Not propagated: the copy is still here, deliberately.
+        $this->assertDatabaseHas('client_invoices', ['workspace_id' => $workspace->getKey(), 'invoice_number' => 'SYN-61']);
+    }
+
     public function test_imported_payments_reconcile_invoice_balance(): void
     {
         $user = User::factory()->create();

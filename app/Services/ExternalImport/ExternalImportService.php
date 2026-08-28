@@ -81,7 +81,7 @@ final class ExternalImportService
                     continue;
                 }
 
-                $this->importSpec($sourceConnection, $spec, $run, $destinationName, $counts, $queryCache, $ledgerItems);
+                $this->importSpec($sourceConnection, $this->sourceGuard->runtimeName($source), $spec, $run, $destinationName, $counts, $queryCache, $ledgerItems);
             }
 
             $this->reconcileImportedInvoices($run, $destinationName);
@@ -91,7 +91,13 @@ final class ExternalImportService
                 'counts' => $counts + ['link_counts' => $linkCounts],
                 'status' => $counts['failed'] > 0
                     ? 'completed_with_failures'
-                    : ($counts['skipped'] > 0 ? 'completed_with_skips' : 'completed'),
+                    // A row this ledger says it imported, which the source has
+                    // since deleted, leaves a live copy here that nothing points
+                    // at any more. This run has not reconciled it and must not
+                    // report as though it had.
+                    : (($counts['skipped'] > 0 || $counts['deleted_at_source'] > 0)
+                        ? 'completed_with_skips'
+                        : 'completed'),
                 'completed_at' => now(),
             ])->save();
         } catch (Throwable) {
@@ -179,19 +185,27 @@ final class ExternalImportService
      * @param  QueryCache  $queryCache
      * @param  array<string, ExternalImportItem>  $ledgerItems
      */
-    private function importSpec(ConnectionInterface $source, array $spec, ExternalImportRun $run, string $destinationName, array &$counts, array &$queryCache, array &$ledgerItems): void
+    private function importSpec(ConnectionInterface $source, string $sourceRuntimeName, array $spec, ExternalImportRun $run, string $destinationName, array &$counts, array &$queryCache, array &$ledgerItems): void
     {
         $table = (string) $spec['source_table'];
         $keyColumn = (string) $spec['source_key'];
-        $cursor = $source->table($table)->orderBy($keyColumn)->cursor();
+        // Deleted rows are not imported. See SourceRows.
+        $cursor = SourceRows::for($source, $sourceRuntimeName, $table)->orderBy($keyColumn)->cursor();
         $itemsForTable = $this->loadLedgerItems($run, $table, $destinationName);
         foreach ($itemsForTable as $sourceKey => $item) {
             $ledgerItems[$this->ledgerItemKey($table, (string) $sourceKey)] = $item;
         }
 
+        // Every key this pass actually saw, so a row the source has deleted
+        // since an earlier pass can be told apart from one that was never
+        // there. Skipping it silently would leave a live copy here that the
+        // source no longer has, while the run reported clean.
+        $seenKeys = [];
+
         foreach ($cursor as $rawRow) {
             $row = (array) $rawRow;
             $sourceKey = (string) ($row[$keyColumn] ?? '');
+            $seenKeys[$sourceKey] = true;
             if ($sourceKey === '') {
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_source_key'] = ($counts['failure_reasons']['missing_source_key'] ?? 0) + 1;
@@ -280,6 +294,20 @@ final class ExternalImportService
                 $counts['failed']++;
                 $counts['failure_reasons']['row_transaction_failed'] = ($counts['failure_reasons']['row_transaction_failed'] ?? 0) + 1;
             }
+        }
+
+        // Rows this ledger imported that the source has since deleted. They are
+        // reported rather than removed: propagating a delete would destroy a
+        // destination row that may since have been issued or paid against, and
+        // that decision is not one an import pass should make on its own. What
+        // it must not do is stay quiet - the run's status carries this.
+        foreach ($itemsForTable as $sourceKey => $item) {
+            if (isset($seenKeys[(string) $sourceKey]) || $item->status !== 'imported') {
+                continue;
+            }
+
+            $counts['deleted_at_source']++;
+            $counts['failure_reasons']['deleted_at_source'] = ($counts['failure_reasons']['deleted_at_source'] ?? 0) + 1;
         }
     }
 
@@ -696,7 +724,7 @@ final class ExternalImportService
             return;
         }
 
-        $rows = $source->table('client_time_entries')
+        $rows = SourceRows::for($source, $sourceRuntimeName, 'client_time_entries')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
             ->get(['id', 'client_invoice_line_id']);
@@ -846,6 +874,7 @@ final class ExternalImportService
             'planned_reference' => 0,
             'failed' => 0,
             'idempotent' => 0,
+            'deleted_at_source' => 0,
             'failure_reasons' => [],
         ];
     }
