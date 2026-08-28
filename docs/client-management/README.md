@@ -230,59 +230,73 @@ be outstanding when this bills a real client.
 
 ### What the replay says now
 
-The numbers the previous version of this document carried were produced by a
-harness that was manufacturing its own findings, and by a classifier that was
-waiving the thing it most needed to report. Both are fixed, and the run has been
-repeated against the migrated production data. Of 42 comparable invoices:
+Three passes at this, and the first two were measuring the harness rather than
+the engine. That is worth saying plainly, because the numbers in each version of
+this document were stated with more confidence than they had earned.
 
-| | before | now |
-| --- | ---: | ---: |
-| money identical | 4 | **7** |
-| identical once the legacy period convention is allowed for | — | **4** |
-| same total, lines arranged differently | 8 | 13 |
-| differs, explained by a deliberate correction | 10 | **0** |
-| differs, unexplained | 15 | 13 |
-| not generated / generated with no counterpart | 2 / 3 | 2 / 3 |
+**The harness was manufacturing its own findings.** It blanked invoices for
+regeneration and left the payment rows behind, so the credit ledger read every
+settled invoice in history as overpaid by its full amount. Eight divergences
+were its own doing.
 
-Three things are worth reading out of that.
+**The classifier was waiving what it most needed to report.** `retainer` sat in
+the capacity-dependent allowlist, so ten whole-invoice disappearances were
+explained away on the strength of `rollover_months > 0`. No capacity correction
+can move a contracted fee.
 
-**Exact reproduction went from 4 to 11.** Most of the difference was the harness
-crediting regenerated invoices against overpayments it had invented. That was
-never the engine.
+**And the import was reading rows the source had deleted.** This was the big
+one, and it hid behind the other two. Of 78 invoices, 49 were soft-deleted in
+the source; of 822 invoice lines, 764; of 455 time entries, 184. All of it
+arrived as live data.
 
-**Nothing is explained by a deliberate correction any more, and that is the
-honest answer.** The old predicate asked whether a correction was switched on,
-not whether it had done anything, and `retainer` sat in its allowlist — so ten
-whole-invoice disappearances were waived on the strength of `rollover_months > 0`.
-The predicates are narrower now and explain none of the 42. Attribution by
-opportunity was worth less than nothing: it was hiding exactly the rows that
-needed reading.
+| | first run | harness fixed | import fixed |
+| --- | ---: | ---: | ---: |
+| reproduce exactly | 4 / 42 | 11 / 42 | **19 / 24** |
+| same total, lines arranged differently | 8 | 13 | **0** |
+| explained by a deliberate correction | 10 | 0 | 0 |
+| unexplained | 15 | 13 | **5** |
+| distinct reasons the generator refused | — | 5 | **1** |
 
-**11 of the 13 unexplained divergences move the retainer line, and 12 of 13
-change the line count.** That is not the shape of capacity arithmetic being
-slightly off. It is the shape of an invoice being generated with a different set
-of lines, or not generated at all — identity, period pairing and generation
-skips, not rollover. The next investigation should start there, and #73 carries
-the detail.
+The one remaining refusal is `zero_activity_non_retainer`, which is a deliberate
+skip rather than a failure. Of the five unexplained, four are legacy-period
+pairings whose cycle total moves, and one is a recurring-item increase.
 
-One finding is about the source rather than the port: **14 of the 78 historical
-invoices have a stored total that does not equal the sum of their lines**, ten of
-them settled. Those cannot be asked of the engine as if they were a target. They
-need classifying as bad history, and where a settled invoice's header and lines
-disagree, the answer is whatever the client was actually sent.
+#### A conclusion this document got wrong
 
-Two things still block adjudicating the rest:
+An earlier version of this section said:
 
-- **`rollover_months` is contradictory.** `billing.md` says `1` means hours are
-  usable only in the month earned; `RolloverCalculator` and its tests let
-  February spend January's hours at `1`. Both rollover-bearing agreements in the
-  production data use exactly that value, so no rollover divergence can be
-  settled until the contract is decided one way or the other.
-- **Attribution should be counterfactual, not predicate-based.** There are four
-  corrections and therefore sixteen combinations. A divergence is explained when
+> **14 of the 78 historical invoices have a stored total that does not equal the
+> sum of their lines**, ten of them settled. Those cannot be asked of the engine
+> as if they were a target.
+
+That was wrong, and it was wrong in the most expensive direction: it attributed
+a defect in this code to the data it was reading, which is the one conclusion
+that stops you looking. An independent review reached it too, from the same
+exported artifacts, which is worth remembering the next time two sources agree.
+
+Counting only the lines the source still has, the number of invoices whose total
+disagrees with their own lines is **zero**. The source is consistent. The import
+was summing deleted lines into the totals.
+
+The same root cause accounted for the rest of it: the ten periods holding up to
+seven invoices each were all deleted drafts, and every refusal the generator
+gave was against a deleted row occupying the period. Two whole investigations -
+one into duplicate invoices, one into a half-open period convention - dissolved
+when the deleted rows stopped being imported.
+
+#### What is left
+
+- **Four legacy-period pairings** whose cycle total moves. These are the
+  one-cycle offset: the predecessor billed `period == cycle`, this engine sells
+  the month ahead, and pairing whole invoices by cycle aligns the retainer while
+  misaligning the work.
+- **One recurring-item increase** of a single unit.
+- **Attribution is still by opportunity, not causation.** There are four
+  corrections and sixteen combinations of them. A divergence is explained when
   disabling one correction moves the result back to history, with a trace naming
-  the lot that expired or the entries whose allocation changed — not when a
-  feature happens to be enabled.
+  the lot that expired or the entries whose allocation changed - not when a
+  feature happens to be enabled. Until that exists, read "explained" as "not yet
+  shown to be a regression".
 
 Interim overage invoices deserve a specific caveat: they are implemented and
 tested, and production has never produced one (75 cadence-period invoices, 3
