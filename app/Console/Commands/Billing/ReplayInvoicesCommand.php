@@ -613,57 +613,18 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'missing',
                     'money_delta' => -$before['total_amount'],
                     'notes' => ['the engine did not produce this invoice'],
-                    'lines' => $before['lines'],
-                    'hours' => $this->hourFields($before),
+                    'snapshot' => $before,
                 ];
 
                 continue;
             }
 
-            $notes = [];
-            // What actually changed, collected as it is found rather than read
-            // back out of the notes afterwards. A note is prose for a human;
-            // an imported line type can be any string the source used, so
-            // recognising types by parsing text meant either losing real ones
-            // or mistaking a word of prose for one. Structural markers carry a
-            // '#' for the same reason - a source line type could be spelled
-            // "subtotal" and must not be mistaken for the invoice's.
-            $changedTokens = [];
+            $examined = $this->examine($before, $after);
+            $notes = $examined['notes'];
+            $changedTokens = $examined['changed_tokens'];
+            $lineMoneyDiffers = $examined['line_money_differs'];
+            $hourNotes = $examined['hour_notes'];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
-
-            if ($after['currency'] !== $before['currency']) {
-                // The same integer in two currencies is not the same money, and
-                // the delta alone would read as an exact match.
-                $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
-                $changedTokens[] = '#currency';
-            }
-
-            if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
-                $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
-                $changedTokens[] = '#subtotal';
-            }
-            if ($after['tax_amount'] !== $before['tax_amount']) {
-                $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
-                $changedTokens[] = '#tax';
-            }
-            if (count($after['lines']) !== count($before['lines'])) {
-                $notes[] = sprintf('line count %d -> %d', count($before['lines']), count($after['lines']));
-            }
-
-            $lineDifferences = $this->lineDifferences($before['lines'], $after['lines']);
-            foreach ($lineDifferences['notes'] as $note) {
-                $notes[] = $note;
-            }
-            $changedTokens = [...$changedTokens, ...$lineDifferences['changed_types']];
-
-            // A line whose price, quantity or tax moved is a money difference
-            // even when the invoice total lands in the same place. The agreed
-            // bar is that money is exact; a charge the client did not have is
-            // not the same money differently arranged.
-            $lineComparison = $this->lineMultisetDifferences($before['lines'], $after['lines']);
-            $lineMoneyDiffers = $lineComparison['money_differs'];
-
-            $hourNotes = $this->hourNotes($this->hourFields($before), $this->hourFields($after));
 
             $comparisons[] = [
                 'key' => $key,
@@ -686,7 +647,7 @@ final class ReplayInvoicesCommand extends Command
                 'notes' => $notes,
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
-                'line_repriced' => $lineComparison['repriced'],
+                'line_repriced' => $examined['line_repriced'],
                 'changed_tokens' => array_values(array_unique($changedTokens)),
             ];
         }
@@ -699,13 +660,85 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'unexpected',
                     'money_delta' => $after['total_amount'],
                     'notes' => ['the engine produced an invoice with no historical counterpart'],
-                    'lines' => $after['lines'],
-                    'hours' => $this->hourFields($after),
+                    'snapshot' => $after,
                 ];
             }
         }
 
         return $this->reconcileLegacyPeriods($comparisons);
+    }
+
+    /**
+     * Everything one snapshot says about another, in one place.
+     *
+     * Both comparison paths ask the same questions, and the legacy pairing has
+     * had to be taught each of them separately - line detail, correction facts,
+     * hours, and now the invoice fields. Sharing the answer is what stops the
+     * two drifting apart again.
+     *
+     * @param  array<string, mixed>  $before
+     * @param  array<string, mixed>  $after
+     * @return array{notes: list<string>, changed_tokens: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, hour_notes: list<string>}
+     */
+    private function examine(array $before, array $after): array
+    {
+        $notes = [];
+        // What actually changed, collected as it is found rather than read back
+        // out of the notes afterwards. A note is prose for a human; an imported
+        // line type can be any string the source used, so recognising types by
+        // parsing text meant either losing real ones or mistaking a word of
+        // prose for one. Structural markers carry a '#' for the same reason - a
+        // source line type could be spelled "subtotal".
+        $changedTokens = [];
+
+        if ($after['currency'] !== $before['currency']) {
+            // The same integer in two currencies is not the same money, and the
+            // delta alone would read as an exact match.
+            $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
+            $changedTokens[] = '#currency';
+        }
+        if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
+            $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
+            $changedTokens[] = '#subtotal';
+        }
+        if ($after['tax_amount'] !== $before['tax_amount']) {
+            $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
+            $changedTokens[] = '#tax';
+        }
+
+        /** @var list<array<string, mixed>> $beforeLines */
+        $beforeLines = $before['lines'] ?? [];
+        /** @var list<array<string, mixed>> $afterLines */
+        $afterLines = $after['lines'] ?? [];
+
+        if (count($afterLines) !== count($beforeLines)) {
+            $notes[] = sprintf('line count %d -> %d', count($beforeLines), count($afterLines));
+        }
+
+        $lineDifferences = $this->lineDifferences($beforeLines, $afterLines);
+        foreach ($lineDifferences['notes'] as $note) {
+            $notes[] = $note;
+        }
+
+        // A line whose price, quantity or tax moved is a money difference even
+        // when the invoice total lands in the same place. The agreed bar is
+        // that money is exact; a charge the client did not have is not the same
+        // money differently arranged.
+        $lineComparison = $this->lineMultisetDifferences($beforeLines, $afterLines);
+
+        return [
+            'notes' => $notes,
+            'changed_tokens' => array_values(array_unique([...$changedTokens, ...$lineDifferences['changed_types']])),
+            // Strictly about the lines. The summary counts on this to tell an
+            // operator a charge moved, and an invoice that only changed
+            // currency has no line change to go looking for.
+            'line_money_differs' => $lineComparison['money_differs'],
+            // Whether anything above the lines moved, which the verdict needs
+            // and the summary must not confuse with the above.
+            'metadata_differs' => $changedTokens !== [],
+            'line_repriced' => $lineComparison['repriced'],
+            'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
+        ];
     }
 
     /**
@@ -766,8 +799,11 @@ final class ReplayInvoicesCommand extends Command
             $historicalLines = $historical['lines'] ?? [];
             /** @var list<array<string, mixed>> $generatedLines */
             $generatedLines = $generated['lines'] ?? [];
-            $lineComparison = $this->lineMultisetDifferences($historicalLines, $generatedLines);
-            $lineDifferences = $this->lineDifferences($historicalLines, $generatedLines);
+            /** @var array<string, mixed> $historicalSnapshot */
+            $historicalSnapshot = $historical['snapshot'] ?? [];
+            /** @var array<string, mixed> $generatedSnapshot */
+            $generatedSnapshot = $generated['snapshot'] ?? [];
+            $examined = $this->examine($historicalSnapshot, $generatedSnapshot);
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
@@ -781,29 +817,30 @@ final class ReplayInvoicesCommand extends Command
                 // with different charges underneath is a composition
                 // difference, and counting it green would report the pair as
                 // reproducing when it did not.
+                // The same three outcomes the ordinary path reaches, asked of
+                // the pair. Currency is money whatever the totals say, so it
+                // can never be filed as an arrangement.
                 'verdict' => match (true) {
-                    $delta !== 0 || $lineComparison['money_differs'] => 'money_differs',
-                    $lineComparison['notes'] !== [] => 'composition_differs',
+                    $delta !== 0 || $examined['line_money_differs'] => 'money_differs',
+                    ($historicalSnapshot['currency'] ?? null) !== ($generatedSnapshot['currency'] ?? null) => 'money_differs',
+                    $examined['notes'] !== [] => 'composition_differs',
                     default => 'match_legacy_period',
                 },
                 'money_delta' => $delta,
-                'line_money_differs' => $lineComparison['money_differs'],
-                'line_repriced' => $lineComparison['repriced'],
-                'changed_tokens' => $lineDifferences['changed_types'],
+                'line_money_differs' => $examined['line_money_differs'],
+                'line_repriced' => $examined['line_repriced'],
+                'changed_tokens' => $examined['changed_tokens'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
-                    $lineComparison['notes'],
+                    $examined['notes'],
                 ),
                 // Hours differ between these two the same way they differ
                 // anywhere else - the source stored fractional hours and this
                 // schema derives them from whole minutes. Discarding them here
                 // reported the pair as identical when it was only equal in
                 // money.
-                'hour_notes' => $this->hourNotes(
-                    (array) ($historical['hours'] ?? []),
-                    (array) ($generated['hours'] ?? []),
-                ),
+                'hour_notes' => $examined['hour_notes'],
             ];
 
             unset($comparisons[$extra[$cycle][0]]);
@@ -812,7 +849,7 @@ final class ReplayInvoicesCommand extends Command
         // The snapshots were carried only so the pairing above could compare
         // them; they are not part of what this command reports.
         foreach ($comparisons as $index => $comparison) {
-            unset($comparisons[$index]['lines'], $comparisons[$index]['hours']);
+            unset($comparisons[$index]['snapshot']);
         }
 
         return array_values($comparisons);
@@ -1408,7 +1445,7 @@ final class ReplayInvoicesCommand extends Command
         $unexplained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
         $missing = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'missing');
         $extra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
-        $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
+        $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'match_legacy_period', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green>money identical</>', (string) count($matched));
