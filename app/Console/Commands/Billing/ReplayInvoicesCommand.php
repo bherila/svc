@@ -614,6 +614,7 @@ final class ReplayInvoicesCommand extends Command
                     'money_delta' => -$before['total_amount'],
                     'notes' => ['the engine did not produce this invoice'],
                     'lines' => $before['lines'],
+                    'hours' => $this->hourFields($before),
                 ];
 
                 continue;
@@ -624,7 +625,9 @@ final class ReplayInvoicesCommand extends Command
             // back out of the notes afterwards. A note is prose for a human;
             // an imported line type can be any string the source used, so
             // recognising types by parsing text meant either losing real ones
-            // or mistaking a word of prose for one.
+            // or mistaking a word of prose for one. Structural markers carry a
+            // '#' for the same reason - a source line type could be spelled
+            // "subtotal" and must not be mistaken for the invoice's.
             $changedTokens = [];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
 
@@ -632,16 +635,16 @@ final class ReplayInvoicesCommand extends Command
                 // The same integer in two currencies is not the same money, and
                 // the delta alone would read as an exact match.
                 $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
-                $changedTokens[] = 'currency';
+                $changedTokens[] = '#currency';
             }
 
             if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
                 $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
-                $changedTokens[] = 'subtotal';
+                $changedTokens[] = '#subtotal';
             }
             if ($after['tax_amount'] !== $before['tax_amount']) {
                 $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
-                $changedTokens[] = 'tax';
+                $changedTokens[] = '#tax';
             }
             if (count($after['lines']) !== count($before['lines'])) {
                 $notes[] = sprintf('line count %d -> %d', count($before['lines']), count($after['lines']));
@@ -660,12 +663,7 @@ final class ReplayInvoicesCommand extends Command
             $lineComparison = $this->lineMultisetDifferences($before['lines'], $after['lines']);
             $lineMoneyDiffers = $lineComparison['money_differs'];
 
-            $hourNotes = [];
-            foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
-                if ($before[$field] !== $after[$field]) {
-                    $hourNotes[] = sprintf('%s %s -> %s', $field, $this->show($before[$field]), $this->show($after[$field]));
-                }
-            }
+            $hourNotes = $this->hourNotes($this->hourFields($before), $this->hourFields($after));
 
             $comparisons[] = [
                 'key' => $key,
@@ -702,6 +700,7 @@ final class ReplayInvoicesCommand extends Command
                     'money_delta' => $after['total_amount'],
                     'notes' => ['the engine produced an invoice with no historical counterpart'],
                     'lines' => $after['lines'],
+                    'hours' => $this->hourFields($after),
                 ];
             }
         }
@@ -796,7 +795,15 @@ final class ReplayInvoicesCommand extends Command
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
                     $lineComparison['notes'],
                 ),
-                'hour_notes' => [],
+                // Hours differ between these two the same way they differ
+                // anywhere else - the source stored fractional hours and this
+                // schema derives them from whole minutes. Discarding them here
+                // reported the pair as identical when it was only equal in
+                // money.
+                'hour_notes' => $this->hourNotes(
+                    (array) ($historical['hours'] ?? []),
+                    (array) ($generated['hours'] ?? []),
+                ),
             ];
 
             unset($comparisons[$extra[$cycle][0]]);
@@ -805,7 +812,7 @@ final class ReplayInvoicesCommand extends Command
         // The snapshots were carried only so the pairing above could compare
         // them; they are not part of what this command reports.
         foreach ($comparisons as $index => $comparison) {
-            unset($comparisons[$index]['lines']);
+            unset($comparisons[$index]['lines'], $comparisons[$index]['hours']);
         }
 
         return array_values($comparisons);
@@ -1343,6 +1350,39 @@ final class ReplayInvoicesCommand extends Command
             ->whereNotNull('effective_on')
             ->where('effective_on', '<', $opens->copy()->startOfMonth()->toDateString())
             ->exists();
+    }
+
+    /**
+     * The aggregate hour fields, which are reported and never gate.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function hourFields(array $row): array
+    {
+        $fields = [];
+        foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
+            $fields[$field] = $row[$field] ?? null;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param  array<string, mixed>  $before
+     * @param  array<string, mixed>  $after
+     * @return list<string>
+     */
+    private function hourNotes(array $before, array $after): array
+    {
+        $notes = [];
+        foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
+            if (($before[$field] ?? null) !== ($after[$field] ?? null)) {
+                $notes[] = sprintf('%s %s -> %s', $field, $this->show($before[$field] ?? null), $this->show($after[$field] ?? null));
+            }
+        }
+
+        return $notes;
     }
 
     private function show(mixed $value): string

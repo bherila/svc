@@ -550,8 +550,8 @@ final class CapacityAndScopeGuardsTest extends TestCase
     {
         $facts = $this->facts(rolloverMonths: 3, fullyUsedMonth: true, deferredWork: true);
 
-        $this->assertSame([], DeliberateCorrections::explaining(['retainer', 'subtotal'], $facts));
-        $this->assertNotSame([], DeliberateCorrections::explaining(['additional_hours', 'subtotal'], $facts));
+        $this->assertSame([], DeliberateCorrections::explaining(['retainer', '#subtotal'], $facts));
+        $this->assertNotSame([], DeliberateCorrections::explaining(['additional_hours', '#subtotal'], $facts));
     }
 
     /**

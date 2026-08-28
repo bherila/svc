@@ -150,7 +150,7 @@ final class ReplayInvoicesTest extends TestCase
         // price moves: the invoice total is untouched, so nothing above the
         // line level has anything to notice.
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
         $line->forceFill(['unit_amount' => (int) $line->unit_amount + 5000])->save();
 
         $invoice = $line->invoice()->firstOrFail();
@@ -189,7 +189,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
 
         // History carried this charge twice; the engine produces it once. Every
         // amount is identical, so nothing about what the client pays moved.
@@ -235,7 +235,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
         $this->assertMatchesRegularExpression('/\d/', (string) $line->description, 'This fixture needs an amount-bearing description.');
 
         // History carried a different quantity, and its description says so -
@@ -342,8 +342,8 @@ final class ReplayInvoicesTest extends TestCase
     {
         $this->generatedHistory();
 
-        $invoiceId = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->value('client_invoice_id');
-        $lines = ClientInvoiceLine::query()->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
+        $invoiceId = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->value('client_invoice_id');
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
         $this->assertGreaterThanOrEqual(2, $lines->count(), 'This fixture needs two lines on one invoice.');
 
         /** @var ClientInvoiceLine $a */
@@ -369,7 +369,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->orderByDesc('total_amount')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->orderByDesc('total_amount')->firstOrFail();
 
         // Nothing recognisable survives to pair on, and the invoice total is
         // untouched, so only the amounts themselves say anything happened.
@@ -392,7 +392,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
         $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
 
         // History carried one more charge than the engine produces, at a price
@@ -421,8 +421,8 @@ final class ReplayInvoicesTest extends TestCase
     {
         $this->generatedHistory();
 
-        $invoiceId = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->value('client_invoice_id');
-        $lines = ClientInvoiceLine::query()->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
+        $invoiceId = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->value('client_invoice_id');
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
         $this->assertGreaterThanOrEqual(2, $lines->count());
 
         /** @var ClientInvoiceLine $a */
@@ -453,7 +453,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
         $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
 
         // Different wording and different amounts: nothing to pair against, so
@@ -528,7 +528,7 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->generatedHistory();
 
-        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
         if ($subcontracted->count() < 2) {
             $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
         }
@@ -595,7 +595,7 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->generatedHistory();
 
-        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
         if ($subcontracted->count() < 2) {
             $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
         }
@@ -633,7 +633,7 @@ final class ReplayInvoicesTest extends TestCase
     public function test_a_charge_that_moves_between_recurring_items_is_not_filed_as_a_move(): void
     {
         $invoice = $this->generatedHistory();
-        $agreement = ClientAgreement::query()->firstOrFail();
+        $agreement = ClientAgreement::query()->where('workspace_id', $this->workspace->id)->firstOrFail();
 
         $item = ClientAgreementRecurringItem::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -647,7 +647,7 @@ final class ReplayInvoicesTest extends TestCase
         ]);
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoice->id)
             ->orderByDesc('total_amount')->firstOrFail();
         $unit = (int) $line->unit_amount;
         $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
@@ -730,7 +730,7 @@ final class ReplayInvoicesTest extends TestCase
             'rollover_months' => 0,
         ]);
 
-        ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)
+        ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoice->id)
             ->orderByDesc('total_amount')->firstOrFail()
             ->forceFill(['client_agreement_id' => $other->id])->save();
 
@@ -814,7 +814,7 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->generatedHistory();
 
-        $lines = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
         if ($lines->count() < 2) {
             $this->markTestSkipped('This fixture did not produce two charges under one filing.');
         }
@@ -842,7 +842,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->generatedHistory();
 
         /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->orderByDesc('total_amount')->firstOrFail();
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->orderByDesc('total_amount')->firstOrFail();
         $project = ClientProject::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
@@ -927,7 +927,7 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         ClientInvoiceLine::query()->create([
             'workspace_id' => $this->workspace->id,
-            'client_invoice_id' => (int) ClientInvoice::query()->where('invoice_number', 'SVC-ADHOC')->value('id'),
+            'client_invoice_id' => (int) ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('invoice_number', 'SVC-ADHOC')->value('id'),
             'type' => 'additional_hours', 'description' => 'One-off', 'quantity' => '1',
             'unit_amount' => 50000, 'tax_amount' => 0, 'total_amount' => 50000, 'sort_order' => 0,
         ]);
@@ -1049,7 +1049,7 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->generatedHistory();
 
-        $lines = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
         if ($lines->count() < 2) {
             $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
         }
@@ -1176,6 +1176,6 @@ final class ReplayInvoicesTest extends TestCase
             Carbon::setTestNow();
         }
 
-        return ClientInvoice::query()->orderByDesc('id')->firstOrFail();
+        return ClientInvoice::query()->where('workspace_id', $this->workspace->id)->orderByDesc('id')->firstOrFail();
     }
 }

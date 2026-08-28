@@ -61,11 +61,15 @@ final class DeliberateCorrections
         'prior_month_retainer',
         'prior_month_billable',
         'additional_hours',
-        'subtotal',
+        // Namespaced so it cannot collide with a line type. An imported line
+        // carries whatever type string its source used, and one literally
+        // called "subtotal" would otherwise be read as this marker and waived
+        // by a correction that says nothing about it.
+        '#subtotal',
     ];
 
     /**
-     * @param  list<string>  $changedLineTypes  line types (and 'subtotal') that differ
+     * @param  list<string>  $changedLineTypes  line types, and '#'-prefixed structural markers, that differ
      * @return list<array{key: string, summary: string}>
      */
     public static function explaining(array $changedLineTypes, CorrectionFacts $facts): array
@@ -118,7 +122,7 @@ final class DeliberateCorrections
         // whose anchor falls before the cycle opens - otherwise the previous
         // cycle never covered it - and which started in an earlier month, since
         // an item in its own first month still bills from its start date.
-        if (self::confinedTo($changedLineTypes, ['recurring_item', 'subtotal'])
+        if (self::confinedTo($changedLineTypes, ['recurring_item', '#subtotal'])
             && $facts->cycleOpensMidMonth
             && $facts->recurringItemAnchoredBeforeCycleOpens) {
             $explanations[] = [
