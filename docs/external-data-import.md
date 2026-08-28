@@ -29,6 +29,36 @@ that source-side integer IDs can be reused.
    or bank credentials are copied.
 7. Copy attachments through the attachment import ledger and verify every
    digest.
+8. Reconcile the links that point backwards. A time entry's invoice line and a
+   milestone task's invoice line both live on the child row in the source but
+   name a row imported later, so they are resolved after every importer has run
+   rather than inline. Both fill a hole only: a link this system already holds
+   is left alone, because repointing a billed row is not a decision an import
+   pass gets to make.
+
+A reconciliation pass reads the source a second time, later than the read the
+importer observed, so it re-checks each row against the fingerprint the ledger
+recorded. That covers both a row this run refused as `source_changed` and one
+edited in the gap between the two reads: either way the ledger item describes a
+snapshot this run never observed, and a billing link must not be written from
+it.
+
+The ledger is keyed on the source identity rather than on a workspace, so a
+public id can resolve to a row owned by a tenant this run is not importing into.
+Both sides of a link are checked, not just the row being written - a foreign key
+here is not workspace-composite, so nothing below the application stops one
+tenant's task pointing at another's invoice line. A blocked write is reported
+rather than counted as a link.
+
+Filling a hole is decided in the write rather than in a read before it, so an
+operator issuing an invoice between the two does not have their decision
+replaced by an import pass.
+
+Every destination column an importer owns is either mapped, reconciled in step
+8, or listed as exempt with a reason in `ImportedColumnCoverageTest`. A column
+that is merely fillable is not covered - the model accepts it and nothing ever
+passes a value, which is how milestone links and invoice opening balances both
+arrived null on every imported row.
 
 ## Rehearsal and verification
 

@@ -76,9 +76,129 @@ final class BackfillBillingLedgerTest extends TestCase
         $task->refresh();
         // Source decimal currency becomes integer minor units.
         $this->assertSame(18750, $task->milestone_price_amount);
+        // The line that billed this milestone. A task repaired without it reads
+        // as unbilled, and the next generation run charges for it again.
+        $this->assertSame($line->id, $task->client_invoice_line_id);
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
         $invoice->refresh();
+        $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
+    }
+
+    /**
+     * The repair now writes a link between two tenant-owned financial rows, so
+     * the mapping it resolves has to name a row this workspace owns. A source
+     * key is the same integer in every tenant imported from one predecessor,
+     * and the foreign key here is not workspace-composite.
+     */
+    public function test_a_backfilled_milestone_link_never_resolves_another_workspaces_line(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        // An invoice line that genuinely belongs to somebody else, with source
+        // line 901 mapped to it under this workspace's own run - so only the
+        // destination-side ownership check stands between the task and it.
+        $other = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $otherInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'THEIRS-1', 'status' => 'draft', 'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+        $otherLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $other->id, 'client_invoice_id' => $otherInvoice->id,
+            'type' => 'milestone', 'description' => 'Theirs', 'quantity' => '1.0000',
+            'unit_amount' => 100000, 'tax_amount' => 0, 'total_amount' => 100000, 'sort_order' => 0,
+        ]);
+
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '901')
+            ->update(['target_public_id' => $otherLine->public_id]);
+
+        // Refused, and loudly. The source says this milestone was billed and
+        // the only candidate belongs to somebody else, so there is no answer
+        // here - and leaving it null quietly would let the next generation run
+        // charge for the milestone again.
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertFailed();
+
+        $task->refresh();
+        $this->assertNull($task->client_invoice_line_id);
+    }
+
+    /**
+     * The inverse split. The resolved invoice line belongs to this workspace
+     * and only the task is foreign, so the task-side boundary is the only thing
+     * that can refuse the link.
+     */
+    public function test_a_backfilled_milestone_link_never_resolves_another_workspaces_task(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        $other = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'name' => 'Their Project',
+        ]);
+        $otherTask = ClientTask::query()->create([
+            'workspace_id' => $other->id, 'client_project_id' => $otherProject->id, 'title' => 'Their Milestone',
+        ]);
+
+        // Source task 701 now names a task owned by somebody else, while source
+        // line 901 still resolves to this workspace's own line.
+        DB::table('external_import_items')
+            ->where('source_table', 'client_tasks')
+            ->where('source_key', '701')
+            ->update(['target_public_id' => $otherTask->public_id]);
+
+        // Succeeds rather than fails, and that is right: a source row imported
+        // into another tenant is genuinely not this repair's business. What
+        // must not happen is the link being written into it.
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $task->refresh();
+        $otherTask->refresh();
+        $this->assertNull($task->client_invoice_line_id);
+        $this->assertNull($otherTask->client_invoice_line_id);
+    }
+
+    /**
+     * A task already carrying its link has no hole to fill, so a source line
+     * this workspace never imported is nothing to refuse over - and failing
+     * would roll back every other row the repair had to offer.
+     */
+    public function test_an_unresolvable_source_link_is_ignored_when_the_task_is_already_linked(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        // Already decided here, by an earlier repair or by an operator.
+        $task->forceFill(['client_invoice_line_id' => $line->id])->save();
+
+        // And the source names a line this workspace has no mapping for.
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '901')
+            ->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $task->refresh();
+        $invoice->refresh();
+        $this->assertSame($line->id, $task->client_invoice_line_id);
+        // The rest of the repair still happened rather than being rolled back.
         $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
@@ -142,7 +262,7 @@ final class BackfillBillingLedgerTest extends TestCase
         $source->statement('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, invoice_kind TEXT, cycle_start TEXT, cycle_end TEXT, paid_date TEXT, retainer_hours_included TEXT, hours_worked TEXT, rollover_hours_used TEXT, unused_hours_balance TEXT, negative_hours_balance TEXT, hours_billed_at_rate TEXT)');
         $source->statement('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, line_date TEXT, hours TEXT, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER)');
         $source->statement('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, catch_up_threshold_hours TEXT, rollover_months INTEGER, initial_rollover_hours TEXT, bill_overage_interim INTEGER, first_cycle_proration TEXT, agreement_link TEXT)');
-        $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT)');
+        $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT, client_invoice_line_id INTEGER)');
         $source->statement('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, job_type TEXT)');
 
         $source->table('client_invoices')->insert([
@@ -160,7 +280,7 @@ final class BackfillBillingLedgerTest extends TestCase
             'initial_rollover_hours' => '0.0000', 'bill_overage_interim' => 1,
             'first_cycle_proration' => 'prorate_hours', 'agreement_link' => 'https://example.com/agreement',
         ]);
-        $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50']);
+        $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50', 'client_invoice_line_id' => 901]);
         $source->table('client_time_entries')->insert(['id' => 601, 'job_type' => 'Support']);
     }
 

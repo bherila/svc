@@ -38,6 +38,17 @@ use Throwable;
  */
 final class ExternalImportService
 {
+    /**
+     * Source keys this run observed carrying an invoice-line link, per source
+     * table. A reconciliation pass queries the source again and only sees rows
+     * that still carry one - so a link cleared, or a row deleted, between the
+     * two reads simply vanishes from the second. Without this the pass has
+     * nothing to notice its absence against.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $linkedSourceKeys = [];
+
     /** @var QueryCache */
     private array $activeQueryCache;
 
@@ -68,7 +79,9 @@ final class ExternalImportService
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
         /** @var ImportCounts $counts */
         $counts = $this->emptyCounts($inventory);
-        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'failed' => 0];
+        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
+        $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
+        $this->linkedSourceKeys = [];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, ExternalImportItem> $ledgerItems */
@@ -86,9 +99,10 @@ final class ExternalImportService
 
             $this->reconcileImportedInvoices($run, $destinationName);
             $this->reconcileTimeEntryInvoiceLinks($sourceConnection, $this->sourceGuard->runtimeName($source), $run, $destinationName, $ledgerItems, $queryCache, $linkCounts, $counts);
+            $this->reconcileMilestoneTaskInvoiceLinks($sourceConnection, $this->sourceGuard->runtimeName($source), $run, $destinationName, $ledgerItems, $queryCache, $milestoneCounts, $counts);
 
             $run->forceFill([
-                'counts' => $counts + ['link_counts' => $linkCounts],
+                'counts' => $counts + ['link_counts' => $linkCounts, 'milestone_link_counts' => $milestoneCounts],
                 'status' => $counts['failed'] > 0
                     ? 'completed_with_failures'
                     // A row this ledger says it imported, which the source has
@@ -108,6 +122,7 @@ final class ExternalImportService
         $summary['run_public_id'] = $run->public_id;
         $summary['counts'] = $counts;
         $summary['link_counts'] = $linkCounts;
+        $summary['milestone_link_counts'] = $milestoneCounts;
         $summary['status'] = $run->status;
 
         return $summary;
@@ -206,6 +221,9 @@ final class ExternalImportService
             $row = (array) $rawRow;
             $sourceKey = (string) ($row[$keyColumn] ?? '');
             $seenKeys[$sourceKey] = true;
+            if (($row['client_invoice_line_id'] ?? null) !== null && $sourceKey !== '') {
+                $this->linkedSourceKeys[$table][$sourceKey] = true;
+            }
             if ($sourceKey === '') {
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_source_key'] = ($counts['failure_reasons']['missing_source_key'] ?? 0) + 1;
@@ -447,7 +465,10 @@ final class ExternalImportService
         $agreement = $parents['client_agreements'] ?? null;
         $invoice = $parents['client_invoices'] ?? null;
         $recurring = $parents['client_agreement_recurring_items'] ?? null;
-        $attributes = ['public_id' => $publicId, 'workspace_id' => $workspaceId];
+        // Source timestamps, carried for every type. importRow() falls back to
+        // now() where the source table has no such column, so an imported row
+        // dates from when it happened rather than from when it was imported.
+        $attributes = ['public_id' => $publicId, 'workspace_id' => $workspaceId, 'created_at' => self::sourceTimestamp($row['created_at'] ?? null), 'updated_at' => self::sourceTimestamp($row['updated_at'] ?? null)];
 
         return match ($type) {
             'company' => $attributes + [
@@ -469,15 +490,15 @@ final class ExternalImportService
                 ]),
             ],
             'project' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'name' => $row['name'] ?? 'External project', 'description' => $row['description'] ?? null, 'status' => 'active', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false)],
-            'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'External task', 'description' => $row['description'] ?? null, 'status' => ($row['completed_at'] ?? null) ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => $row['completed_at'] ?? null, 'milestone_price_amount' => ((float) ($row['milestone_price'] ?? 0)) > 0.0 ? self::minorUnits($row['milestone_price']) : null],
-            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => $row['date_worked'] ?? null, 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'job_type' => $row['job_type'] ?? null, 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft'],
-            'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'External proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => $row['accepted_at'] ?? null, 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['accepted_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null],
+            'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'External task', 'description' => $row['description'] ?? null, 'status' => self::sourceTimestamp($row['completed_at'] ?? null) !== null ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => self::sourceTimestamp($row['completed_at'] ?? null), 'milestone_price_amount' => ((float) ($row['milestone_price'] ?? 0)) > 0.0 ? self::minorUnits($row['milestone_price']) : null],
+            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => self::sourceDate($row['date_worked'] ?? null), 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'job_type' => $row['job_type'] ?? null, 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'subcontractor_cost_currency' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null) === null ? null : self::sourceCurrency($row['currency'] ?? null), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft', 'approved_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['approved_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'approved_at' => self::sourceTimestamp($row['approved_at'] ?? null)],
+            'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'External proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => self::sourceTimestamp($row['accepted_at'] ?? null), 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['accepted_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'sent_at' => self::sourceTimestamp($row['sent_at'] ?? null)],
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'External proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
-            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'External agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null, 'catch_up_threshold_minutes' => self::minutesFromDecimal($row['catch_up_threshold_hours'] ?? null), 'period_retainer_minutes' => self::minutesFromDecimal($row['retainer_hours'] ?? null), 'period_retainer_amount' => self::nullableMinorUnits($row['retainer_fee'] ?? null), 'rollover_months' => isset($row['rollover_months']) ? (int) $row['rollover_months'] : null, 'initial_rollover_minutes' => self::minutesFromDecimal($row['initial_rollover_hours'] ?? null), 'bill_overage_interim' => isset($row['bill_overage_interim']) ? (bool) $row['bill_overage_interim'] : null, 'first_cycle_proration' => $row['first_cycle_proration'] ?? null, 'agreement_link' => $row['agreement_link'] ?? null],
-            'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'External recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => $row['start_date'] ?? null, 'expires_on' => $row['end_date'] ?? null, 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
-            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => isset($row['cycle_start']) ? substr((string) $row['cycle_start'], 0, 10) : null, 'cycle_end' => isset($row['cycle_end']) ? substr((string) $row['cycle_end'], 0, 10) : null, 'paid_on' => isset($row['paid_date']) ? substr((string) $row['paid_date'], 0, 10) : null, 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null],
-            'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'External invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => self::invoiceLineQuantity($row['quantity'] ?? null), 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0), 'line_date' => isset($row['line_date']) ? substr((string) $row['line_date'], 0, 10) : null, 'hours' => $row['hours'] ?? null, 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'client_agreement_recurring_item_id' => $this->internalId($destinationName, 'client_agreement_recurring_items', $recurring)],
-            'invoice_payment' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'status' => 'succeeded', 'amount' => self::minorUnits($row['amount'] ?? null), 'refunded_amount' => 0, 'currency' => $row['currency'] ?? 'USD', 'received_on' => $row['payment_date'] ?? null, 'method' => $row['payment_method'] ?? 'external', 'reference' => $row['stripe_payment_intent_id'] ?? null, 'notes' => $row['notes'] ?? null, 'provider' => ($row['stripe_payment_intent_id'] ?? null) ? 'stripe' : null, 'provider_payment_identifier' => $row['stripe_payment_intent_id'] ?? null, 'external_finance_transaction_uuid' => null],
+            'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'External agreement', 'status' => self::sourceDate($row['termination_date'] ?? null) !== null ? 'terminated' : (self::sourceDate($row['active_date'] ?? null) !== null ? 'active' : 'draft'), 'starts_on' => self::sourceDate($row['active_date'] ?? null), 'ends_on' => self::sourceDate($row['termination_date'] ?? null), 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => self::sourceTimestamp($row['active_date'] ?? null), 'signed_at' => self::sourceTimestamp($row['client_company_signed_date'] ?? null), 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => self::sourceTimestamp($row['termination_date'] ?? null), 'catch_up_threshold_minutes' => self::minutesFromDecimal($row['catch_up_threshold_hours'] ?? null), 'period_retainer_minutes' => self::minutesFromDecimal($row['retainer_hours'] ?? null), 'period_retainer_amount' => self::nullableMinorUnits($row['retainer_fee'] ?? null), 'rollover_months' => isset($row['rollover_months']) ? (int) $row['rollover_months'] : null, 'initial_rollover_minutes' => self::minutesFromDecimal($row['initial_rollover_hours'] ?? null), 'bill_overage_interim' => isset($row['bill_overage_interim']) ? (bool) $row['bill_overage_interim'] : null, 'first_cycle_proration' => $row['first_cycle_proration'] ?? null, 'agreement_link' => $row['agreement_link'] ?? null],
+            'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'External recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => self::sourceDate($row['start_date'] ?? null), 'expires_on' => self::sourceDate($row['end_date'] ?? null), 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
+            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => self::sourceDate($row['issue_date'] ?? null), 'due_date' => self::sourceDate($row['due_date'] ?? null), 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => self::sourceDate($row['cycle_start'] ?? null), 'cycle_end' => self::sourceDate($row['cycle_end'] ?? null), 'paid_on' => self::sourceDate($row['paid_date'] ?? null), 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null, 'starting_unused_hours' => $row['starting_unused_hours'] ?? null, 'starting_negative_hours' => $row['starting_negative_hours'] ?? null],
+            'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'External invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => self::invoiceLineQuantity($row['quantity'] ?? null), 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0), 'line_date' => self::sourceDate($row['line_date'] ?? null), 'hours' => $row['hours'] ?? null, 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'client_agreement_recurring_item_id' => $this->internalId($destinationName, 'client_agreement_recurring_items', $recurring)],
+            'invoice_payment' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'status' => 'succeeded', 'amount' => self::minorUnits($row['amount'] ?? null), 'refunded_amount' => 0, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'received_on' => self::sourceDate($row['payment_date'] ?? null), 'method' => $row['payment_method'] ?? 'external', 'reference' => $row['stripe_payment_intent_id'] ?? null, 'notes' => $row['notes'] ?? null, 'provider' => ($row['stripe_payment_intent_id'] ?? null) ? 'stripe' : null, 'provider_payment_identifier' => $row['stripe_payment_intent_id'] ?? null, 'external_finance_transaction_uuid' => null],
             'invoice_email_delivery' => $attributes + [
                 'client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice),
                 'recipients' => $this->jsonOrNull([
@@ -497,18 +518,18 @@ final class ExternalImportService
                     'transport_message_id' => $row['transport_message_id'] ?? null,
                     'note' => $row['note'] ?? null,
                     'last_event' => $row['last_event'] ?? null,
-                    'last_event_at' => $row['last_event_at'] ?? null,
-                    'last_status_checked_at' => $row['last_status_checked_at'] ?? null,
+                    'last_event_at' => self::sourceTimestamp($row['last_event_at'] ?? null),
+                    'last_status_checked_at' => self::sourceTimestamp($row['last_status_checked_at'] ?? null),
                     'delivery_events' => $this->decodeJson($row['delivery_events'] ?? null),
                     'provider_response' => $this->decodeJson($row['provider_response'] ?? null),
                 ]),
-                'queued_at' => $row['queued_at'] ?? null,
-                'sent_at' => $row['sent_at'] ?? null,
-                'failed_at' => $row['failed_at'] ?? null,
+                'queued_at' => self::sourceTimestamp($row['queued_at'] ?? null),
+                'sent_at' => self::sourceTimestamp($row['sent_at'] ?? null),
+                'failed_at' => self::sourceTimestamp($row['failed_at'] ?? null),
             ],
             'stripe_customer' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'stripe_customer_id' => $row['stripe_customer_id'] ?? null, 'metadata' => json_encode(['imported' => true], JSON_THROW_ON_ERROR)],
             'stripe_payment_method' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_stripe_customer_id' => $this->stripeCustomerInternalId($destinationName, $company), 'stripe_payment_method_id' => $row['stripe_payment_method_id'] ?? null, 'type' => $row['type'] ?? 'unknown', 'brand' => $row['brand'] ?? null, 'last4' => $row['last4'] ?? null, 'exp_month' => $row['exp_month'] ?? null, 'exp_year' => $row['exp_year'] ?? null, 'is_default' => (bool) ($row['is_default'] ?? false), 'metadata' => json_encode(['imported' => true], JSON_THROW_ON_ERROR)],
-            'stripe_event' => $attributes + ['stripe_event_id' => $row['stripe_event_id'] ?? null, 'event_type' => $row['type'] ?? 'external.event', 'object_id' => $row['object_id'] ?? null, 'payload_hash' => Fingerprint::row($row), 'status' => 'received', 'processed_at' => $row['processed_at'] ?? null],
+            'stripe_event' => $attributes + ['stripe_event_id' => $row['stripe_event_id'] ?? null, 'event_type' => $row['type'] ?? 'external.event', 'object_id' => $row['object_id'] ?? null, 'payload_hash' => Fingerprint::row($row), 'status' => 'received', 'processed_at' => self::sourceTimestamp($row['processed_at'] ?? null)],
             default => $attributes,
         };
     }
@@ -630,6 +651,67 @@ final class ExternalImportService
         return $columns;
     }
 
+    /**
+     * A reconciliation pass reads the source a second time, later than the read
+     * importSpec() observed. Anything that changed in between - a row this run
+     * refused as source_changed, or one edited in the gap between the two reads
+     * - describes a snapshot this run never observed, and a billing link must
+     * not be written from it.
+     *
+     * @param  array<string, mixed>  $row
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     */
+    private function observedThisRun(string $sourceTable, string $sourceKey, array $row, array $ledgerItems): bool
+    {
+        $item = $ledgerItems[$this->ledgerItemKey($sourceTable, $sourceKey)] ?? null;
+
+        return $item !== null && $item->source_fingerprint === Fingerprint::row($row);
+    }
+
+    /**
+     * How many rows carried a link when this run observed them and do not carry
+     * one now.
+     *
+     * Such a row never reaches the reconciliation loop at all - the second read
+     * filters it out, whether the link was cleared or the row was deleted - so
+     * there is nothing there to notice its absence. Silence would leave a
+     * milestone unlinked while the run reported clean, and an unlinked
+     * milestone is billed again.
+     *
+     * @param  array<string, true>  $seen
+     * @param  array<string, mixed>  $counts
+     */
+    private function vanishedLinkCount(string $sourceTable, array $seen, array &$counts, string $reason): int
+    {
+        $vanished = 0;
+
+        foreach (array_keys($this->linkedSourceKeys[$sourceTable] ?? []) as $sourceKey) {
+            if (isset($seen[$sourceKey])) {
+                continue;
+            }
+
+            $vanished++;
+            $counts['skipped']++;
+            $counts['failure_reasons'][$reason] = ($counts['failure_reasons'][$reason] ?? 0) + 1;
+        }
+
+        return $vanished;
+    }
+
+    /**
+     * The ledger is keyed on the source identity rather than on a workspace, so
+     * a public id can resolve to a row owned by a tenant this run is not
+     * importing into. A foreign key here is not workspace-composite, so nothing
+     * below the application stops one tenant's row pointing at another's.
+     */
+    private function ownedByRunWorkspace(string $destinationName, string $table, int $id, int $workspaceId): bool
+    {
+        return DB::connection($destinationName)->table($table)
+            ->where('id', $id)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+    }
+
     private function ledgerItemKey(string $sourceTable, string $sourceKey): string
     {
         return $sourceTable."\0".$sourceKey;
@@ -707,7 +789,7 @@ final class ExternalImportService
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
-     * @param  array{source_rows:int,inserted:int,idempotent:int,failed:int}  $linkCounts
+     * @param  array{source_rows:int,inserted:int,idempotent:int,rejected:int,failed:int}  $linkCounts
      * @param  array<string, mixed>  $counts
      */
     private function reconcileTimeEntryInvoiceLinks(
@@ -724,15 +806,32 @@ final class ExternalImportService
             return;
         }
 
+        // Streamed, not materialised. Fingerprinting needs every column, and a
+        // long billed-time history would otherwise be held in memory in full
+        // after the imports have already succeeded.
         $rows = SourceRows::for($source, $sourceRuntimeName, 'client_time_entries')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
-            ->get(['id', 'client_invoice_line_id']);
-        $linkCounts['source_rows'] = $rows->count();
+            ->cursor();
 
-        foreach ($rows as $row) {
-            $timePublicId = $this->resolveParentId('client_time_entries', (string) $row->id, $ledgerItems, $queryCache);
-            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) $row->client_invoice_line_id, $ledgerItems, $queryCache);
+        $seen = [];
+
+        foreach ($rows as $rawRow) {
+            $linkCounts['source_rows']++;
+            $row = (array) $rawRow;
+            $sourceKey = (string) ($row['id'] ?? '');
+            $seen[$sourceKey] = true;
+
+            if (! $this->observedThisRun('client_time_entries', $sourceKey, $row, $ledgerItems)) {
+                $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_source_changed'] = ($counts['failure_reasons']['time_link_source_changed'] ?? 0) + 1;
+
+                continue;
+            }
+
+            $timePublicId = $this->resolveParentId('client_time_entries', $sourceKey, $ledgerItems, $queryCache);
+            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
 
@@ -740,6 +839,15 @@ final class ExternalImportService
                 $linkCounts['failed']++;
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_invoice_time_link_parent'] = ($counts['failure_reasons']['missing_invoice_time_link_parent'] ?? 0) + 1;
+
+                continue;
+            }
+
+            if (! $this->ownedByRunWorkspace($destinationName, 'client_time_entries', $timeId, (int) $run->workspace_id)
+                || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, (int) $run->workspace_id)) {
+                $linkCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['time_link_outside_workspace'] = ($counts['failure_reasons']['time_link_outside_workspace'] ?? 0) + 1;
 
                 continue;
             }
@@ -764,6 +872,109 @@ final class ExternalImportService
             ]);
             $linkCounts['inserted']++;
         }
+
+        $linkCounts['rejected'] += $this->vanishedLinkCount('client_time_entries', $seen, $counts, 'time_link_vanished');
+    }
+
+    /**
+     * A milestone task records which invoice line billed it. Without that link,
+     * the next generation run finds every completed priced task unbilled and
+     * charges for it a second time - so this is reconstructed from the source
+     * rather than left null, and it runs after the invoice lines have their
+     * public-id mappings.
+     *
+     * Unlike time entries, a milestone is one deliverable at one price and
+     * cannot be split, so the link is a column rather than a pivot row.
+     *
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     * @param  array{source_rows:int,linked:int,idempotent:int,rejected:int,failed:int}  $milestoneCounts
+     * @param  array<string, mixed>  $counts
+     */
+    private function reconcileMilestoneTaskInvoiceLinks(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        ExternalImportRun $run,
+        string $destinationName,
+        array $ledgerItems,
+        array &$queryCache,
+        array &$milestoneCounts,
+        array &$counts,
+    ): void {
+        if (! Schema::connection($sourceRuntimeName)->hasColumn('client_tasks', 'client_invoice_line_id')) {
+            return;
+        }
+
+        $rows = SourceRows::for($source, $sourceRuntimeName, 'client_tasks')
+            ->whereNotNull('client_invoice_line_id')
+            ->orderBy('id')
+            ->cursor();
+
+        $seen = [];
+
+        foreach ($rows as $rawRow) {
+            $milestoneCounts['source_rows']++;
+            $row = (array) $rawRow;
+            $sourceKey = (string) ($row['id'] ?? '');
+            $seen[$sourceKey] = true;
+
+            // A rejected link is not a cosmetic skip: the milestone stays
+            // unlinked, and an unlinked completed milestone is one the next
+            // generation run charges for again. The run must not report clean.
+            if (! $this->observedThisRun('client_tasks', $sourceKey, $row, $ledgerItems)) {
+                $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_source_changed'] = ($counts['failure_reasons']['milestone_link_source_changed'] ?? 0) + 1;
+
+                continue;
+            }
+
+            $taskPublicId = $this->resolveParentId('client_tasks', $sourceKey, $ledgerItems, $queryCache);
+            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
+            $taskId = $this->internalId($destinationName, 'client_tasks', $taskPublicId);
+            $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+
+            if ($taskId === null || $lineId === null) {
+                $milestoneCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['missing_milestone_invoice_link_parent'] = ($counts['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0) + 1;
+
+                continue;
+            }
+
+            // Both sides, not just the task. Scoping only the row being written
+            // still lets a task in this workspace point at another tenant's
+            // invoice line, and the foreign key is not workspace-composite.
+            if (! $this->ownedByRunWorkspace($destinationName, 'client_tasks', $taskId, (int) $run->workspace_id)
+                || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, (int) $run->workspace_id)) {
+                $milestoneCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['milestone_link_outside_workspace'] = ($counts['failure_reasons']['milestone_link_outside_workspace'] ?? 0) + 1;
+
+                continue;
+            }
+
+            // Only ever fill a hole, and decide that in the write rather than
+            // in a read before it: an operator issuing an invoice between the
+            // two would otherwise have their link replaced by this one. Leaving
+            // updated_at alone keeps the source date attributes() imported -
+            // reconstructing a link is not the source editing the row.
+            $updated = DB::connection($destinationName)->table('client_tasks')
+                ->where('workspace_id', $run->workspace_id)
+                ->where('id', $taskId)
+                ->whereNull('client_invoice_line_id')
+                ->update(['client_invoice_line_id' => $lineId]);
+
+            if ($updated === 0) {
+                $milestoneCounts['idempotent']++;
+
+                continue;
+            }
+
+            $milestoneCounts['linked']++;
+        }
+
+        $milestoneCounts['rejected'] += $this->vanishedLinkCount('client_tasks', $seen, $counts, 'milestone_link_vanished');
     }
 
     /**
@@ -960,6 +1171,50 @@ final class ExternalImportService
         }
 
         return self::minorUnits($value);
+    }
+
+    /**
+     * A source timestamp, or null where the source is not really carrying one.
+     *
+     * MySQL's zero date is a legal value there and rejected outright by a
+     * strict destination, and importRow()'s null-coalescing fallback does not
+     * see it - so copying it verbatim fails the insert, fails the row, and
+     * cascades into every child that needed it as a parent.
+     */
+    private static function sourceTimestamp(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+
+        return $text === '' || str_starts_with($text, '0000-00-00') ? null : $text;
+    }
+
+    /**
+     * A source date, normalised the same way, truncated to the day.
+     */
+    /**
+     * A source currency, never blank.
+     *
+     * Null-coalescing catches a missing column and not an empty one, and a
+     * blank currency is worse than a missing one: InvoiceLineComposer skips its
+     * cross-currency refusal when the cost currency is empty, so a rate of
+     * unknown denomination would be billed as though it were the invoice's.
+     */
+    private static function sourceCurrency(mixed $value): string
+    {
+        $text = strtoupper(trim((string) ($value ?? '')));
+
+        return $text === '' ? 'USD' : $text;
+    }
+
+    private static function sourceDate(mixed $value): ?string
+    {
+        $text = self::sourceTimestamp($value);
+
+        return $text === null ? null : substr($text, 0, 10);
     }
 
     private static function minorUnits(mixed $value): int

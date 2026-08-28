@@ -2,6 +2,12 @@
 
 namespace Tests\Feature\ExternalImport;
 
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
+use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\User;
@@ -317,6 +323,399 @@ class ExternalImportTest extends TestCase
         $this->assertSame(2.25, (float) $quantities[1]);
     }
 
+    public function test_a_milestone_task_keeps_the_line_that_billed_it(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (91, 11, NULL, 'SYN-91', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (92, 91, NULL, NULL, 'Synthetic milestone line', '1', '2500.00', '2500.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 92, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $lineId = DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())->value('id');
+        $taskLink = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id');
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame(1, $summary['milestone_link_counts']['source_rows']);
+        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
+        // Without this the next generation run reads the task as unbilled and
+        // charges the client for the same deliverable a second time.
+        $this->assertNotNull($taskLink);
+        $this->assertSame((int) $lineId, (int) $taskLink);
+        // Reconstructing a link is not the source editing the row, so the
+        // source date the import wrote must survive the reconciliation.
+        $this->assertStringStartsWith(
+            '2026-01-06',
+            (string) DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('updated_at'),
+        );
+    }
+
+    public function test_a_milestone_link_never_crosses_a_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (97, 11, NULL, 'SYN-97', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (98, 97, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 98 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // Everything now belongs to the owning workspace, and the ledger is
+        // keyed on the source identity rather than on a workspace - so a run
+        // for a different tenant resolves these very rows.
+        $taskId = DB::table('client_tasks')->where('workspace_id', $owner->getKey())->value('id');
+        DB::table('client_tasks')->where('id', $taskId)->update(['client_invoice_line_id' => null]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        // Without the workspace predicate on the read and the update, this run
+        // would reach across and write a billing link into another tenant.
+        $this->assertSame(1, $summary['milestone_link_counts']['failed']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
+        $this->assertNull(DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
+    }
+
+    public function test_a_milestone_link_refuses_an_invoice_line_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (101, 11, NULL, 'SYN-101', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (102, 101, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 102 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // A task belonging to the other workspace, and the ledger repointed at
+        // it. This is what an incremental import into a second workspace looks
+        // like: the task mapping resolves in one tenant while the invoice line
+        // mapping still resolves in the first.
+        $strandedTask = $this->taskInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_tasks')
+            ->where('source_key', '14')
+            ->update(['target_public_id' => $strandedTask->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        // The task passes a task-only ownership check, so only validating both
+        // sides catches this. Otherwise one tenant's task points straight at
+        // another tenant's financial row, with no composite key beneath it.
+        $this->assertSame(1, $summary['milestone_link_counts']['failed']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
+        $this->assertNull(DB::table('client_tasks')->where('id', $strandedTask->id)->value('client_invoice_line_id'));
+    }
+
+    public function test_a_task_whose_source_row_changed_does_not_get_a_milestone_link(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (99, 11, NULL, 'SYN-99', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (100, 99, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The source row now differs from the snapshot the ledger recorded, and
+        // it has grown a billing link. The run refuses the new snapshot, so the
+        // link must be refused with it rather than read straight off the source.
+        $pdo->exec("UPDATE client_tasks SET name = 'Renamed after import', client_invoice_line_id = 100 WHERE id = 14");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['source_changed'] ?? 0);
+        $this->assertSame(1, $summary['milestone_link_counts']['rejected']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertNull(DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+
+        // An unlinked milestone is one the next generation run bills again, so
+        // the rejection has to reach the run status rather than living only in
+        // the link counters.
+        $this->assertNotSame('completed', $summary['status']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_source_changed'] ?? 0);
+    }
+
+    public function test_a_billed_time_link_refuses_rows_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (111, 11, NULL, 'SYN-111', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (112, 111, NULL, NULL, 'Synthetic billed line', '1', '100.00', '100.00', 'time', 1)");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (113, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 112)");
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        $pivotsAfterOwner = DB::table('client_invoice_line_time_entries')->count();
+
+        // Both rows belong to the owning workspace; a run for another tenant
+        // resolves them through the same identity-keyed ledger.
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        // No pivot row was added, and none carries the other tenant's id.
+        $this->assertSame($pivotsAfterOwner, DB::table('client_invoice_line_time_entries')->count());
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    public function test_a_milestone_link_refuses_a_task_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // The inverse of the line-side case: the resolved invoice line belongs
+        // to the run workspace and only the task is foreign, so the task check
+        // is the only thing that can refuse this.
+        $localLine = $this->invoiceLineInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '132')
+            ->update(['target_public_id' => $localLine->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['milestone_link_counts']['failed']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
+        // The owning workspace's task keeps the link its own run wrote, and did
+        // not get repointed at the line this run resolved.
+        $ownerTaskLink = DB::table('client_tasks')->where('workspace_id', $owner->getKey())->value('client_invoice_line_id');
+        $this->assertNotNull($ownerTaskLink);
+        $this->assertNotSame((int) $localLine->id, (int) $ownerTaskLink);
+    }
+
+    public function test_a_billed_time_link_refuses_a_time_entry_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->seedBilledTimeSource();
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // Line local, entry foreign - only the time-entry check can refuse.
+        $localLine = $this->invoiceLineInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '112')
+            ->update(['target_public_id' => $localLine->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    public function test_a_billed_time_link_refuses_an_invoice_line_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->seedBilledTimeSource();
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // Entry local, line foreign - only the invoice-line check can refuse.
+        $localEntry = $this->timeEntryInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_time_entries')
+            ->where('source_key', '113')
+            ->update(['target_public_id' => $localEntry->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    public function test_a_zero_source_timestamp_does_not_fail_the_row(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        // MySQL's zero date is a legal value there and rejected by a strict
+        // destination. Carried verbatim it fails the insert, fails the row, and
+        // takes every child that needed this project as a parent with it.
+        $pdo->exec("UPDATE client_projects SET created_at = '0000-00-00 00:00:00', updated_at = '' WHERE id = 13");
+        // Not just the row's own timestamps: every date the importer carries
+        // reads from the same permissive source and lands in the same strict
+        // destination.
+        $pdo->exec("UPDATE client_tasks SET completed_at = '0000-00-00 00:00:00' WHERE id = 14");
+        // An agreement reads its status from these dates the same way, and a
+        // zero termination date would retire an agreement that is still live.
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, active_date TEXT, termination_date TEXT, monthly_retainer_hours TEXT, hourly_rate TEXT, billing_cadence TEXT)');
+        $pdo->exec("INSERT INTO client_agreements VALUES (51, 11, '2026-01-01', '0000-00-00 00:00:00', '10', '150.00', 'monthly')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $project = DB::table('client_projects')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertNotNull($project);
+        $this->assertNotNull($project->created_at);
+        $this->assertStringStartsNotWith('0000-00-00', (string) $project->created_at);
+        // The task below it still arrived, which is what a failed parent costs.
+        $this->assertSame(1, DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->count());
+        $task = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->first();
+        $this->assertNotNull($task);
+        $this->assertNull($task->completed_at);
+        // A zero date is a non-empty string, so anything reading the raw value
+        // as a yes/no reads yes - and the row ends up saying it completed on no
+        // date at all.
+        $this->assertSame('open', $task->status);
+        $this->assertSame('active', DB::table('client_agreements')->where('workspace_id', $workspace->getKey())->value('status'));
+    }
+
+    public function test_imported_rows_keep_the_dates_the_source_recorded(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $project = DB::table('client_projects')->where('workspace_id', $workspace->getKey())->first();
+
+        // An imported row dates from when it happened, not from when it was
+        // imported; otherwise every migrated record claims to be new.
+        $this->assertNotNull($project);
+        $this->assertStringStartsWith('2026-01-03', (string) $project->created_at);
+        $this->assertStringStartsWith('2026-01-04', (string) $project->updated_at);
+    }
+
+    public function test_a_subcontractor_cost_keeps_the_currency_it_was_costed_in(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, subcontractor_hourly_rate TEXT, currency TEXT)');
+        $pdo->exec("INSERT INTO client_time_entries VALUES (41, 13, 11, NULL, 7, 'Synthetic subcontracted work', 60, '2026-02-02', 1, 0, 'approved', '80.00', 'EUR')");
+        // A blank currency is worse than a missing one: the composer skips its
+        // cross-currency refusal when the cost currency is empty, so a rate of
+        // unknown denomination would bill as though it were the invoice's.
+        $pdo->exec("INSERT INTO client_time_entries VALUES (42, 13, 11, NULL, 7, 'Synthetic blank-currency work', 60, '2026-02-03', 1, 0, 'approved', '90.00', '')");
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $entry = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())
+            ->where('description', 'Synthetic subcontracted work')->first();
+
+        // InvoiceLineComposer refuses a cross-currency cost only when this field
+        // is set. Left null, an EUR rate bills as that many USD cents and the
+        // guard never fires.
+        $this->assertNotNull($entry);
+        $this->assertSame(8000, (int) $entry->subcontractor_cost_amount);
+        $this->assertSame('EUR', $entry->subcontractor_cost_currency);
+
+        $blank = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())
+            ->where('description', 'Synthetic blank-currency work')->first();
+        $this->assertNotNull($blank);
+        $this->assertNotSame('', (string) $blank->subcontractor_cost_currency);
+        $this->assertNotSame('', (string) $blank->currency);
+    }
+
+    public function test_a_milestone_link_already_decided_here_is_not_repointed(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (93, 11, NULL, 'SYN-93', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (94, 93, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (96, 93, NULL, NULL, 'Synthetic corrected milestone line', '1', '100.00', '100.00', 'milestone', 2)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 94 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // Stand in for a correction made here after the first import: the task
+        // now points at a different line than the source says.
+        $taskId = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('id');
+        $correctedLineId = DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())
+            ->orderByDesc('sort_order')->value('id');
+        DB::table('client_tasks')->where('id', $taskId)->update(['client_invoice_line_id' => $correctedLineId]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame((int) $correctedLineId, (int) DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
+    }
+
+    public function test_imported_invoices_carry_their_opening_balances(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT, starting_unused_hours TEXT, starting_negative_hours TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (95, 11, NULL, 'SYN-95', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL, '3.50', '1.25')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $invoice = DB::table('client_invoices')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertNotNull($invoice);
+        // The repair command fills these for older imports. A fresh onboarding
+        // that stored null would disagree with it about what a complete import
+        // contains, and the rollover a cycle opens with would start from zero.
+        $this->assertSame(3.5, (float) $invoice->starting_unused_hours);
+        $this->assertSame(1.25, (float) $invoice->starting_negative_hours);
+    }
+
     public function test_unknown_imported_invoice_line_quantity_fails_instead_of_guessing(): void
     {
         $user = User::factory()->create();
@@ -487,6 +886,93 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(6, $ledgerReads, 'The five source-table preloads plus invoice reconciliation should be the only ledger reads.');
         $this->assertSame(21, $this->countForWorkspace('client_tasks', $workspace));
+    }
+
+    /** A source carrying one billed time entry linked to one invoice line. */
+    private function seedBilledTimeSource(): void
+    {
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (111, 11, NULL, 'SYN-111', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (112, 111, NULL, NULL, 'Synthetic billed line', '1', '100.00', '100.00', 'time', 1)");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (113, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 112)");
+    }
+
+    /** An invoice line owned entirely by the given workspace. */
+    private function invoiceLineInWorkspace(Workspace $workspace): ClientInvoiceLine
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Line Business',
+            'slug' => 'stranded-line-business-'.$workspace->getKey(),
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'invoice_number' => 'STRANDED-'.$workspace->getKey(),
+            'status' => 'draft',
+            'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => $invoice->id,
+            'type' => 'milestone', 'description' => 'Stranded', 'quantity' => '1.0000',
+            'unit_amount' => 100, 'tax_amount' => 0, 'total_amount' => 100, 'sort_order' => 0,
+        ]);
+    }
+
+    /** A time entry owned entirely by the given workspace. */
+    private function timeEntryInWorkspace(Workspace $workspace): ClientTimeEntry
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Time Business',
+            'slug' => 'stranded-time-business-'.$workspace->getKey(),
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'name' => 'Stranded Time Project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-01-20',
+            'minutes' => 60,
+            'description' => 'Stranded work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+    }
+
+    /** A company, project and task owned entirely by the given workspace. */
+    private function taskInWorkspace(Workspace $workspace): ClientTask
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Business',
+            'slug' => 'stranded-business-'.$workspace->getKey(),
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'name' => 'Stranded Project',
+        ]);
+
+        return ClientTask::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_project_id' => $project->id,
+            'title' => 'Stranded Task',
+        ]);
     }
 
     private function countForWorkspace(string $table, Workspace $workspace): int
