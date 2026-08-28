@@ -298,6 +298,17 @@ final class ReplayInvoicesTest extends TestCase
             (string) $withoutAmounts->invoke(null, 'Milestone: Package ($200)'),
         );
 
+        // A worker's name is user text too, and it sits before the generated
+        // suffix rather than after it. Only the last group is the amount.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Junior) (1:00 @ 60.00 USD/hr)'),
+        );
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (2:00 @ 90.00 USD/hr)'),
+        );
+
         // And a generated line keeps everything that names its cycle while
         // losing the hours it was priced from.
         $this->assertSame(
@@ -760,6 +771,65 @@ final class ReplayInvoicesTest extends TestCase
         // engine never produces.
         $a->forceFill(['client_project_id' => $b->client_project_id, 'unit_amount' => 1111, 'total_amount' => 1111])->save();
         $b->forceFill(['unit_amount' => 2222, 'total_amount' => 2222])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced']);
+    }
+
+    /**
+     * Two charges under one filing at one price, one of which the engine
+     * prices differently. The price is still stated on both sides and both
+     * charges still share their filing, so every pairing pass matches them off
+     * against each other - only counting the occurrences shows that one of the
+     * two left that price.
+     */
+    public function test_one_of_two_identically_priced_charges_being_repriced_is_caught(): void
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'One project',
+        ]);
+
+        // One worker, one project, two rates - so the composer writes two lines
+        // that differ only in the rate their wording quotes, which is exactly
+        // what identity normalises away.
+        foreach ([6000, 9000] as $rate) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        if ($lines->count() < 2) {
+            $this->markTestSkipped('This fixture did not produce two charges under one filing.');
+        }
+
+        /** @var ClientInvoiceLine $a */
+        $a = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $lines->last();
+
+        // History charged both at the second's price.
+        $a->forceFill([
+            'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount,
+            'description' => (string) $b->description,
+        ])->save();
 
         $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
 

@@ -11,7 +11,6 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
-use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -621,27 +620,38 @@ final class ReplayInvoicesCommand extends Command
             }
 
             $notes = [];
+            // What actually changed, collected as it is found rather than read
+            // back out of the notes afterwards. A note is prose for a human;
+            // an imported line type can be any string the source used, so
+            // recognising types by parsing text meant either losing real ones
+            // or mistaking a word of prose for one.
+            $changedTokens = [];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
 
             if ($after['currency'] !== $before['currency']) {
                 // The same integer in two currencies is not the same money, and
                 // the delta alone would read as an exact match.
                 $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
+                $changedTokens[] = 'currency';
             }
 
             if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
                 $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
+                $changedTokens[] = 'subtotal';
             }
             if ($after['tax_amount'] !== $before['tax_amount']) {
                 $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
+                $changedTokens[] = 'tax';
             }
             if (count($after['lines']) !== count($before['lines'])) {
                 $notes[] = sprintf('line count %d -> %d', count($before['lines']), count($after['lines']));
             }
 
-            foreach ($this->lineDifferences($before['lines'], $after['lines']) as $note) {
+            $lineDifferences = $this->lineDifferences($before['lines'], $after['lines']);
+            foreach ($lineDifferences['notes'] as $note) {
                 $notes[] = $note;
             }
+            $changedTokens = [...$changedTokens, ...$lineDifferences['changed_types']];
 
             // A line whose price, quantity or tax moved is a money difference
             // even when the invoice total lands in the same place. The agreed
@@ -679,6 +689,7 @@ final class ReplayInvoicesCommand extends Command
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
                 'line_repriced' => $lineComparison['repriced'],
+                'changed_tokens' => array_values(array_unique($changedTokens)),
             ];
         }
 
@@ -757,6 +768,7 @@ final class ReplayInvoicesCommand extends Command
             /** @var list<array<string, mixed>> $generatedLines */
             $generatedLines = $generated['lines'] ?? [];
             $lineComparison = $this->lineMultisetDifferences($historicalLines, $generatedLines);
+            $lineDifferences = $this->lineDifferences($historicalLines, $generatedLines);
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
@@ -778,6 +790,7 @@ final class ReplayInvoicesCommand extends Command
                 'money_delta' => $delta,
                 'line_money_differs' => $lineComparison['money_differs'],
                 'line_repriced' => $lineComparison['repriced'],
+                'changed_tokens' => $lineDifferences['changed_types'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
@@ -801,7 +814,7 @@ final class ReplayInvoicesCommand extends Command
     /**
      * @param  list<array<string, mixed>>  $before
      * @param  list<array<string, mixed>>  $after
-     * @return list<string>
+     * @return array{notes: list<string>, changed_types: list<string>}
      */
     private function lineDifferences(array $before, array $after): array
     {
@@ -819,11 +832,13 @@ final class ReplayInvoicesCommand extends Command
         $afterTotals = $sum($after);
 
         $notes = [];
+        $changedTypes = [];
         foreach (array_unique([...array_keys($beforeTotals), ...array_keys($afterTotals)]) as $type) {
             $b = $beforeTotals[$type] ?? 0;
             $a = $afterTotals[$type] ?? 0;
             if ($a !== $b) {
                 $notes[] = sprintf('%s %d -> %d', $type, $b, $a);
+                $changedTypes[] = (string) $type;
             }
         }
 
@@ -836,7 +851,7 @@ final class ReplayInvoicesCommand extends Command
             $notes[] = $note;
         }
 
-        return $notes;
+        return ['notes' => $notes, 'changed_types' => array_values(array_unique($changedTypes))];
     }
 
     /**
@@ -863,7 +878,9 @@ final class ReplayInvoicesCommand extends Command
         $templates = [
             '/^(Deferred work items applied to retainer) \(.*\)$/',
             '/^(Deferred work items billed on agreement termination) \(.*\)$/',
-            '/^(Subcontractor: .*?) \(.*\)$/',
+            // Greedy: a worker's name can carry its own parentheses, and only
+            // the last group is the amount suffix the composer appended.
+            '/^(Subcontractor: .*) \([^()]*\)$/',
             '/^(Work items applied to(?: .+?)? retainer) \(.*\)$/',
             '/^(Interim overage hours for) .+$/',
         ];
@@ -877,7 +894,7 @@ final class ReplayInvoicesCommand extends Command
         // The retainer fee line carries its hours in the middle and the cycle
         // dates at the end. The dates name which cycle and stay; only the hours
         // are derived from an amount.
-        if (preg_match('/^(.+ Retainer) \(.*\)( - .+)$/', $description, $matches) === 1) {
+        if (preg_match('/^(.+ Retainer) \([^()]*\)( - .+)$/', $description, $matches) === 1) {
             return $matches[1].' (#)'.$matches[2];
         }
 
@@ -977,10 +994,14 @@ final class ReplayInvoicesCommand extends Command
         // of the same charge becoming one is a line removed, which is exactly
         // what a deliberate correction is entitled to explain; the same charge
         // at a different price is not, and never becomes explainable.
+        // Counted, not merely seen. Two charges under one key at the same price,
+        // one of which is later repriced, leaves that price present on both
+        // sides - a set says nothing changed, a count says one of them left.
         $pricesBy = static function (array $lines, callable $key) use ($priceTuple): array {
             $map = [];
             foreach ($lines as $line) {
-                $map[$key($line)][$priceTuple($line)] = true;
+                $tuple = $priceTuple($line);
+                $map[$key($line)][$tuple] = ($map[$key($line)][$tuple] ?? 0) + 1;
             }
             foreach ($map as $k => $prices) {
                 ksort($prices);
@@ -1003,12 +1024,19 @@ final class ReplayInvoicesCommand extends Command
                     continue;
                 }
 
-                $beforeOnly = array_diff_key($prices, $afterMap[$key]);
-                $afterOnly = array_diff_key($afterMap[$key], $prices);
+                // One price losing an occurrence while another gains one, under
+                // a single key: the same charge at a different price. Counts
+                // that only fall are a line removed from under that key, and
+                // counts that only rise are one added.
+                $rose = false;
+                $fell = false;
+                foreach (array_unique([...array_keys($prices), ...array_keys($afterMap[$key])]) as $tuple) {
+                    $delta = ($afterMap[$key][$tuple] ?? 0) - ($prices[$tuple] ?? 0);
+                    $rose = $rose || $delta > 0;
+                    $fell = $fell || $delta < 0;
+                }
 
-                // Both sides left holding a price the other does not: the same
-                // charge at a different price.
-                if ($beforeOnly !== [] && $afterOnly !== []) {
+                if ($rose && $fell) {
                     return true;
                 }
             }
@@ -1191,26 +1219,8 @@ final class ReplayInvoicesCommand extends Command
         // pairing in words - and every lowercase first word used to be read as
         // a changed line type. One stray token makes confinedTo() reject every
         // correction, so only real line types are taken.
-        // Line types, plus the three aggregate tokens a note can lead with that
-        // carry meaning here: 'subtotal', which DeliberateCorrections treats as
-        // capacity-dependent, and 'currency' and 'tax', which no correction
-        // covers and which must therefore stay in the list so they refuse one.
-        // Anything else leading a note is prose, and dropping it matters: an
-        // unrecognised token makes confinedTo() reject every correction.
-        $meaningful = [
-            ...array_map(static fn (InvoiceLineType $type): string => $type->value, InvoiceLineType::cases()),
-            'subtotal',
-            'currency',
-            'tax',
-        ];
-
-        $changed = [];
-        foreach ((array) ($comparison['notes'] ?? []) as $note) {
-            if (preg_match('/^([a-z_]+) /', (string) $note, $matches) === 1 && in_array($matches[1], $meaningful, true)) {
-                $changed[] = $matches[1];
-            }
-        }
-        $changed = array_values(array_unique($changed));
+        /** @var list<string> $changed */
+        $changed = array_values(array_unique((array) ($comparison['changed_tokens'] ?? [])));
 
         $comparison['explained_by'] = DeliberateCorrections::explaining(
             $changed,
