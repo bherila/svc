@@ -455,6 +455,73 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * One worker on two projects gets one line per project, worded identically.
+     * Exchanging their prices moves no total, no count, and no amount the
+     * invoice states - only which project each is filed under separates them,
+     * so the pairing has to see the project before it falls back to wording.
+     */
+    public function test_two_concurrent_charges_that_swap_prices_are_not_a_match(): void
+    {
+        $here = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
+        ]);
+        $there = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
+        ]);
+
+        // One worker, two projects, two different rates. The composer writes a
+        // line per project, worded identically because the wording names the
+        // worker rather than the project.
+        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        if ($subcontracted->count() < 2) {
+            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
+        }
+
+        /** @var ClientInvoiceLine $a */
+        $a = $subcontracted->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $subcontracted->last();
+        // Their wording differs only by the rate it quotes, so once the amounts
+        // are taken out they name the same charge - which is the whole point:
+        // only the project tells these two apart.
+        $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, (string) $a->description),
+            (string) $withoutAmounts->invoke(null, (string) $b->description),
+        );
+        $this->assertNotSame((int) $a->unit_amount, (int) $b->unit_amount);
+
+        // History charged each project at the other's rate, wording and all.
+        // Every total, every count and every amount the invoice states is
+        // unchanged; only which project paid which rate moved.
+        $carry = ['unit_amount' => (int) $a->unit_amount, 'total_amount' => (int) $a->total_amount, 'description' => (string) $a->description];
+        $a->forceFill(['unit_amount' => (int) $b->unit_amount, 'total_amount' => (int) $b->total_amount, 'description' => (string) $b->description])->save();
+        $b->forceFill($carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
      * A charge that moves project and changes price at the same time. Filing
      * the move under attribution must not take the repricing with it.
      */
@@ -481,7 +548,31 @@ final class ReplayInvoicesTest extends TestCase
             'quantity' => (string) ((float) $line->quantity * 2),
         ])->save();
 
-        $this->assertSame('money_differs', $this->verdictFor($line->invoice()->firstOrFail()->invoice_number));
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $number = (string) $line->invoice()->firstOrFail()->invoice_number;
+        $row = array_column($detail['comparisons'], null, 'invoice_number')[$number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        // Repriced, not merely moved. The move puts it beyond the pairing that
+        // knows where a charge is filed, so only pairing on what the charge is
+        // can still recognise it as the same charge at a different price.
+        $this->assertTrue($row['line_repriced']);
     }
 
     /**

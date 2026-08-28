@@ -752,6 +752,11 @@ final class ReplayInvoicesCommand extends Command
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
+                // The pair exists because the two label the period
+                // differently. Correction predicates read time entries for the
+                // period in the key, so they have to read the engine's - the
+                // historical label names the month before the work.
+                'facts_key' => $generated['key'],
                 'invoice_number' => $historical['invoice_number'],
                 // Identical only when the lines say so too. Equal cycle totals
                 // with different charges underneath is a composition
@@ -916,10 +921,23 @@ final class ReplayInvoicesCommand extends Command
         // its identity across a repricing and loses it when the line is
         // reclassified, added, or removed - which is the distinction the two
         // sides of the split need.
-        // What the charge is, and nothing about where it was filed. Type, date
-        // and project are attribution: a line that moves project *and* changes
-        // price would otherwise have no counterpart to compare against, and the
-        // repricing would disappear into the move.
+        // Two ways to say which charge is which, used in that order.
+        //
+        // Where it was filed, when, and what it is - specific enough to keep
+        // two concurrent charges apart. A subcontractor working two projects
+        // has one line per project, identically worded, and exchanging their
+        // prices moves no total and no count: only the project separates them.
+        $filedAs = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (string) $line['line_date'],
+            (string) $line['recurring_item_id'],
+            (string) $line['project_id'],
+            (string) $line['identity_hash'],
+        ]);
+
+        // Just what the charge is. Used only for what the first pass could not
+        // pair, so a charge that moves project and reprices at the same time
+        // still finds its counterpart instead of vanishing into the move.
         $identity = static fn (array $line): string => implode('|', [
             (string) $line['recurring_item_id'],
             (string) $line['identity_hash'],
@@ -937,31 +955,48 @@ final class ReplayInvoicesCommand extends Command
         // of the same charge becoming one is a line removed, which is exactly
         // what a deliberate correction is entitled to explain; the same charge
         // at a different price is not, and never becomes explainable.
-        $pricesByIdentity = static function (array $lines) use ($identity, $priceTuple): array {
+        $pricesBy = static function (array $lines, callable $key) use ($priceTuple): array {
             $map = [];
             foreach ($lines as $line) {
-                $map[$identity($line)][$priceTuple($line)] = true;
+                $map[$key($line)][$priceTuple($line)] = true;
             }
-            foreach ($map as $key => $prices) {
+            foreach ($map as $k => $prices) {
                 ksort($prices);
-                $map[$key] = $prices;
+                $map[$k] = $prices;
             }
 
             return $map;
         };
 
-        $beforePrices = $pricesByIdentity($before);
-        $afterPrices = $pricesByIdentity($after);
-
-        $repriced = false;
-        foreach ($beforePrices as $key => $prices) {
-            // Only charges present on both sides. An identity on one side alone
-            // is a line added or removed - composition, not a repricing.
-            if (isset($afterPrices[$key]) && $afterPrices[$key] !== $prices) {
-                $repriced = true;
-
-                break;
+        $comparePrices = static function (array $beforeMap, array $afterMap): bool {
+            foreach ($beforeMap as $key => $prices) {
+                // Only charges present on both sides. A key on one side alone
+                // is a line added or removed - composition, not a repricing.
+                if (isset($afterMap[$key]) && $afterMap[$key] !== $prices) {
+                    return true;
+                }
             }
+
+            return false;
+        };
+
+        $beforeFiled = $pricesBy($before, $filedAs);
+        $afterFiled = $pricesBy($after, $filedAs);
+        $repriced = $comparePrices($beforeFiled, $afterFiled);
+
+        if (! $repriced) {
+            // Whatever the first pass could not pair, tried again on what the
+            // charge is alone. A line that both moved and was repriced is
+            // unpaired above and paired here.
+            $residual = static fn (array $lines, array $ownMap, array $otherMap): array => array_values(array_filter(
+                $lines,
+                static fn (array $line): bool => ! isset($otherMap[$filedAs($line)]),
+            ));
+
+            $repriced = $comparePrices(
+                $pricesBy($residual($before, $beforeFiled, $afterFiled), $identity),
+                $pricesBy($residual($after, $afterFiled, $beforeFiled), $identity),
+            );
         }
 
         // Pairing by identity cannot see an amount that exists on one side and
@@ -1065,7 +1100,10 @@ final class ReplayInvoicesCommand extends Command
         }
         $changed = array_values(array_unique(array_diff($changed, ['line'])));
 
-        $comparison['explained_by'] = DeliberateCorrections::explaining($changed, $this->facts($comparison['key']));
+        $comparison['explained_by'] = DeliberateCorrections::explaining(
+            $changed,
+            $this->facts((string) ($comparison['facts_key'] ?? $comparison['key'])),
+        );
 
         return $comparison;
     }
