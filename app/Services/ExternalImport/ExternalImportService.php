@@ -97,8 +97,11 @@ final class ExternalImportService
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         // "Work items applied to retainer (N)" and its cadence-qualified form,
-        // "... applied to monthly retainer (N applied to 2026-01 cycle)".
-        '/^Work items applied to(?: [a-z-]+)? retainer \(/',
+        // "... applied to monthly retainer (N applied to 2026-01 cycle)". The
+        // qualifiers are enumerated rather than matched as a word: a "gold
+        // retainer" somebody named is not a cadence, and reading it as one
+        // would strip the figure that tells two of them apart.
+        '/^Work items applied to(?: (?:monthly|quarterly|semiannual|annual))? retainer \(/',
         '/^Deferred work items applied to retainer \(/',
         '/^Deferred work items billed on agreement termination \(/',
         '/^Interim overage hours /',
