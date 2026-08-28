@@ -131,6 +131,47 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertNull($task->client_invoice_line_id);
     }
 
+    /**
+     * The inverse split. The resolved invoice line belongs to this workspace
+     * and only the task is foreign, so the task-side boundary is the only thing
+     * that can refuse the link.
+     */
+    public function test_a_backfilled_milestone_link_never_resolves_another_workspaces_task(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        $other = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'name' => 'Their Project',
+        ]);
+        $otherTask = ClientTask::query()->create([
+            'workspace_id' => $other->id, 'client_project_id' => $otherProject->id, 'title' => 'Their Milestone',
+        ]);
+
+        // Source task 701 now names a task owned by somebody else, while source
+        // line 901 still resolves to this workspace's own line.
+        DB::table('external_import_items')
+            ->where('source_table', 'client_tasks')
+            ->where('source_key', '701')
+            ->update(['target_public_id' => $otherTask->public_id]);
+
+        // Succeeds rather than fails, and that is right: a source row imported
+        // into another tenant is genuinely not this repair's business. What
+        // must not happen is the link being written into it.
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $task->refresh();
+        $otherTask->refresh();
+        $this->assertNull($task->client_invoice_line_id);
+        $this->assertNull($otherTask->client_invoice_line_id);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();

@@ -586,6 +586,10 @@ class ExternalImportTest extends TestCase
         // destination. Carried verbatim it fails the insert, fails the row, and
         // takes every child that needed this project as a parent with it.
         $pdo->exec("UPDATE client_projects SET created_at = '0000-00-00 00:00:00', updated_at = '' WHERE id = 13");
+        // Not just the row's own timestamps: every date the importer carries
+        // reads from the same permissive source and lands in the same strict
+        // destination.
+        $pdo->exec("UPDATE client_tasks SET completed_at = '0000-00-00 00:00:00' WHERE id = 14");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -597,6 +601,7 @@ class ExternalImportTest extends TestCase
         $this->assertStringStartsNotWith('0000-00-00', (string) $project->created_at);
         // The task below it still arrived, which is what a failed parent costs.
         $this->assertSame(1, DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->count());
+        $this->assertNull(DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('completed_at'));
     }
 
     public function test_imported_rows_keep_the_dates_the_source_recorded(): void
