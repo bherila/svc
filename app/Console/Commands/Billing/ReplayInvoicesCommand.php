@@ -729,7 +729,7 @@ final class ReplayInvoicesCommand extends Command
 
         return [
             'notes' => $notes,
-            'changed_tokens' => array_values(array_unique([...$changedTokens, ...$lineDifferences['changed_types']])),
+            'changed_tokens' => array_values(array_unique([...$changedTokens, ...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
             // Strictly about the lines. The summary counts on this to tell an
             // operator a charge moved, and an invoice that only changed
             // currency has no line change to go looking for.
@@ -981,7 +981,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  list<array<string, mixed>>  $before
      * @param  list<array<string, mixed>>  $after
-     * @return array{notes: list<string>, money_differs: bool, repriced: bool}
+     * @return array{notes: list<string>, money_differs: bool, repriced: bool, changed_types: list<string>}
      */
     private function lineMultisetDifferences(array $before, array $after): array
     {
@@ -1097,8 +1097,20 @@ final class ReplayInvoicesCommand extends Command
             return false;
         };
 
-        $beforeFiled = $pricesBy($before, $filedAs);
-        $afterFiled = $pricesBy($after, $filedAs);
+        // Every money question below is asked only of lines that carry money. A
+        // line whose total is zero charges nobody - the reconciliation line
+        // mirrors interim hours in its quantity at a unit and total of zero -
+        // so a change to its quantity is representation, which this command
+        // reports and never gates on.
+        $carriesMoney = static fn (array $lines): array => array_values(array_filter(
+            $lines,
+            static fn (array $line): bool => (int) $line['total_amount'] !== 0,
+        ));
+        $beforeCharged = $carriesMoney($before);
+        $afterCharged = $carriesMoney($after);
+
+        $beforeFiled = $pricesBy($beforeCharged, $filedAs);
+        $afterFiled = $pricesBy($afterCharged, $filedAs);
         $repriced = $comparePrices($beforeFiled, $afterFiled);
 
         if (! $repriced) {
@@ -1151,8 +1163,8 @@ final class ReplayInvoicesCommand extends Command
                 return $left;
             };
 
-            $beforeLeft = $residual($before, $after);
-            $afterLeft = $residual($after, $before);
+            $beforeLeft = $residual($beforeCharged, $afterCharged);
+            $afterLeft = $residual($afterCharged, $beforeCharged);
 
             // A recurring item's id survives its description being rewritten,
             // which wording cannot. Where both sides still carry the same item,
@@ -1237,15 +1249,8 @@ final class ReplayInvoicesCommand extends Command
         // costs the client nothing, so it appearing or disappearing is
         // arrangement; a line with a total is a charge, and one arriving or
         // leaving is money whether or not something offsets it.
-        $charged = [];
-        foreach ([...$before, ...$after] as $line) {
-            if ((int) $line['total_amount'] !== 0) {
-                $charged[$priceTuple($line)] = true;
-            }
-        }
-
-        $beforeAmounts = $amounts($before);
-        $afterAmounts = $amounts($after);
+        $beforeAmounts = $amounts($beforeCharged);
+        $afterAmounts = $amounts($afterCharged);
         $rose = false;
         $fell = false;
         $chargeCountMoved = false;
@@ -1253,7 +1258,7 @@ final class ReplayInvoicesCommand extends Command
             $delta = ($afterAmounts[$tuple] ?? 0) - ($beforeAmounts[$tuple] ?? 0);
             $rose = $rose || $delta > 0;
             $fell = $fell || $delta < 0;
-            $chargeCountMoved = $chargeCountMoved || ($delta !== 0 && isset($charged[$tuple]));
+            $chargeCountMoved = $chargeCountMoved || $delta !== 0;
         }
 
         // Two charges dropped whose totals cancel leave every count falling and
@@ -1279,7 +1284,28 @@ final class ReplayInvoicesCommand extends Command
             $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
         }
 
-        return ['notes' => $notes, 'money_differs' => $moneyMoved, 'repriced' => $repriced];
+        // The types of the lines that actually differ, which is not the same as
+        // the types whose net total moved: two removed lines of one type whose
+        // totals cancel leave that net where it was, and attribution would then
+        // never hear that the type was involved at all.
+        $typeOf = [];
+        foreach ([...$before, ...$after] as $line) {
+            $typeOf[$tally([$line]) === [] ? '' : array_key_first($tally([$line]))] = (string) $line['type'];
+        }
+
+        $changedTypes = [];
+        foreach ($signatures as $signature) {
+            if (($beforeCounts[$signature] ?? 0) !== ($afterCounts[$signature] ?? 0) && isset($typeOf[$signature])) {
+                $changedTypes[] = $typeOf[$signature];
+            }
+        }
+
+        return [
+            'notes' => $notes,
+            'money_differs' => $moneyMoved,
+            'repriced' => $repriced,
+            'changed_types' => array_values(array_unique($changedTypes)),
+        ];
     }
 
     /**

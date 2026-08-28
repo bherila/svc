@@ -143,35 +143,17 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_a_repriced_line_is_not_waived_by_a_correction_that_covers_its_type(): void
     {
-        $this->generatedHistory();
+        // additional_hours is capacity-dependent, so this is the invoice a
+        // correction could otherwise excuse - and it is charged for, so a
+        // question about its money means something.
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
 
-        // prior_month_retainer is one of the capacity-dependent types, so this
-        // is the invoice a correction could otherwise excuse. Only the unit
-        // price moves: the invoice total is untouched, so nothing above the
-        // line level has anything to notice.
-        /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
-        $line->forceFill(['unit_amount' => (int) $line->unit_amount + 5000])->save();
+        // Only the unit price moves; the invoice total is untouched, so nothing
+        // above the line level has anything to notice.
+        $overage->forceFill(['unit_amount' => (int) $overage->unit_amount + 5000])->save();
 
-        $invoice = $line->invoice()->firstOrFail();
-        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
-
-        try {
-            $this->artisan('svc:billing:replay', [
-                '--workspace' => $this->workspace->public_id,
-                '--report' => $report,
-            ])->assertFailed();
-
-            /** @var array{comparisons: list<array<string, mixed>>} $detail */
-            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
-        } finally {
-            if (is_file($report)) {
-                unlink($report);
-            }
-        }
-
-        $rows = array_column($detail['comparisons'], null, 'invoice_number');
-        $row = $rows[(string) $invoice->invoice_number] ?? null;
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
 
         $this->assertNotNull($row);
         $this->assertSame('money_differs', $row['verdict']);
@@ -232,38 +214,19 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_a_repricing_hidden_by_its_own_description_still_gates(): void
     {
-        $this->generatedHistory();
+        [, $retainer] = $this->chargedOverageHistory();
+        $invoice = $retainer->invoice()->firstOrFail();
+        $this->assertMatchesRegularExpression('/\d+:\d{2}/', (string) $retainer->description, 'This fixture needs an amount-bearing description.');
 
-        /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
-        $this->assertMatchesRegularExpression('/\d/', (string) $line->description, 'This fixture needs an amount-bearing description.');
-
-        // History carried a different quantity, and its description says so -
-        // exactly what the composer would have written for that quantity.
-        $line->forceFill([
-            'quantity' => '5.0000',
-            'description' => (string) preg_replace('/\d+:\d+/', '99:00', (string) $line->description),
+        // History priced this charge differently, and its wording quotes the
+        // hours it was priced from - exactly what the composer would have
+        // written for them.
+        $retainer->forceFill([
+            'unit_amount' => (int) $retainer->unit_amount + 1000,
+            'description' => (string) preg_replace('/\d+:\d{2}/', '99:00', (string) $retainer->description),
         ])->save();
 
-        $invoice = $line->invoice()->firstOrFail();
-        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
-
-        try {
-            $this->artisan('svc:billing:replay', [
-                '--workspace' => $this->workspace->public_id,
-                '--report' => $report,
-            ])->assertFailed();
-
-            /** @var array{comparisons: list<array<string, mixed>>} $detail */
-            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
-        } finally {
-            if (is_file($report)) {
-                unlink($report);
-            }
-        }
-
-        $rows = array_column($detail['comparisons'], null, 'invoice_number');
-        $row = $rows[(string) $invoice->invoice_number] ?? null;
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
 
         $this->assertNotNull($row);
         $this->assertSame('money_differs', $row['verdict']);
@@ -347,23 +310,17 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_two_charges_that_swap_prices_are_not_a_match(): void
     {
-        $this->generatedHistory();
+        [$overage, $retainer] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertNotSame((int) $overage->total_amount, (int) $retainer->total_amount);
 
-        $invoiceId = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->value('client_invoice_id');
-        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
-        $this->assertGreaterThanOrEqual(2, $lines->count(), 'This fixture needs two lines on one invoice.');
+        // The two charges exchanged prices. Every total, every count and every
+        // amount the invoice states is unchanged.
+        $carry = ['unit_amount' => (int) $overage->unit_amount, 'quantity' => (string) $overage->quantity, 'total_amount' => (int) $overage->total_amount];
+        $overage->forceFill(['unit_amount' => (int) $retainer->unit_amount, 'quantity' => (string) $retainer->quantity, 'total_amount' => (int) $retainer->total_amount])->save();
+        $retainer->forceFill($carry)->save();
 
-        /** @var ClientInvoiceLine $a */
-        $a = $lines->firstOrFail();
-        /** @var ClientInvoiceLine $b */
-        $b = $lines->last();
-        $this->assertNotSame((int) $a->total_amount, (int) $b->total_amount, 'The two lines must differ for a swap to mean anything.');
-
-        $carry = ['unit_amount' => (int) $a->unit_amount, 'quantity' => (string) $a->quantity, 'total_amount' => (int) $a->total_amount];
-        $a->forceFill(['unit_amount' => (int) $b->unit_amount, 'quantity' => (string) $b->quantity, 'total_amount' => (int) $b->total_amount])->save();
-        $b->forceFill($carry)->save();
-
-        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
     }
 
     /**
@@ -426,27 +383,20 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_a_repricing_onto_an_existing_amount_still_gates(): void
     {
-        $this->generatedHistory();
+        [$overage, $retainer] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
 
-        $invoiceId = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->value('client_invoice_id');
-        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
-        $this->assertGreaterThanOrEqual(2, $lines->count());
-
-        /** @var ClientInvoiceLine $a */
-        $a = $lines->firstOrFail();
-        /** @var ClientInvoiceLine $b */
-        $b = $lines->last();
-
-        // History priced this charge exactly like the other one, and worded it
-        // differently too, so pairing has no counterpart to compare against.
-        $a->forceFill([
+        // History priced this charge exactly like the other one and worded it
+        // like nothing the engine writes, so pairing has no counterpart and
+        // only the count of that amount says anything happened.
+        $overage->forceFill([
             'description' => 'A charge worded nothing like the engine words it',
-            'unit_amount' => (int) $b->unit_amount,
-            'quantity' => (string) $b->quantity,
-            'total_amount' => (int) $a->total_amount,
+            'unit_amount' => (int) $retainer->unit_amount,
+            'quantity' => (string) $retainer->quantity,
+            'total_amount' => (int) $overage->total_amount,
         ])->save();
 
-        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
     }
 
     /**
@@ -457,37 +407,19 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_a_charge_replaced_by_another_stays_explainable(): void
     {
-        $this->generatedHistory();
-
-        /** @var ClientInvoiceLine $line */
-        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
-        $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
 
         // Different wording and different amounts: nothing to pair against, so
         // this is one charge gone and another arrived rather than a repricing.
-        $line->forceFill([
+        $overage->forceFill([
             'description' => 'A charge the engine replaced with a different one',
             'unit_amount' => 2500,
             'quantity' => '1.0000',
+            'total_amount' => 2500,
         ])->save();
 
-        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
-
-        try {
-            $this->artisan('svc:billing:replay', [
-                '--workspace' => $this->workspace->public_id,
-                '--report' => $report,
-            ])->run();
-
-            /** @var array{comparisons: list<array<string, mixed>>} $detail */
-            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
-        } finally {
-            if (is_file($report)) {
-                unlink($report);
-            }
-        }
-
-        $row = array_column($detail['comparisons'], null, 'invoice_number')[$invoiceNumber] ?? null;
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
 
         $this->assertNotNull($row);
         $this->assertFalse($row['line_repriced'], 'Nothing was repriced; a charge was replaced.');
@@ -924,7 +856,9 @@ final class ReplayInvoicesTest extends TestCase
         $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
             ->where('client_invoice_id', $invoice->id)->orderByDesc('total_amount')->firstOrFail();
 
-        foreach ([['An adjustment the engine no longer makes', 'adjustment', 10000], ['A credit the engine no longer makes', 'credit', -10000]] as [$description, $type, $amount]) {
+        // Both of one type, so that type's net total is exactly where it was -
+        // which is all the per-type comparison would have looked at.
+        foreach ([['An adjustment the engine no longer makes', 'adjustment', 10000], ['Another the engine no longer makes', 'adjustment', -10000]] as [$description, $type, $amount]) {
             $extra = $line->replicate();
             $extra->public_id = (string) Str::uuid();
             $extra->description = $description;
@@ -936,8 +870,14 @@ final class ReplayInvoicesTest extends TestCase
             $extra->save();
         }
 
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
         // The invoice total is untouched, so nothing above the lines notices.
-        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        // And attribution has to hear that this type was involved, or a
+        // correction covering the rest of the invoice waives these away.
+        $this->assertContains('adjustment', $row['changed_tokens']);
     }
 
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
@@ -1115,6 +1055,52 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /**
+     * History whose overage is actually charged for.
+     *
+     * The default fixture absorbs its overage into the rollover pool, which
+     * produces capacity lines at a total of zero - real lines, but ones that
+     * charge nobody, so no question about money can be asked of them.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine} the charged
+     *                                                           overage line and the retainer line on the same invoice
+     */
+    private function chargedOverageHistory(): array
+    {
+        $this->generatedHistory(function (ClientAgreement $agreement): void {
+            $agreement->forceFill(['rollover_months' => 0])->save();
+
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $this->project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-03-14',
+                'minutes' => 3000,
+                'description' => 'Far more work than the retainer covers',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+            ]);
+        });
+
+        $overage = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'additional_hours')->where('total_amount', '!=', 0)->orderBy('id')->first();
+        if (! $overage instanceof ClientInvoiceLine) {
+            $this->markTestSkipped('This fixture did not charge for its overage.');
+        }
+
+        $retainer = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_id', $overage->client_invoice_id)
+            ->where('type', 'retainer')->orderBy('id')->first();
+        if (! $retainer instanceof ClientInvoiceLine) {
+            $this->markTestSkipped('This fixture did not put a retainer beside the overage.');
+        }
+
+        return [$overage, $retainer];
+    }
+
     /**
      * One worker on two projects, billed once per project.
      *
