@@ -41,10 +41,18 @@ that source-side integer IDs can be reused.
    without repointing the rows that named the old ones, so the work was billed
    while the line that billed it is gone. Such a claim is followed to the
    invoice the superseded line belonged to and resolved to the live line that
-   replaced it, but only when exactly one live line on that invoice shares its
-   type. Anything less than certain is refused and reported: attaching work to a
-   line that did not bill it suppresses a charge that is owed, which is the same
-   size of mistake as billing it twice. The superseded line is read unfiltered -
+   replaced it, but only when the replacement is unambiguous in both directions:
+   exactly one live line on that invoice shares the superseded line's type, and
+   exactly one superseded line of that type is still claimed. The second half
+   matters because not every type is one line per invoice - a milestone is one
+   line per task and a subcontractor charge one per rate - so collapsing two
+   claims onto the one line that survived would mark work billed that the
+   regenerated invoice dropped. Counting claims rather than copies is also what
+   keeps the ordinary case working: an invoice regenerated twenty-one times
+   carries twenty-one superseded copies of one aggregate line, and only the last
+   is named by anything. Anything less than certain is refused and reported:
+   attaching work to a line that did not bill it suppresses a charge that is
+   owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -
    the only such read - because the one thing asked of it is which invoice it
    was on, and the replacement is held to the same fingerprint check as the row
    carrying the claim.

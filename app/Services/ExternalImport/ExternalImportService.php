@@ -34,7 +34,8 @@ use Throwable;
  *     target_exists: array<array-key, bool>,
  *     table_exists: array<array-key, bool>,
  *     table_columns: array<array-key, list<string>>,
- *     source_columns: array<array-key, list<string>>
+ *     source_columns: array<array-key, list<string>>,
+ *     sole_superseded_claim: array<array-key, bool>
  * }
  */
 final class ExternalImportService
@@ -605,6 +606,7 @@ final class ExternalImportService
             'table_exists' => [],
             'table_columns' => [],
             'source_columns' => [],
+            'sole_superseded_claim' => [],
         ];
     }
 
@@ -672,6 +674,65 @@ final class ExternalImportService
     }
 
     /**
+     * Whether exactly one superseded line of this type is still claimed here.
+     *
+     * A line type is not always one line per invoice. A milestone is one line
+     * per task and a subcontractor charge one per rate, so an invoice can carry
+     * several superseded lines of a type that each stood for a different thing.
+     * If two of them are still claimed and one live line survived, the
+     * regenerated invoice dropped something - and resolving both claims to the
+     * survivor would mark the dropped work billed, so nothing would ever charge
+     * for it.
+     *
+     * Counting the claims rather than the lines is what keeps the ordinary case
+     * working. An invoice regenerated twenty-one times carries twenty-one
+     * superseded copies of the same aggregate line, but only the last of them
+     * is named by anything, so the mapping is still one to one.
+     *
+     * @param  QueryCache  $queryCache
+     */
+    private function soleSupersededClaim(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        mixed $invoiceKey,
+        string $lineType,
+        array &$queryCache,
+    ): bool {
+        $memo = 'client_invoice_lines'."\0".((string) $invoiceKey)."\0".$lineType;
+        if (array_key_exists($memo, $queryCache['sole_superseded_claim'])) {
+            return $queryCache['sole_superseded_claim'][$memo];
+        }
+
+        $superseded = $source->table('client_invoice_lines')
+            ->where('client_invoice_id', $invoiceKey)
+            ->where('line_type', $lineType)
+            ->whereNotNull('deleted_at')
+            ->pluck('client_invoice_line_id')
+            ->all();
+
+        $claimed = [];
+
+        if (count($superseded) > 1) {
+            // Only live claimants count. A claim on a row the source has
+            // deleted is not competing for anything, because that row is not
+            // imported and never reaches the reconciliation loop.
+            foreach (['client_time_entries', 'client_tasks'] as $table) {
+                if (! in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $table, $queryCache), true)) {
+                    continue;
+                }
+
+                foreach (SourceRows::for($source, $sourceRuntimeName, $table)
+                    ->whereIn('client_invoice_line_id', $superseded)
+                    ->pluck('client_invoice_line_id') as $claim) {
+                    $claimed[(string) $claim] = true;
+                }
+            }
+        }
+
+        return $queryCache['sole_superseded_claim'][$memo] = count($claimed) <= 1;
+    }
+
+    /**
      * The live invoice line that replaced a superseded one, when exactly one did.
      *
      * The source regenerates an invoice by soft-deleting its lines and inserting
@@ -688,10 +749,17 @@ final class ExternalImportService
      * read: it is deleted at the source, it will never be imported, and the one
      * thing asked of it is which invoice it belonged to.
      *
-     * The replacement has to be unambiguous - exactly one live line of the same
-     * type on that invoice - because attaching work to a line that did not bill
-     * it suppresses a charge that is owed. That is the same size of mistake in
-     * the other direction, so anything less than certain is refused and
+     * The replacement has to be unambiguous in both directions, because
+     * attaching work to a line that did not bill it suppresses a charge that is
+     * owed - the same size of mistake as billing it twice. One direction is
+     * that exactly one live line on that invoice shares the superseded line's
+     * type. The other is that exactly one superseded line of that type is still
+     * claimed: not every type is one line per invoice, and a type that is one
+     * line per item - a milestone is one line per task, a subcontractor charge
+     * one per rate - can have several superseded lines standing for several
+     * different things. Collapsing those onto the single line that survived
+     * would mark work billed that the regenerated invoice dropped, and nothing
+     * would ever charge for it. Anything less than certain is refused and
      * reported rather than guessed.
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
@@ -743,6 +811,10 @@ final class ExternalImportService
             ->get();
 
         if ($replacements->count() !== 1) {
+            return null;
+        }
+
+        if (! $this->soleSupersededClaim($source, $sourceRuntimeName, $invoiceKey, (string) $lineType, $queryCache)) {
             return null;
         }
 
