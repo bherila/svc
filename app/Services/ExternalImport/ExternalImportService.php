@@ -111,10 +111,14 @@ final class ExternalImportService
      * @var array<string, bool>
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
-        '/^Work items applied to(?: (?:monthly|quarterly|semiannual|annual))? retainer \(/' => false,
-        '/^Deferred work items applied to retainer \(/' => false,
+        // Every one anchored end to end, not by its opening. A prefix is
+        // something an operator can write too, and matching on one lets this
+        // strip a figure that names the allocation rather than prices it.
+        '/^Work items applied to retainer \([\d.,]+ applied to .+ pool\)$/' => false,
+        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,]+ applied to .+ cycle\)$/' => false,
+        '/^Deferred work items applied to retainer \([\d.,]+\)$/' => false,
         '/^Deferred work items billed on agreement termination \([\d.,]+ @ .+\/hr\)$/' => true,
-        '/^Interim overage hours /' => false,
+        '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
         '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
     ];
 
@@ -1484,11 +1488,21 @@ final class ExternalImportService
             // where losing to the predicate returns zero. Both mean the line
             // was taken, so both are read the same way rather than one of them
             // failing the whole run after earlier tables have committed.
-            // Two live tasks naming one line is two deliverables with one
-            // line between them. Left to the write, the lower id would take it
-            // and the constraint would reject the other - and nothing here says
-            // the lower id is the one the line billed.
-            if (($this->observedClaimsByLine()['client_tasks'][(string) ($row['client_invoice_line_id'] ?? '')] ?? 0) > 1) {
+            // Two tasks naming one line is two deliverables with one line
+            // between them. Left to the write, the lower id would take it and
+            // the constraint would reject the other - and nothing here says the
+            // lower id is the one the line billed.
+            //
+            // Counted in the source unfiltered as well as among what this run
+            // observed. A task deleted before the run is not a rival for being
+            // billed again, but it may be the deliverable the line paid for,
+            // and handing that line to the survivor would mark the survivor
+            // billed for work of its own that nothing has charged.
+            $claimedLine = (string) ($row['client_invoice_line_id'] ?? '');
+            if (max(
+                $this->observedClaimsByLine()['client_tasks'][$claimedLine] ?? 0,
+                $source->table('client_tasks')->where('client_invoice_line_id', $claimedLine)->count(),
+            ) > 1) {
                 $milestoneCounts['rejected']++;
                 $counts['skipped']++;
                 $counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] = ($counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0) + 1;

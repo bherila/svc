@@ -506,11 +506,11 @@ class ExternalImportTest extends TestCase
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
         $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
         $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Work items applied to retainer (9.9168)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Work items applied to retainer (10.0000)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Deferred work items applied to retainer (9.9168)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Deferred work items applied to retainer (10.0000)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
 
         if ($withSecondLiveLine) {
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Work items applied to retainer (11.0000)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Deferred work items applied to retainer (11.0000)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
         }
 
         // Earlier regenerations of the same aggregate line. Nothing names them
@@ -518,7 +518,7 @@ class ExternalImportTest extends TestCase
         // make the replacement look ambiguous.
         for ($i = 0; $i < $unclaimedEarlierGenerations; $i++) {
             $key = 200 + $i;
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, NULL, NULL, 'Work items applied to retainer (8.0000)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, NULL, NULL, 'Deferred work items applied to retainer (8.0000)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
         }
 
         $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
@@ -1300,6 +1300,59 @@ class ExternalImportTest extends TestCase
             0,
             ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
             'Neither task may take a line that might have billed the other',
+        );
+    }
+
+    /**
+     * A generated prefix on somebody's own wording is not a generated line. The
+     * matchers want the whole syntax, so a figure that names the allocation is
+     * left where it is.
+     */
+    public function test_a_generated_prefix_on_custom_wording_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A task deleted before the run is not a rival for being billed again, but
+     * it may be the deliverable the line paid for - and handing that line to
+     * the survivor would mark the survivor billed for work of its own that
+     * nothing has charged.
+     */
+    public function test_a_deleted_task_claiming_the_live_line_refuses_the_survivor(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN deleted_at TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (25, 13, 'The deleted deliverable', 'Named the same line', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL, '2026-01-20 09:00:00')");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (271, 11, NULL, 'SYN-271', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (272, 271, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 272, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 25)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
         );
     }
 
