@@ -1505,6 +1505,26 @@ class ExternalImportTest extends TestCase
                 'Work items applied to monthly retainer (9:55 applied to 2026-03..2026-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-03..2026-01 cycle)',
             ],
+            'a range starting from a bare year' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026..2027-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026..2027-01 cycle)',
+            ],
+            'a range starting from a quarter' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-Q1..2027-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-Q1..2027-01 cycle)',
+            ],
+            'hours padded with a leading zero' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (09:55)',
+                'Deferred work items applied to retainer (010:00)',
+            ],
+            'money padded with leading zeros' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',

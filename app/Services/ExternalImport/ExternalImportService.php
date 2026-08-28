@@ -118,11 +118,26 @@ final class ExternalImportService
      *
      * @var array<string, bool>
      */
-    /** What HoursQuantity::format writes, and nothing else: H:MM, signed. */
-    private const HOURS = '-?\d+:[0-5]\d';
+    /**
+     * What HoursQuantity::format writes, and nothing else: H:MM, signed.
+     *
+     * It builds the hour with %d, so there is no leading zero to allow - and
+     * allowing one would let "09:55" and "010:00" pass as two generations of
+     * one line.
+     */
+    private const HOURS = '-?(?:0|[1-9]\d*):[0-5]\d';
 
-    /** What PeriodLabel writes: 2026-01, 2026-Q1, 2026, or a range of the first. */
-    private const PERIOD_LABEL = '(?:\d{4}(?:-(?:0[1-9]|1[0-2]|Q[1-4]))?(?:\.\.\d{4}-(?:0[1-9]|1[0-2]))?)';
+    /** A month as PeriodLabel writes one. */
+    private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
+
+    /**
+     * What PeriodLabel writes: a month, a quarter, a year, or a month range.
+     *
+     * The range form takes months on both sides - it is built from two
+     * format('Y-m') calls - so a year or a quarter on either end is somebody
+     * else's text.
+     */
+    private const PERIOD_LABEL = '(?:'.self::PERIOD_MONTH.'\.\.'.self::PERIOD_MONTH.'|'.self::PERIOD_MONTH.'|\d{4}-Q[1-4]|\d{4})';
 
     /** What Carbon's "M j, Y" writes. */
     private const SHORT_DATE = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}';
@@ -130,8 +145,13 @@ final class ExternalImportService
     /** What Carbon's "F Y" writes. */
     private const POOL_MONTH = '(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}';
 
-    /** What formatMoney writes: number_format's grouping beside a currency code. */
-    private const MONEY = '\d{1,3}(?:,\d{3})*\.\d{2} [A-Z]{3}';
+    /**
+     * What formatMoney writes: number_format's grouping beside a currency code.
+     *
+     * number_format does not pad the leading group, so "00.00" and
+     * "000,100.00" are not amounts it could have produced.
+     */
+    private const MONEY = '(?:0|[1-9]\d{0,2})(?:,\d{3})*\.\d{2} [A-Z]{3}';
 
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         // Every one anchored end to end, not by its opening. A prefix is
