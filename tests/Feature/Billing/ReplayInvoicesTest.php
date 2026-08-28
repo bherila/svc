@@ -869,7 +869,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame('money_differs', $row['verdict']);
         // And attribution has to hear that this type was involved, or a
         // correction covering the rest of the invoice waives these away.
-        $this->assertContains('adjustment', $row['changed_tokens']);
+        $this->assertContains('adjustment', $row['changed_types']);
     }
 
     /**

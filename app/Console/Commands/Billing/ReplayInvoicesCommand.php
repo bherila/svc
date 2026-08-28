@@ -621,7 +621,8 @@ final class ReplayInvoicesCommand extends Command
 
             $examined = $this->examine($before, $after);
             $notes = $examined['notes'];
-            $changedTokens = $examined['changed_tokens'];
+            $changedTypes = $examined['changed_types'];
+            $changedFields = $examined['changed_fields'];
             $lineMoneyDiffers = $examined['line_money_differs'];
             $hourNotes = $examined['hour_notes'];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
@@ -649,7 +650,8 @@ final class ReplayInvoicesCommand extends Command
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
                 'line_repriced' => $examined['line_repriced'],
-                'changed_tokens' => array_values(array_unique($changedTokens)),
+                'changed_types' => $changedTypes,
+                'changed_fields' => $changedFields,
             ];
         }
 
@@ -679,7 +681,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  array<string, mixed>  $before
      * @param  array<string, mixed>  $after
-     * @return array{notes: list<string>, changed_tokens: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, hour_notes: list<string>}
+     * @return array{notes: list<string>, changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, hour_notes: list<string>}
      */
     private function examine(array $before, array $after): array
     {
@@ -690,21 +692,21 @@ final class ReplayInvoicesCommand extends Command
         // parsing text meant either losing real ones or mistaking a word of
         // prose for one. Structural markers carry a '#' for the same reason - a
         // source line type could be spelled "subtotal".
-        $changedTokens = [];
+        $changedFields = [];
 
         if ($after['currency'] !== $before['currency']) {
             // The same integer in two currencies is not the same money, and the
             // delta alone would read as an exact match.
             $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
-            $changedTokens[] = '#currency';
+            $changedFields[] = 'currency';
         }
         if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
             $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
-            $changedTokens[] = '#subtotal';
+            $changedFields[] = 'subtotal';
         }
         if ($after['tax_amount'] !== $before['tax_amount']) {
             $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
-            $changedTokens[] = '#tax';
+            $changedFields[] = 'tax';
         }
 
         /** @var list<array<string, mixed>> $beforeLines */
@@ -729,14 +731,15 @@ final class ReplayInvoicesCommand extends Command
 
         return [
             'notes' => $notes,
-            'changed_tokens' => array_values(array_unique([...$changedTokens, ...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
+            'changed_types' => array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
+            'changed_fields' => array_values(array_unique($changedFields)),
             // Strictly about the lines. The summary counts on this to tell an
             // operator a charge moved, and an invoice that only changed
             // currency has no line change to go looking for.
             'line_money_differs' => $lineComparison['money_differs'],
             // Whether anything above the lines moved, which the verdict needs
             // and the summary must not confuse with the above.
-            'metadata_differs' => $changedTokens !== [],
+            'metadata_differs' => $changedFields !== [],
             'line_repriced' => $lineComparison['repriced'],
             'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
         ];
@@ -829,7 +832,8 @@ final class ReplayInvoicesCommand extends Command
                 'money_delta' => $delta,
                 'line_money_differs' => $examined['line_money_differs'],
                 'line_repriced' => $examined['line_repriced'],
-                'changed_tokens' => $examined['changed_tokens'],
+                'changed_types' => $examined['changed_types'],
+                'changed_fields' => $examined['changed_fields'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
@@ -1360,11 +1364,14 @@ final class ReplayInvoicesCommand extends Command
         // pairing in words - and every lowercase first word used to be read as
         // a changed line type. One stray token makes confinedTo() reject every
         // correction, so only real line types are taken.
-        /** @var list<string> $changed */
-        $changed = array_values(array_unique((array) ($comparison['changed_tokens'] ?? [])));
+        /** @var list<string> $changedTypes */
+        $changedTypes = array_values(array_unique((array) ($comparison['changed_types'] ?? [])));
+        /** @var list<string> $changedFields */
+        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
 
         $comparison['explained_by'] = DeliberateCorrections::explaining(
-            $changed,
+            $changedTypes,
+            $changedFields,
             $this->facts((string) ($comparison['facts_key'] ?? $comparison['key'])),
         );
 

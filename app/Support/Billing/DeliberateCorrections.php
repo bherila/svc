@@ -61,26 +61,36 @@ final class DeliberateCorrections
         'prior_month_retainer',
         'prior_month_billable',
         'additional_hours',
-        // Namespaced so it cannot collide with a line type. An imported line
-        // carries whatever type string its source used, and one literally
-        // called "subtotal" would otherwise be read as this marker and waived
-        // by a correction that says nothing about it.
-        '#subtotal',
     ];
 
     /**
-     * @param  list<string>  $changedLineTypes  line types, and '#'-prefixed structural markers, that differ
+     * Invoice fields a capacity correction moves as a consequence.
+     *
+     * Kept as their own argument rather than mixed in with line types. An
+     * imported line carries whatever type string its source used, so no
+     * spelling is safe to reserve - a line typed "subtotal", or "#subtotal",
+     * would otherwise be read as this marker and waived by a correction that
+     * says nothing about it.
+     *
+     * @var list<string>
+     */
+    private const CAPACITY_DEPENDENT_FIELDS = ['subtotal'];
+
+    /**
+     * @param  list<string>  $changedLineTypes  the types of the lines that differ
+     * @param  list<string>  $changedFields  invoice fields that differ, named separately so no line type can impersonate one
      * @return list<array{key: string, summary: string}>
      */
-    public static function explaining(array $changedLineTypes, CorrectionFacts $facts): array
+    public static function explaining(array $changedLineTypes, array $changedFields, CorrectionFacts $facts): array
     {
-        if ($changedLineTypes === []) {
+        if ($changedLineTypes === [] && $changedFields === []) {
             return [];
         }
 
         $explanations = [];
 
-        $withinCapacity = self::confinedTo($changedLineTypes, self::CAPACITY_DEPENDENT);
+        $withinCapacity = self::confinedTo($changedLineTypes, self::CAPACITY_DEPENDENT)
+            && self::confinedTo($changedFields, self::CAPACITY_DEPENDENT_FIELDS);
 
         // The original counted stored non-zero balances when ageing rollover, so
         // a month that used its whole retainer was invisible to the ageing and
@@ -122,7 +132,8 @@ final class DeliberateCorrections
         // whose anchor falls before the cycle opens - otherwise the previous
         // cycle never covered it - and which started in an earlier month, since
         // an item in its own first month still bills from its start date.
-        if (self::confinedTo($changedLineTypes, ['recurring_item', '#subtotal'])
+        if (self::confinedTo($changedLineTypes, ['recurring_item'])
+            && self::confinedTo($changedFields, self::CAPACITY_DEPENDENT_FIELDS)
             && $facts->cycleOpensMidMonth
             && $facts->recurringItemAnchoredBeforeCycleOpens) {
             $explanations[] = [
