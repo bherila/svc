@@ -86,14 +86,33 @@ final class InventoryService
 
         $child = $spec['source_table'];
 
-        return (int) SourceRows::for($source, $runtimeConnectionName, $child)->where(function ($query) use ($parents, $child, $sourceKeys): void {
+        $parentColumns = [];
+        foreach ($parents as $parent) {
+            $parentTable = (string) $parent['source_table'];
+            $parentColumns[$parentTable] = Schema::connection($runtimeConnectionName)->getColumnListing($parentTable);
+        }
+
+        return (int) SourceRows::for($source, $runtimeConnectionName, $child)->where(function ($query) use ($parents, $child, $sourceKeys, $parentColumns): void {
             foreach ($parents as $index => $parent) {
                 $column = $parent['source_column'];
                 $parentTable = $parent['source_table'];
                 $method = $index === 0 ? 'where' : 'orWhere';
-                $query->{$method}(function ($condition) use ($column, $parentTable, $child, $sourceKeys): void {
+                $query->{$method}(function ($condition) use ($column, $parentTable, $child, $sourceKeys, $parentColumns): void {
                     $parentKey = $sourceKeys[$parentTable] ?? 'id';
-                    $condition->whereNull($column)->orWhereNotExists(fn ($subquery) => $subquery->selectRaw('1')->from($parentTable)->whereColumn("{$parentTable}.{$parentKey}", "{$child}.{$column}"));
+
+                    // A parent the source has deleted is a parent the import
+                    // will not write. Counting it as present here made the
+                    // readiness report say there were no orphans, and the apply
+                    // pass then failed those children with `missing_parent` -
+                    // so the report stopped predicting the run.
+                    $condition->whereNull($column)->orWhereNotExists(function ($subquery) use ($parentTable, $parentKey, $child, $column, $parentColumns): void {
+                        $subquery->selectRaw('1')->from($parentTable)
+                            ->whereColumn("{$parentTable}.{$parentKey}", "{$child}.{$column}");
+
+                        if (in_array('deleted_at', $parentColumns[$parentTable] ?? [], true)) {
+                            $subquery->whereNull("{$parentTable}.deleted_at");
+                        }
+                    });
                 });
             }
         })->count();

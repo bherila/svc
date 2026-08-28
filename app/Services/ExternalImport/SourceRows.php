@@ -30,6 +30,25 @@ use Illuminate\Support\Facades\Schema;
 final class SourceRows
 {
     /**
+     * Tables whose deleted rows are still needed.
+     *
+     * A recurring item is imported as `is_active = false` when the source has
+     * deleted it - deliberately, because a live historical invoice line points
+     * at the item that produced its charge. Dropping the row would resolve that
+     * reference to null and lose the link between a charge and its reason,
+     * which is worse than carrying an inactive row.
+     *
+     * The rule is narrow on purpose: the question is not "was it deleted" but
+     * "does anything still reference it". Add a table here only when something
+     * live points at its deleted rows.
+     *
+     * @var list<string>
+     */
+    private const KEEP_DELETED = [
+        'client_agreement_recurring_items',
+    ];
+
+    /**
      * The runtime connection name is passed rather than read off the
      * connection: `ConnectionInterface` does not expose one, and the source may
      * be running under a temporary name the guard assigned it.
@@ -43,6 +62,10 @@ final class SourceRows
         ?array $columns = null,
     ): Builder {
         $query = $source->table($table);
+
+        if (in_array($table, self::KEEP_DELETED, true)) {
+            return $query;
+        }
 
         $columns ??= Schema::connection($connectionName)->getColumnListing($table);
 

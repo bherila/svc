@@ -91,7 +91,13 @@ final class ExternalImportService
                 'counts' => $counts + ['link_counts' => $linkCounts],
                 'status' => $counts['failed'] > 0
                     ? 'completed_with_failures'
-                    : ($counts['skipped'] > 0 ? 'completed_with_skips' : 'completed'),
+                    // A row this ledger says it imported, which the source has
+                    // since deleted, leaves a live copy here that nothing points
+                    // at any more. This run has not reconciled it and must not
+                    // report as though it had.
+                    : (($counts['skipped'] > 0 || $counts['deleted_at_source'] > 0)
+                        ? 'completed_with_skips'
+                        : 'completed'),
                 'completed_at' => now(),
             ])->save();
         } catch (Throwable) {
@@ -190,9 +196,16 @@ final class ExternalImportService
             $ledgerItems[$this->ledgerItemKey($table, (string) $sourceKey)] = $item;
         }
 
+        // Every key this pass actually saw, so a row the source has deleted
+        // since an earlier pass can be told apart from one that was never
+        // there. Skipping it silently would leave a live copy here that the
+        // source no longer has, while the run reported clean.
+        $seenKeys = [];
+
         foreach ($cursor as $rawRow) {
             $row = (array) $rawRow;
             $sourceKey = (string) ($row[$keyColumn] ?? '');
+            $seenKeys[$sourceKey] = true;
             if ($sourceKey === '') {
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_source_key'] = ($counts['failure_reasons']['missing_source_key'] ?? 0) + 1;
@@ -281,6 +294,20 @@ final class ExternalImportService
                 $counts['failed']++;
                 $counts['failure_reasons']['row_transaction_failed'] = ($counts['failure_reasons']['row_transaction_failed'] ?? 0) + 1;
             }
+        }
+
+        // Rows this ledger imported that the source has since deleted. They are
+        // reported rather than removed: propagating a delete would destroy a
+        // destination row that may since have been issued or paid against, and
+        // that decision is not one an import pass should make on its own. What
+        // it must not do is stay quiet - the run's status carries this.
+        foreach ($itemsForTable as $sourceKey => $item) {
+            if (isset($seenKeys[(string) $sourceKey]) || $item->status !== 'imported') {
+                continue;
+            }
+
+            $counts['deleted_at_source']++;
+            $counts['failure_reasons']['deleted_at_source'] = ($counts['failure_reasons']['deleted_at_source'] ?? 0) + 1;
         }
     }
 
@@ -847,6 +874,7 @@ final class ExternalImportService
             'planned_reference' => 0,
             'failed' => 0,
             'idempotent' => 0,
+            'deleted_at_source' => 0,
             'failure_reasons' => [],
         ];
     }
