@@ -61,6 +61,7 @@ final class ImportedColumnCoverageTest extends TestCase
             'access_scope' => 'Project-level client scoping is an SVC concept the source had no column for, and it is opt-in: inferring a scope on import would narrow every portal at once.',
         ],
         'client_time_entries' => [
+            'billing_rate_amount' => 'Written as a literal null on purpose: the source has no rate on a time entry, and svc:billing:derive-time-rates resolves one from the agreement in force with its provenance recorded. Inventing one here would be indistinguishable from a rate somebody was charged.',
             'subcontractor_cost_metadata' => 'SVC-only; the source has no structured subcontractor cost.',
             'is_visible_to_client' => 'Source has no per-entry client visibility. Defaults closed, which is the safe direction.',
             'client_visible_description' => 'Source has no client-safe description. Left null so the portal shows nothing rather than an internal note.',
@@ -74,6 +75,7 @@ final class ImportedColumnCoverageTest extends TestCase
             'expired_at' => 'Source has expires_at, which is the deadline and imports as valid_until. When it actually expired is not recorded.',
         ],
         'client_agreements' => [
+            'client_project_id' => 'Written as a literal null: the source has no project column on an agreement. Project-scoped agreements are an SVC concept, and guessing a scope would narrow what an agreement covers.',
             'rollover_policy' => 'SVC-only. The source expresses rollover through rollover_months and initial_rollover_hours, both of which import.',
         ],
         'client_agreement_recurring_items' => [
@@ -91,12 +93,50 @@ final class ImportedColumnCoverageTest extends TestCase
             'client_project_id' => 'Source lines belong to an invoice and an agreement, never directly to a project.',
         ],
         'client_invoice_payments' => [
+            'external_finance_transaction_uuid' => 'Written as a literal null: the reconciliation link to an external finance system is established here and has no counterpart in the source.',
             'idempotency_key' => 'Guards concurrent payment writes here; a historical payment has already happened.',
         ],
         'client_stripe_events' => [
             'error_summary' => 'Written when this application fails to process an event. An imported event was processed by the predecessor.',
         ],
     ];
+
+    /**
+     * Columns this type's mapping writes as a literal `null`.
+     *
+     * Read from the source of `attributes()` rather than from its return value,
+     * because the two cases are indistinguishable at runtime: a mapping that
+     * reads an absent source field and one that hard-codes an absence both
+     * produce null for a row with no data.
+     *
+     * The limit is worth stating: this catches a declared null, not a mistyped
+     * source key. Distinguishing that would need the source column names, which
+     * this test does not have.
+     *
+     * @return list<string>
+     */
+    private function literalNulls(string $type): array
+    {
+        $method = new ReflectionMethod(ExternalImportService::class, 'attributes');
+        $file = (string) $method->getFileName();
+        $lines = array_slice(
+            file($file) ?: [],
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1,
+        );
+
+        foreach ($lines as $line) {
+            if (! str_contains($line, "'".$type."' => \$attributes")) {
+                continue;
+            }
+
+            preg_match_all("/'([a-z_]+)'\s*=>\s*null\b/", $line, $matches);
+
+            return $matches[1];
+        }
+
+        return [];
+    }
 
     public function test_every_imported_table_has_every_column_written(): void
     {
@@ -124,7 +164,14 @@ final class ImportedColumnCoverageTest extends TestCase
             ]);
 
             $exempt = array_merge(self::GLOBALLY_EXEMPT, self::TABLE_EXEMPT[$table] ?? [], self::RECONCILED_AFTER_IMPORT[$table] ?? []);
-            $missing = array_diff(Schema::getColumnListing($table), array_keys($mapped), array_keys($exempt));
+
+            // A key alone is not coverage. `'column' => null` satisfies a name
+            // check while every imported row still reads null, which is the
+            // exact omission this test exists to catch, so a mapping written as
+            // a literal null does not count as mapped.
+            $carried = array_diff(array_keys($mapped), $this->literalNulls((string) $spec['target_type']));
+
+            $missing = array_diff(Schema::getColumnListing($table), $carried, array_keys($exempt));
 
             if ($missing !== []) {
                 $gaps[] = sprintf('%s [%s]: %s', $spec['name'], $table, implode(', ', $missing));

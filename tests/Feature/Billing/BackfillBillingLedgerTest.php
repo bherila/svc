@@ -118,10 +118,14 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('source_key', '901')
             ->update(['target_public_id' => $otherLine->public_id]);
 
+        // Refused, and loudly. The source says this milestone was billed and
+        // the only candidate belongs to somebody else, so there is no answer
+        // here - and leaving it null quietly would let the next generation run
+        // charge for the milestone again.
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
             '--apply' => true,
-        ])->assertSuccessful();
+        ])->assertFailed();
 
         $task->refresh();
         $this->assertNull($task->client_invoice_line_id);

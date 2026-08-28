@@ -180,7 +180,7 @@ final class BackfillBillingLedgerCommand extends Command
     /**
      * Whether what was found justifies keeping the repairs.
      *
-     * @param  array<string, array{matched:int, written:int, unmatched:int, changed:int}>  $totals
+     * @param  array<string, array{matched:int, written:int, unmatched:int, changed:int, deferred:int, unresolved:int}>  $totals
      */
     private function verdictFor(array $totals, ?string $declaredRestore): int
     {
@@ -203,6 +203,24 @@ final class BackfillBillingLedgerCommand extends Command
             }
 
             $this->components->warn("{$unmatched} source rows had no ledger mapping for this source and were skipped.");
+        }
+
+        $unresolved = array_sum(array_column($totals, 'unresolved'));
+        if ($unresolved > 0) {
+            $this->components->error(
+                "{$unresolved} rows name a billing link this repair could not resolve. Leaving those milestones ".
+                'unlinked would let the next generation run charge for them again, so nothing here is reported as repaired.'
+            );
+
+            return self::FAILURE;
+        }
+
+        $deferred = array_sum(array_column($totals, 'deferred'));
+        if ($deferred > 0) {
+            $this->components->warn(
+                "{$deferred} rows were filled by something else between this command's read and its write, and were left alone. ".
+                'Run again to pick up whatever is still empty.'
+            );
         }
 
         $changed = array_sum(array_column($totals, 'changed'));
@@ -277,7 +295,7 @@ final class BackfillBillingLedgerCommand extends Command
      * refuses for the same reason.
      *
      * @param  array<string, array{id:int, fingerprint:string}>  $map
-     * @param  array{matched:int,written:int,unmatched:int,changed:int}  $counters
+     * @param  array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int}  $counters
      */
     private function resolve(array $map, object $row, string $key, array &$counters): ?int
     {
@@ -301,7 +319,7 @@ final class BackfillBillingLedgerCommand extends Command
      * Applies one row's worth of values, writing only columns that are still empty.
      *
      * @param  array<string, mixed>  $candidate
-     * @param  array{matched:int,written:int,unmatched:int,changed:int}  $counters
+     * @param  array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int}  $counters
      */
     private function applyRow(string $table, int $id, array $candidate, bool $dryRun, array &$counters): void
     {
@@ -348,9 +366,11 @@ final class BackfillBillingLedgerCommand extends Command
         }
 
         if ($query->update($changes) === 0) {
-            // Someone filled one of them in between. Leave it; a re-run picks
-            // up whatever is still genuinely empty.
-            $counters['changed']++;
+            // Someone filled one of them between the read and this write. Leave
+            // it alone and record it as deferred rather than changed - a
+            // fingerprint mismatch means the source moved and must block, and
+            // this is neither of those.
+            $counters['deferred']++;
 
             return;
         }
@@ -466,13 +486,13 @@ final class BackfillBillingLedgerCommand extends Command
         return self::SUCCESS;
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function counters(): array
     {
-        return ['matched' => 0, 'written' => 0, 'unmatched' => 0, 'changed' => 0];
+        return ['matched' => 0, 'written' => 0, 'unmatched' => 0, 'changed' => 0, 'deferred' => 0, 'unresolved' => 0];
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function backfillInvoices(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
     {
         $counters = $this->counters();
@@ -506,7 +526,7 @@ final class BackfillBillingLedgerCommand extends Command
         return $counters;
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function backfillInvoiceLines(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
     {
         $counters = $this->counters();
@@ -535,7 +555,7 @@ final class BackfillBillingLedgerCommand extends Command
         return $counters;
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function backfillAgreements(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
     {
         $counters = $this->counters();
@@ -571,7 +591,7 @@ final class BackfillBillingLedgerCommand extends Command
         return $counters;
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function backfillTasks(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
     {
         $counters = $this->counters();
@@ -585,6 +605,19 @@ final class BackfillBillingLedgerCommand extends Command
                     continue;
                 }
 
+                $sourceLink = $row->client_invoice_line_id ?? null;
+                $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
+
+                // The source says this milestone was billed and this repair
+                // cannot say by what. Writing null would leave it reading as
+                // unbilled, which is how it gets charged a second time - so the
+                // repair reports rather than quietly filling in nothing.
+                if ($sourceLink !== null && $resolvedLink === null) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
+
                 $price = $row->milestone_price ?? null;
                 $this->applyRow('client_tasks', $id, [
                     // Source is decimal currency; the schema is integer minor units.
@@ -594,7 +627,7 @@ final class BackfillBillingLedgerCommand extends Command
                     // Which line billed this milestone. A task that arrived
                     // without it reads as unbilled, and the next generation run
                     // charges the client for the same deliverable again.
-                    'client_invoice_line_id' => $lines[(string) ($row->client_invoice_line_id ?? '')]['id'] ?? null,
+                    'client_invoice_line_id' => $resolvedLink,
                 ], $dryRun, $counters);
             }
         });
@@ -602,7 +635,7 @@ final class BackfillBillingLedgerCommand extends Command
         return $counters;
     }
 
-    /** @return array{matched:int,written:int,unmatched:int,changed:int} */
+    /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */
     private function backfillTimeEntries(ConnectionInterface $legacy, string $identityHash, bool $dryRun): array
     {
         $counters = $this->counters();

@@ -38,6 +38,17 @@ use Throwable;
  */
 final class ExternalImportService
 {
+    /**
+     * Source keys this run observed carrying an invoice-line link, per source
+     * table. A reconciliation pass queries the source again and only sees rows
+     * that still carry one - so a link cleared, or a row deleted, between the
+     * two reads simply vanishes from the second. Without this the pass has
+     * nothing to notice its absence against.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $linkedSourceKeys = [];
+
     /** @var QueryCache */
     private array $activeQueryCache;
 
@@ -70,6 +81,7 @@ final class ExternalImportService
         $counts = $this->emptyCounts($inventory);
         $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
+        $this->linkedSourceKeys = [];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, ExternalImportItem> $ledgerItems */
@@ -209,6 +221,9 @@ final class ExternalImportService
             $row = (array) $rawRow;
             $sourceKey = (string) ($row[$keyColumn] ?? '');
             $seenKeys[$sourceKey] = true;
+            if (($row['client_invoice_line_id'] ?? null) !== null && $sourceKey !== '') {
+                $this->linkedSourceKeys[$table][$sourceKey] = true;
+            }
             if ($sourceKey === '') {
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_source_key'] = ($counts['failure_reasons']['missing_source_key'] ?? 0) + 1;
@@ -654,6 +669,36 @@ final class ExternalImportService
     }
 
     /**
+     * How many rows carried a link when this run observed them and do not carry
+     * one now.
+     *
+     * Such a row never reaches the reconciliation loop at all - the second read
+     * filters it out, whether the link was cleared or the row was deleted - so
+     * there is nothing there to notice its absence. Silence would leave a
+     * milestone unlinked while the run reported clean, and an unlinked
+     * milestone is billed again.
+     *
+     * @param  array<string, true>  $seen
+     * @param  array<string, mixed>  $counts
+     */
+    private function vanishedLinkCount(string $sourceTable, array $seen, array &$counts, string $reason): int
+    {
+        $vanished = 0;
+
+        foreach (array_keys($this->linkedSourceKeys[$sourceTable] ?? []) as $sourceKey) {
+            if (isset($seen[$sourceKey])) {
+                continue;
+            }
+
+            $vanished++;
+            $counts['skipped']++;
+            $counts['failure_reasons'][$reason] = ($counts['failure_reasons'][$reason] ?? 0) + 1;
+        }
+
+        return $vanished;
+    }
+
+    /**
      * The ledger is keyed on the source identity rather than on a workspace, so
      * a public id can resolve to a row owned by a tenant this run is not
      * importing into. A foreign key here is not workspace-composite, so nothing
@@ -769,10 +814,13 @@ final class ExternalImportService
             ->orderBy('id')
             ->cursor();
 
+        $seen = [];
+
         foreach ($rows as $rawRow) {
             $linkCounts['source_rows']++;
             $row = (array) $rawRow;
             $sourceKey = (string) ($row['id'] ?? '');
+            $seen[$sourceKey] = true;
 
             if (! $this->observedThisRun('client_time_entries', $sourceKey, $row, $ledgerItems)) {
                 $linkCounts['rejected']++;
@@ -824,6 +872,8 @@ final class ExternalImportService
             ]);
             $linkCounts['inserted']++;
         }
+
+        $linkCounts['rejected'] += $this->vanishedLinkCount('client_time_entries', $seen, $counts, 'time_link_vanished');
     }
 
     /**
@@ -860,10 +910,13 @@ final class ExternalImportService
             ->orderBy('id')
             ->cursor();
 
+        $seen = [];
+
         foreach ($rows as $rawRow) {
             $milestoneCounts['source_rows']++;
             $row = (array) $rawRow;
             $sourceKey = (string) ($row['id'] ?? '');
+            $seen[$sourceKey] = true;
 
             // A rejected link is not a cosmetic skip: the milestone stays
             // unlinked, and an unlinked completed milestone is one the next
@@ -920,6 +973,8 @@ final class ExternalImportService
 
             $milestoneCounts['linked']++;
         }
+
+        $milestoneCounts['rejected'] += $this->vanishedLinkCount('client_tasks', $seen, $counts, 'milestone_link_vanished');
     }
 
     /**
