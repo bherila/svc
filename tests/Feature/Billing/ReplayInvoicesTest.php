@@ -222,6 +222,52 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * The composer writes amounts into its own wording, so a repriced line
+     * arrives with a different description. If the description identified the
+     * charge, the repricing would read as one line removed and another added -
+     * composition, which a correction is allowed to waive.
+     */
+    public function test_a_repricing_hidden_by_its_own_description_still_gates(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $this->assertMatchesRegularExpression('/\d/', (string) $line->description, 'This fixture needs an amount-bearing description.');
+
+        // History carried a different quantity, and its description says so -
+        // exactly what the composer would have written for that quantity.
+        $line->forceFill([
+            'quantity' => '5.0000',
+            'description' => (string) preg_replace('/\d+:\d+/', '99:00', (string) $line->description),
+        ])->save();
+
+        $invoice = $line->invoice()->firstOrFail();
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->assertFailed();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $rows = array_column($detail['comparisons'], null, 'invoice_number');
+        $row = $rows[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.

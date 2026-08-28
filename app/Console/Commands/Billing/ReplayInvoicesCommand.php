@@ -278,7 +278,7 @@ final class ReplayInvoicesCommand extends Command
             ->get();
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, description_hash: string, hours: float|null}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -311,6 +311,14 @@ final class ReplayInvoicesCommand extends Command
                     // lines that differ only in wording still compare as
                     // different without a guess being verifiable off the host.
                     'description_hash' => substr(hash_hmac('sha256', (string) $line->description, $this->digestKey), 0, 12),
+                    // The same description with every number taken out. The
+                    // composer writes amounts into its wording - hours and rate
+                    // for deferred termination work, applied time for a
+                    // retainer draw - so a repriced line gets a new description
+                    // too. Identifying a charge by the full text would make it
+                    // a different charge, and hide the repricing as a line
+                    // removed and another added.
+                    'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description), $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
                 ];
             }
@@ -815,6 +823,19 @@ final class ReplayInvoicesCommand extends Command
      * decimal(16,4) holds values a binary float cannot separate, and a quantity
      * that differs only in the fourth decimal place is a different charge.
      */
+    /**
+     * A description with its numbers removed.
+     *
+     * What a charge is for is in the wording; what it cost is in the amounts,
+     * and those are compared separately. Leaving the amounts in would make a
+     * repriced line unrecognisable as the same charge - which is exactly the
+     * comparison this command exists to make.
+     */
+    private static function withoutAmounts(string $description): string
+    {
+        return (string) preg_replace('/\d[\d.,:]*/', '#', $description);
+    }
+
     private static function decimalString(mixed $value): string
     {
         $text = trim((string) $value);
@@ -876,7 +897,7 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['line_date'],
             (string) $line['recurring_item_id'],
             (string) $line['project_id'],
-            (string) $line['description_hash'],
+            (string) $line['identity_hash'],
         ]);
 
         $priceTuple = static fn (array $line): string => sprintf(
