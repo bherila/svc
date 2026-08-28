@@ -325,7 +325,7 @@ final class ReplayInvoicesCommand extends Command
                     // too. Identifying a charge by the full text would make it
                     // a different charge, and hide the repricing as a line
                     // removed and another added.
-                    'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description), $this->digestKey), 0, 12),
+                    'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description, (string) $line->type), $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
                 ];
             }
@@ -912,8 +912,17 @@ final class ReplayInvoicesCommand extends Command
      * repriced line unrecognisable as the same charge - which is exactly the
      * comparison this command exists to make.
      */
-    private static function withoutAmounts(string $description): string
+    private static function withoutAmounts(string $description, string $type): string
     {
+        // Only line types whose description the billing services write. A
+        // milestone takes a task's title, a time line takes the entry's, and a
+        // recurring item takes its own - all user text, and a title that reads
+        // like a generated one must not be treated as one.
+        $generated = ['retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'subcontractor'];
+        if (! in_array($type, $generated, true)) {
+            return $description;
+        }
+
         // Anchored to the descriptions the billing services actually generate,
         // rather than to a shape a description happens to have. The one built
         // from user text - "Milestone: <title>" - is deliberately absent, so a

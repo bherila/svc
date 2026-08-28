@@ -281,8 +281,8 @@ final class ReplayInvoicesTest extends TestCase
     {
         $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
 
-        $phaseOne = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 1');
-        $phaseTwo = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 2');
+        $phaseOne = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 1', 'milestone');
+        $phaseTwo = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 2', 'milestone');
         $this->assertNotSame($phaseOne, $phaseTwo);
 
         // A milestone title is user text appended whole, so a figure in it
@@ -290,45 +290,52 @@ final class ReplayInvoicesTest extends TestCase
         // descriptions the billing services generate is normalised - including
         // a title that happens to end in a parenthetical of its own.
         $this->assertNotSame(
-            (string) $withoutAmounts->invoke(null, 'Milestone: Package $100'),
-            (string) $withoutAmounts->invoke(null, 'Milestone: Package $200'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $100', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $200', 'milestone'),
         );
         $this->assertNotSame(
-            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($100)'),
-            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($200)'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($100)', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($200)', 'milestone'),
+        );
+
+        // A title can read exactly like a generated retainer line. The type is
+        // what says whether the billing services wrote it.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Monthly Retainer (20 hours) - Feb 1, 2024 through Feb 29, 2024', 'milestone'),
         );
 
         // A worker's name is user text too, and it sits before the generated
         // suffix rather than after it. Only the last group is the amount.
         $this->assertNotSame(
-            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)'),
-            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Junior) (1:00 @ 60.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Junior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
         );
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)'),
-            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (2:00 @ 90.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (2:00 @ 90.00 USD/hr)', 'subcontractor'),
         );
 
         // And a generated line keeps everything that names its cycle while
         // losing the hours it was priced from.
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024'),
-            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (99 hours) - Feb 1, 2024 through Feb 29, 2024'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (99 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
         );
         $this->assertNotSame(
-            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024'),
-            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Mar 1, 2024 through Mar 31, 2024'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Mar 1, 2024 through Mar 31, 2024', 'retainer'),
         );
 
         // The amounts, though, have to go: the composer writes them from the
         // very price and quantity the comparison exists to detect.
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ 150.00 USD/hr)'),
-            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ 9.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ 150.00 USD/hr)', 'additional_hours'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ 9.00 USD/hr)', 'additional_hours'),
         );
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (15:00 applied to February 2024 pool)'),
-            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (2:30 applied to February 2024 pool)'),
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (15:00 applied to February 2024 pool)', 'prior_month_retainer'),
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (2:30 applied to February 2024 pool)', 'prior_month_retainer'),
         );
     }
 
@@ -542,8 +549,8 @@ final class ReplayInvoicesTest extends TestCase
         // only the project tells these two apart.
         $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, (string) $a->description),
-            (string) $withoutAmounts->invoke(null, (string) $b->description),
+            (string) $withoutAmounts->invoke(null, (string) $a->description, (string) $a->type),
+            (string) $withoutAmounts->invoke(null, (string) $b->description, (string) $b->type),
         );
         $this->assertNotSame((int) $a->unit_amount, (int) $b->unit_amount);
 
