@@ -664,14 +664,6 @@ final class BackfillBillingLedgerCommand extends Command
             foreach ($rows as $row) {
                 $sourceLink = $row->client_invoice_line_id ?? null;
 
-                // Nothing here says which of them the line billed, so neither
-                // gets it and both are reported.
-                if ($sourceLink !== null && isset($contested[(string) $sourceLink])) {
-                    $counters['unresolved']++;
-
-                    continue;
-                }
-
                 // Writing which line billed a milestone is writing a financial
                 // relationship, so this row has to be the row that was
                 // imported - not one a restore's accepted drift covered for.
@@ -681,6 +673,23 @@ final class BackfillBillingLedgerCommand extends Command
                 }
 
                 $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
+
+                // Nothing here says which of the claimants the line billed, so
+                // neither gets it and both are reported - but only where this
+                // task has a hole to fill. A task already carrying an
+                // operator's correction is not competing for anything, and
+                // refusing costs the milestone price applyRow() could still
+                // restore without touching that link.
+                $fillsItsLink = $this->db()->table('client_tasks')
+                    ->where('id', $id)
+                    ->whereNull('client_invoice_line_id')
+                    ->exists();
+
+                if ($sourceLink !== null && $fillsItsLink && isset($contested[(string) $sourceLink])) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
 
                 // Or already held. An operator can have reconciled that line
                 // by hand, and the source knowing nothing about it does not
@@ -701,8 +710,7 @@ final class BackfillBillingLedgerCommand extends Command
                 // generation run can take the line between this and the write.
                 // applyRow() reports that collision rather than letting it
                 // escape, so the two together cover both orderings.
-                if ($resolvedLink !== null
-                    && $this->db()->table('client_tasks')->where('id', $id)->whereNull('client_invoice_line_id')->exists()
+                if ($resolvedLink !== null && $fillsItsLink
                     && $this->db()->table('client_tasks')
                         ->where('client_invoice_line_id', $resolvedLink)
                         ->where('id', '!=', $id)

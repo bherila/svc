@@ -354,6 +354,33 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertNull($task->refresh()->client_invoice_line_id);
     }
 
+    /**
+     * A task already carrying an operator's correction is not competing for
+     * anything, so a contested source line must not cost it the milestone
+     * price the repair could still restore.
+     */
+    public function test_a_corrected_task_is_repaired_despite_a_contested_source_line(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $corrected = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 8,
+        ]);
+        $task->forceFill(['client_invoice_line_id' => $corrected->id])->save();
+
+        // Two source tasks argue over the line the source names for this one.
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 804, 'milestone_price' => '100.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 804)->update(['client_invoice_line_id' => 901]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        $this->assertSame((int) $corrected->id, (int) $task->refresh()->client_invoice_line_id);
+        $this->assertSame(18750, $task->milestone_price_amount);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();
