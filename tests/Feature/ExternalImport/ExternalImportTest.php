@@ -3,8 +3,11 @@
 namespace Tests\Feature\ExternalImport;
 
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\User;
@@ -486,6 +489,93 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
     }
 
+    public function test_a_milestone_link_refuses_a_task_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // The inverse of the line-side case: the resolved invoice line belongs
+        // to the run workspace and only the task is foreign, so the task check
+        // is the only thing that can refuse this.
+        $localLine = $this->invoiceLineInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '132')
+            ->update(['target_public_id' => $localLine->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['milestone_link_counts']['failed']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
+        // The owning workspace's task keeps the link its own run wrote, and did
+        // not get repointed at the line this run resolved.
+        $ownerTaskLink = DB::table('client_tasks')->where('workspace_id', $owner->getKey())->value('client_invoice_line_id');
+        $this->assertNotNull($ownerTaskLink);
+        $this->assertNotSame((int) $localLine->id, (int) $ownerTaskLink);
+    }
+
+    public function test_a_billed_time_link_refuses_a_time_entry_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->seedBilledTimeSource();
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // Line local, entry foreign - only the time-entry check can refuse.
+        $localLine = $this->invoiceLineInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '112')
+            ->update(['target_public_id' => $localLine->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    public function test_a_billed_time_link_refuses_an_invoice_line_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->seedBilledTimeSource();
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // Entry local, line foreign - only the invoice-line check can refuse.
+        $localEntry = $this->timeEntryInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_time_entries')
+            ->where('source_key', '113')
+            ->update(['target_public_id' => $localEntry->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
     public function test_imported_rows_keep_the_dates_the_source_recorded(): void
     {
         $user = User::factory()->create();
@@ -746,6 +836,72 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(6, $ledgerReads, 'The five source-table preloads plus invoice reconciliation should be the only ledger reads.');
         $this->assertSame(21, $this->countForWorkspace('client_tasks', $workspace));
+    }
+
+    /** A source carrying one billed time entry linked to one invoice line. */
+    private function seedBilledTimeSource(): void
+    {
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (111, 11, NULL, 'SYN-111', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (112, 111, NULL, NULL, 'Synthetic billed line', '1', '100.00', '100.00', 'time', 1)");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (113, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 112)");
+    }
+
+    /** An invoice line owned entirely by the given workspace. */
+    private function invoiceLineInWorkspace(Workspace $workspace): ClientInvoiceLine
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Line Business',
+            'slug' => 'stranded-line-business-'.$workspace->getKey(),
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'invoice_number' => 'STRANDED-'.$workspace->getKey(),
+            'status' => 'draft',
+            'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => $invoice->id,
+            'type' => 'milestone', 'description' => 'Stranded', 'quantity' => '1.0000',
+            'unit_amount' => 100, 'tax_amount' => 0, 'total_amount' => 100, 'sort_order' => 0,
+        ]);
+    }
+
+    /** A time entry owned entirely by the given workspace. */
+    private function timeEntryInWorkspace(Workspace $workspace): ClientTimeEntry
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Time Business',
+            'slug' => 'stranded-time-business-'.$workspace->getKey(),
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'name' => 'Stranded Time Project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-01-20',
+            'minutes' => 60,
+            'description' => 'Stranded work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
     }
 
     /** A company, project and task owned entirely by the given workspace. */
