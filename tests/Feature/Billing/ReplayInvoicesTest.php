@@ -84,6 +84,52 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * The command claims money is exact to the cent. Comparing totals per type
+     * cannot deliver that: a line repriced with a compensating quantity reaches
+     * the same total, the same per-type total and the same line count, so every
+     * aggregate agrees while the client was charged for something else.
+     */
+    public function test_a_repriced_line_is_not_reported_as_an_exact_reproduction(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = $invoice->lines()->orderByDesc('total_amount')->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Half the price, twice as many. Total unchanged, so nothing an
+        // aggregate looks at moves.
+        $line->forceFill([
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (float) $line->quantity * 2,
+        ])->save();
+
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-').'.json';
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->assertSuccessful();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $verdicts = array_column($detail['comparisons'], 'verdict', 'invoice_number');
+
+        // Every aggregate agrees on this invoice, so the old comparison called
+        // it an exact reproduction. The individual lines are what disagree.
+        $this->assertArrayHasKey((string) $invoice->invoice_number, $verdicts);
+        $this->assertSame('composition_differs', $verdicts[(string) $invoice->invoice_number]);
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.

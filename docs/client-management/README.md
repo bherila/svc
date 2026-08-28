@@ -223,10 +223,9 @@ be outstanding when this bills a real client.
 | Activity timeline | Rows are written; nothing reads them. | #77 |
 | Correction range can resell a sold cycle | A disjoint monthly correction derives the same `cycle_start` as the invoice that already sold that retainer, and the service-period overlap guard does not see it. Bills the retainer and its recurring items twice. | #79 |
 | Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
-| Replay compares line totals per type | Two lines of the same type moving by opposite amounts report no difference, and the snapshotted unit and tax amounts are discarded. The command's cent-level claim is overstated until this is a multiset comparison of individual lines. | #81 |
 | Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |
 | Fresh imports drop opening balances | `starting_unused_hours` and `starting_negative_hours` are repaired by the backfill command but absent from `ExternalImportService`'s invoice mapping, so a new onboarding stores nulls. | #83 |
-| Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. The drivers differ on defaults, `uuid` and JSON handling. Nothing has been attributed to it; CI matches production deliberately, so a switch has to happen in both places at once. | #78 |
+| Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. At 10.6 the two grammars emit identical SQL for this schema — `typeUuid` returns `char(36)` on both, and the JSON selector difference is unreachable because nothing queries a JSON path. It diverges at server **10.7**, where the `mariadb` driver switches to a native `uuid` type: 30 `uuid()` columns would then differ by when their table was created. The trigger is a server upgrade rather than a code change. | #78 |
 
 ### What the replay says now
 

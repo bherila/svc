@@ -266,20 +266,36 @@ final class ReplayInvoicesCommand extends Command
             ->get();
 
         foreach ($invoices as $invoice) {
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: float, line_date: string, recurring_item_id: string, description_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
+                $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
+                $recurringItemId = $line->client_agreement_recurring_item_id === null
+                    ? ''
+                    : (string) (int) $line->client_agreement_recurring_item_id;
+
                 $lines[] = [
                     'type' => (string) $line->type,
                     'total_amount' => (int) $line->total_amount,
                     'unit_amount' => (int) $line->unit_amount,
                     'tax_amount' => (int) $line->tax_amount,
+                    'quantity' => round((float) $line->quantity, 4),
+                    'line_date' => $lineDate,
+                    'recurring_item_id' => $recurringItemId,
+                    // A description is the one field here that can carry a
+                    // client's name, and this output is meant to be readable
+                    // outside the host. Hashed, so two lines that differ only in
+                    // wording still compare as different without the wording
+                    // leaving the machine.
+                    'description_hash' => substr(hash('sha256', (string) $line->description), 0, 6),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
                 ];
             }
 
             // Sorted so that a pure ordering difference is not reported as a
             // money difference; sort_order is compared separately by count.
-            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount']] <=> [$b['type'], $b['total_amount']]);
+            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount'], $a['unit_amount'], $a['quantity'], $a['line_date'], $a['description_hash']]
+                <=> [$b['type'], $b['total_amount'], $b['unit_amount'], $b['quantity'], $b['line_date'], $b['description_hash']]);
 
             $key = $this->key($invoice);
 
@@ -728,6 +744,70 @@ final class ReplayInvoicesCommand extends Command
             if ($a !== $b) {
                 $notes[] = sprintf('%s %d -> %d', $type, $b, $a);
             }
+        }
+
+        // Per-type totals are the headline, and they are also not a comparison.
+        // Two lines of one type moving by equal and opposite amounts sum to no
+        // difference, and a unit price that changes while quantity compensates
+        // leaves the total alone - both would report as an exact reproduction.
+        // So the lines are also compared as a multiset of individual rows.
+        foreach ($this->lineMultisetDifferences($before, $after) as $note) {
+            $notes[] = $note;
+        }
+
+        return $notes;
+    }
+
+    /**
+     * Compare individual lines rather than totals per type.
+     *
+     * The signature is every field that carries meaning about what was charged
+     * - what kind of line, what it was for, when, how many, at what price, and
+     * with what tax. Hours are deliberately absent: the source stored fractional
+     * hours and this schema derives them from whole minutes, so they are
+     * reported at invoice level and never gate.
+     *
+     * @param  list<array<string, mixed>>  $before
+     * @param  list<array<string, mixed>>  $after
+     * @return list<string>
+     */
+    private function lineMultisetDifferences(array $before, array $after): array
+    {
+        $tally = static function (array $lines): array {
+            $counts = [];
+            foreach ($lines as $line) {
+                $signature = sprintf(
+                    '%s unit %d qty %s tax %d total %d on %s item %s desc %s',
+                    (string) $line['type'],
+                    (int) $line['unit_amount'],
+                    rtrim(rtrim(number_format((float) $line['quantity'], 4, '.', ''), '0'), '.') ?: '0',
+                    (int) $line['tax_amount'],
+                    (int) $line['total_amount'],
+                    ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
+                    ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
+                    (string) $line['description_hash'],
+                );
+                $counts[$signature] = ($counts[$signature] ?? 0) + 1;
+            }
+
+            return $counts;
+        };
+
+        $beforeCounts = $tally($before);
+        $afterCounts = $tally($after);
+
+        $notes = [];
+        $signatures = array_unique([...array_keys($beforeCounts), ...array_keys($afterCounts)]);
+        sort($signatures);
+
+        foreach ($signatures as $signature) {
+            $b = $beforeCounts[$signature] ?? 0;
+            $a = $afterCounts[$signature] ?? 0;
+            if ($a === $b) {
+                continue;
+            }
+
+            $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
         }
 
         return $notes;
