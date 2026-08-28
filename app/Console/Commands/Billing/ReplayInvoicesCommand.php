@@ -103,8 +103,20 @@ final class ReplayInvoicesCommand extends Command
     /** @var array<string, CorrectionFacts> */
     private array $factCache = [];
 
+    /**
+     * Per-run key for description digests.
+     *
+     * A bare hash of a low-entropy string is not concealment: a reader with the
+     * report can hash likely client names and billing labels and test them.
+     * Keying it per run keeps the before and after snapshots comparable while
+     * making a guess unverifiable off the host.
+     */
+    private string $digestKey = '';
+
     public function handle(): int
     {
+        $this->digestKey = bin2hex(random_bytes(32));
+
         $workspacePublicId = $this->option('workspace');
         if (! is_string($workspacePublicId) || $workspacePublicId === '') {
             $this->components->error('--workspace is required.');
@@ -266,36 +278,47 @@ final class ReplayInvoicesCommand extends Command
             ->get();
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: float, line_date: string, recurring_item_id: string, description_hash: string, hours: float|null}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, description_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
                 $recurringItemId = $line->client_agreement_recurring_item_id === null
                     ? ''
                     : (string) (int) $line->client_agreement_recurring_item_id;
+                $projectId = $line->client_project_id === null
+                    ? ''
+                    : (string) (int) $line->client_project_id;
 
                 $lines[] = [
                     'type' => (string) $line->type,
                     'total_amount' => (int) $line->total_amount,
                     'unit_amount' => (int) $line->unit_amount,
                     'tax_amount' => (int) $line->tax_amount,
-                    'quantity' => round((float) $line->quantity, 4),
+                    // Kept as the stored decimal string. Casting to float
+                    // collapses values that differ only in the last of four
+                    // decimal places, which is exactly where a quantity this
+                    // schema allows can differ.
+                    'quantity' => self::decimalString($line->quantity),
                     'line_date' => $lineDate,
                     'recurring_item_id' => $recurringItemId,
+                    // Which project the charge is attributed to. A subcontractor
+                    // line carries one, and moving a charge between projects is
+                    // not visible in any other field here.
+                    'project_id' => $projectId,
                     // A description is the one field here that can carry a
                     // client's name, and this output is meant to be readable
-                    // outside the host. Hashed, so two lines that differ only in
-                    // wording still compare as different without the wording
-                    // leaving the machine.
-                    'description_hash' => substr(hash('sha256', (string) $line->description), 0, 6),
+                    // outside the host. Digested under a per-run key, so two
+                    // lines that differ only in wording still compare as
+                    // different without a guess being verifiable off the host.
+                    'description_hash' => substr(hash_hmac('sha256', (string) $line->description, $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
                 ];
             }
 
             // Sorted so that a pure ordering difference is not reported as a
             // money difference; sort_order is compared separately by count.
-            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount'], $a['unit_amount'], $a['quantity'], $a['line_date'], $a['description_hash']]
-                <=> [$b['type'], $b['total_amount'], $b['unit_amount'], $b['quantity'], $b['line_date'], $b['description_hash']]);
+            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount'], $a['unit_amount'], $a['quantity'], $a['line_date'], $a['project_id'], $a['description_hash']]
+                <=> [$b['type'], $b['total_amount'], $b['unit_amount'], $b['quantity'], $b['line_date'], $b['project_id'], $b['description_hash']]);
 
             $key = $this->key($invoice);
 
@@ -575,6 +598,7 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'missing',
                     'money_delta' => -$before['total_amount'],
                     'notes' => ['the engine did not produce this invoice'],
+                    'lines' => $before['lines'],
                 ];
 
                 continue;
@@ -603,6 +627,12 @@ final class ReplayInvoicesCommand extends Command
                 $notes[] = $note;
             }
 
+            // A line whose price, quantity or tax moved is a money difference
+            // even when the invoice total lands in the same place. The agreed
+            // bar is that money is exact; a charge the client did not have is
+            // not the same money differently arranged.
+            $lineMoneyDiffers = $this->lineMultisetDifferences($before['lines'], $after['lines'])['money_differs'];
+
             $hourNotes = [];
             foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
                 if ($before[$field] !== $after[$field]) {
@@ -624,7 +654,7 @@ final class ReplayInvoicesCommand extends Command
                     // so a currency change can never be filed as a difference of
                     // arrangement - it would exit zero saying every invoice
                     // reproduced to the cent.
-                    $moneyDelta === 0 && $before['currency'] === $after['currency'] => 'composition_differs',
+                    $moneyDelta === 0 && $before['currency'] === $after['currency'] && ! $lineMoneyDiffers => 'composition_differs',
                     default => 'money_differs',
                 },
                 'money_delta' => $moneyDelta,
@@ -641,6 +671,7 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'unexpected',
                     'money_delta' => $after['total_amount'],
                     'notes' => ['the engine produced an invoice with no historical counterpart'],
+                    'lines' => $after['lines'],
                 ];
             }
         }
@@ -699,19 +730,37 @@ final class ReplayInvoicesCommand extends Command
             // engine over- or under-billed for the cycle.
             $delta = (int) $historical['money_delta'] + (int) $generated['money_delta'];
 
+            // Pairing on the cycle total alone would call two invoices with
+            // equal totals and completely different charges a match. The pair
+            // gets the same line comparison an ordinary pair gets.
+            /** @var list<array<string, mixed>> $historicalLines */
+            $historicalLines = $historical['lines'] ?? [];
+            /** @var list<array<string, mixed>> $generatedLines */
+            $generatedLines = $generated['lines'] ?? [];
+            $lineComparison = $this->lineMultisetDifferences($historicalLines, $generatedLines);
+
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
                 'invoice_number' => $historical['invoice_number'],
-                'verdict' => $delta === 0 ? 'match_legacy_period' : 'money_differs',
+                'verdict' => $delta === 0 && ! $lineComparison['money_differs']
+                    ? 'match_legacy_period'
+                    : 'money_differs',
                 'money_delta' => $delta,
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
+                    $lineComparison['notes'],
                 ),
                 'hour_notes' => [],
             ];
 
             unset($comparisons[$extra[$cycle][0]]);
+        }
+
+        // The snapshots were carried only so the pairing above could compare
+        // them; they are not part of what this command reports.
+        foreach ($comparisons as $index => $comparison) {
+            unset($comparisons[$index]['lines']);
         }
 
         return array_values($comparisons);
@@ -751,11 +800,33 @@ final class ReplayInvoicesCommand extends Command
         // difference, and a unit price that changes while quantity compensates
         // leaves the total alone - both would report as an exact reproduction.
         // So the lines are also compared as a multiset of individual rows.
-        foreach ($this->lineMultisetDifferences($before, $after) as $note) {
+        foreach ($this->lineMultisetDifferences($before, $after)['notes'] as $note) {
             $notes[] = $note;
         }
 
         return $notes;
+    }
+
+    /**
+     * Normalise a decimal without going through a float.
+     *
+     * decimal(16,4) holds values a binary float cannot separate, and a quantity
+     * that differs only in the fourth decimal place is a different charge.
+     */
+    private static function decimalString(mixed $value): string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '0';
+        }
+
+        if (! str_contains($text, '.')) {
+            return $text;
+        }
+
+        $text = rtrim(rtrim($text, '0'), '.');
+
+        return $text === '' || $text === '-' ? '0' : $text;
     }
 
     /**
@@ -769,7 +840,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  list<array<string, mixed>>  $before
      * @param  list<array<string, mixed>>  $after
-     * @return list<string>
+     * @return array{notes: list<string>, money_differs: bool}
      */
     private function lineMultisetDifferences(array $before, array $after): array
     {
@@ -777,15 +848,37 @@ final class ReplayInvoicesCommand extends Command
             $counts = [];
             foreach ($lines as $line) {
                 $signature = sprintf(
-                    '%s unit %d qty %s tax %d total %d on %s item %s desc %s',
+                    '%s unit %d qty %s tax %d total %d project %s on %s item %s desc %s',
                     (string) $line['type'],
                     (int) $line['unit_amount'],
-                    rtrim(rtrim(number_format((float) $line['quantity'], 4, '.', ''), '0'), '.') ?: '0',
+                    (string) $line['quantity'],
                     (int) $line['tax_amount'],
                     (int) $line['total_amount'],
+                    ((string) $line['project_id']) === '' ? 'none' : (string) $line['project_id'],
                     ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
                     ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
                     (string) $line['description_hash'],
+                );
+                $counts[$signature] = ($counts[$signature] ?? 0) + 1;
+            }
+
+            return $counts;
+        };
+
+        // The money a line states, separated from what the line is for. A
+        // difference in the first is a difference in what the client was
+        // charged and gates; a difference only in the second is the same money
+        // attributed differently, which is reported and does not.
+        $money = static function (array $lines): array {
+            $counts = [];
+            foreach ($lines as $line) {
+                $signature = sprintf(
+                    '%s unit %d qty %s tax %d total %d',
+                    (string) $line['type'],
+                    (int) $line['unit_amount'],
+                    (string) $line['quantity'],
+                    (int) $line['tax_amount'],
+                    (int) $line['total_amount'],
                 );
                 $counts[$signature] = ($counts[$signature] ?? 0) + 1;
             }
@@ -810,7 +903,7 @@ final class ReplayInvoicesCommand extends Command
             $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
         }
 
-        return $notes;
+        return ['notes' => $notes, 'money_differs' => $money($before) !== $money($after)];
     }
 
     /**

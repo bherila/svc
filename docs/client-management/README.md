@@ -40,6 +40,18 @@ places where SVC deliberately diverges.
 | Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
 | Activity timeline | [overview.md](overview.md) | Storage only |
 
+### What the replay treats as a money difference
+
+The bar is that money is exact. That is now judged per line rather than per
+invoice: a line whose price, quantity or tax moved is a money difference even
+where the invoice total lands in the same place, because a charge the client did
+not have is not the same money differently arranged. What stays reported rather
+than blocking is the same money attributed differently - a changed service date,
+project, or recurring item with every amount identical.
+
+Hours are the documented exception and still never gate: the source stored
+fractional hours and this schema derives them from whole minutes.
+
 ### Generation never touches a settled invoice
 
 The four corrections below change what a period costs. That is intended for work

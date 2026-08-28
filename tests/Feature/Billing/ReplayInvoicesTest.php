@@ -105,13 +105,15 @@ final class ReplayInvoicesTest extends TestCase
             'quantity' => (float) $line->quantity * 2,
         ])->save();
 
-        $report = tempnam(sys_get_temp_dir(), 'svc-replay-').'.json';
+        // tempnam() creates the file it names, so use that path rather than a
+        // suffixed sibling - otherwise every run leaves the original behind.
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
 
         try {
             $this->artisan('svc:billing:replay', [
                 '--workspace' => $this->workspace->public_id,
                 '--report' => $report,
-            ])->assertSuccessful();
+            ])->assertFailed();
 
             /** @var array{comparisons: list<array<string, mixed>>} $detail */
             $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
@@ -126,7 +128,9 @@ final class ReplayInvoicesTest extends TestCase
         // Every aggregate agrees on this invoice, so the old comparison called
         // it an exact reproduction. The individual lines are what disagree.
         $this->assertArrayHasKey((string) $invoice->invoice_number, $verdicts);
-        $this->assertSame('composition_differs', $verdicts[(string) $invoice->invoice_number]);
+        // A repriced line is a money difference, not an arrangement: the client
+        // was charged for something they were not charged for. It gates.
+        $this->assertSame('money_differs', $verdicts[(string) $invoice->invoice_number]);
     }
 
     /**
