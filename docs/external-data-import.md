@@ -50,7 +50,12 @@ that source-side integer IDs can be reused.
    regenerated invoice dropped. Counting claims rather than copies is also what
    keeps the ordinary case working: an invoice regenerated twenty-one times
    carries twenty-one superseded copies of one aggregate line, and only the last
-   is named by anything. Anything less than certain is refused and reported:
+   is named by anything. Where the claim is exclusive there is a third
+   direction: a milestone task holds its line in a column because a milestone
+   cannot be split, so a live line another task already holds is not available
+   to this one. A time entry's claim is a pivot row precisely because one line
+   bills many entries, so the same test there would refuse the ordinary case.
+   Anything less than certain is refused and reported:
    attaching work to a line that did not bill it suppresses a charge that is
    owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -
    the only such read - because the one thing asked of it is which invoice it

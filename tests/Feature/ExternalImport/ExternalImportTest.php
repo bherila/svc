@@ -499,6 +499,7 @@ class ExternalImportTest extends TestCase
         string $replacementType = 'time',
         bool $withSecondLiveLine = false,
         int $unclaimedEarlierGenerations = 0,
+        bool $withEntryAlreadyOnTheReplacement = false,
     ): void {
         $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
@@ -520,6 +521,12 @@ class ExternalImportTest extends TestCase
         }
 
         $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
+
+        if ($withEntryAlreadyOnTheReplacement) {
+            // One line bills many entries, so the replacement having claimants
+            // already is the ordinary case, not evidence of ambiguity.
+            $pdo->exec("INSERT INTO client_time_entries VALUES (126, 13, 11, NULL, 7, 'Work already on the live line', 30, '2026-01-21', 1, 0, 'approved', 123)");
+        }
     }
 
     public function test_a_time_entry_naming_a_superseded_line_is_billed_by_its_replacement(): void
@@ -564,6 +571,29 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(1, $summary['link_counts']['recovered']);
         $this->assertSame(1, $summary['link_counts']['inserted']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A time entry's claim is a pivot row precisely because one line bills many
+     * entries, so a replacement that already has claimants is the ordinary
+     * case. In the migrated data the line the twenty are recovered onto is
+     * already held by nineteen live entries; treating that as ambiguity would
+     * refuse the case this exists for.
+     */
+    public function test_a_replacement_other_entries_already_share_is_still_available(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), withEntryAlreadyOnTheReplacement: true);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        // Both entries end up on the one line that survived, which is what a
+        // many-to-many pivot is for.
+        $this->assertSame(2, DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->count());
         $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
     }
 
@@ -656,6 +686,41 @@ class ExternalImportTest extends TestCase
             ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
             'Marking the dropped deliverable billed would mean nothing ever charges for it',
         );
+    }
+
+    /**
+     * A milestone task holds its line in a column because a milestone is one
+     * deliverable that cannot be split. So a live line another task already
+     * holds is not available to this one: attaching the dropped milestone to
+     * its neighbour's line would mark it billed and nothing would charge for it.
+     */
+    public function test_a_replacement_another_milestone_already_holds_is_not_available(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (16, 13, 'The milestone that kept its line', 'Still billed', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (151, 11, NULL, 'SYN-151', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (152, 151, NULL, NULL, 'Superseded line for task 14', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (153, 151, NULL, NULL, 'The line task 16 still holds', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        // Task 14's line was superseded; task 16 holds the only live one.
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 152, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 153, milestone_price = 2500.00 WHERE id = 16');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $held = ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count();
+
+        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0);
+        // Task 16 keeps the line it always had; task 14 is left unlinked and
+        // reported rather than quietly attached to a deliverable it is not.
+        $this->assertSame(1, $held, 'Only the task that genuinely holds the live line may point at it');
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void

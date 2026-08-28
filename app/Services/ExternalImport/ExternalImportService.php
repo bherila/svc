@@ -759,8 +759,19 @@ final class ExternalImportService
      * one per rate - can have several superseded lines standing for several
      * different things. Collapsing those onto the single line that survived
      * would mark work billed that the regenerated invoice dropped, and nothing
-     * would ever charge for it. Anything less than certain is refused and
-     * reported rather than guessed.
+     * would ever charge for it.
+     *
+     * Where the claim is exclusive there is a third direction to check. A
+     * milestone task holds its line in a column because a milestone is one
+     * deliverable that cannot be split, so a live line another task already
+     * holds is not available to this one - a dropped milestone would otherwise
+     * be marked billed by attaching it to the survivor its neighbour owns. A
+     * time entry's claim is a pivot row precisely because one line bills many
+     * entries, so the same test there would refuse the ordinary case: the
+     * replacement in the migrated data is already claimed by nineteen live
+     * entries, and the twenty being recovered belong on it beside them.
+     *
+     * Anything less than certain is refused and reported rather than guessed.
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
@@ -773,6 +784,7 @@ final class ExternalImportService
         int $workspaceId,
         array $ledgerItems,
         array &$queryCache,
+        ?string $exclusiveClaimantTable = null,
     ): ?int {
         if ($supersededKey === '') {
             return null;
@@ -820,6 +832,16 @@ final class ExternalImportService
 
         $replacement = (array) $replacements->first();
         $replacementKey = (string) ($replacement['client_invoice_line_id'] ?? '');
+
+        // The row being resolved names a superseded line, so anything holding
+        // the replacement is necessarily a different row.
+        if ($exclusiveClaimantTable !== null
+            && in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $exclusiveClaimantTable, $queryCache), true)
+            && SourceRows::for($source, $sourceRuntimeName, $exclusiveClaimantTable)
+                ->where('client_invoice_line_id', $replacementKey)
+                ->exists()) {
+            return null;
+        }
 
         // Held to the same fingerprint check as the row carrying the link. A
         // replacement edited since this run observed it describes a snapshot
@@ -1136,7 +1158,7 @@ final class ExternalImportService
             // milestone naming a superseded line was billed, and an unlinked
             // milestone is one the next generation run charges for again.
             if ($taskId !== null && $lineId === null) {
-                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache);
+                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache, 'client_tasks');
 
                 if ($lineId !== null) {
                     $milestoneCounts['recovered']++;
