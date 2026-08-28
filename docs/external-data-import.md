@@ -55,11 +55,14 @@ that source-side integer IDs can be reused.
    cannot be split, so a live line another task already holds - at the source or
    in this system - is not available to this one. A time entry's claim is a
    pivot row precisely because one line bills many entries, so the same test
-   there would refuse the ordinary case. What replaces it is a restriction on
-   type: a time entry's claim is recovered only for line types the generator
-   emits once per invoice. The rest it emits per item - a milestone per task, a
-   subcontractor charge per rate group - and there nothing establishes which of
-   two lines of a type a superseded one stood for.
+   there would refuse the ordinary case. What replaces it is the description:
+   the type alone never identifies a line, because a generator writes a retainer
+   draw per pool and can add a deferred one beside it. The words say which, so
+   they have to agree - with the figures in them normalised away, since those
+   move between generations of the same line while the words stay put. Types
+   whose description cannot settle it even so are refused: a subcontractor
+   charge is one line per rate group and the rate is a figure, and a milestone,
+   a recurring item and an adjustment are each one item among several.
    Anything less than certain is refused and reported:
    attaching work to a line that did not bill it suppresses a charge that is
    owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -

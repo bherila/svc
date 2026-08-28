@@ -57,22 +57,36 @@ final class ExternalImportService
     private array $linkedSourceKeys = [];
 
     /**
-     * Line types that stand for a whole invoice rather than one item on it.
+     * linkedSourceKeys inverted, built once per run.
      *
-     * InvoiceLineComposer emits each of these once per invoice. The rest it
-     * emits from a loop - a milestone per task, a subcontractor charge per
-     * (user, project, rate, currency) group, a recurring_item per item - so two
-     * lines of one of those types are two different things, and which one a
-     * superseded line stood for cannot be read off its type.
+     * @var array<string, true>|null
+     */
+    private ?array $observedClaimsByLine = null;
+
+    /**
+     * Line types a description can tell apart, once its numbers are set aside.
      *
-     * The distinction only has to be made where the claimant cannot make it. A
-     * milestone task's claim is exclusive, so counting claims settles the
-     * identity; a time entry's is not, so nothing but the type is left, and the
-     * type is not enough.
+     * These are not one-per-invoice - that was the first thing tried here and
+     * it is not true. ClientInvoicingService writes a prior_month_retainer line
+     * per retainer pool, and addDeferredRetainerLine can add another. What is
+     * true is that their descriptions name what they are for in words: which
+     * pool a draw came from, what the hours were charged against. Numbers move
+     * between generations of the same line - the hours in "applied to retainer
+     * (9.9168)" become "(10.0000)" - so they are normalised away, and what is
+     * left identifies the line rather than the run that wrote it.
+     *
+     * The types kept out are the ones where that still would not settle it. A
+     * subcontractor charge is one line per (user, project, rate, currency), and
+     * the rate is a number, so two groups can normalise to the same words. A
+     * milestone, a recurring_item and an adjustment are each one item among
+     * several of their kind.
+     *
+     * None of this is needed where the claim is exclusive: a milestone task
+     * holds one line, so counting claims settles the identity by itself.
      *
      * @var list<string>
      */
-    private const WHOLE_INVOICE_LINE_TYPES = [
+    private const IDENTIFIABLE_BY_DESCRIPTION = [
         'retainer',
         'prior_month_retainer',
         'prior_month_billable',
@@ -112,6 +126,7 @@ final class ExternalImportService
         $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
         $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
         $this->linkedSourceKeys = [];
+        $this->observedClaimsByLine = null;
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, ExternalImportItem> $ledgerItems */
@@ -702,6 +717,39 @@ final class ExternalImportService
     }
 
     /**
+     * Every line this run observed a claim on, indexed by the line's source key.
+     *
+     * @return array<string, true>
+     */
+    private function observedClaimsByLine(): array
+    {
+        if ($this->observedClaimsByLine !== null) {
+            return $this->observedClaimsByLine;
+        }
+
+        $byLine = [];
+        foreach (['client_time_entries', 'client_tasks'] as $table) {
+            foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
+                $byLine[$lineKey] = true;
+            }
+        }
+
+        return $this->observedClaimsByLine = $byLine;
+    }
+
+    /**
+     * A line description with its numbers set aside.
+     *
+     * Regenerating a line rewrites the figures in its description while the
+     * words stay put, so this is what two generations of one line have in
+     * common and two different lines of a type do not.
+     */
+    private static function descriptionShape(mixed $description): string
+    {
+        return (string) preg_replace('/\d[\d.,:]*/', 'N', trim((string) ($description ?? '')));
+    }
+
+    /**
      * Whether exactly one superseded line of this type is still claimed here.
      *
      * A line type is not always one line per invoice. A milestone is one line
@@ -741,18 +789,20 @@ final class ExternalImportService
         $claimed = [];
 
         if (count($superseded) > 1) {
-            $keys = array_flip(array_map(strval(...), $superseded));
-
             // The claims this run observed, not the ones the source still
             // shows. A competitor deleted or cleared between the two reads
             // would otherwise disappear from the count and leave the survivor
             // looking unambiguous - and vanishedLinkCount() reports that
             // afterwards without undoing a link written on the strength of it.
-            foreach (['client_time_entries', 'client_tasks'] as $table) {
-                foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
-                    if (isset($keys[$lineKey])) {
-                        $claimed[$lineKey] = true;
-                    }
+            // Indexed by line once per run rather than walked per question.
+            // Walking it per (invoice, type) meant every regenerated invoice
+            // scanning every billed row in the source, which is quadratic in
+            // exactly the history this exists to repair.
+            $claimants = $this->observedClaimsByLine();
+
+            foreach ($superseded as $key) {
+                if (isset($claimants[(string) $key])) {
+                    $claimed[(string) $key] = true;
                 }
             }
         }
@@ -846,7 +896,7 @@ final class ExternalImportService
         // Where the claimant cannot establish identity, the type has to. One
         // superseded subcontractor line and one live one are two different
         // groups of work as often as they are the same line twice.
-        if ($exclusiveClaimantTable === null && ! in_array((string) $lineType, self::WHOLE_INVOICE_LINE_TYPES, true)) {
+        if ($exclusiveClaimantTable === null && ! in_array((string) $lineType, self::IDENTIFIABLE_BY_DESCRIPTION, true)) {
             return null;
         }
 
@@ -869,14 +919,29 @@ final class ExternalImportService
         $replacement = (array) $replacements->first();
         $replacementKey = (string) ($replacement['client_invoice_line_id'] ?? '');
 
+        // Same type is not the same line. Two retainer draws on one invoice are
+        // two pools, and only the words say which - so the words have to agree,
+        // with the numbers in them set aside because those move between
+        // generations of the same line.
+        if ($exclusiveClaimantTable === null
+            && self::descriptionShape($supersededRow['description'] ?? null) !== self::descriptionShape($replacement['description'] ?? null)) {
+            return null;
+        }
+
         // Asked of what this run observed, not of the source now. A claim
         // cleared between the two reads would otherwise make the replacement
         // look unheld, and the row being resolved would take a line its
         // neighbour was holding when anybody last looked. The row being
         // resolved named a superseded line, so anything holding the
         // replacement is necessarily a different row.
+        //
+        // And of the source unfiltered, because a claimant deleted before this
+        // run began was never observed at all: it is in neither the ledger nor
+        // the destination, so nothing else here can notice that the line it
+        // held is spoken for.
         if ($exclusiveClaimantTable !== null
-            && in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)) {
+            && (in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)
+                || $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $replacementKey)->exists())) {
             return null;
         }
 
