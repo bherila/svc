@@ -838,8 +838,15 @@ final class ReplayInvoicesCommand extends Command
         // make "Phase 1" and "Phase 2" the same charge, and a swap of their
         // prices would then compare as no difference at all.
         return (string) preg_replace(
-            ['/[$£€]\s?[\d,]+(?:\.\d+)?/u', '/\b\d+:\d{2}\b/', '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i'],
-            ['#', '#', '#'],
+            [
+                // What InvoiceLineComposer::formatMoney() actually writes: a
+                // plain decimal beside its currency code, never a symbol.
+                '/\b[\d,]+\.\d{2}\s+[A-Z]{3}\b/',
+                '/[$£€]\s?[\d,]+(?:\.\d+)?/u',
+                '/\b\d+:\d{2}\b/',
+                '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i',
+            ],
+            ['#', '#', '#', '#'],
             $description,
         );
     }
@@ -963,7 +970,16 @@ final class ReplayInvoicesCommand extends Command
             return $seen;
         };
 
-        if ($distinctPrices($before) !== $distinctPrices($after)) {
+        // Only a substitution. An amount that leaves with nothing arriving in
+        // its place is a line removed, and one that arrives with nothing
+        // leaving is a line added - both composition, and both things a
+        // deliberate correction is entitled to explain. An amount leaving while
+        // another arrives is a charge repriced under wording that changed with
+        // it, which no correction speaks for.
+        $beforeOnly = array_diff_key($distinctPrices($before), $distinctPrices($after));
+        $afterOnly = array_diff_key($distinctPrices($after), $distinctPrices($before));
+
+        if ($beforeOnly !== [] && $afterOnly !== []) {
             $repriced = true;
         }
 

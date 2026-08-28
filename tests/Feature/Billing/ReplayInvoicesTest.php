@@ -287,8 +287,8 @@ final class ReplayInvoicesTest extends TestCase
         // The amounts, though, have to go: the composer writes them from the
         // very price and quantity the comparison exists to detect.
         $this->assertSame(
-            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ $150.00/hr)'),
-            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ $9.00/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ 150.00 USD/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ 9.00 USD/hr)'),
         );
         $this->assertSame(
             (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (15:00 applied to February 2024 pool)'),
@@ -343,6 +343,36 @@ final class ReplayInvoicesTest extends TestCase
         ])->save();
 
         $this->assertSame('money_differs', $this->verdictFor($line->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A line the engine no longer produces, priced at an amount that appears
+     * nowhere else, is still a line removed. Comparing the amounts an invoice
+     * states must not read that as a repricing, or the corrections that exist
+     * to remove exactly such a line could never explain one.
+     */
+    public function test_removing_a_uniquely_priced_line_stays_explainable(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+        $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
+
+        // History carried one more charge than the engine produces, at a price
+        // no other line on the invoice states.
+        $extra = $line->replicate();
+        $extra->public_id = (string) Str::uuid();
+        $extra->sort_order = (int) $line->sort_order + 1;
+        $extra->unit_amount = 1234;
+        $extra->quantity = '1.0000';
+        $extra->total_amount = 0;
+        $extra->description = 'A charge the engine no longer makes';
+        $extra->save();
+
+        // Reported, not gated: the money the client owes is unchanged and a
+        // correction is allowed to account for the line being gone.
+        $this->assertSame('composition_differs', $this->verdictFor($invoiceNumber));
     }
 
     /**
