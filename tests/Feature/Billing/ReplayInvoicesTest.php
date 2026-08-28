@@ -892,6 +892,25 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertTrue($row['line_repriced'], 'The item id links the two versions when the wording cannot.');
     }
 
+    /**
+     * Subtotal and tax are money on the invoice header. Moving them by
+     * offsetting amounts leaves the total, the currency and every line
+     * untouched - and bills the client differently for the same figure.
+     */
+    public function test_an_offsetting_subtotal_and_tax_are_a_money_difference(): void
+    {
+        $invoice = $this->generatedHistory();
+        $this->assertGreaterThan(0, (int) $invoice->subtotal_amount);
+
+        // The same total, split differently between the charge and its tax.
+        $invoice->forceFill([
+            'subtotal_amount' => (int) $invoice->subtotal_amount - 500,
+            'tax_amount' => (int) $invoice->tax_amount + 500,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();

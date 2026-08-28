@@ -636,11 +636,12 @@ final class ReplayInvoicesCommand extends Command
                 // same money is presented is worth seeing, not worth blocking.
                 'verdict' => match (true) {
                     $moneyDelta === 0 && $notes === [] => 'match',
-                    // The same integer in two currencies is not the same money,
-                    // so a currency change can never be filed as a difference of
-                    // arrangement - it would exit zero saying every invoice
-                    // reproduced to the cent.
-                    $moneyDelta === 0 && $before['currency'] === $after['currency'] && ! $lineMoneyDiffers => 'composition_differs',
+                    // Money on the invoice header counts too. The same integer
+                    // in two currencies is not the same money, and a subtotal
+                    // and tax that move by offsetting amounts are a different
+                    // bill for the same total - neither is an arrangement of
+                    // the same money.
+                    $moneyDelta === 0 && ! $lineMoneyDiffers && ! $examined['metadata_differs'] => 'composition_differs',
                     default => 'money_differs',
                 },
                 'money_delta' => $moneyDelta,
@@ -821,8 +822,7 @@ final class ReplayInvoicesCommand extends Command
                 // the pair. Currency is money whatever the totals say, so it
                 // can never be filed as an arrangement.
                 'verdict' => match (true) {
-                    $delta !== 0 || $examined['line_money_differs'] => 'money_differs',
-                    ($historicalSnapshot['currency'] ?? null) !== ($generatedSnapshot['currency'] ?? null) => 'money_differs',
+                    $delta !== 0 || $examined['line_money_differs'] || $examined['metadata_differs'] => 'money_differs',
                     $examined['notes'] !== [] => 'composition_differs',
                     default => 'match_legacy_period',
                 },
