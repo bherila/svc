@@ -273,12 +273,17 @@ class InvoiceLineComposer
             ->orderBy('id')
             ->get();
 
-        // Group by (user, project, snapshot rate) so a mid-period rate change
-        // produces correctly-priced separate lines rather than one blended line.
+        // Group by (user, project, snapshot rate, rate currency) so a mid-period
+        // rate change produces correctly-priced separate lines rather than one
+        // blended line. The currency belongs in the key rather than only in the
+        // refusal below: without it, two entries costed at the same number in
+        // different currencies share a group, and the check sees only the first
+        // one - so the other currency's minutes bill at this one's rate.
         $groups = $entries->groupBy(fn (ClientTimeEntry $entry): string => implode('|', [
             $entry->user_id,
             $entry->client_project_id,
             (string) $entry->subcontractor_cost_amount,
+            (string) ($entry->subcontractor_cost_currency ?? ''),
         ]));
 
         foreach ($groups as $groupEntries) {

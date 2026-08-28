@@ -222,6 +222,39 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * The cross-currency refusal reads one entry per group, so the currency has
+     * to be part of what makes a group. Two entries costed at the same number
+     * in different currencies otherwise share one, and only the first is
+     * checked - which bills the other currency's minutes at this one's rate.
+     */
+    public function test_two_currencies_at_the_same_rate_do_not_share_a_subcontractor_group(): void
+    {
+        $project = $this->project('Mixed currency');
+        $agreement = $this->agreement($project);
+
+        // Same number, different currencies, same worker and project. The USD
+        // one sorts first, so it is the sample the refusal would inspect.
+        $this->entry($project, '2024-02-10', 60)
+            ->forceFill(['subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+        $this->entry($project, '2024-02-11', 60)
+            ->forceFill(['subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'EUR'])->save();
+
+        $invoice = $this->invoice($agreement);
+        $sort = 1;
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('costed in EUR');
+
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+    }
+
+    /**
      * A company id is globally unique, so an agreement row carrying it under
      * another tenant's workspace is reachable through the foreign key alone.
      * The explicit-agreement path validates both keys; the automatic selectors

@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\ExternalImport;
 
+use App\Models\ClientCompany;
+use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\User;
@@ -343,6 +346,12 @@ class ExternalImportTest extends TestCase
         // charges the client for the same deliverable a second time.
         $this->assertNotNull($taskLink);
         $this->assertSame((int) $lineId, (int) $taskLink);
+        // Reconstructing a link is not the source editing the row, so the
+        // source date the import wrote must survive the reconciliation.
+        $this->assertStringStartsWith(
+            '2026-01-06',
+            (string) DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('updated_at'),
+        );
     }
 
     public function test_a_milestone_link_never_crosses_a_workspace(): void
@@ -375,6 +384,43 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, $summary['milestone_link_counts']['linked']);
         $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
         $this->assertNull(DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
+    }
+
+    public function test_a_milestone_link_refuses_an_invoice_line_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (101, 11, NULL, 'SYN-101', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (102, 101, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 102 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        // A task belonging to the other workspace, and the ledger repointed at
+        // it. This is what an incremental import into a second workspace looks
+        // like: the task mapping resolves in one tenant while the invoice line
+        // mapping still resolves in the first.
+        $strandedTask = $this->taskInWorkspace($other);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_tasks')
+            ->where('source_key', '14')
+            ->update(['target_public_id' => $strandedTask->public_id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        // The task passes a task-only ownership check, so only validating both
+        // sides catches this. Otherwise one tenant's task points straight at
+        // another tenant's financial row, with no composite key beneath it.
+        $this->assertSame(1, $summary['milestone_link_counts']['failed']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_outside_workspace'] ?? 0);
+        $this->assertNull(DB::table('client_tasks')->where('id', $strandedTask->id)->value('client_invoice_line_id'));
     }
 
     public function test_a_task_whose_source_row_changed_does_not_get_a_milestone_link(): void
@@ -664,6 +710,27 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(6, $ledgerReads, 'The five source-table preloads plus invoice reconciliation should be the only ledger reads.');
         $this->assertSame(21, $this->countForWorkspace('client_tasks', $workspace));
+    }
+
+    /** A company, project and task owned entirely by the given workspace. */
+    private function taskInWorkspace(Workspace $workspace): ClientTask
+    {
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'name' => 'Stranded Business',
+            'slug' => 'stranded-business-'.$workspace->getKey(),
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_company_id' => $company->id,
+            'name' => 'Stranded Project',
+        ]);
+
+        return ClientTask::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_project_id' => $project->id,
+            'title' => 'Stranded Task',
+        ]);
     }
 
     private function countForWorkspace(string $table, Workspace $workspace): int

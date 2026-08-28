@@ -38,15 +38,6 @@ use Throwable;
  */
 final class ExternalImportService
 {
-    /**
-     * Source keys this run refused, per source table. A reconciliation pass
-     * reads the source directly, so without this it would resolve the ledger
-     * item of a snapshot the run has just rejected.
-     *
-     * @var array<string, array<string, true>>
-     */
-    private array $rejectedSourceKeys = [];
-
     /** @var QueryCache */
     private array $activeQueryCache;
 
@@ -77,7 +68,6 @@ final class ExternalImportService
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
         /** @var ImportCounts $counts */
         $counts = $this->emptyCounts($inventory);
-        $this->rejectedSourceKeys = [];
         $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $queryCache = $this->newQueryCache();
@@ -236,7 +226,6 @@ final class ExternalImportService
                         $this->recordFailure($run, $item, $spec, $sourceKey, $fingerprint, 'source_changed', $row, $destinationName);
                         $counts['failed']++;
                         $counts['failure_reasons']['source_changed'] = ($counts['failure_reasons']['source_changed'] ?? 0) + 1;
-                        $this->rejectedSourceKeys[$table][$sourceKey] = true;
 
                         return;
                     }
@@ -647,6 +636,37 @@ final class ExternalImportService
         return $columns;
     }
 
+    /**
+     * A reconciliation pass reads the source a second time, later than the read
+     * importSpec() observed. Anything that changed in between - a row this run
+     * refused as source_changed, or one edited in the gap between the two reads
+     * - describes a snapshot this run never observed, and a billing link must
+     * not be written from it.
+     *
+     * @param  array<string, mixed>  $row
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     */
+    private function observedThisRun(string $sourceTable, string $sourceKey, array $row, array $ledgerItems): bool
+    {
+        $item = $ledgerItems[$this->ledgerItemKey($sourceTable, $sourceKey)] ?? null;
+
+        return $item !== null && $item->source_fingerprint === Fingerprint::row($row);
+    }
+
+    /**
+     * The ledger is keyed on the source identity rather than on a workspace, so
+     * a public id can resolve to a row owned by a tenant this run is not
+     * importing into. A foreign key here is not workspace-composite, so nothing
+     * below the application stops one tenant's row pointing at another's.
+     */
+    private function ownedByRunWorkspace(string $destinationName, string $table, int $id, int $workspaceId): bool
+    {
+        return DB::connection($destinationName)->table($table)
+            ->where('id', $id)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+    }
+
     private function ledgerItemKey(string $sourceTable, string $sourceKey): string
     {
         return $sourceTable."\0".$sourceKey;
@@ -744,21 +764,21 @@ final class ExternalImportService
         $rows = SourceRows::for($source, $sourceRuntimeName, 'client_time_entries')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
-            ->get(['id', 'client_invoice_line_id']);
+            ->get();
         $linkCounts['source_rows'] = $rows->count();
 
-        foreach ($rows as $row) {
-            // This run refused the new snapshot of this row, so its ledger item
-            // still describes the old one. Linking from a rejected snapshot
-            // would splice unobserved source state into financial records.
-            if (isset($this->rejectedSourceKeys['client_time_entries'][(string) $row->id])) {
+        foreach ($rows as $rawRow) {
+            $row = (array) $rawRow;
+            $sourceKey = (string) ($row['id'] ?? '');
+
+            if (! $this->observedThisRun('client_time_entries', $sourceKey, $row, $ledgerItems)) {
                 $linkCounts['rejected']++;
 
                 continue;
             }
 
-            $timePublicId = $this->resolveParentId('client_time_entries', (string) $row->id, $ledgerItems, $queryCache);
-            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) $row->client_invoice_line_id, $ledgerItems, $queryCache);
+            $timePublicId = $this->resolveParentId('client_time_entries', $sourceKey, $ledgerItems, $queryCache);
+            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
 
@@ -766,6 +786,15 @@ final class ExternalImportService
                 $linkCounts['failed']++;
                 $counts['failed']++;
                 $counts['failure_reasons']['missing_invoice_time_link_parent'] = ($counts['failure_reasons']['missing_invoice_time_link_parent'] ?? 0) + 1;
+
+                continue;
+            }
+
+            if (! $this->ownedByRunWorkspace($destinationName, 'client_time_entries', $timeId, (int) $run->workspace_id)
+                || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, (int) $run->workspace_id)) {
+                $linkCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['time_link_outside_workspace'] = ($counts['failure_reasons']['time_link_outside_workspace'] ?? 0) + 1;
 
                 continue;
             }
@@ -824,20 +853,21 @@ final class ExternalImportService
         $rows = SourceRows::for($source, $sourceRuntimeName, 'client_tasks')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
-            ->get(['id', 'client_invoice_line_id']);
+            ->get();
         $milestoneCounts['source_rows'] = $rows->count();
 
-        foreach ($rows as $row) {
-            // Same rule as the time-entry pass: a row whose snapshot this run
-            // rejected is not a row to write a billing link from.
-            if (isset($this->rejectedSourceKeys['client_tasks'][(string) $row->id])) {
+        foreach ($rows as $rawRow) {
+            $row = (array) $rawRow;
+            $sourceKey = (string) ($row['id'] ?? '');
+
+            if (! $this->observedThisRun('client_tasks', $sourceKey, $row, $ledgerItems)) {
                 $milestoneCounts['rejected']++;
 
                 continue;
             }
 
-            $taskPublicId = $this->resolveParentId('client_tasks', (string) $row->id, $ledgerItems, $queryCache);
-            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) $row->client_invoice_line_id, $ledgerItems, $queryCache);
+            $taskPublicId = $this->resolveParentId('client_tasks', $sourceKey, $ledgerItems, $queryCache);
+            $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $taskId = $this->internalId($destinationName, 'client_tasks', $taskPublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
 
@@ -849,34 +879,31 @@ final class ExternalImportService
                 continue;
             }
 
-            $current = DB::connection($destinationName)->table('client_tasks')
-                ->where('workspace_id', $run->workspace_id)
-                ->where('id', $taskId)
-                ->value('client_invoice_line_id');
-
-            // Only ever fill a hole. A link the destination already holds was
-            // either written by a previous run or decided here since, and
-            // re-pointing a billed milestone at a different line is not
-            // something an import pass gets to do.
-            if ($current !== null) {
-                $milestoneCounts['idempotent']++;
+            // Both sides, not just the task. Scoping only the row being written
+            // still lets a task in this workspace point at another tenant's
+            // invoice line, and the foreign key is not workspace-composite.
+            if (! $this->ownedByRunWorkspace($destinationName, 'client_tasks', $taskId, (int) $run->workspace_id)
+                || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, (int) $run->workspace_id)) {
+                $milestoneCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['milestone_link_outside_workspace'] = ($counts['failure_reasons']['milestone_link_outside_workspace'] ?? 0) + 1;
 
                 continue;
             }
 
+            // Only ever fill a hole, and decide that in the write rather than
+            // in a read before it: an operator issuing an invoice between the
+            // two would otherwise have their link replaced by this one. Leaving
+            // updated_at alone keeps the source date attributes() imported -
+            // reconstructing a link is not the source editing the row.
             $updated = DB::connection($destinationName)->table('client_tasks')
                 ->where('workspace_id', $run->workspace_id)
                 ->where('id', $taskId)
-                ->update(['client_invoice_line_id' => $lineId, 'updated_at' => now()]);
+                ->whereNull('client_invoice_line_id')
+                ->update(['client_invoice_line_id' => $lineId]);
 
-            // The ledger is keyed on the source identity rather than the
-            // workspace, so a public id can resolve to a task belonging to a
-            // tenant this run is not importing into. The predicate above stops
-            // the write; counting it as linked would hide that it was stopped.
             if ($updated === 0) {
-                $milestoneCounts['failed']++;
-                $counts['failed']++;
-                $counts['failure_reasons']['milestone_link_outside_workspace'] = ($counts['failure_reasons']['milestone_link_outside_workspace'] ?? 0) + 1;
+                $milestoneCounts['idempotent']++;
 
                 continue;
             }
