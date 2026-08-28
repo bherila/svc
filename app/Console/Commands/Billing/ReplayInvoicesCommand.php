@@ -1233,17 +1233,34 @@ final class ReplayInvoicesCommand extends Command
         // already stated, which the pairing above cannot see when the wording
         // moved with it. Counts that only fall are lines removed, counts that
         // only rise are lines added - composition, and explainable.
+        // Which amounts are actually charged for. A line whose total is zero
+        // costs the client nothing, so it appearing or disappearing is
+        // arrangement; a line with a total is a charge, and one arriving or
+        // leaving is money whether or not something offsets it.
+        $charged = [];
+        foreach ([...$before, ...$after] as $line) {
+            if ((int) $line['total_amount'] !== 0) {
+                $charged[$priceTuple($line)] = true;
+            }
+        }
+
         $beforeAmounts = $amounts($before);
         $afterAmounts = $amounts($after);
         $rose = false;
         $fell = false;
+        $chargeCountMoved = false;
         foreach (array_unique([...array_keys($beforeAmounts), ...array_keys($afterAmounts)]) as $tuple) {
             $delta = ($afterAmounts[$tuple] ?? 0) - ($beforeAmounts[$tuple] ?? 0);
             $rose = $rose || $delta > 0;
             $fell = $fell || $delta < 0;
+            $chargeCountMoved = $chargeCountMoved || ($delta !== 0 && isset($charged[$tuple]));
         }
 
-        $moneyMoved = $repriced || ($rose && $fell);
+        // Two charges dropped whose totals cancel leave every count falling and
+        // none rising, and the invoice total where it was. Requiring a
+        // substitution would call that an arrangement of the same money, when
+        // neither charge was reproduced at all.
+        $moneyMoved = $repriced || ($rose && $fell) || $chargeCountMoved;
 
         $beforeCounts = $tally($before);
         $afterCounts = $tally($after);

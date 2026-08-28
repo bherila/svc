@@ -911,6 +911,35 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
     }
 
+    /**
+     * Two charges the engine no longer produces, whose totals cancel. Every
+     * count falls and none rises, the invoice total does not move, and the
+     * client was nonetheless shown two charges they are no longer shown.
+     */
+    public function test_two_dropped_charges_that_cancel_are_still_a_money_difference(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_id', $invoice->id)->orderByDesc('total_amount')->firstOrFail();
+
+        foreach ([['An adjustment the engine no longer makes', 'adjustment', 10000], ['A credit the engine no longer makes', 'credit', -10000]] as [$description, $type, $amount]) {
+            $extra = $line->replicate();
+            $extra->public_id = (string) Str::uuid();
+            $extra->description = $description;
+            $extra->type = $type;
+            $extra->quantity = '1.0000';
+            $extra->unit_amount = abs($amount);
+            $extra->total_amount = $amount;
+            $extra->sort_order = (int) $line->sort_order + 10;
+            $extra->save();
+        }
+
+        // The invoice total is untouched, so nothing above the lines notices.
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();
