@@ -118,10 +118,15 @@ final class ExternalImportService
         // The figure class admits a colon because the source writes hours as
         // H:MM - the migrated retainer draws read "(9:55)" and "(10:00)", not
         // "(9.9168)". Anchoring without it matched nothing there at all.
+        //
+        // The termination rate is formatMoney()'s output, a decimal beside a
+        // currency code, and it is spelled out rather than left as prose: that
+        // template replaces its whole group, so anything it wrongly matches
+        // loses the text that told two allocations apart.
         '/^Work items applied to retainer \([\d.,:]+ applied to .+ pool\)$/' => false,
         '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,:]+ applied to .+ cycle\)$/' => false,
         '/^Deferred work items applied to retainer \([\d.,:]+\)$/' => false,
-        '/^Deferred work items billed on agreement termination \([\d.,:]+ @ .+\/hr\)$/' => true,
+        '/^Deferred work items billed on agreement termination \([\d.,:]+ @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
         '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
     ];

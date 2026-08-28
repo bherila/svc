@@ -1182,27 +1182,6 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * A termination line fills its whole group, "(N @ $X/hr)", so both figures
-     * move when the rate changes. Normalising only the first leaves two
-     * generations of one line looking different and refuses a valid recovery.
-     */
-    public function test_a_termination_line_whose_rate_moved_is_still_the_same_line(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo);
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (9.9168 @ \$150.00/hr)' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (10.0000 @ \$175.00/hr)' WHERE client_invoice_line_id = 123");
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(1, $summary['link_counts']['recovered']);
-        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
-    }
-
-    /**
      * The fee line's qualifier is a cadence too. "Gold Retainer (10 hours) -
      * ..." follows the shape without being generated, and merging two of those
      * would suppress a charge.
@@ -1370,6 +1349,46 @@ class ExternalImportTest extends TestCase
         $this->supersededClaimSource($pdo);
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (9:55)' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (10:00)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * The termination rate is formatMoney()'s output. Prose in its place is
+     * somebody's own wording, and this template erases the whole group - so
+     * matching it loosely loses the text that told two allocations apart.
+     */
+    public function test_a_termination_rate_that_is_not_money_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2025 tier/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2026 tier/hr)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The generated form still is one, hours and rate both moving.
+     */
+    public function test_a_termination_line_in_the_generated_form_is_still_recovered(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (9:55 @ 150.00 USD/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (10:00 @ 175.00 USD/hr)' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
