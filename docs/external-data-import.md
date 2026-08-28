@@ -29,6 +29,18 @@ that source-side integer IDs can be reused.
    or bank credentials are copied.
 7. Copy attachments through the attachment import ledger and verify every
    digest.
+8. Reconcile the links that point backwards. A time entry's invoice line and a
+   milestone task's invoice line both live on the child row in the source but
+   name a row imported later, so they are resolved after every importer has run
+   rather than inline. Both fill a hole only: a link this system already holds
+   is left alone, because repointing a billed row is not a decision an import
+   pass gets to make.
+
+Every destination column an importer owns is either mapped, reconciled in step
+8, or listed as exempt with a reason in `ImportedColumnCoverageTest`. A column
+that is merely fillable is not covered - the model accepts it and nothing ever
+passes a value, which is how milestone links and invoice opening balances both
+arrived null on every imported row.
 
 ## Rehearsal and verification
 

@@ -556,8 +556,9 @@ final class BackfillBillingLedgerCommand extends Command
     {
         $counters = $this->counters();
         $map = $this->idMap('client_tasks', 'client_tasks', $identityHash);
+        $lines = $this->idMap('client_invoice_lines', 'client_invoice_lines', $identityHash);
 
-        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $dryRun, &$counters): void {
+        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, &$counters): void {
             foreach ($rows as $row) {
                 $id = $this->resolve($map, $row, 'id', $counters);
                 if ($id === null) {
@@ -570,6 +571,10 @@ final class BackfillBillingLedgerCommand extends Command
                     'milestone_price_amount' => ($price === null || (float) $price <= 0.0)
                         ? null
                         : (int) round((float) $price * 100),
+                    // Which line billed this milestone. A task that arrived
+                    // without it reads as unbilled, and the next generation run
+                    // charges the client for the same deliverable again.
+                    'client_invoice_line_id' => $lines[(string) ($row->client_invoice_line_id ?? '')]['id'] ?? null,
                 ], $dryRun, $counters);
             }
         });

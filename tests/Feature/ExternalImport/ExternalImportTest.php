@@ -317,6 +317,86 @@ class ExternalImportTest extends TestCase
         $this->assertSame(2.25, (float) $quantities[1]);
     }
 
+    public function test_a_milestone_task_keeps_the_line_that_billed_it(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (91, 11, NULL, 'SYN-91', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (92, 91, NULL, NULL, 'Synthetic milestone line', '1', '2500.00', '2500.00', 'milestone', 1)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 92, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $lineId = DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())->value('id');
+        $taskLink = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id');
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame(1, $summary['milestone_link_counts']['source_rows']);
+        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
+        // Without this the next generation run reads the task as unbilled and
+        // charges the client for the same deliverable a second time.
+        $this->assertNotNull($taskLink);
+        $this->assertSame((int) $lineId, (int) $taskLink);
+    }
+
+    public function test_a_milestone_link_already_decided_here_is_not_repointed(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (93, 11, NULL, 'SYN-93', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (94, 93, NULL, NULL, 'Synthetic milestone line', '1', '100.00', '100.00', 'milestone', 1)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (96, 93, NULL, NULL, 'Synthetic corrected milestone line', '1', '100.00', '100.00', 'milestone', 2)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 94 WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // Stand in for a correction made here after the first import: the task
+        // now points at a different line than the source says.
+        $taskId = DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('id');
+        $correctedLineId = DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())
+            ->orderByDesc('sort_order')->value('id');
+        DB::table('client_tasks')->where('id', $taskId)->update(['client_invoice_line_id' => $correctedLineId]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame((int) $correctedLineId, (int) DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
+    }
+
+    public function test_imported_invoices_carry_their_opening_balances(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT, starting_unused_hours TEXT, starting_negative_hours TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (95, 11, NULL, 'SYN-95', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL, '3.50', '1.25')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $invoice = DB::table('client_invoices')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertNotNull($invoice);
+        // The repair command fills these for older imports. A fresh onboarding
+        // that stored null would disagree with it about what a complete import
+        // contains, and the rollover a cycle opens with would start from zero.
+        $this->assertSame(3.5, (float) $invoice->starting_unused_hours);
+        $this->assertSame(1.25, (float) $invoice->starting_negative_hours);
+    }
+
     public function test_unknown_imported_invoice_line_quantity_fails_instead_of_guessing(): void
     {
         $user = User::factory()->create();

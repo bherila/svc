@@ -76,6 +76,9 @@ final class BackfillBillingLedgerTest extends TestCase
         $task->refresh();
         // Source decimal currency becomes integer minor units.
         $this->assertSame(18750, $task->milestone_price_amount);
+        // The line that billed this milestone. A task repaired without it reads
+        // as unbilled, and the next generation run charges for it again.
+        $this->assertSame($line->id, $task->client_invoice_line_id);
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
         $invoice->refresh();
@@ -142,7 +145,7 @@ final class BackfillBillingLedgerTest extends TestCase
         $source->statement('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, invoice_kind TEXT, cycle_start TEXT, cycle_end TEXT, paid_date TEXT, retainer_hours_included TEXT, hours_worked TEXT, rollover_hours_used TEXT, unused_hours_balance TEXT, negative_hours_balance TEXT, hours_billed_at_rate TEXT)');
         $source->statement('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, line_date TEXT, hours TEXT, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER)');
         $source->statement('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, catch_up_threshold_hours TEXT, rollover_months INTEGER, initial_rollover_hours TEXT, bill_overage_interim INTEGER, first_cycle_proration TEXT, agreement_link TEXT)');
-        $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT)');
+        $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT, client_invoice_line_id INTEGER)');
         $source->statement('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, job_type TEXT)');
 
         $source->table('client_invoices')->insert([
@@ -160,7 +163,7 @@ final class BackfillBillingLedgerTest extends TestCase
             'initial_rollover_hours' => '0.0000', 'bill_overage_interim' => 1,
             'first_cycle_proration' => 'prorate_hours', 'agreement_link' => 'https://example.com/agreement',
         ]);
-        $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50']);
+        $source->table('client_tasks')->insert(['id' => 701, 'milestone_price' => '187.50', 'client_invoice_line_id' => 901]);
         $source->table('client_time_entries')->insert(['id' => 601, 'job_type' => 'Support']);
     }
 
