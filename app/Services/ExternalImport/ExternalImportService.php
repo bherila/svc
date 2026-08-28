@@ -8,6 +8,7 @@ use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -95,21 +96,26 @@ final class ExternalImportService
      *
      * @var list<string>
      */
+    /**
+     * Descriptions a billing service writes, and how much of one it fills in.
+     *
+     * Deliberately literal, down to the cadences BillingCadenceLabel emits: a
+     * shape like "something in parentheses" would match an operator's text as
+     * readily as a generated line, and telling those apart is the whole point.
+     *
+     * The value says where the figures are. Most templates put one at the
+     * front of a group and words after it - "(N applied to 2026-01 cycle)" -
+     * so only the figure goes. The termination line fills the entire group,
+     * "(N @ $X/hr)", and both move when the rate changes.
+     *
+     * @var array<string, bool>
+     */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
-        // "Work items applied to retainer (N)" and its cadence-qualified form,
-        // "... applied to monthly retainer (N applied to 2026-01 cycle)". The
-        // qualifiers are enumerated rather than matched as a word: a "gold
-        // retainer" somebody named is not a cadence, and reading it as one
-        // would strip the figure that tells two of them apart.
-        '/^Work items applied to(?: (?:monthly|quarterly|semiannual|annual))? retainer \(/',
-        '/^Deferred work items applied to retainer \(/',
-        '/^Deferred work items billed on agreement termination \(/',
-        '/^Interim overage hours /',
-        '/^Subcontractor: /',
-        // The whole fee line, not a shape ending in "Retainer (": a "Gold
-        // Retainer (2025 tier)" an operator typed is not this, and normalising
-        // it would merge two allocations.
-        '/^.+ Retainer \([^()]* hours\) - .+ through .+$/',
+        '/^Work items applied to(?: (?:monthly|quarterly|semiannual|annual))? retainer \(/' => false,
+        '/^Deferred work items applied to retainer \(/' => false,
+        '/^Deferred work items billed on agreement termination \(/' => true,
+        '/^Interim overage hours /' => false,
+        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [
@@ -777,12 +783,19 @@ final class ExternalImportService
     {
         $text = trim((string) ($description ?? ''));
 
-        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template) {
-            if (preg_match($template, $text) === 1) {
-                // The first group only. A later one is prose the service did
-                // not write and has no claim to being an amount.
-                return (string) preg_replace('/\((\s*)\d[\d.,:]*/', '($1#', $text, 1);
+        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $wholeGroup) {
+            if (preg_match($template, $text) !== 1) {
+                continue;
             }
+
+            // The first group only. A later one is prose the service did not
+            // write and has no claim to being an amount.
+            return (string) preg_replace(
+                $wholeGroup ? '/\([^()]*\)/' : '/\((\s*)\d[\d.,:]*/',
+                $wholeGroup ? '(#)' : '($1#',
+                $text,
+                1,
+            );
         }
 
         return $text;
@@ -1328,7 +1341,28 @@ final class ExternalImportService
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-            } catch (UniqueConstraintViolationException) {
+            } catch (QueryException $exception) {
+                // The line can also go between the checks above and this
+                // insert - a draft regenerated in the gap takes its lines with
+                // it - and that arrives as a foreign key failure rather than a
+                // duplicate. It means the parent is missing, which is what this
+                // run would have reported had it looked a moment later.
+                if (! $exception instanceof UniqueConstraintViolationException) {
+                    $lineStillThere = DB::connection($destinationName)->table('client_invoice_lines')
+                        ->where('id', $lineId)
+                        ->exists();
+
+                    if ($lineStillThere) {
+                        throw $exception;
+                    }
+
+                    $linkCounts['failed']++;
+                    $counts['failed']++;
+                    $counts['failure_reasons']['missing_invoice_time_link_parent'] = ($counts['failure_reasons']['missing_invoice_time_link_parent'] ?? 0) + 1;
+
+                    continue;
+                }
+
                 // Losing the race does not say what won it. The other writer
                 // may have written the very row this was about to, and
                 // reporting a skip then would end an otherwise reconciled run

@@ -1181,6 +1181,76 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    /**
+     * A termination line fills its whole group, "(N @ $X/hr)", so both figures
+     * move when the rate changes. Normalising only the first leaves two
+     * generations of one line looking different and refuses a valid recovery.
+     */
+    public function test_a_termination_line_whose_rate_moved_is_still_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (9.9168 @ \$150.00/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (10.0000 @ \$175.00/hr)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * The fee line's qualifier is a cadence too. "Gold Retainer (10 hours) -
+     * ..." follows the shape without being generated, and merging two of those
+     * would suppress a charge.
+     */
+    public function test_a_fee_line_qualifier_that_is_not_a_cadence_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (10 hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (12 hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A draft regenerated between the ownership check and the insert takes its
+     * lines with it, which arrives as a foreign key failure rather than a
+     * duplicate. That means the parent is missing - what this run would have
+     * reported had it looked a moment later - not that the import should die.
+     */
+    public function test_a_replacement_deleted_before_the_insert_is_reported_not_thrown(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                return;
+            }
+            $done = true;
+            DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())->delete();
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();
