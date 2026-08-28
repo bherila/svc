@@ -127,6 +127,16 @@ final class ExternalImportService
      */
     private const HOURS = '-?(?:0|[1-9]\d*):[0-5]\d';
 
+    /**
+     * Hours above zero, for the one template whose line cannot exist below it.
+     *
+     * addDeferredTerminationLine() returns without writing anything when the
+     * minutes are not positive, so "(0:00 @ ...)" is not a line it produced -
+     * and that template replaces its whole group, so a false match there costs
+     * the text that identified the charge.
+     */
+    private const POSITIVE_HOURS = '(?:0:(?:0[1-9]|[1-5]\d)|[1-9]\d*:[0-5]\d)';
+
     /** A month as PeriodLabel writes one. */
     private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
 
@@ -166,7 +176,7 @@ final class ExternalImportService
         '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
-        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
+        '/^Deferred work items billed on agreement termination \('.self::POSITIVE_HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
             'whole' => true, 'types' => ['additional_hours'],
         ],
         '/^Interim overage hours for '.self::POOL_MONTH.'$/' => [
@@ -809,6 +819,29 @@ final class ExternalImportService
     }
 
     /**
+     * Whether every "A through B" here runs forwards.
+     *
+     * The fee composer is handed a cycle's start and end in that order, so a
+     * span that ends before it begins is somebody's own text - and both dates
+     * can be real while the pair is not.
+     */
+    private static function datesAreOrdered(string $text): bool
+    {
+        preg_match_all('/('.self::SHORT_DATE.') through ('.self::SHORT_DATE.')/', $text, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $span) {
+            $from = Carbon::createFromFormat('M j, Y', $span[1]);
+            $to = Carbon::createFromFormat('M j, Y', $span[2]);
+
+            if ($from === null || $to === null || $from->greaterThan($to)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Whether every period range here is one PeriodLabel would write.
      *
      * It writes a range only when the two ends are not the same month - a span
@@ -900,6 +933,7 @@ final class ExternalImportService
             $wholeGroup = $rule['whole'];
             if (preg_match($template, $text) !== 1
                 || ! self::datesAreReal($text)
+                || ! self::datesAreOrdered($text)
                 || ! self::periodRangesAreReal($text)) {
                 continue;
             }

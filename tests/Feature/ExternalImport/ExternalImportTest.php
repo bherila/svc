@@ -1526,6 +1526,16 @@ class ExternalImportTest extends TestCase
                 'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
             ],
+            'a termination line of no hours' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (0:00 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (0:00 @ 200.00 USD/hr)',
+            ],
+            'a fee span that ends before it starts' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 31, 2026 through Jan 1, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 31, 2026 through Jan 1, 2026',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
