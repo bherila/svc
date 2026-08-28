@@ -167,6 +167,40 @@ class ExternalImportTest extends TestCase
         $this->assertSame('synthetic.user@example.test', $existing->fresh()->email);
     }
 
+    /**
+     * A service period here is the closed interval `[first, last]`, and the
+     * source did not always agree: for one run it started each period on the
+     * previous invoice's end date. Copied across verbatim, that gives
+     * consecutive invoices a shared boundary day, which
+     * `assertNoOverlappingInvoice()` reads as an overlap - so those months
+     * could never be regenerated, and in the replay against migrated data they
+     * came back empty. It is normalised at the point of import.
+     */
+    public function test_a_period_starting_on_a_month_end_is_advanced_to_the_next_day(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT, period_start TEXT, period_end TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (41, 11, NULL, 'SYN-HALFOPEN', 'issued', '2026-02-01', '2026-03-01', '100.00', 'USD', NULL, '2026-01-31', '2026-02-28')");
+        $pdo->exec("INSERT INTO client_invoices VALUES (42, 11, NULL, 'SYN-CLOSED', 'issued', '2026-01-01', '2026-02-01', '100.00', 'USD', NULL, '2026-01-01', '2026-01-31')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $this->assertDatabaseHas('client_invoices', [
+            'workspace_id' => $workspace->getKey(),
+            'invoice_number' => 'SYN-HALFOPEN',
+            'service_period_start' => '2026-02-01',
+        ]);
+
+        // A period that already begins on the first is untouched.
+        $this->assertDatabaseHas('client_invoices', [
+            'workspace_id' => $workspace->getKey(),
+            'invoice_number' => 'SYN-CLOSED',
+            'service_period_start' => '2026-01-01',
+        ]);
+    }
+
     public function test_imported_payments_reconcile_invoice_balance(): void
     {
         $user = User::factory()->create();

@@ -7,6 +7,7 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -447,7 +448,7 @@ final class ExternalImportService
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'External proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
             'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'External agreement', 'status' => ($row['termination_date'] ?? null) ? 'terminated' : (($row['active_date'] ?? null) ? 'active' : 'draft'), 'starts_on' => $row['active_date'] ?? null, 'ends_on' => $row['termination_date'] ?? null, 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => $row['currency'] ?? 'USD', 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => $row['active_date'] ?? null, 'signed_at' => $row['client_company_signed_date'] ?? null, 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => $row['termination_date'] ?? null, 'catch_up_threshold_minutes' => self::minutesFromDecimal($row['catch_up_threshold_hours'] ?? null), 'period_retainer_minutes' => self::minutesFromDecimal($row['retainer_hours'] ?? null), 'period_retainer_amount' => self::nullableMinorUnits($row['retainer_fee'] ?? null), 'rollover_months' => isset($row['rollover_months']) ? (int) $row['rollover_months'] : null, 'initial_rollover_minutes' => self::minutesFromDecimal($row['initial_rollover_hours'] ?? null), 'bill_overage_interim' => isset($row['bill_overage_interim']) ? (bool) $row['bill_overage_interim'] : null, 'first_cycle_proration' => $row['first_cycle_proration'] ?? null, 'agreement_link' => $row['agreement_link'] ?? null],
             'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'External recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => $row['currency'] ?? 'USD', 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => $row['start_date'] ?? null, 'expires_on' => $row['end_date'] ?? null, 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
-            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => isset($row['cycle_start']) ? substr((string) $row['cycle_start'], 0, 10) : null, 'cycle_end' => isset($row['cycle_end']) ? substr((string) $row['cycle_end'], 0, 10) : null, 'paid_on' => isset($row['paid_date']) ? substr((string) $row['paid_date'], 0, 10) : null, 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null],
+            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => isset($row['issue_date']) ? substr((string) $row['issue_date'], 0, 10) : null, 'due_date' => isset($row['due_date']) ? substr((string) $row['due_date'], 0, 10) : null, 'service_period_start' => self::periodStart($row), 'service_period_end' => $row['period_end'] ?? null, 'currency' => $row['currency'] ?? 'USD', 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => isset($row['cycle_start']) ? substr((string) $row['cycle_start'], 0, 10) : null, 'cycle_end' => isset($row['cycle_end']) ? substr((string) $row['cycle_end'], 0, 10) : null, 'paid_on' => isset($row['paid_date']) ? substr((string) $row['paid_date'], 0, 10) : null, 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null],
             'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'External invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => self::invoiceLineQuantity($row['quantity'] ?? null), 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0), 'line_date' => isset($row['line_date']) ? substr((string) $row['line_date'], 0, 10) : null, 'hours' => $row['hours'] ?? null, 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'client_agreement_recurring_item_id' => $this->internalId($destinationName, 'client_agreement_recurring_items', $recurring)],
             'invoice_payment' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'status' => 'succeeded', 'amount' => self::minorUnits($row['amount'] ?? null), 'refunded_amount' => 0, 'currency' => $row['currency'] ?? 'USD', 'received_on' => $row['payment_date'] ?? null, 'method' => $row['payment_method'] ?? 'external', 'reference' => $row['stripe_payment_intent_id'] ?? null, 'notes' => $row['notes'] ?? null, 'provider' => ($row['stripe_payment_intent_id'] ?? null) ? 'stripe' : null, 'provider_payment_identifier' => $row['stripe_payment_intent_id'] ?? null, 'external_finance_transaction_uuid' => null],
             'invoice_email_delivery' => $attributes + [
@@ -979,5 +980,48 @@ final class ExternalImportService
     private static function minutesFromDecimal(mixed $value): int
     {
         return (int) round(((float) ($value ?: 0)) * 60);
+    }
+
+    /**
+     * The first day the invoice's period actually covers.
+     *
+     * A service period here is the closed interval `[first, last]`, so January
+     * ends on the 31st and February begins on the 1st. The source did not
+     * always agree: for one run it started each period on the previous
+     * invoice's end date, and copying that across produced consecutive
+     * invoices sharing a boundary day.
+     *
+     * `assertNoOverlappingInvoice()` reads a shared endpoint as an overlap -
+     * correctly, for a closed interval - so those invoices could never be
+     * regenerated. In the replay against migrated data this was the largest
+     * single cause of divergence: the generator refused, and the invoice came
+     * back empty.
+     *
+     * A start on the last day of a month whose period ends in a later month is
+     * the shape, and it is normalised rather than refused. Under this schema's
+     * convention a period genuinely beginning on the 31st would overlap the
+     * month before it anyway, so there is no reading of that date which both
+     * differs from this one and is valid.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private static function periodStart(array $row): ?string
+    {
+        $start = $row['period_start'] ?? null;
+        $end = $row['period_end'] ?? null;
+
+        if (! is_string($start) || $start === '' || ! is_string($end) || $end === '') {
+            return is_string($start) && $start !== '' ? $start : null;
+        }
+
+        $startDate = CarbonImmutable::parse($start)->startOfDay();
+        $endDate = CarbonImmutable::parse($end)->startOfDay();
+
+        $startsOnAMonthEnd = $startDate->isSameDay($startDate->endOfMonth());
+        $endsInALaterMonth = $endDate->startOfMonth()->gt($startDate->startOfMonth());
+
+        return $startsOnAMonthEnd && $endsInALaterMonth
+            ? $startDate->addDay()->toDateString()
+            : $startDate->toDateString();
     }
 }
