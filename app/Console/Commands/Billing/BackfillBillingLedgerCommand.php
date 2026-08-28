@@ -662,14 +662,26 @@ final class BackfillBillingLedgerCommand extends Command
 
                 $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
 
-                // Or already held here. An operator can have reconciled that
-                // line by hand, and the source knowing nothing about it does
-                // not make the line free.
-                if ($resolvedLink !== null && $this->db()->table('client_tasks')
-                    ->where('workspace_id', $this->workspaceId)
-                    ->where('client_invoice_line_id', $resolvedLink)
-                    ->where('id', '!=', $id)
-                    ->exists()) {
+                // Or already held. An operator can have reconciled that line
+                // by hand, and the source knowing nothing about it does not
+                // make the line free.
+                //
+                // Asked with the constraint's own scope rather than this
+                // workspace's: task_invoice_line_once is global, so a holder in
+                // another workspace would collide just the same, and a check
+                // narrower than the rule it predicts is not a prediction. It
+                // reads whether a line is spoken for and nothing else.
+                //
+                // Only where this task has no link of its own. If it already
+                // has one, applyRow() fills holes and would leave it alone, so
+                // there is no conflicting write to head off - and refusing
+                // would cost the milestone price it could still repair.
+                if ($resolvedLink !== null
+                    && $this->db()->table('client_tasks')->where('id', $id)->whereNull('client_invoice_line_id')->exists()
+                    && $this->db()->table('client_tasks')
+                        ->where('client_invoice_line_id', $resolvedLink)
+                        ->where('id', '!=', $id)
+                        ->exists()) {
                     $counters['unresolved']++;
 
                     continue;

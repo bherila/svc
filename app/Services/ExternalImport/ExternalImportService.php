@@ -65,6 +65,13 @@ final class ExternalImportService
     private ?array $observedClaimsByLine = null;
 
     /**
+     * Claims the source holds on each line, per claimant table, built once.
+     *
+     * @var array<string, array<string, int>>
+     */
+    private array $sourceClaimsByLine = [];
+
+    /**
      * Line types a description can tell apart, once its numbers are set aside.
      *
      * These are not one-per-invoice - that was the first thing tried here and
@@ -178,6 +185,7 @@ final class ExternalImportService
         $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $this->linkedSourceKeys = [];
         $this->observedClaimsByLine = null;
+        $this->sourceClaimsByLine = [];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, ExternalImportItem> $ledgerItems */
@@ -847,6 +855,31 @@ final class ExternalImportService
     }
 
     /**
+     * How many claims the source holds on each line, deleted rows included.
+     *
+     * Read once per table rather than per row. Asking it per row meant a
+     * workspace with a thousand billed milestones making a thousand round
+     * trips to the source, each one scanning the same claims again, in the
+     * middle of a pass that is otherwise streamed.
+     *
+     * @return array<string, int>
+     */
+    private function sourceClaimsByLine(ConnectionInterface $source, string $table): array
+    {
+        if (isset($this->sourceClaimsByLine[$table])) {
+            return $this->sourceClaimsByLine[$table];
+        }
+
+        $counts = [];
+        foreach ($source->table($table)->whereNotNull('client_invoice_line_id')
+            ->pluck('client_invoice_line_id') as $claim) {
+            $counts[(string) $claim] = ($counts[(string) $claim] ?? 0) + 1;
+        }
+
+        return $this->sourceClaimsByLine[$table] = $counts;
+    }
+
+    /**
      * How many claims this run observed on each line, by the line's source key.
      *
      * Counted rather than flagged. A milestone task's claim is exclusive, so
@@ -942,9 +975,11 @@ final class ExternalImportService
                     continue;
                 }
 
-                foreach ($source->table($table)->whereIn('client_invoice_line_id', $superseded)
-                    ->pluck('client_invoice_line_id') as $claim) {
-                    $claimed[(string) $claim] = true;
+                $counts = $this->sourceClaimsByLine($source, $table);
+                foreach ($superseded as $key) {
+                    if (($counts[(string) $key] ?? 0) > 0) {
+                        $claimed[(string) $key] = true;
+                    }
                 }
             }
         }
@@ -1516,7 +1551,7 @@ final class ExternalImportService
             $claimedLine = (string) ($row['client_invoice_line_id'] ?? '');
             if (max(
                 $this->observedClaimsByLine()['client_tasks'][$claimedLine] ?? 0,
-                $source->table('client_tasks')->where('client_invoice_line_id', $claimedLine)->count(),
+                $this->sourceClaimsByLine($source, 'client_tasks')[$claimedLine] ?? 0,
             ) > 1) {
                 $milestoneCounts['rejected']++;
                 $counts['skipped']++;

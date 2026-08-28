@@ -273,6 +273,65 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
     }
 
+    /**
+     * task_invoice_line_once is global, so a holder in another workspace
+     * collides just the same. A check narrower than the rule it predicts is
+     * not a prediction.
+     */
+    public function test_a_holder_in_another_workspace_is_seen_by_the_conflict_check(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $theirCompany = ClientCompany::query()->create([
+            'workspace_id' => $elsewhere->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $theirProject = ClientProject::query()->create([
+            'workspace_id' => $elsewhere->id, 'client_company_id' => $theirCompany->id, 'name' => 'Their Project',
+        ]);
+        $theirs = ClientTask::query()->create([
+            'workspace_id' => $elsewhere->id, 'client_project_id' => $theirProject->id,
+            'title' => 'Malformed holder', 'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame((int) $line->id, (int) $theirs->refresh()->client_invoice_line_id);
+        $this->assertSame($invoice->workspace_id, $task->workspace_id);
+    }
+
+    /**
+     * A task that already has a link has no hole to fill, so there is no
+     * conflicting write to head off - and refusing would cost the milestone
+     * price the repair could still restore.
+     */
+    public function test_a_task_already_linked_here_is_repaired_despite_a_contested_source_line(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $other = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 7,
+        ]);
+        $task->forceFill(['client_invoice_line_id' => $other->id])->save();
+
+        // Somebody else holds the line the source names.
+        ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_project_id' => $task->client_project_id,
+            'title' => 'Holds the source line', 'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        // The correction stands and the price was still restored.
+        $this->assertSame((int) $other->id, (int) $task->refresh()->client_invoice_line_id);
+        $this->assertSame(18750, $task->milestone_price_amount);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();
