@@ -9,6 +9,7 @@ use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -371,7 +372,21 @@ final class BackfillBillingLedgerCommand extends Command
             $query->whereNull($column);
         }
 
-        if ($query->update($changes) === 0) {
+        // A unique column among these can be taken between the read that
+        // cleared it and this write - task_invoice_line_once is the one that
+        // can, and it is global, so no predicate here can hold it. Losing that
+        // race means the same thing the reader would have found a moment
+        // later: the line is spoken for and this row is not the repair's to
+        // make.
+        try {
+            $written = $query->update($changes);
+        } catch (UniqueConstraintViolationException) {
+            $counters['unresolved']++;
+
+            return;
+        }
+
+        if ($written === 0) {
             // Someone filled one of them between the read and this write. Leave
             // it alone and record it as deferred rather than changed - a
             // fingerprint mismatch means the source moved and must block, and
@@ -621,23 +636,28 @@ final class BackfillBillingLedgerCommand extends Command
         // row would give the line to whichever task came first and then take
         // the constraint violation on the next - failing a repair that has
         // nothing wrong with it except the rows it cannot decide between.
-        // Scoped to the ledger's own rows, because a source can hold another
-        // tenant's onboarding as readily as this one's, and two of their tasks
-        // arguing over a line is not this repair's business - resolve() would
-        // have skipped them a moment later anyway.
+        // Which of this ledger's lines more than one source task claims.
+        //
+        // Pivoted on the line rather than on the claimant. Scoping by which
+        // tasks the ledger mapped looked right and was not: a task deleted
+        // before the original import has no mapping and still argues over the
+        // line, and it is the line being ours that makes the argument ours.
+        // Another tenant's tasks fighting over another tenant's line never
+        // reach this, because that line is not in the map.
         //
         // Read only when the source records claims at all: a table without the
         // column is a schema the row loop below tolerates, and a prepass that
         // queried it regardless would fail the whole command instead.
         $contested = [];
-        if ($map !== [] && $this->sourceRecordsTaskLinks($legacy)) {
-            foreach ($legacy->table('client_tasks')->whereNotNull('client_invoice_line_id')
-                ->whereIn('id', array_keys($map))
-                ->pluck('client_invoice_line_id') as $claim) {
-                $contested[(string) $claim] = ($contested[(string) $claim] ?? 0) + 1;
+        if ($lines !== [] && $this->sourceRecordsTaskLinks($legacy)) {
+            foreach ($legacy->table('client_tasks')
+                ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
+                ->whereIn('client_invoice_line_id', array_keys($lines))
+                ->groupBy('client_invoice_line_id')
+                ->havingRaw('count(*) > 1')
+                ->get() as $row) {
+                $contested[(string) $row->line_key] = (int) $row->claims;
             }
-
-            $contested = array_filter($contested, static fn (int $count): bool => $count > 1);
         }
 
         $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, $contested, &$counters): void {
@@ -676,6 +696,11 @@ final class BackfillBillingLedgerCommand extends Command
                 // has one, applyRow() fills holes and would leave it alone, so
                 // there is no conflicting write to head off - and refusing
                 // would cost the milestone price it could still repair.
+                //
+                // A reader, so it can still be overtaken - an operator or a
+                // generation run can take the line between this and the write.
+                // applyRow() reports that collision rather than letting it
+                // escape, so the two together cover both orderings.
                 if ($resolvedLink !== null
                     && $this->db()->table('client_tasks')->where('id', $id)->whereNull('client_invoice_line_id')->exists()
                     && $this->db()->table('client_tasks')

@@ -117,6 +117,9 @@ final class ExternalImportService
      *
      * @var array<string, bool>
      */
+    /** What HoursQuantity::format writes, and nothing else: H:MM, signed. */
+    private const HOURS = '-?\d+:\d{2}';
+
     /** What PeriodLabel writes: 2026-01, 2026-Q1, 2026, or a range of the first. */
     private const PERIOD_LABEL = '(?:\d{4}(?:-(?:\d{2}|Q[1-4]))?(?:\.\.\d{4}-\d{2})?)';
 
@@ -136,12 +139,12 @@ final class ExternalImportService
         // currency code, and it is spelled out rather than left as prose: that
         // template replaces its whole group, so anything it wrongly matches
         // loses the text that told two allocations apart.
-        '/^Work items applied to retainer \([\d.,:]+ applied to [A-Z][a-z]+ \d{4} pool\)$/' => false,
-        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,:]+ applied to '.self::PERIOD_LABEL.' cycle\)$/' => false,
-        '/^Deferred work items applied to retainer \([\d.,:]+\)$/' => false,
-        '/^Deferred work items billed on agreement termination \([\d.,:]+ @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
+        '/^Work items applied to retainer \('.self::HOURS.' applied to [A-Z][a-z]+ \d{4} pool\)$/' => false,
+        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \('.self::HOURS.' applied to '.self::PERIOD_LABEL.' cycle\)$/' => false,
+        '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => false,
+        '/^Deferred work items billed on agreement termination \('.self::HOURS.' @ [\d,]+\.\d{2} [A-Z]{3}\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
-        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([\d.,:]+ hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => false,
+        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => false,
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [
@@ -870,10 +873,16 @@ final class ExternalImportService
             return $this->sourceClaimsByLine[$table];
         }
 
+        // Grouped in the source rather than counted here. Plucking every claim
+        // materialised a whole billed-time history to answer a question about
+        // a handful of lines.
         $counts = [];
-        foreach ($source->table($table)->whereNotNull('client_invoice_line_id')
-            ->pluck('client_invoice_line_id') as $claim) {
-            $counts[(string) $claim] = ($counts[(string) $claim] ?? 0) + 1;
+        foreach ($source->table($table)
+            ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
+            ->whereNotNull('client_invoice_line_id')
+            ->groupBy('client_invoice_line_id')
+            ->get() as $row) {
+            $counts[(string) $row->line_key] = (int) $row->claims;
         }
 
         return $this->sourceClaimsByLine[$table] = $counts;

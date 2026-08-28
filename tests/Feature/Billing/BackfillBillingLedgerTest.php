@@ -253,18 +253,20 @@ final class BackfillBillingLedgerTest extends TestCase
     }
 
     /**
-     * Two tasks from another tenant's onboarding arguing over a line is not
-     * this repair's business - resolve() would skip them a moment later, and
-     * counting them unresolved rolls back a workspace that is fine.
+     * Two tasks from another tenant's onboarding arguing over a line this
+     * ledger never mapped is not this repair's business, and counting them
+     * unresolved rolls back a workspace that is fine. What makes an argument
+     * ours is the line being ours, not the claimants being mapped.
      */
     public function test_contested_claims_outside_this_workspace_do_not_stop_the_repair(): void
     {
         $this->buildDestination();
 
-        // Two source tasks the ledger never mapped, both naming line 901.
+        // Two source tasks the ledger never mapped, arguing over a line it
+        // never mapped either. Both belong to somebody else's onboarding.
         foreach ([801, 802] as $key) {
             DB::connection('synthetic')->table('client_tasks')->insert(['id' => $key, 'milestone_price' => '100.00']);
-            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 901]);
+            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 999]);
         }
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
@@ -330,6 +332,26 @@ final class BackfillBillingLedgerTest extends TestCase
         // The correction stands and the price was still restored.
         $this->assertSame((int) $other->id, (int) $task->refresh()->client_invoice_line_id);
         $this->assertSame(18750, $task->milestone_price_amount);
+    }
+
+    /**
+     * A task deleted before the original import has no ledger mapping and
+     * still argues over the line. Scoping the prepass by which claimants were
+     * mapped missed exactly that, and the repair walked into the constraint.
+     */
+    public function test_an_unmapped_task_claiming_our_line_still_contests_it(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        // Never imported - deleted before the original run - but it still
+        // names the line the ledger did map.
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 803, 'milestone_price' => '100.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 803)->update(['client_invoice_line_id' => 901]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
     }
 
     public function test_it_writes_nothing_without_apply(): void

@@ -506,11 +506,11 @@ class ExternalImportTest extends TestCase
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
         $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
         $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Deferred work items applied to retainer (9.9168)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Deferred work items applied to retainer (10.0000)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
 
         if ($withSecondLiveLine) {
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Deferred work items applied to retainer (11.0000)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Deferred work items applied to retainer (11:00)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
         }
 
         // Earlier regenerations of the same aggregate line. Nothing names them
@@ -518,7 +518,7 @@ class ExternalImportTest extends TestCase
         // make the replacement look ambiguous.
         for ($i = 0; $i < $unclaimedEarlierGenerations; $i++) {
             $key = 200 + $i;
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, NULL, NULL, 'Deferred work items applied to retainer (8.0000)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, NULL, NULL, 'Deferred work items applied to retainer (8:00)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
         }
 
         $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
@@ -811,7 +811,7 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo);
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10.0000 applied to August 2026 pool)' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10:00 applied to August 2026 pool)' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -849,8 +849,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.00 hours) - Feb 1, 2025 through Feb 28, 2025' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12:00 hours) - Feb 1, 2025 through Feb 28, 2025' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -870,8 +870,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12.50 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12:30 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -890,8 +890,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo);
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (9.9168) 2026-01' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10.0000) 2026-02' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (9:55) 2026-01' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10:00) 2026-02' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -953,8 +953,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo);
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (9.9168) Aug 1, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (10.0000) Aug 15, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (9:55) Aug 1, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (10:00) Aug 15, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -1059,8 +1059,8 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         $this->supersededClaimSource($pdo);
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9.9168 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 122");
-        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10.0000 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -1410,6 +1410,27 @@ class ExternalImportTest extends TestCase
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (2025 tier hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (2026 tier hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * HoursQuantity::format writes H:MM and nothing else, so a bare number in
+     * that slot is somebody's own qualifier - and two of them are two
+     * allocations rather than two generations of one line.
+     */
+    public function test_a_bare_number_where_hours_belong_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2025)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2026)' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
