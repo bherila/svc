@@ -14,6 +14,13 @@ use Illuminate\Support\Facades\Schema;
  * rows cannot settle that, and the import's reconciliation is exactly the kind
  * of long pass that can be racing a generation run.
  *
+ * Not scoped to a workspace, deliberately. An invoice line's id is global and
+ * the foreign key is not workspace-composite, so a task in one workspace can
+ * already name another's line - a per-workspace index would let two tasks in
+ * two workspaces hold one line and see nothing wrong. The workspace-scoped
+ * checks in the reconciliation cannot see across that boundary either; this
+ * can, and it is the only thing here that can.
+ *
  * Null is not constrained by a unique index on any engine this runs on, so
  * every unlinked task is still free to be unlinked.
  */
@@ -22,9 +29,9 @@ return new class extends Migration
     public function up(): void
     {
         $duplicates = DB::table('client_tasks')
-            ->select('workspace_id', 'client_invoice_line_id')
+            ->select('client_invoice_line_id')
             ->whereNotNull('client_invoice_line_id')
-            ->groupBy('workspace_id', 'client_invoice_line_id')
+            ->groupBy('client_invoice_line_id')
             ->havingRaw('count(*) > 1')
             ->count();
 
@@ -41,7 +48,7 @@ return new class extends Migration
 
         Schema::table('client_tasks', function (Blueprint $table): void {
             $table->dropIndex('task_invoice_line_idx');
-            $table->unique(['workspace_id', 'client_invoice_line_id'], 'task_invoice_line_once');
+            $table->unique('client_invoice_line_id', 'task_invoice_line_once');
         });
     }
 

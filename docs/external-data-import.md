@@ -58,11 +58,18 @@ that source-side integer IDs can be reused.
    there would refuse the ordinary case. What replaces it is the description:
    the type alone never identifies a line, because a generator writes a retainer
    draw per pool and can add a deferred one beside it. The words say which, so
-   they have to agree - with the figures in them normalised away, since those
-   move between generations of the same line while the words stay put. Types
-   whose description cannot settle it even so are refused: a subcontractor
-   charge is one line per rate group and the rate is a figure, and a milestone,
-   a recurring item and an adjustment are each one item among several.
+   they have to agree, and only the figure the composer writes at the front of
+   its parenthetical is set aside - "(9.9168)" against "(10.0000)" is the same
+   line regenerated, while "(10.0000 applied to August 2026 pool)" is a
+   different one. Nothing else is normalised, and that is deliberate: four
+   earlier rules tried to decide which numbers were mutable and each lost to
+   some format the source writes - a year, a 2026-01 label, a day inside a
+   prose date, the leading digits of a rate. A figure written anywhere but
+   there is treated as naming the charge, so a line that moves one is refused
+   rather than recovered. Types whose description cannot settle it even so are
+   refused too: a subcontractor charge is one line per rate group and the rate
+   is a figure, and a milestone, a recurring item and an adjustment are each one
+   item among several.
 
    One limit is known and not closed. The superseded line is deleted at the
    source, so it was never ledgered and no fingerprint can tell whether it

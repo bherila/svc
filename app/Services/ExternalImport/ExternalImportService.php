@@ -717,40 +717,34 @@ final class ExternalImportService
     }
 
     /**
-     * A line description with its mutable figures set aside.
+     * A line description with the composer's own figures set aside.
      *
-     * Regenerating a line rewrites the hours and money in its description while
-     * the words stay put, so what is left is what two generations of one line
-     * have in common and two different lines of a type do not.
+     * Regenerating a line rewrites the hours and money it quotes while the
+     * words stay put, so two generations of one line differ only there. What
+     * this must not do is decide which numbers are the mutable ones, and four
+     * attempts to went wrong in four different ways: deleting every number
+     * merged February 2024 with February 2025; keeping years merged 2026-01
+     * with 2026-02; keeping the cycle labels PeriodLabel emits still merged
+     * "Aug 1, 2026" with "Aug 15, 2026"; and keeping four-digit tokens read the
+     * front of a 2000.00 rate as a year. Every round the source found another
+     * way to write a date.
      *
-     * Dates are not mutable figures. A retainer description carries the cycle
-     * it is for, and February 2024 is not February 2025 - deleting every number
-     * would say they were the same charge. Nor is it enough to keep the year:
-     * PeriodLabel writes cycles as 2026-01, 2026-Q1, 2026 and 2026-01..2026-03,
-     * so a normaliser that kept only the year would merge every month of one
-     * year into a single charge. Every shape it emits survives, along with full
-     * dates; everything else numeric does not.
+     * So it does not classify numbers at all. The composer puts its figure at
+     * the front of a parenthetical - "(9.9168)" becomes "(10.0000)", and
+     * "(10.0000 applied to August 2026 pool)" names its pool after it - so only
+     * that leading figure is set aside. Everything else, inside the group or
+     * out, names the charge and has to match exactly.
      *
-     * The replay normalises the same descriptions for a different question -
-     * whether a line it generated is the line that was billed - and answers it
-     * by template, stripping the whole parenthetical the composer appends. That
-     * is right there and wrong here: the parenthetical is where a retainer draw
-     * names its pool, so stripping it would merge the two lines this has to
-     * keep apart.
+     * A figure written anywhere else is therefore treated as identifying, and a
+     * line that moves one is refused rather than recovered. That is the safe
+     * direction: a refusal leaves work looking unbilled and reported, where a
+     * wrong match marks it billed silently.
      */
     private static function descriptionShape(mixed $description): string
     {
-        // Longest first, so a range is matched whole rather than as two labels.
-        // The lookahead is what stops a year-shaped amount being read as a
-        // year: a deferred termination line carries a rate of 2000.00, and
-        // matching its first four digits would leave 2000.N - which then
-        // differs from 2001.N when the rate moves, and refuses a recovery that
-        // should have happened.
-        $keep = '(?:19|20)\d{2}(?:-(?:\d{2}(?:-\d{2})?|Q[1-4]))?(?![.,:]?\d)';
-
-        return (string) preg_replace_callback(
-            '/'.$keep.'\.\.'.$keep.'|'.$keep.'|\d+(?:[.,:]\d+)*/',
-            static fn (array $m): string => preg_match('/^\d/', $m[0]) === 1 && preg_match('/^(?:'.$keep.'\.\.'.$keep.'|'.$keep.')$/', $m[0]) === 1 ? $m[0] : 'N',
+        return (string) preg_replace(
+            '/\((\s*)\d[\d.,:]*/',
+            '($1#',
             trim((string) ($description ?? '')),
         );
     }
@@ -1023,8 +1017,12 @@ final class ExternalImportService
         // tasks naming it is two deliverables with one line between them, and
         // nothing here says which it billed - handing the survivor to whichever
         // task is processed first would mark the other billed for good.
+        //
+        // Counted in the source unfiltered rather than among what this run
+        // observed: a rival deleted before the run began was never observed,
+        // and it may well be the deliverable the old line billed.
         if ($exclusiveClaimantTable !== null
-            && ($this->observedClaimsByLine()[$supersededKey] ?? 0) > 1) {
+            && $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $supersededKey)->count() > 1) {
             return null;
         }
 

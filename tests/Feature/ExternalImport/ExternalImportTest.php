@@ -1151,11 +1151,13 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * A rate of 2000.00 is an amount, not a year. Reading its first four digits
-     * as a cycle would leave 2000.N, which differs from 2001.N when the rate
-     * moves - refusing a recovery that should have happened.
+     * A figure outside the composer's parenthetical is treated as naming the
+     * charge, because nothing here can tell a rate from a date without
+     * classifying numbers - and every attempt at that lost to some format the
+     * source writes. Refusing leaves the work reported and unbilled; a wrong
+     * match would mark it billed silently.
      */
-    public function test_a_year_shaped_amount_is_still_an_amount(): void
+    public function test_a_figure_outside_the_parenthetical_is_treated_as_identifying(): void
     {
         $user = User::factory()->create();
         Config::set('external-import.user_bindings.7', $user->public_id);
@@ -1167,8 +1169,28 @@ class ExternalImportTest extends TestCase
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
-        $this->assertSame(1, $summary['link_counts']['recovered']);
-        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
+    /**
+     * The source writes cycles in prose as well as in labels, and a day is as
+     * much a part of one as a month is.
+     */
+    public function test_a_textual_cycle_that_moved_its_day_is_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (9.9168) Aug 1, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (10.0000) Aug 15, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
     }
 
     /**
@@ -1197,6 +1219,38 @@ class ExternalImportTest extends TestCase
         $this->assertSame(1, $summary['milestone_link_counts']['recovered']);
         $this->assertSame(1, $summary['milestone_link_counts']['linked']);
         $this->assertNotNull(ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+    }
+
+    /**
+     * A rival deleted before the run began was never observed, and it may be
+     * the deliverable the superseded line actually billed - so the live task
+     * must not take the survivor on the strength of being the only one left.
+     */
+    public function test_a_rival_deleted_before_the_run_still_makes_the_claim_ambiguous(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN deleted_at TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (22, 13, 'The deleted rival', 'Claimed it too', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL, '2026-01-12 09:00:00')");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (221, 11, NULL, 'SYN-221', 'issued', '2026-01-10', '2026-02-10', '5000.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (222, 221, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (223, 221, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        // Both the live task and the deleted one named the superseded line.
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 222, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 22)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+        );
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
