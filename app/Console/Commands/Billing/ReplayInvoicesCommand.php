@@ -867,30 +867,56 @@ final class ReplayInvoicesCommand extends Command
             return $counts;
         };
 
-        // The money a line states, separated from what the line is for. A
-        // difference in the first is a difference in what the client was
-        // charged and gates; a difference only in the second is the same money
-        // attributed differently, which is reported and does not.
-        $money = static function (array $lines): array {
-            $counts = [];
+        // What a line is *for*, separately from what it costs. A charge keeps
+        // its identity across a repricing and loses it when the line is
+        // reclassified, added, or removed - which is the distinction the two
+        // sides of the split need.
+        $identity = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (string) $line['line_date'],
+            (string) $line['recurring_item_id'],
+            (string) $line['project_id'],
+            (string) $line['description_hash'],
+        ]);
+
+        $priceTuple = static fn (array $line): string => sprintf(
+            'unit %d qty %s tax %d total %d',
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+        );
+
+        // Prices seen for each identity, as a set rather than a multiset. Two
+        // of the same charge becoming one is a line removed, which is exactly
+        // what a deliberate correction is entitled to explain; the same charge
+        // at a different price is not, and never becomes explainable.
+        $pricesByIdentity = static function (array $lines) use ($identity, $priceTuple): array {
+            $map = [];
             foreach ($lines as $line) {
-                // Type is deliberately absent. A line reclassified from one
-                // category to another with every amount identical is the same
-                // money under a different name, which belongs on the reporting
-                // side of the split - and reclassification between the capacity
-                // types is one of the things this port changes on purpose.
-                $signature = sprintf(
-                    'unit %d qty %s tax %d total %d',
-                    (int) $line['unit_amount'],
-                    (string) $line['quantity'],
-                    (int) $line['tax_amount'],
-                    (int) $line['total_amount'],
-                );
-                $counts[$signature] = ($counts[$signature] ?? 0) + 1;
+                $map[$identity($line)][$priceTuple($line)] = true;
+            }
+            foreach ($map as $key => $prices) {
+                ksort($prices);
+                $map[$key] = $prices;
             }
 
-            return $counts;
+            return $map;
         };
+
+        $beforePrices = $pricesByIdentity($before);
+        $afterPrices = $pricesByIdentity($after);
+
+        $repriced = false;
+        foreach ($beforePrices as $key => $prices) {
+            // Only charges present on both sides. An identity on one side alone
+            // is a line added or removed - composition, not a repricing.
+            if (isset($afterPrices[$key]) && $afterPrices[$key] !== $prices) {
+                $repriced = true;
+
+                break;
+            }
+        }
 
         $beforeCounts = $tally($before);
         $afterCounts = $tally($after);
@@ -909,7 +935,7 @@ final class ReplayInvoicesCommand extends Command
             $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
         }
 
-        return ['notes' => $notes, 'money_differs' => $money($before) !== $money($after)];
+        return ['notes' => $notes, 'money_differs' => $repriced];
     }
 
     /**

@@ -57,9 +57,11 @@ one of the things this port changes on purpose.
 Hours are the documented exception and still never gate: the source stored
 fractional hours and this schema derives them from whole minutes.
 
-The four deliberate corrections can waive a divergence in *which* line types a
-period carries. They never waive a difference in what a line of a given type
-costs - a correction is a claim about composition, not about price, and the
+The four deliberate corrections can waive a divergence in *which* lines a period
+carries - a line added, removed, or reclassified. They never waive a difference
+in what an existing line costs: a charge keeps its identity across a repricing
+and loses it when it is reclassified, added or removed, so prices are compared
+per identity and only where the same charge appears on both sides - a correction is a claim about composition, not about price, and the
 per-line notes are type-prefixed, so without that rule a repriced line would be
 excused by the very correction that explains why its type moved at all.
 

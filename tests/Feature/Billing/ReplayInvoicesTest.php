@@ -177,6 +177,51 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * A line the engine no longer produces is a composition change, and
+     * composition is what the four deliberate corrections exist to explain. It
+     * must not be mistaken for a repricing, which is never explainable.
+     */
+    public function test_a_line_the_engine_no_longer_produces_is_not_read_as_a_repricing(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->firstOrFail();
+
+        // History carried this charge twice; the engine produces it once. Every
+        // amount is identical, so nothing about what the client pays moved.
+        $duplicate = $line->replicate();
+        $duplicate->public_id = (string) Str::uuid();
+        $duplicate->sort_order = (int) $line->sort_order + 1;
+        $duplicate->save();
+
+        $invoice = $line->invoice()->firstOrFail();
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $rows = array_column($detail['comparisons'], null, 'invoice_number');
+        $row = $rows[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        // Comparing prices as a multiset would call one-of-these-instead-of-two
+        // a money difference, and no correction could ever explain it.
+        $this->assertSame('composition_differs', $row['verdict']);
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.
