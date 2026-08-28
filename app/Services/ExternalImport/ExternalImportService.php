@@ -33,7 +33,8 @@ use Throwable;
  *     related_exists: array<array-key, bool>,
  *     target_exists: array<array-key, bool>,
  *     table_exists: array<array-key, bool>,
- *     table_columns: array<array-key, list<string>>
+ *     table_columns: array<array-key, list<string>>,
+ *     source_columns: array<array-key, list<string>>
  * }
  */
 final class ExternalImportService
@@ -79,8 +80,8 @@ final class ExternalImportService
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
         /** @var ImportCounts $counts */
         $counts = $this->emptyCounts($inventory);
-        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
-        $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
+        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
+        $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
         $this->linkedSourceKeys = [];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
@@ -603,6 +604,7 @@ final class ExternalImportService
             'target_exists' => [],
             'table_exists' => [],
             'table_columns' => [],
+            'source_columns' => [],
         ];
     }
 
@@ -649,6 +651,119 @@ final class ExternalImportService
         $columns = $queryCache['table_columns'][$table];
 
         return $columns;
+    }
+
+    /**
+     * @param  QueryCache  $queryCache
+     * @return list<string>
+     */
+    private function sourceColumns(string $sourceRuntimeName, string $table, array &$queryCache): array
+    {
+        if (! array_key_exists($table, $queryCache['source_columns'])) {
+            $queryCache['source_columns'][$table] = Schema::connection($sourceRuntimeName)->hasTable($table)
+                ? Schema::connection($sourceRuntimeName)->getColumnListing($table)
+                : [];
+        }
+
+        /** @var list<string> $columns */
+        $columns = $queryCache['source_columns'][$table];
+
+        return $columns;
+    }
+
+    /**
+     * The live invoice line that replaced a superseded one, when exactly one did.
+     *
+     * The source regenerates an invoice by soft-deleting its lines and inserting
+     * fresh ones, and it does not repoint the rows that named the old line. So a
+     * time entry or a milestone can name a line that no longer exists while the
+     * work it records was billed - on that same invoice, by the line that
+     * replaced it. One issued invoice in the migrated data carries two live
+     * lines and forty-two superseded ones, and twenty live time entries still
+     * name copies from earlier generations. Left unresolved they arrive here
+     * unbilled, which is indistinguishable from work nobody has charged for, and
+     * the next generation run charges for it again.
+     *
+     * The superseded line is read unfiltered, deliberately and as the only such
+     * read: it is deleted at the source, it will never be imported, and the one
+     * thing asked of it is which invoice it belonged to.
+     *
+     * The replacement has to be unambiguous - exactly one live line of the same
+     * type on that invoice - because attaching work to a line that did not bill
+     * it suppresses a charge that is owed. That is the same size of mistake in
+     * the other direction, so anything less than certain is refused and
+     * reported rather than guessed.
+     *
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     */
+    private function supersededLineId(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        string $supersededKey,
+        string $destinationName,
+        int $workspaceId,
+        array $ledgerItems,
+        array &$queryCache,
+    ): ?int {
+        if ($supersededKey === '') {
+            return null;
+        }
+
+        $columns = $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache);
+        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at'] as $required) {
+            if (! in_array($required, $columns, true)) {
+                return null;
+            }
+        }
+
+        $superseded = $source->table('client_invoice_lines')
+            ->where('client_invoice_line_id', $supersededKey)
+            ->whereNotNull('deleted_at')
+            ->first();
+
+        if ($superseded === null) {
+            return null;
+        }
+
+        $supersededRow = (array) $superseded;
+        $invoiceKey = $supersededRow['client_invoice_id'] ?? null;
+        $lineType = $supersededRow['line_type'] ?? null;
+
+        if ($invoiceKey === null || $lineType === null) {
+            return null;
+        }
+
+        // Two is enough to know it is ambiguous, and stops an invoice with a
+        // long line history being read in full to answer a yes-or-no question.
+        $replacements = SourceRows::for($source, $sourceRuntimeName, 'client_invoice_lines', $columns)
+            ->where('client_invoice_id', $invoiceKey)
+            ->where('line_type', $lineType)
+            ->limit(2)
+            ->get();
+
+        if ($replacements->count() !== 1) {
+            return null;
+        }
+
+        $replacement = (array) $replacements->first();
+        $replacementKey = (string) ($replacement['client_invoice_line_id'] ?? '');
+
+        // Held to the same fingerprint check as the row carrying the link. A
+        // replacement edited since this run observed it describes a snapshot
+        // this run never saw, and a billing link must not be written from one.
+        if (! $this->observedThisRun('client_invoice_lines', $replacementKey, $replacement, $ledgerItems)) {
+            return null;
+        }
+
+        $publicId = $this->resolveParentId('client_invoice_lines', $replacementKey, $ledgerItems, $queryCache);
+        $lineId = $this->internalId($destinationName, 'client_invoice_lines', $publicId);
+
+        if ($lineId === null || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, $workspaceId)) {
+            return null;
+        }
+
+        return $lineId;
     }
 
     /**
@@ -789,7 +904,7 @@ final class ExternalImportService
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
-     * @param  array{source_rows:int,inserted:int,idempotent:int,rejected:int,failed:int}  $linkCounts
+     * @param  array{source_rows:int,inserted:int,idempotent:int,recovered:int,rejected:int,failed:int}  $linkCounts
      * @param  array<string, mixed>  $counts
      */
     private function reconcileTimeEntryInvoiceLinks(
@@ -834,6 +949,17 @@ final class ExternalImportService
             $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+
+            // An entry naming a line the source has superseded is billed work,
+            // not unbilled work, so follow the claim to the line that replaced
+            // it rather than dropping it and letting it be charged again.
+            if ($timeId !== null && $lineId === null) {
+                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache);
+
+                if ($lineId !== null) {
+                    $linkCounts['recovered']++;
+                }
+            }
 
             if ($timeId === null || $lineId === null) {
                 $linkCounts['failed']++;
@@ -888,7 +1014,7 @@ final class ExternalImportService
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
-     * @param  array{source_rows:int,linked:int,idempotent:int,rejected:int,failed:int}  $milestoneCounts
+     * @param  array{source_rows:int,linked:int,idempotent:int,recovered:int,rejected:int,failed:int}  $milestoneCounts
      * @param  array<string, mixed>  $counts
      */
     private function reconcileMilestoneTaskInvoiceLinks(
@@ -933,6 +1059,17 @@ final class ExternalImportService
             $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $taskId = $this->internalId($destinationName, 'client_tasks', $taskPublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+
+            // Same hazard as a time entry's claim, and the same recovery: a
+            // milestone naming a superseded line was billed, and an unlinked
+            // milestone is one the next generation run charges for again.
+            if ($taskId !== null && $lineId === null) {
+                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache);
+
+                if ($lineId !== null) {
+                    $milestoneCounts['recovered']++;
+                }
+            }
 
             if ($taskId === null || $lineId === null) {
                 $milestoneCounts['failed']++;

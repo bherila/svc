@@ -489,6 +489,158 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
     }
 
+    /**
+     * The source regenerates an invoice by soft-deleting its lines and
+     * inserting fresh ones, without repointing the entries that named the old
+     * ones. Line 122 below is one of those superseded copies.
+     */
+    private function supersededClaimSource(PDO $pdo, string $replacementType = 'time', bool $withSecondLiveLine = false): void
+    {
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Superseded copy', '1', '100.00', '100.00', 'time', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Live replacement', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
+
+        if ($withSecondLiveLine) {
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Second live line of the same type', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
+        }
+
+        $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
+    }
+
+    public function test_a_time_entry_naming_a_superseded_line_is_billed_by_its_replacement(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $liveLineId = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
+        $pivot = DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['link_counts']['inserted']);
+        $this->assertSame(0, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        // The superseded copy is deleted at the source and must stay uneported;
+        // only its live replacement is here to be linked to.
+        $this->assertSame(1, ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->count());
+        $this->assertNotNull($pivot);
+        $this->assertSame((int) $liveLineId, (int) $pivot->client_invoice_line_id);
+        // The whole point: the generator must not read this as outstanding work
+        // and charge the client for hours the invoice already billed.
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_two_live_lines_could_be_the_replacement(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), withSecondLiveLine: true);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // Attaching the work to whichever line happened to sort first would
+        // suppress a charge that may be owed, so an ambiguous claim is reported
+        // rather than guessed.
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_no_live_line_shares_its_type(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        // The invoice kept a line, but not one of the superseded line's type -
+        // the shape of a line an operator removed rather than regenerated.
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), replacementType: 'adjustment');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    public function test_a_superseded_claim_never_resolves_across_a_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+        $pivotsAfterOwner = DB::table('client_invoice_line_time_entries')->count();
+
+        // The ledger is keyed on source identity, so a run for another tenant
+        // resolves the replacement to the owning tenant's invoice line. The
+        // foreign key is not workspace-composite and would accept it.
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame($pivotsAfterOwner, DB::table('client_invoice_line_time_entries')->count());
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+
+        $first = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The replacement now differs from the snapshot this run observed, so
+        // it describes a line nobody here has read. A billing link must not be
+        // written from one, however plausible the replacement looks.
+        $pdo->exec("UPDATE client_invoice_lines SET line_total = '250.00' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $first['link_counts']['recovered']);
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        // Refusing to resolve the claim again must not undo the link the run
+        // that did read the replacement already established.
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->count());
+    }
+
+    public function test_a_milestone_naming_a_superseded_line_is_billed_by_its_replacement(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Superseded copy', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (133, 131, NULL, NULL, 'Live replacement', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $liveLineId = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
+        $taskLink = ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id');
+
+        $this->assertSame(1, $summary['milestone_link_counts']['recovered']);
+        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
+        $this->assertNotNull($taskLink);
+        $this->assertSame((int) $liveLineId, (int) $taskLink);
+    }
+
     public function test_a_milestone_link_refuses_a_task_owned_by_another_workspace(): void
     {
         $user = User::factory()->create();

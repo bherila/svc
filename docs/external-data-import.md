@@ -36,6 +36,19 @@ that source-side integer IDs can be reused.
    is left alone, because repointing a billed row is not a decision an import
    pass gets to make.
 
+   A claim can name a line the source has since superseded. The source
+   regenerates an invoice by soft-deleting its lines and inserting fresh ones
+   without repointing the rows that named the old ones, so the work was billed
+   while the line that billed it is gone. Such a claim is followed to the
+   invoice the superseded line belonged to and resolved to the live line that
+   replaced it, but only when exactly one live line on that invoice shares its
+   type. Anything less than certain is refused and reported: attaching work to a
+   line that did not bill it suppresses a charge that is owed, which is the same
+   size of mistake as billing it twice. The superseded line is read unfiltered -
+   the only such read - because the one thing asked of it is which invoice it
+   was on, and the replacement is held to the same fingerprint check as the row
+   carrying the claim.
+
 A reconciliation pass reads the source a second time, later than the read the
 importer observed, so it re-checks each row against the fingerprint the ledger
 recorded. That covers both a row this run refused as `source_changed` and one
