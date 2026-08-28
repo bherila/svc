@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -15,6 +18,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use ReflectionMethod;
 use Tests\TestCase;
 
 /**
@@ -84,6 +88,1011 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * The command claims money is exact to the cent. Comparing totals per type
+     * cannot deliver that: a line repriced with a compensating quantity reaches
+     * the same total, the same per-type total and the same line count, so every
+     * aggregate agrees while the client was charged for something else.
+     */
+    public function test_a_repriced_line_is_not_reported_as_an_exact_reproduction(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = $invoice->lines()->orderByDesc('total_amount')->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Half the price, twice as many. Total unchanged, so nothing an
+        // aggregate looks at moves.
+        $line->forceFill([
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (float) $line->quantity * 2,
+        ])->save();
+
+        // tempnam() creates the file it names, so use that path rather than a
+        // suffixed sibling - otherwise every run leaves the original behind.
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->assertFailed();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $verdicts = array_column($detail['comparisons'], 'verdict', 'invoice_number');
+
+        // Every aggregate agrees on this invoice, so the old comparison called
+        // it an exact reproduction. The individual lines are what disagree.
+        $this->assertArrayHasKey((string) $invoice->invoice_number, $verdicts);
+        // A repriced line is a money difference, not an arrangement: the client
+        // was charged for something they were not charged for. It gates.
+        $this->assertSame('money_differs', $verdicts[(string) $invoice->invoice_number]);
+    }
+
+    /**
+     * The deliberate corrections say which line types a period should carry.
+     * They say nothing about what a line of that type costs, so a repriced line
+     * must not be waived by the correction that explains why its type moved.
+     */
+    public function test_a_repriced_line_is_not_waived_by_a_correction_that_covers_its_type(): void
+    {
+        // additional_hours is capacity-dependent, so this is the invoice a
+        // correction could otherwise excuse - and it is charged for, so a
+        // question about its money means something.
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+
+        // Only the unit price moves; the invoice total is untouched, so nothing
+        // above the line level has anything to notice.
+        $overage->forceFill(['unit_amount' => (int) $overage->unit_amount + 5000])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertSame(0, $row['money_delta']);
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
+     * A line the engine no longer produces is a composition change, and
+     * composition is what the four deliberate corrections exist to explain. It
+     * must not be mistaken for a repricing, which is never explainable.
+     */
+    public function test_a_line_the_engine_no_longer_produces_is_not_read_as_a_repricing(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
+
+        // History carried this charge twice; the engine produces it once. Every
+        // amount is identical, so nothing about what the client pays moved.
+        $duplicate = $line->replicate();
+        $duplicate->public_id = (string) Str::uuid();
+        $duplicate->sort_order = (int) $line->sort_order + 1;
+        $duplicate->save();
+
+        $invoice = $line->invoice()->firstOrFail();
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $rows = array_column($detail['comparisons'], null, 'invoice_number');
+        $row = $rows[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        // Comparing prices as a multiset would call one-of-these-instead-of-two
+        // a money difference, and no correction could ever explain it.
+        $this->assertSame('composition_differs', $row['verdict']);
+    }
+
+    /**
+     * The composer writes amounts into its own wording, so a repriced line
+     * arrives with a different description. If the description identified the
+     * charge, the repricing would read as one line removed and another added -
+     * composition, which a correction is allowed to waive.
+     */
+    public function test_a_repricing_hidden_by_its_own_description_still_gates(): void
+    {
+        [, $retainer] = $this->chargedOverageHistory();
+        $invoice = $retainer->invoice()->firstOrFail();
+        $this->assertMatchesRegularExpression('/\d+:\d{2}/', (string) $retainer->description, 'This fixture needs an amount-bearing description.');
+
+        // History priced this charge differently, and its wording quotes the
+        // hours it was priced from - exactly what the composer would have
+        // written for them.
+        $retainer->forceFill([
+            'unit_amount' => (int) $retainer->unit_amount + 1000,
+            'description' => (string) preg_replace('/\d+:\d{2}/', '99:00', (string) $retainer->description),
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
+     * Charges are paired by what their wording says they are for, with only the
+     * amounts a composer writes into that wording removed. Removing every digit
+     * instead would make "Phase 1" and "Phase 2" one charge - and two charges
+     * that exchange prices leave every total, count and distinct amount
+     * unchanged, so pairing is the only thing that can see the swap.
+     */
+    public function test_charge_wording_keeps_the_numbers_that_are_not_amounts(): void
+    {
+        $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
+
+        $phaseOne = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 1', 'milestone');
+        $phaseTwo = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 2', 'milestone');
+        $this->assertNotSame($phaseOne, $phaseTwo);
+
+        // A milestone title is user text appended whole, so a figure in it
+        // names the charge rather than pricing it. Nothing outside the
+        // descriptions the billing services generate is normalised - including
+        // a title that happens to end in a parenthetical of its own.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $100', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package $200', 'milestone'),
+        );
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($100)', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($200)', 'milestone'),
+        );
+
+        // A title can read exactly like a generated retainer line. The type is
+        // what says whether the billing services wrote it.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'milestone'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Monthly Retainer (20 hours) - Feb 1, 2024 through Feb 29, 2024', 'milestone'),
+        );
+
+        // A worker's name is user text too, and it sits before the generated
+        // suffix rather than after it. Only the last group is the amount.
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Junior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
+        );
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (1:00 @ 60.00 USD/hr)', 'subcontractor'),
+            (string) $withoutAmounts->invoke(null, 'Subcontractor: Alex (Senior) (2:00 @ 90.00 USD/hr)', 'subcontractor'),
+        );
+
+        // And a generated line keeps everything that names its cycle while
+        // losing the hours it was priced from.
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (99 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
+        );
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024', 'retainer'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Mar 1, 2024 through Mar 31, 2024', 'retainer'),
+        );
+
+        // The amounts, though, have to go: the composer writes them from the
+        // very price and quantity the comparison exists to detect.
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ 150.00 USD/hr)', 'additional_hours'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ 9.00 USD/hr)', 'additional_hours'),
+        );
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (15:00 applied to February 2024 pool)', 'prior_month_retainer'),
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (2:30 applied to February 2024 pool)', 'prior_month_retainer'),
+        );
+    }
+
+    /**
+     * Two charges exchanging prices leaves the invoice total, the line count
+     * and the set of distinct amounts all unchanged. Nothing that looks at the
+     * invoice as a whole can see it; only pairing each charge to its own
+     * counterpart can.
+     */
+    public function test_two_charges_that_swap_prices_are_not_a_match(): void
+    {
+        [$overage, $retainer] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertNotSame((int) $overage->total_amount, (int) $retainer->total_amount);
+
+        // The two charges exchanged prices. Every total, every count and every
+        // amount the invoice states is unchanged.
+        $carry = ['unit_amount' => (int) $overage->unit_amount, 'quantity' => (string) $overage->quantity, 'total_amount' => (int) $overage->total_amount];
+        $overage->forceFill(['unit_amount' => (int) $retainer->unit_amount, 'quantity' => (string) $retainer->quantity, 'total_amount' => (int) $retainer->total_amount])->save();
+        $retainer->forceFill($carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    /**
+     * A charge whose wording changes along with its price has no counterpart to
+     * be paired with, so pairing cannot see the repricing. What gives it away
+     * is that the invoice now states an amount it did not state before.
+     */
+    public function test_a_repricing_that_takes_its_wording_with_it_still_gates(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->orderByDesc('total_amount')->firstOrFail();
+
+        // Nothing recognisable survives to pair on, and the invoice total is
+        // untouched, so only the amounts themselves say anything happened.
+        $line->forceFill([
+            'description' => 'An entirely different charge',
+            'unit_amount' => (int) $line->unit_amount + 700,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($line->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A line the engine no longer produces, priced at an amount that appears
+     * nowhere else, is still a line removed. Comparing the amounts an invoice
+     * states must not read that as a repricing, or the corrections that exist
+     * to remove exactly such a line could never explain one.
+     */
+    public function test_removing_a_uniquely_priced_line_stays_explainable(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'prior_month_retainer')->firstOrFail();
+        $invoiceNumber = (string) $line->invoice()->firstOrFail()->invoice_number;
+
+        // History carried one more charge than the engine produces, at a price
+        // no other line on the invoice states.
+        $extra = $line->replicate();
+        $extra->public_id = (string) Str::uuid();
+        $extra->sort_order = (int) $line->sort_order + 1;
+        $extra->unit_amount = 1234;
+        $extra->quantity = '1.0000';
+        $extra->total_amount = 0;
+        $extra->description = 'A charge the engine no longer makes';
+        $extra->save();
+
+        // Reported, not gated: the money the client owes is unchanged and a
+        // correction is allowed to account for the line being gone.
+        $this->assertSame('composition_differs', $this->verdictFor($invoiceNumber));
+    }
+
+    /**
+     * A charge repriced onto an amount the invoice already states changes only
+     * how many times that amount appears. No total moves, no line count moves,
+     * and if the wording moved with the price there is nothing to pair either -
+     * one count falling while another rises is the whole signal.
+     */
+    public function test_a_repricing_onto_an_existing_amount_still_gates(): void
+    {
+        [$overage, $retainer] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+
+        // History priced this charge exactly like the other one and worded it
+        // like nothing the engine writes, so pairing has no counterpart and
+        // only the count of that amount says anything happened.
+        $overage->forceFill([
+            'description' => 'A charge worded nothing like the engine words it',
+            'unit_amount' => (int) $retainer->unit_amount,
+            'quantity' => (string) $retainer->quantity,
+            'total_amount' => (int) $overage->total_amount,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    /**
+     * A correction that removes one charge and adds another moves money in
+     * aggregate without repricing anything. The money must still be reported,
+     * but the correction has to remain able to account for it - otherwise the
+     * corrections this port makes on purpose can never explain their own work.
+     */
+    public function test_a_charge_replaced_by_another_stays_explainable(): void
+    {
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+
+        // Different wording and different amounts: nothing to pair against, so
+        // this is one charge gone and another arrived rather than a repricing.
+        $overage->forceFill([
+            'description' => 'A charge the engine replaced with a different one',
+            'unit_amount' => 2500,
+            'quantity' => '1.0000',
+            'total_amount' => 2500,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertFalse($row['line_repriced'], 'Nothing was repriced; a charge was replaced.');
+        // Refusing attribution on any line-money movement would make
+        // composition permanently unexplainable, which is the opposite of what
+        // the deliberate corrections are for.
+        $this->assertNotNull($row['explained_by'] ?? null);
+    }
+
+    /**
+     * One worker on two projects gets one line per project, worded identically.
+     * Exchanging their prices moves no total, no count, and no amount the
+     * invoice states - only which project each is filed under separates them,
+     * so the pairing has to see the project before it falls back to wording.
+     */
+    public function test_two_concurrent_charges_that_swap_prices_are_not_a_match(): void
+    {
+        $here = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
+        ]);
+        $there = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
+        ]);
+
+        // One worker, two projects, two different rates. The composer writes a
+        // line per project, worded identically because the wording names the
+        // worker rather than the project.
+        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $subcontracted->count(), 'The fixture must produce two concurrent subcontractor lines.');
+
+        /** @var ClientInvoiceLine $a */
+        $a = $subcontracted->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $subcontracted->last();
+        // Their wording differs only by the rate it quotes, so once the amounts
+        // are taken out they name the same charge - which is the whole point:
+        // only the project tells these two apart.
+        $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, (string) $a->description, (string) $a->type),
+            (string) $withoutAmounts->invoke(null, (string) $b->description, (string) $b->type),
+        );
+        $this->assertNotSame((int) $a->unit_amount, (int) $b->unit_amount);
+
+        // History charged each project at the other's rate, wording and all.
+        // Every total, every count and every amount the invoice states is
+        // unchanged; only which project paid which rate moved.
+        $carry = ['unit_amount' => (int) $a->unit_amount, 'total_amount' => (int) $a->total_amount, 'description' => (string) $a->description];
+        $a->forceFill(['unit_amount' => (int) $b->unit_amount, 'total_amount' => (int) $b->total_amount, 'description' => (string) $b->description])->save();
+        $b->forceFill($carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A charge that moves project and changes price at the same time. Filing
+     * the move under attribution must not take the repricing with it.
+     */
+    /**
+     * Two concurrent charges that both move and exchange prices. Nothing links
+     * which became which, so pairing cannot decide - and where it cannot
+     * decide it must not certify, or a repricing passes as a pair of moves.
+     */
+    public function test_two_concurrent_charges_that_both_move_and_swap_are_not_certified(): void
+    {
+        $here = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
+        ]);
+        $there = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
+        ]);
+
+        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $subcontracted = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $subcontracted->count(), 'The fixture must produce two concurrent subcontractor lines.');
+
+        $elsewhere = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Elsewhere',
+        ]);
+        $beyond = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Beyond',
+        ]);
+
+        /** @var ClientInvoiceLine $a */
+        $a = $subcontracted->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $subcontracted->last();
+
+        // Both filed somewhere else than the engine files them, and their
+        // prices exchanged. The first pass can pair neither, and under the
+        // second they are one identity carrying the same two prices.
+        $carry = ['unit_amount' => (int) $a->unit_amount, 'total_amount' => (int) $a->total_amount, 'description' => (string) $a->description];
+        $a->forceFill(['client_project_id' => $elsewhere->id, 'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount, 'description' => (string) $b->description])->save();
+        $b->forceFill(['client_project_id' => $beyond->id] + $carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * Which recurring item a line belongs to is filing, like its project or its
+     * date. A charge that moves between items while its price changes must
+     * still be recognised as the same charge repriced - moving between items is
+     * exactly what the recurring-item correction is about, so letting the move
+     * hide the repricing would hand it the one thing it must never waive.
+     */
+    public function test_a_charge_that_moves_between_recurring_items_is_not_filed_as_a_move(): void
+    {
+        $invoice = $this->generatedHistory();
+        $agreement = ClientAgreement::query()->where('workspace_id', $this->workspace->id)->firstOrFail();
+
+        $item = ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => 'Somewhere to move to',
+            'cadence' => 'monthly',
+            'quantity' => '1.0000',
+            'amount' => 1000,
+            'currency' => 'USD',
+            'is_active' => false,
+        ]);
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('total_amount')->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Filed under a recurring item the engine does not use, at half the
+        // price and twice the quantity, so the invoice total never moves.
+        $line->forceFill([
+            'client_agreement_recurring_item_id' => $item->id,
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $row = array_column($detail['comparisons'], null, 'invoice_number')[(string) $invoice->invoice_number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The move must not absorb the repricing.');
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
+     * A charge misfiled onto a key the other side already uses. Dropping every
+     * line that shares a key would take the other side's genuine line out with
+     * it, and both would leave the comparison together.
+     */
+    public function test_a_charge_misfiled_onto_an_occupied_key_is_still_paired(): void
+    {
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
+
+        // History filed this charge under the other project - where a charge
+        // already sits - and repriced it to match.
+        $a->forceFill([
+            'client_project_id' => $b->client_project_id,
+            'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount,
+            'description' => (string) $b->description,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The collision must not take the genuine line out of the pairing.');
+    }
+
+    /**
+     * A line stores its own agreement, restored per source row, so it need not
+     * match the invoice's. Reattributing a charge to another agreement changes
+     * nothing else about it and must not read as an exact reproduction.
+     */
+    public function test_a_line_reattributed_to_another_agreement_is_not_a_match(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        $other = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Another agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2024-01-01',
+            'retainer_minutes' => 0,
+            'retainer_amount' => 0,
+            'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
+            'rollover_months' => 0,
+        ]);
+
+        ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('total_amount')->firstOrFail()
+            ->forceFill(['client_agreement_id' => $other->id])->save();
+
+        $this->assertSame('composition_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    /**
+     * A charge that moves onto an occupied key while keeping its own price. The
+     * destination key gains a price without anything being repriced, so
+     * comparing the two price sets whole calls it a repricing; matching the
+     * occurrences first leaves only the move.
+     */
+    public function test_a_charge_that_moves_without_repricing_stays_composition(): void
+    {
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
+
+        // Filed under the other project, at its own price. Every amount the
+        // invoice states is unchanged; only where one charge sits moved.
+        $a->forceFill(['client_project_id' => $b->client_project_id])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertFalse($row['line_repriced'], 'Nothing was repriced; a charge moved.');
+        $this->assertSame('composition_differs', $row['verdict']);
+    }
+
+    /**
+     * Two charges collapsed onto one key and both repriced. The key is shared,
+     * and each side is left holding a price the other does not state - which is
+     * the first pass's whole question, asked of two charges at once.
+     */
+    public function test_two_charges_filed_onto_one_key_and_repriced_are_caught(): void
+    {
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
+
+        // Both filed where the second sits, and both repriced to figures the
+        // engine never produces.
+        $a->forceFill(['client_project_id' => $b->client_project_id, 'unit_amount' => 1111, 'total_amount' => 1111])->save();
+        $b->forceFill(['unit_amount' => 2222, 'total_amount' => 2222])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced']);
+    }
+
+    /**
+     * Two charges under one filing at one price, one of which the engine
+     * prices differently. The price is still stated on both sides and both
+     * charges still share their filing, so every pairing pass matches them off
+     * against each other - only counting the occurrences shows that one of the
+     * two left that price.
+     */
+    public function test_one_of_two_identically_priced_charges_being_repriced_is_caught(): void
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'One project',
+        ]);
+
+        // One worker, one project, two rates - so the composer writes two lines
+        // that differ only in the rate their wording quotes, which is exactly
+        // what identity normalises away.
+        foreach ([6000, 9000] as $rate) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two charges under one filing.');
+
+        /** @var ClientInvoiceLine $a */
+        $a = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $lines->last();
+
+        // History charged both at the second's price.
+        $a->forceFill([
+            'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount,
+            'description' => (string) $b->description,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced']);
+    }
+
+    /**
+     * A recurring item keeps its id when its description is rewritten. Nothing
+     * about the wording links the two versions, but the item does - and without
+     * asking it, an item renamed and repriced in one edit pairs with nothing
+     * and the repricing reads as a line removed and another added.
+     */
+    public function test_a_renamed_recurring_item_is_still_paired_by_its_id(): void
+    {
+        // The engine bills this item, so both sides carry its id.
+        $this->generatedHistory(function (ClientAgreement $agreement): void {
+            ClientAgreementRecurringItem::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_agreement_id' => $agreement->id,
+                'description' => 'Support plan',
+                'cadence' => 'monthly',
+                'quantity' => '1.0000',
+                'amount' => 5000,
+                'currency' => 'USD',
+                'effective_on' => '2024-01-01',
+                'is_active' => true,
+            ]);
+        });
+
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->whereNotNull('client_agreement_recurring_item_id')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must produce a recurring-item line.');
+
+        $invoice = $line->invoice()->firstOrFail();
+        $unit = (int) $line->unit_amount;
+        $this->assertGreaterThan(0, $unit);
+
+        // History worded the charge differently and priced it differently, with
+        // a compensating quantity so the invoice total never moves. The item id
+        // is the only thing the two versions share.
+        $line->forceFill([
+            'description' => 'Support plan, renamed since',
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The item id links the two versions when the wording cannot.');
+    }
+
+    /**
+     * Subtotal and tax are money on the invoice header. Moving them by
+     * offsetting amounts leaves the total, the currency and every line
+     * untouched - and bills the client differently for the same figure.
+     */
+    public function test_an_offsetting_subtotal_and_tax_are_a_money_difference(): void
+    {
+        $invoice = $this->generatedHistory();
+        $this->assertGreaterThan(0, (int) $invoice->subtotal_amount);
+
+        // The same total, split differently between the charge and its tax.
+        $invoice->forceFill([
+            'subtotal_amount' => (int) $invoice->subtotal_amount - 500,
+            'tax_amount' => (int) $invoice->tax_amount + 500,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    /**
+     * Two charges the engine no longer produces, whose totals cancel. Every
+     * count falls and none rises, the invoice total does not move, and the
+     * client was nonetheless shown two charges they are no longer shown.
+     */
+    public function test_two_dropped_charges_that_cancel_are_still_a_money_difference(): void
+    {
+        $invoice = $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_id', $invoice->id)->orderByDesc('total_amount')->firstOrFail();
+
+        // Both of one type, so that type's net total is exactly where it was -
+        // which is all the per-type comparison would have looked at.
+        foreach ([['An adjustment the engine no longer makes', 'adjustment', 10000], ['Another the engine no longer makes', 'adjustment', -10000]] as [$description, $type, $amount]) {
+            $extra = $line->replicate();
+            $extra->public_id = (string) Str::uuid();
+            $extra->description = $description;
+            $extra->type = $type;
+            $extra->quantity = '1.0000';
+            $extra->unit_amount = abs($amount);
+            $extra->total_amount = $amount;
+            $extra->sort_order = (int) $line->sort_order + 10;
+            $extra->save();
+        }
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        // The invoice total is untouched, so nothing above the lines notices.
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        // And attribution has to hear that this type was involved, or a
+        // correction covering the rest of the invoice waives these away.
+        $this->assertContains('adjustment', $row['changed_types']);
+    }
+
+    /**
+     * A charge that becomes a line charging nothing. Only a change between two
+     * amounts that charge nobody is representation - money left here, and the
+     * pairing has to still see the two as one charge to say so.
+     */
+    public function test_a_charge_falling_to_nothing_is_a_repricing(): void
+    {
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertNotSame(0, (int) $overage->total_amount);
+
+        // History charged for this; the engine no longer does, at the same
+        // wording and the same filing.
+        $overage->forceFill(['unit_amount' => 0, 'total_amount' => 0])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'A charge falling to nothing is the same charge at a different price.');
+        $this->assertNull($row['explained_by'] ?? null);
+    }
+
+    /**
+     * A charge reclassified between capacity types, at a different amount. That
+     * is one of the four things this port does on purpose, and it is a charge
+     * removed and another added rather than one charge repriced - so the money
+     * is reported and the correction is still allowed to account for it.
+     */
+    public function test_a_reclassified_charge_stays_explainable(): void
+    {
+        [$overage] = $this->chargedOverageHistory();
+        $invoice = $overage->invoice()->firstOrFail();
+        $this->assertSame('additional_hours', (string) $overage->type);
+
+        // History billed this as prior-month work, and for a different amount.
+        $overage->forceFill([
+            'type' => 'prior_month_billable',
+            'unit_amount' => (int) $overage->unit_amount + 2500,
+            'total_amount' => (int) $overage->total_amount + 2500,
+        ])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        $this->assertFalse($row['line_repriced'], 'A charge of another kind is not the same charge repriced.');
+    }
+
+    /**
+     * A charge repriced while another arrives at the price it left. That price
+     * never moves in count, so nothing looks like a substitution and the new
+     * one reads as a plain addition - which it is, and equally is not. Where a
+     * pairing cannot tell, it must not certify.
+     */
+    public function test_an_addition_that_could_be_masking_a_repricing_is_not_certified(): void
+    {
+        [$kept, $dropped] = $this->twoChargesUnderOneFiling();
+        $invoice = $kept->invoice()->firstOrFail();
+
+        // History held only one of the two charges the engine produces, so the
+        // engine's extra one arrives beside a price that never moved.
+        $dropped->delete();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'A pairing that cannot decide must not certify.');
+    }
+
+    /**
+     * A milestone's title and price are both editable, so rewriting them
+     * together leaves nothing in the wording linking the two versions. The
+     * claim the task holds on its invoice line does link them, and this command
+     * releases and recreates exactly that claim.
+     */
+    public function test_a_retitled_milestone_is_still_paired_by_its_claim(): void
+    {
+        $task = null;
+        $this->generatedHistory(function (ClientAgreement $agreement) use (&$task): void {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Deliverables',
+            ]);
+
+            $task = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+                'status' => 'completed',
+                'completed_at' => '2024-02-20',
+                'milestone_price_amount' => 250000,
+            ]);
+        });
+
+        $this->assertInstanceOf(ClientTask::class, $task);
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'milestone')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must bill a milestone.');
+        $invoice = $line->invoice()->firstOrFail();
+
+        // The engine bills from the task's current title and price, so changing
+        // both leaves the two versions with nothing in common but the claim.
+        $task->forceFill(['title' => 'Phase one, retitled', 'milestone_price_amount' => 275000])->save();
+
+        $row = $this->comparisonFor((string) $invoice->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced'], 'The claim links the two versions when the wording cannot.');
+    }
+
+    /**
+     * Two deliverables alike in every field the invoice shows. If the claim is
+     * not compared, a milestone billed against the wrong one reproduces
+     * exactly - the charge is right and the thing it paid for is not.
+     */
+    public function test_a_milestone_claimed_by_a_different_task_is_not_a_match(): void
+    {
+        $tasks = [];
+        $this->generatedHistory(function (ClientAgreement $agreement) use (&$tasks): void {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Deliverables',
+            ]);
+
+            // One deliverable the engine bills, and one it does not - so the
+            // invoice carries a single milestone line and nothing but its
+            // claim can say which deliverable it paid for.
+            $tasks[] = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+                'status' => 'completed',
+                'completed_at' => '2024-02-20',
+                'milestone_price_amount' => 250000,
+            ]);
+
+            $tasks[] = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+            ]);
+        });
+
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'milestone')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must bill a milestone.');
+        $invoice = $line->invoice()->firstOrFail();
+
+        // History billed this charge against the other deliverable.
+        $claimant = ClientTask::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_line_id', $line->id)->firstOrFail();
+        $other = ClientTask::query()->where('workspace_id', $this->workspace->id)
+            ->whereKeyNot($claimant->getKey())->firstOrFail();
+
+        // Same leading characters, so a comparison key that shortens the claim
+        // cannot tell these two apart.
+        $prefix = substr((string) $claimant->public_id, 0, 8);
+        $other->forceFill(['public_id' => $prefix.substr((string) Str::uuid(), 8)])->save();
+
+        $claimant->forceFill(['client_invoice_line_id' => null])->save();
+        $other->forceFill(['client_invoice_line_id' => $line->id])->save();
+
+        $this->assertSame($prefix, substr((string) $other->public_id, 0, 8));
+        $this->assertNotSame((string) $claimant->public_id, (string) $other->public_id);
+        $this->assertNotSame('match', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->orderByDesc('total_amount')->firstOrFail();
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Somewhere else',
+        ]);
+
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Half the price at twice the quantity, so the invoice total is
+        // untouched, and filed under a different project at the same time.
+        $line->forceFill([
+            'client_project_id' => $project->id,
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $number = (string) $line->invoice()->firstOrFail()->invoice_number;
+        $row = array_column($detail['comparisons'], null, 'invoice_number')[$number] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame('money_differs', $row['verdict']);
+        // Repriced, not merely moved. The move puts it beyond the pairing that
+        // knows where a charge is filed, so only pairing on what the charge is
+        // can still recognise it as the same charge at a different price.
+        $this->assertTrue($row['line_repriced']);
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.
@@ -123,7 +1132,7 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         ClientInvoiceLine::query()->create([
             'workspace_id' => $this->workspace->id,
-            'client_invoice_id' => (int) ClientInvoice::query()->where('invoice_number', 'SVC-ADHOC')->value('id'),
+            'client_invoice_id' => (int) ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('invoice_number', 'SVC-ADHOC')->value('id'),
             'type' => 'additional_hours', 'description' => 'One-off', 'quantity' => '1',
             'unit_amount' => 50000, 'tax_amount' => 0, 'total_amount' => 50000, 'sort_order' => 0,
         ]);
@@ -208,6 +1217,196 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /**
+     * Two charges the engine files under one key.
+     *
+     * One worker, one project, two rates: the composer writes a line each, and
+     * their wording differs only in the rate it quotes - which identity
+     * normalises away, leaving the same filing for both.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine}
+     */
+    private function twoChargesUnderOneFiling(): array
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'One project',
+        ]);
+
+        foreach ([6000, 9000] as $rate) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two charges under one filing.');
+
+        /** @var ClientInvoiceLine $first */
+        $first = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $last */
+        $last = $lines->last();
+
+        return [$first, $last];
+    }
+
+    /**
+     * History whose overage is actually charged for.
+     *
+     * The default fixture absorbs its overage into the rollover pool, which
+     * produces capacity lines at a total of zero - real lines, but ones that
+     * charge nobody, so no question about money can be asked of them.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine} the charged
+     *                                                           overage line and the retainer line on the same invoice
+     */
+    private function chargedOverageHistory(): array
+    {
+        $this->generatedHistory(function (ClientAgreement $agreement): void {
+            $agreement->forceFill(['rollover_months' => 0])->save();
+
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $this->project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-03-14',
+                'minutes' => 3000,
+                'description' => 'Far more work than the retainer covers',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+            ]);
+        });
+
+        $overage = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'additional_hours')->where('total_amount', '!=', 0)->orderBy('id')->first();
+        // Asserted, not skipped: this is a deterministic local fixture, and
+        // five tests are meaningless without it. A skip would take them out of
+        // the run and report nothing.
+        $this->assertInstanceOf(ClientInvoiceLine::class, $overage, 'The fixture must charge for its overage.');
+
+        $retainer = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_id', $overage->client_invoice_id)
+            ->where('type', 'retainer')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $retainer, 'The fixture must put a retainer beside the overage.');
+
+        return [$overage, $retainer];
+    }
+
+    /**
+     * One worker on two projects, billed once per project.
+     *
+     * The composer words these two identically apart from the rate each quotes,
+     * so nothing but the project tells them apart - which is what makes them
+     * the fixture for every question about pairing concurrent charges.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine}
+     */
+    private function twoConcurrentSubcontractorCharges(): array
+    {
+        foreach ([['Here', 6000], ['There', 9000]] as [$name, $rate]) {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => $name,
+            ]);
+
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)->where('type', 'subcontractor')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'The fixture must produce two concurrent subcontractor lines.');
+
+        /** @var ClientInvoiceLine $first */
+        $first = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $last */
+        $last = $lines->last();
+
+        return [$first, $last];
+    }
+
+    /**
+     * The whole comparison row the replay records for one invoice.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function comparisonFor(string $invoiceNumber): ?array
+    {
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        return array_column($detail['comparisons'], null, 'invoice_number')[$invoiceNumber] ?? null;
+    }
+
+    /** The verdict the replay records for one invoice, via its report file. */
+    private function verdictFor(string $invoiceNumber): ?string
+    {
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $verdicts = array_column($detail['comparisons'], 'verdict', 'invoice_number');
+
+        return $verdicts[$invoiceNumber] ?? null;
+    }
+
     private function fingerprint(): string
     {
         $parts = [];
@@ -231,9 +1430,14 @@ final class ReplayInvoicesTest extends TestCase
         return implode('|', $parts);
     }
 
-    private function generatedHistory(): ClientInvoice
+    /**
+     * @param  (callable(ClientAgreement): void)|null  $beforeGenerating
+     *                                                                    Run once the agreement exists and before any invoice is produced, for
+     *                                                                    the cases that need the engine itself to bill something extra.
+     */
+    private function generatedHistory(?callable $beforeGenerating = null): ClientInvoice
     {
-        ClientAgreement::query()->create([
+        $agreement = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'title' => 'Retainer',
@@ -265,6 +1469,10 @@ final class ReplayInvoicesTest extends TestCase
         // The whole history, as the original system would have produced it -
         // one hand-made invoice would leave every later cycle looking like a
         // divergence the moment the replay walked past it.
+        if ($beforeGenerating !== null) {
+            $beforeGenerating($agreement);
+        }
+
         Carbon::setTestNow(Carbon::parse('2024-06-15'));
         try {
             app(ClientInvoicingService::class)->generateAllInvoices($this->company);
@@ -272,6 +1480,6 @@ final class ReplayInvoicesTest extends TestCase
             Carbon::setTestNow();
         }
 
-        return ClientInvoice::query()->orderByDesc('id')->firstOrFail();
+        return ClientInvoice::query()->where('workspace_id', $this->workspace->id)->orderByDesc('id')->firstOrFail();
     }
 }

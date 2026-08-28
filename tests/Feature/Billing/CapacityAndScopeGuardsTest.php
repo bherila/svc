@@ -550,8 +550,16 @@ final class CapacityAndScopeGuardsTest extends TestCase
     {
         $facts = $this->facts(rolloverMonths: 3, fullyUsedMonth: true, deferredWork: true);
 
-        $this->assertSame([], DeliberateCorrections::explaining(['retainer', 'subtotal'], $facts));
-        $this->assertNotSame([], DeliberateCorrections::explaining(['additional_hours', 'subtotal'], $facts));
+        $this->assertSame([], DeliberateCorrections::explaining(['retainer'], ['subtotal'], $facts));
+        $this->assertNotSame([], DeliberateCorrections::explaining(['additional_hours'], ['subtotal'], $facts));
+
+        // A line type is whatever string its source used, so no spelling of the
+        // invoice-field marker is safe to reserve. Naming fields separately is
+        // what stops a line literally typed "subtotal" - or "#subtotal" - being
+        // read as the invoice's own subtotal and waived by a correction that
+        // says nothing about it.
+        $this->assertSame([], DeliberateCorrections::explaining(['subtotal'], [], $facts));
+        $this->assertSame([], DeliberateCorrections::explaining(['#subtotal'], [], $facts));
     }
 
     /**
@@ -565,6 +573,7 @@ final class CapacityAndScopeGuardsTest extends TestCase
             [],
             DeliberateCorrections::explaining(
                 ['additional_hours'],
+                [],
                 $this->facts(rolloverMonths: 3, fullyUsedMonth: false),
             ),
             'rollover_months > 0 alone is not the trigger',
@@ -572,6 +581,7 @@ final class CapacityAndScopeGuardsTest extends TestCase
 
         $explained = DeliberateCorrections::explaining(
             ['additional_hours'],
+            [],
             $this->facts(rolloverMonths: 3, fullyUsedMonth: true),
         );
         $this->assertSame('rollover_expiry_ages_by_calendar', $explained[0]['key']);
@@ -585,11 +595,13 @@ final class CapacityAndScopeGuardsTest extends TestCase
     {
         $this->assertSame([], DeliberateCorrections::explaining(
             ['recurring_item'],
+            [],
             $this->facts(cycleOpensMidMonth: true, recurringAnchoredBefore: false),
         ));
 
         $this->assertNotSame([], DeliberateCorrections::explaining(
             ['recurring_item'],
+            [],
             $this->facts(cycleOpensMidMonth: true, recurringAnchoredBefore: true),
         ));
     }

@@ -5,6 +5,7 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
@@ -103,8 +104,20 @@ final class ReplayInvoicesCommand extends Command
     /** @var array<string, CorrectionFacts> */
     private array $factCache = [];
 
+    /**
+     * Per-run key for description digests.
+     *
+     * A bare hash of a low-entropy string is not concealment: a reader with the
+     * report can hash likely client names and billing labels and test them.
+     * Keying it per run keeps the before and after snapshots comparable while
+     * making a guess unverifiable off the host.
+     */
+    private string $digestKey = '';
+
     public function handle(): int
     {
+        $this->digestKey = bin2hex(random_bytes(32));
+
         $workspacePublicId = $this->option('workspace');
         if (! is_string($workspacePublicId) || $workspacePublicId === '') {
             $this->components->error('--workspace is required.');
@@ -265,21 +278,74 @@ final class ReplayInvoicesCommand extends Command
             ->orderBy('id')
             ->get();
 
+        // Which deliverable each milestone line billed. A task's title and
+        // price are both editable, so the wording and the amount can change
+        // together and leave nothing linking the two versions - but the claim
+        // itself survives, and this command releases and recreates it.
+        $claimedBy = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereNotNull('client_invoice_line_id')
+            ->pluck('public_id', 'client_invoice_line_id');
+
         foreach ($invoices as $invoice) {
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
+                $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
+                $recurringItemId = $line->client_agreement_recurring_item_id === null
+                    ? ''
+                    : (string) (int) $line->client_agreement_recurring_item_id;
+                $projectId = $line->client_project_id === null
+                    ? ''
+                    : (string) (int) $line->client_project_id;
+                // Stored per line and restored per source row, so it is not
+                // guaranteed to match the invoice's own agreement - a charge
+                // reattributed to another agreement changes nothing else.
+                $agreementId = $line->client_agreement_id === null
+                    ? ''
+                    : (string) (int) $line->client_agreement_id;
+                $claim = (string) ($claimedBy[$line->id] ?? '');
+
                 $lines[] = [
                     'type' => (string) $line->type,
                     'total_amount' => (int) $line->total_amount,
                     'unit_amount' => (int) $line->unit_amount,
                     'tax_amount' => (int) $line->tax_amount,
+                    // Kept as the stored decimal string. Casting to float
+                    // collapses values that differ only in the last of four
+                    // decimal places, which is exactly where a quantity this
+                    // schema allows can differ.
+                    'quantity' => self::decimalString($line->quantity),
+                    'line_date' => $lineDate,
+                    'recurring_item_id' => $recurringItemId,
+                    // Which project the charge is attributed to. A subcontractor
+                    // line carries one, and moving a charge between projects is
+                    // not visible in any other field here.
+                    'project_id' => $projectId,
+                    'agreement_id' => $agreementId,
+                    'claimed_by' => $claim,
+                    // A description is the one field here that can carry a
+                    // client's name, and this output is meant to be readable
+                    // outside the host. Digested under a per-run key, so two
+                    // lines that differ only in wording still compare as
+                    // different without a guess being verifiable off the host.
+                    'description_hash' => substr(hash_hmac('sha256', (string) $line->description, $this->digestKey), 0, 12),
+                    // The same description with every number taken out. The
+                    // composer writes amounts into its wording - hours and rate
+                    // for deferred termination work, applied time for a
+                    // retainer draw - so a repriced line gets a new description
+                    // too. Identifying a charge by the full text would make it
+                    // a different charge, and hide the repricing as a line
+                    // removed and another added.
+                    'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description, (string) $line->type), $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
                 ];
             }
 
             // Sorted so that a pure ordering difference is not reported as a
             // money difference; sort_order is compared separately by count.
-            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount']] <=> [$b['type'], $b['total_amount']]);
+            usort($lines, static fn (array $a, array $b): int => [$a['type'], $a['total_amount'], $a['unit_amount'], $a['quantity'], $a['line_date'], $a['project_id'], $a['description_hash']]
+                <=> [$b['type'], $b['total_amount'], $b['unit_amount'], $b['quantity'], $b['line_date'], $b['project_id'], $b['description_hash']]);
 
             $key = $this->key($invoice);
 
@@ -559,40 +625,19 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'missing',
                     'money_delta' => -$before['total_amount'],
                     'notes' => ['the engine did not produce this invoice'],
+                    'snapshot' => $before,
                 ];
 
                 continue;
             }
 
-            $notes = [];
+            $examined = $this->examine($before, $after);
+            $notes = $examined['notes'];
+            $changedTypes = $examined['changed_types'];
+            $changedFields = $examined['changed_fields'];
+            $lineMoneyDiffers = $examined['line_money_differs'];
+            $hourNotes = $examined['hour_notes'];
             $moneyDelta = $after['total_amount'] - $before['total_amount'];
-
-            if ($after['currency'] !== $before['currency']) {
-                // The same integer in two currencies is not the same money, and
-                // the delta alone would read as an exact match.
-                $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
-            }
-
-            if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
-                $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
-            }
-            if ($after['tax_amount'] !== $before['tax_amount']) {
-                $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
-            }
-            if (count($after['lines']) !== count($before['lines'])) {
-                $notes[] = sprintf('line count %d -> %d', count($before['lines']), count($after['lines']));
-            }
-
-            foreach ($this->lineDifferences($before['lines'], $after['lines']) as $note) {
-                $notes[] = $note;
-            }
-
-            $hourNotes = [];
-            foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
-                if ($before[$field] !== $after[$field]) {
-                    $hourNotes[] = sprintf('%s %s -> %s', $field, $this->show($before[$field]), $this->show($after[$field]));
-                }
-            }
 
             $comparisons[] = [
                 'key' => $key,
@@ -604,16 +649,21 @@ final class ReplayInvoicesCommand extends Command
                 // same money is presented is worth seeing, not worth blocking.
                 'verdict' => match (true) {
                     $moneyDelta === 0 && $notes === [] => 'match',
-                    // The same integer in two currencies is not the same money,
-                    // so a currency change can never be filed as a difference of
-                    // arrangement - it would exit zero saying every invoice
-                    // reproduced to the cent.
-                    $moneyDelta === 0 && $before['currency'] === $after['currency'] => 'composition_differs',
+                    // Money on the invoice header counts too. The same integer
+                    // in two currencies is not the same money, and a subtotal
+                    // and tax that move by offsetting amounts are a different
+                    // bill for the same total - neither is an arrangement of
+                    // the same money.
+                    $moneyDelta === 0 && ! $lineMoneyDiffers && ! $examined['metadata_differs'] => 'composition_differs',
                     default => 'money_differs',
                 },
                 'money_delta' => $moneyDelta,
                 'notes' => $notes,
                 'hour_notes' => $hourNotes,
+                'line_money_differs' => $lineMoneyDiffers,
+                'line_repriced' => $examined['line_repriced'],
+                'changed_types' => $changedTypes,
+                'changed_fields' => $changedFields,
             ];
         }
 
@@ -625,11 +675,86 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'unexpected',
                     'money_delta' => $after['total_amount'],
                     'notes' => ['the engine produced an invoice with no historical counterpart'],
+                    'snapshot' => $after,
                 ];
             }
         }
 
         return $this->reconcileLegacyPeriods($comparisons);
+    }
+
+    /**
+     * Everything one snapshot says about another, in one place.
+     *
+     * Both comparison paths ask the same questions, and the legacy pairing has
+     * had to be taught each of them separately - line detail, correction facts,
+     * hours, and now the invoice fields. Sharing the answer is what stops the
+     * two drifting apart again.
+     *
+     * @param  array<string, mixed>  $before
+     * @param  array<string, mixed>  $after
+     * @return array{notes: list<string>, changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, hour_notes: list<string>}
+     */
+    private function examine(array $before, array $after): array
+    {
+        $notes = [];
+        // What actually changed, collected as it is found rather than read back
+        // out of the notes afterwards. A note is prose for a human; an imported
+        // line type can be any string the source used, so recognising types by
+        // parsing text meant either losing real ones or mistaking a word of
+        // prose for one. Structural markers carry a '#' for the same reason - a
+        // source line type could be spelled "subtotal".
+        $changedFields = [];
+
+        if ($after['currency'] !== $before['currency']) {
+            // The same integer in two currencies is not the same money, and the
+            // delta alone would read as an exact match.
+            $notes[] = sprintf('currency %s -> %s', $before['currency'], $after['currency']);
+            $changedFields[] = 'currency';
+        }
+        if ($after['subtotal_amount'] !== $before['subtotal_amount']) {
+            $notes[] = sprintf('subtotal %d -> %d', $before['subtotal_amount'], $after['subtotal_amount']);
+            $changedFields[] = 'subtotal';
+        }
+        if ($after['tax_amount'] !== $before['tax_amount']) {
+            $notes[] = sprintf('tax %d -> %d', $before['tax_amount'], $after['tax_amount']);
+            $changedFields[] = 'tax';
+        }
+
+        /** @var list<array<string, mixed>> $beforeLines */
+        $beforeLines = $before['lines'] ?? [];
+        /** @var list<array<string, mixed>> $afterLines */
+        $afterLines = $after['lines'] ?? [];
+
+        if (count($afterLines) !== count($beforeLines)) {
+            $notes[] = sprintf('line count %d -> %d', count($beforeLines), count($afterLines));
+        }
+
+        $lineDifferences = $this->lineDifferences($beforeLines, $afterLines);
+        foreach ($lineDifferences['notes'] as $note) {
+            $notes[] = $note;
+        }
+
+        // A line whose price, quantity or tax moved is a money difference even
+        // when the invoice total lands in the same place. The agreed bar is
+        // that money is exact; a charge the client did not have is not the same
+        // money differently arranged.
+        $lineComparison = $this->lineMultisetDifferences($beforeLines, $afterLines);
+
+        return [
+            'notes' => $notes,
+            'changed_types' => array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
+            'changed_fields' => array_values(array_unique($changedFields)),
+            // Strictly about the lines. The summary counts on this to tell an
+            // operator a charge moved, and an invoice that only changed
+            // currency has no line change to go looking for.
+            'line_money_differs' => $lineComparison['money_differs'],
+            // Whether anything above the lines moved, which the verdict needs
+            // and the summary must not confuse with the above.
+            'metadata_differs' => $changedFields !== [],
+            'line_repriced' => $lineComparison['repriced'],
+            'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
+        ];
     }
 
     /**
@@ -683,19 +808,64 @@ final class ReplayInvoicesCommand extends Command
             // engine over- or under-billed for the cycle.
             $delta = (int) $historical['money_delta'] + (int) $generated['money_delta'];
 
+            // Pairing on the cycle total alone would call two invoices with
+            // equal totals and completely different charges a match. The pair
+            // gets the same line comparison an ordinary pair gets.
+            /** @var list<array<string, mixed>> $historicalLines */
+            $historicalLines = $historical['lines'] ?? [];
+            /** @var list<array<string, mixed>> $generatedLines */
+            $generatedLines = $generated['lines'] ?? [];
+            /** @var array<string, mixed> $historicalSnapshot */
+            $historicalSnapshot = $historical['snapshot'] ?? [];
+            /** @var array<string, mixed> $generatedSnapshot */
+            $generatedSnapshot = $generated['snapshot'] ?? [];
+            $examined = $this->examine($historicalSnapshot, $generatedSnapshot);
+
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
+                // The pair exists because the two label the period
+                // differently. Correction predicates read time entries for the
+                // period in the key, so they have to read the engine's - the
+                // historical label names the month before the work.
+                'facts_key' => $generated['key'],
                 'invoice_number' => $historical['invoice_number'],
-                'verdict' => $delta === 0 ? 'match_legacy_period' : 'money_differs',
+                // Identical only when the lines say so too. Equal cycle totals
+                // with different charges underneath is a composition
+                // difference, and counting it green would report the pair as
+                // reproducing when it did not.
+                // The same three outcomes the ordinary path reaches, asked of
+                // the pair. Currency is money whatever the totals say, so it
+                // can never be filed as an arrangement.
+                'verdict' => match (true) {
+                    $delta !== 0 || $examined['line_money_differs'] || $examined['metadata_differs'] => 'money_differs',
+                    $examined['notes'] !== [] => 'composition_differs',
+                    default => 'match_legacy_period',
+                },
                 'money_delta' => $delta,
+                'line_money_differs' => $examined['line_money_differs'],
+                'line_repriced' => $examined['line_repriced'],
+                'changed_types' => $examined['changed_types'],
+                'changed_fields' => $examined['changed_fields'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
                     $delta === 0 ? [] : ['cycle total '.$this->show(-(int) $historical['money_delta']).' -> '.$this->show((int) $generated['money_delta'])],
+                    $examined['notes'],
                 ),
-                'hour_notes' => [],
+                // Hours differ between these two the same way they differ
+                // anywhere else - the source stored fractional hours and this
+                // schema derives them from whole minutes. Discarding them here
+                // reported the pair as identical when it was only equal in
+                // money.
+                'hour_notes' => $examined['hour_notes'],
             ];
 
             unset($comparisons[$extra[$cycle][0]]);
+        }
+
+        // The snapshots were carried only so the pairing above could compare
+        // them; they are not part of what this command reports.
+        foreach ($comparisons as $index => $comparison) {
+            unset($comparisons[$index]['snapshot']);
         }
 
         return array_values($comparisons);
@@ -704,7 +874,7 @@ final class ReplayInvoicesCommand extends Command
     /**
      * @param  list<array<string, mixed>>  $before
      * @param  list<array<string, mixed>>  $after
-     * @return list<string>
+     * @return array{notes: list<string>, changed_types: list<string>}
      */
     private function lineDifferences(array $before, array $after): array
     {
@@ -722,15 +892,516 @@ final class ReplayInvoicesCommand extends Command
         $afterTotals = $sum($after);
 
         $notes = [];
+        $changedTypes = [];
         foreach (array_unique([...array_keys($beforeTotals), ...array_keys($afterTotals)]) as $type) {
             $b = $beforeTotals[$type] ?? 0;
             $a = $afterTotals[$type] ?? 0;
             if ($a !== $b) {
                 $notes[] = sprintf('%s %d -> %d', $type, $b, $a);
+                $changedTypes[] = (string) $type;
             }
         }
 
-        return $notes;
+        // Per-type totals are the headline, and they are also not a comparison.
+        // Two lines of one type moving by equal and opposite amounts sum to no
+        // difference, and a unit price that changes while quantity compensates
+        // leaves the total alone - both would report as an exact reproduction.
+        // So the lines are also compared as a multiset of individual rows.
+        foreach ($this->lineMultisetDifferences($before, $after)['notes'] as $note) {
+            $notes[] = $note;
+        }
+
+        return ['notes' => $notes, 'changed_types' => array_values(array_unique($changedTypes))];
+    }
+
+    /**
+     * Normalise a decimal without going through a float.
+     *
+     * decimal(16,4) holds values a binary float cannot separate, and a quantity
+     * that differs only in the fourth decimal place is a different charge.
+     */
+    /**
+     * A description with its numbers removed.
+     *
+     * What a charge is for is in the wording; what it cost is in the amounts,
+     * and those are compared separately. Leaving the amounts in would make a
+     * repriced line unrecognisable as the same charge - which is exactly the
+     * comparison this command exists to make.
+     */
+    private static function withoutAmounts(string $description, string $type): string
+    {
+        // Only line types whose description the billing services write. A
+        // milestone takes a task's title, a time line takes the entry's, and a
+        // recurring item takes its own - all user text, and a title that reads
+        // like a generated one must not be treated as one.
+        $generated = ['retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'subcontractor'];
+        if (! in_array($type, $generated, true)) {
+            return $description;
+        }
+
+        // Anchored to the descriptions the billing services actually generate,
+        // rather than to a shape a description happens to have. The one built
+        // from user text - "Milestone: <title>" - is deliberately absent, so a
+        // milestone called "Package ($100)" keeps the figure that names it even
+        // though it ends in a parenthetical like the generated ones do.
+        $templates = [
+            '/^(Deferred work items applied to retainer) \(.*\)$/',
+            '/^(Deferred work items billed on agreement termination) \(.*\)$/',
+            // Greedy: a worker's name can carry its own parentheses, and only
+            // the last group is the amount suffix the composer appended.
+            '/^(Subcontractor: .*) \([^()]*\)$/',
+            '/^(Work items applied to(?: .+?)? retainer) \(.*\)$/',
+            '/^(Interim overage hours for) .+$/',
+        ];
+
+        foreach ($templates as $template) {
+            if (preg_match($template, $description, $matches) === 1) {
+                return $matches[1].' (#)';
+            }
+        }
+
+        // The retainer fee line carries its hours in the middle and the cycle
+        // dates at the end. The dates name which cycle and stay; only the hours
+        // are derived from an amount.
+        if (preg_match('/^(.+ Retainer) \([^()]*\)( - .+)$/', $description, $matches) === 1) {
+            return $matches[1].' (#)'.$matches[2];
+        }
+
+        return $description;
+    }
+
+    private static function decimalString(mixed $value): string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '0';
+        }
+
+        if (! str_contains($text, '.')) {
+            return $text;
+        }
+
+        $text = rtrim(rtrim($text, '0'), '.');
+
+        return $text === '' || $text === '-' ? '0' : $text;
+    }
+
+    /**
+     * Compare individual lines rather than totals per type.
+     *
+     * The signature is every field that carries meaning about what was charged
+     * - what kind of line, what it was for, when, how many, at what price, and
+     * with what tax. Hours are deliberately absent: the source stored fractional
+     * hours and this schema derives them from whole minutes, so they are
+     * reported at invoice level and never gate.
+     *
+     * @param  list<array<string, mixed>>  $before
+     * @param  list<array<string, mixed>>  $after
+     * @return array{notes: list<string>, money_differs: bool, repriced: bool, changed_types: list<string>}
+     */
+    private function lineMultisetDifferences(array $before, array $after): array
+    {
+        // The key carries every value whole. Shortening anything inside it -
+        // a claim's uuid, say - makes two different charges compare equal, so
+        // abbreviation belongs in what is printed and nowhere else.
+        $signatureOf = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+            (string) $line['project_id'],
+            (string) $line['agreement_id'],
+            (string) $line['line_date'],
+            (string) $line['recurring_item_id'],
+            (string) $line['claimed_by'],
+            (string) $line['description_hash'],
+        ]);
+
+        $describe = static fn (array $line): string => sprintf(
+            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
+            (string) $line['type'],
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+            ((string) $line['project_id']) === '' ? 'none' : (string) $line['project_id'],
+            ((string) $line['agreement_id']) === '' ? 'none' : (string) $line['agreement_id'],
+            ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
+            ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
+            ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
+            (string) $line['description_hash'],
+        );
+
+        /** @var array<string, string> $described */
+        $described = [];
+        $tally = static function (array $lines) use ($signatureOf, $describe, &$described): array {
+            $counts = [];
+            foreach ($lines as $line) {
+                $signature = $signatureOf($line);
+                $described[$signature] = $describe($line);
+                $counts[$signature] = ($counts[$signature] ?? 0) + 1;
+            }
+
+            return $counts;
+        };
+
+        // What a line is *for*, separately from what it costs. A charge keeps
+        // its identity across a repricing and loses it when the line is
+        // reclassified, added, or removed - which is the distinction the two
+        // sides of the split need.
+        // Two ways to say which charge is which, used in that order.
+        //
+        // Where it was filed, when, and what it is - specific enough to keep
+        // two concurrent charges apart. A subcontractor working two projects
+        // has one line per project, identically worded, and exchanging their
+        // prices moves no total and no count: only the project separates them.
+        $filedAs = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (string) $line['line_date'],
+            (string) $line['recurring_item_id'],
+            (string) $line['project_id'],
+            (string) $line['agreement_id'],
+            (string) $line['claimed_by'],
+            (string) $line['identity_hash'],
+        ]);
+
+        // Just what the charge is - its wording, with the amounts taken out,
+        // and nothing else. Used only for what the first pass could not pair,
+        // so a charge that reprices while its filing moves still finds its
+        // counterpart instead of vanishing into the move. The recurring item a
+        // line belongs to is filing like any other, and a line that moves
+        // between items is exactly the case the recurring-item correction is
+        // about - so it must not be able to hide a repricing.
+        // Type belongs here, though the rest of the filing does not. Where a
+        // line moves project or date it is the same charge filed elsewhere;
+        // where its type changes it is a different kind of charge, and
+        // reclassifying between the capacity types is one of the four things
+        // this port does on purpose. Pairing across a type change would call
+        // that correction's own work a repricing and refuse to explain it.
+        $identity = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (string) $line['identity_hash'],
+        ]);
+
+        $priceTuple = static fn (array $line): string => sprintf(
+            'unit %d qty %s tax %d total %d',
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+        );
+
+        // Prices seen for each identity, as a set rather than a multiset. Two
+        // of the same charge becoming one is a line removed, which is exactly
+        // what a deliberate correction is entitled to explain; the same charge
+        // at a different price is not, and never becomes explainable.
+        // Counted, not merely seen. Two charges under one key at the same price,
+        // one of which is later repriced, leaves that price present on both
+        // sides - a set says nothing changed, a count says one of them left.
+        $pricesBy = static function (array $lines, callable $key) use ($priceTuple): array {
+            $map = [];
+            foreach ($lines as $line) {
+                $tuple = $priceTuple($line);
+                $map[$key($line)][$tuple] = ($map[$key($line)][$tuple] ?? 0) + 1;
+            }
+            foreach ($map as $k => $prices) {
+                ksort($prices);
+                $map[$k] = $prices;
+            }
+
+            return $map;
+        };
+
+        // Prices that appear on both sides under one key are the same charges;
+        // what is left over on each side is what actually differs. Comparing
+        // the sets whole would call a charge that merely moved onto an occupied
+        // key a repricing, because the destination set gains a price without
+        // anything being repriced.
+        // Which amounts charge somebody. A line whose total is zero charges
+        // nobody - the reconciliation line mirrors interim hours in its
+        // quantity at a unit and total of zero - so a change between two such
+        // amounts is representation, which this command reports and never
+        // gates on. A change from one to the other is not: money either
+        // arrived or left.
+        $charged = [];
+        foreach ([...$before, ...$after] as $line) {
+            if ((int) $line['total_amount'] !== 0) {
+                $charged[$priceTuple($line)] = true;
+            }
+        }
+
+        $comparePrices = static function (array $beforeMap, array $afterMap) use ($charged): bool {
+            foreach ($beforeMap as $key => $prices) {
+                if (! isset($afterMap[$key])) {
+                    // A key on one side alone is a line added or removed -
+                    // composition, not a repricing.
+                    continue;
+                }
+
+                // One price losing an occurrence while another gains one, under
+                // a single key: the same charge at a different price. Counts
+                // that only fall are a line removed from under that key, and
+                // counts that only rise are one added. At least one of the
+                // amounts involved has to charge somebody, or this is two ways
+                // of writing nothing.
+                $rose = false;
+                $fell = false;
+                $money = false;
+                foreach (array_unique([...array_keys($prices), ...array_keys($afterMap[$key])]) as $tuple) {
+                    $delta = ($afterMap[$key][$tuple] ?? 0) - ($prices[$tuple] ?? 0);
+                    $rose = $rose || $delta > 0;
+                    $fell = $fell || $delta < 0;
+                    $money = $money || ($delta !== 0 && isset($charged[$tuple]));
+                }
+
+                if ($rose && $fell && $money) {
+                    return true;
+                }
+
+                // One occurrence repriced while another arrives at the price it
+                // left leaves that price's count where it was, so only the new
+                // one rises and nothing looks like a substitution. It is
+                // indistinguishable from a line simply being added - so where a
+                // shared key holds charged lines on both sides and their prices
+                // are not the same set, this refuses to certify rather than
+                // read it the generous way.
+                //
+                // A judgement call, and it costs a report on a correction that
+                // adds or removes a charge beside one that is already there.
+                // The other way round hides a repricing, and money exact is the
+                // rule this command is held to.
+                $chargedBefore = array_filter($prices, static fn (string $tuple): bool => isset($charged[$tuple]), ARRAY_FILTER_USE_KEY);
+                $chargedAfter = array_filter($afterMap[$key], static fn (string $tuple): bool => isset($charged[$tuple]), ARRAY_FILTER_USE_KEY);
+
+                // Every price that was here is still here, and a new one has
+                // joined them. That is a line added - and equally, one of the
+                // originals repriced onto the new price while another arrived
+                // at the price it left. The two are the same data.
+                //
+                // Deliberately one-directional: a price *leaving* while the
+                // others stay is a line removed, which is what the
+                // recurring-item correction does, and refusing to explain that
+                // would deny the correction its own work.
+                if ($chargedBefore !== []
+                    && array_diff_key($chargedBefore, $chargedAfter) === []
+                    && array_diff_key($chargedAfter, $chargedBefore) !== []) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        $beforeFiled = $pricesBy($before, $filedAs);
+        $afterFiled = $pricesBy($after, $filedAs);
+        $repriced = $comparePrices($beforeFiled, $afterFiled);
+
+        if (! $repriced) {
+            // Whatever the first pass could not pair, tried again on what the
+            // charge is alone. A line that both moved and was repriced is
+            // unpaired above and paired here.
+            // One occurrence consumed per match, not every line sharing a key.
+            // A charge misfiled onto a key the other side already uses would
+            // otherwise take that side's genuine line out of the residual with
+            // it, and both would disappear from the comparison together.
+            // Consumed in two rounds, exact first. A charge that matches the
+            // other side in filing *and* price is unambiguously the same charge
+            // unchanged; taking those out first stops a moved line being paired
+            // against its unmoved neighbour and reported as a repricing.
+            $residual = static function (array $lines, array $otherLines) use ($filedAs, $priceTuple): array {
+                $exact = [];
+                $filed = [];
+                foreach ($otherLines as $other) {
+                    $key = $filedAs($other);
+                    $exact[$key."\0".$priceTuple($other)] = ($exact[$key."\0".$priceTuple($other)] ?? 0) + 1;
+                    $filed[$key] = ($filed[$key] ?? 0) + 1;
+                }
+
+                $remaining = [];
+                foreach ($lines as $line) {
+                    $key = $filedAs($line);
+                    $exactKey = $key."\0".$priceTuple($line);
+                    if (($exact[$exactKey] ?? 0) > 0) {
+                        $exact[$exactKey]--;
+                        $filed[$key]--;
+
+                        continue;
+                    }
+
+                    $remaining[] = $line;
+                }
+
+                $left = [];
+                foreach ($remaining as $line) {
+                    $key = $filedAs($line);
+                    if (($filed[$key] ?? 0) > 0) {
+                        $filed[$key]--;
+
+                        continue;
+                    }
+
+                    $left[] = $line;
+                }
+
+                return $left;
+            };
+
+            $beforeLeft = $residual($before, $after);
+            $afterLeft = $residual($after, $before);
+
+            // A recurring item's id survives its description being rewritten,
+            // which wording cannot. Where both sides still carry the same item,
+            // that is an unambiguous link and worth asking before falling back
+            // to what the charge says it is.
+            // The two stable links a charge can carry: the recurring item it
+            // bills, or the deliverable that claimed it. Both survive their
+            // wording and their price being rewritten together, which is
+            // exactly when nothing else can pair the two versions.
+            $stableLink = static fn (array $line): string => (string) $line['recurring_item_id'] !== ''
+                ? 'item:'.$line['recurring_item_id']
+                : 'task:'.$line['claimed_by'];
+            $itemOf = static fn (array $line): string => $stableLink($line);
+            $carriesItem = static fn (array $lines): array => array_values(array_filter(
+                $lines,
+                static fn (array $line): bool => (string) $line['recurring_item_id'] !== '' || (string) $line['claimed_by'] !== '',
+            ));
+
+            $beforeItems = $pricesBy($carriesItem($beforeLeft), $itemOf);
+            $afterItems = $pricesBy($carriesItem($afterLeft), $itemOf);
+            $repriced = $comparePrices($beforeItems, $afterItems);
+
+            // Whatever the item id could not pair - a line carrying none, or
+            // one whose item the other side no longer has - falls through to
+            // the wording.
+            $unpairedByItem = static fn (array $lines, array $otherItems): array => array_values(array_filter(
+                $lines,
+                static fn (array $line): bool => ((string) $line['recurring_item_id'] === '' && (string) $line['claimed_by'] === '')
+                    || ! isset($otherItems[$stableLink($line)]),
+            ));
+
+            $beforeResidual = $pricesBy($unpairedByItem($beforeLeft, $afterItems), $identity);
+            $afterResidual = $pricesBy($unpairedByItem($afterLeft, $beforeItems), $identity);
+            $repriced = $repriced || $comparePrices($beforeResidual, $afterResidual);
+
+            // Fail closed where pairing cannot decide. If several charges share
+            // this looser identity and carry different prices, their filing has
+            // all changed and nothing links which became which - two of them
+            // exchanging prices is indistinguishable from each keeping its own.
+            // Certifying that as unchanged would pass a repricing; refusing
+            // costs a report on the narrow case where several identically
+            // worded charges move at once.
+            if (! $repriced) {
+                foreach ($beforeResidual as $key => $prices) {
+                    // Only where both sides still hold something under this
+                    // identity. A group on one side alone is unambiguously
+                    // lines added or removed, and refusing to certify that
+                    // would deny the corrections that add and remove lines.
+                    if (! isset($afterResidual[$key])) {
+                        continue;
+                    }
+
+                    if (count($prices) > 1 || count($afterResidual[$key]) > 1) {
+                        $repriced = true;
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Pairing by identity cannot see an amount that exists on one side and
+        // nowhere on the other - a charge whose wording changed with its price,
+        // say. Comparing the distinct amounts the invoice states catches that
+        // without counting them, so a line merely added or removed at an amount
+        // still present elsewhere stays composition.
+        // Two questions, and conflating them is what made every earlier shape of
+        // this wrong in one direction or the other.
+        //
+        // Did the money move? That is the multiset of amounts the two invoices
+        // state, counts included - a charge repriced onto an amount another
+        // line already carries changes only a count. It decides the verdict.
+        //
+        // Was an existing charge repriced? That is the pairing above and only
+        // it. A line removed and another added is composition however it looks
+        // in aggregate, and composition is what the four corrections exist to
+        // explain, so only a repricing refuses attribution.
+        $amounts = static function (array $lines) use ($priceTuple): array {
+            $counts = [];
+            foreach ($lines as $line) {
+                $tuple = $priceTuple($line);
+                $counts[$tuple] = ($counts[$tuple] ?? 0) + 1;
+            }
+            ksort($counts);
+
+            return $counts;
+        };
+
+        // A substitution at the level of amounts: one goes down in count while
+        // another goes up. That is a charge repriced onto an amount the invoice
+        // already stated, which the pairing above cannot see when the wording
+        // moved with it. Counts that only fall are lines removed, counts that
+        // only rise are lines added - composition, and explainable.
+        // Which amounts are actually charged for. A line whose total is zero
+        // costs the client nothing, so it appearing or disappearing is
+        // arrangement; a line with a total is a charge, and one arriving or
+        // leaving is money whether or not something offsets it.
+        $beforeAmounts = $amounts($before);
+        $afterAmounts = $amounts($after);
+        $chargeCountMoved = false;
+        foreach (array_unique([...array_keys($beforeAmounts), ...array_keys($afterAmounts)]) as $tuple) {
+            if (($afterAmounts[$tuple] ?? 0) !== ($beforeAmounts[$tuple] ?? 0) && isset($charged[$tuple])) {
+                $chargeCountMoved = true;
+
+                break;
+            }
+        }
+
+        // An amount that charges somebody, stated a different number of times.
+        // That covers a charge repriced onto an amount already present, and two
+        // charges dropped whose totals cancel - neither of which moves a total,
+        // a line count, or the set of amounts on the invoice.
+        $moneyMoved = $repriced || $chargeCountMoved;
+
+        $beforeCounts = $tally($before);
+        $afterCounts = $tally($after);
+
+        $notes = [];
+        $signatures = array_unique([...array_keys($beforeCounts), ...array_keys($afterCounts)]);
+        sort($signatures);
+
+        foreach ($signatures as $signature) {
+            $b = $beforeCounts[$signature] ?? 0;
+            $a = $afterCounts[$signature] ?? 0;
+            if ($a === $b) {
+                continue;
+            }
+
+            $notes[] = sprintf('%s [%+d]', $described[$signature] ?? $signature, $a - $b);
+        }
+
+        // The types of the lines that actually differ, which is not the same as
+        // the types whose net total moved: two removed lines of one type whose
+        // totals cancel leave that net where it was, and attribution would then
+        // never hear that the type was involved at all.
+        $typeOf = [];
+        foreach ([...$before, ...$after] as $line) {
+            $typeOf[$signatureOf($line)] = (string) $line['type'];
+        }
+
+        $changedTypes = [];
+        foreach ($signatures as $signature) {
+            if (($beforeCounts[$signature] ?? 0) !== ($afterCounts[$signature] ?? 0) && isset($typeOf[$signature])) {
+                $changedTypes[] = $typeOf[$signature];
+            }
+        }
+
+        return [
+            'notes' => $notes,
+            'money_differs' => $moneyMoved,
+            'repriced' => $repriced,
+            'changed_types' => array_values(array_unique($changedTypes)),
+        ];
     }
 
     /**
@@ -751,15 +1422,31 @@ final class ReplayInvoicesCommand extends Command
             return $comparison;
         }
 
-        $changed = [];
-        foreach ((array) ($comparison['notes'] ?? []) as $note) {
-            if (preg_match('/^([a-z_]+) /', (string) $note, $matches) === 1) {
-                $changed[] = $matches[1];
-            }
-        }
-        $changed = array_values(array_unique(array_diff($changed, ['line'])));
+        // A correction is a claim about which line types a period should carry,
+        // never about what a line of that type costs. Attribution works on type
+        // names, and the per-line notes are type-prefixed too - so without this
+        // a repriced additional_hours line would be waived by the very
+        // correction that explains why additional_hours moved at all.
+        if (($comparison['line_repriced'] ?? false) === true) {
+            $comparison['explained_by'] = null;
 
-        $comparison['explained_by'] = DeliberateCorrections::explaining($changed, $this->facts($comparison['key']));
+            return $comparison;
+        }
+
+        // Notes carry prose as well as line detail - a legacy pair explains its
+        // pairing in words - and every lowercase first word used to be read as
+        // a changed line type. One stray token makes confinedTo() reject every
+        // correction, so only real line types are taken.
+        /** @var list<string> $changedTypes */
+        $changedTypes = array_values(array_unique((array) ($comparison['changed_types'] ?? [])));
+        /** @var list<string> $changedFields */
+        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
+
+        $comparison['explained_by'] = DeliberateCorrections::explaining(
+            $changedTypes,
+            $changedFields,
+            $this->facts((string) ($comparison['facts_key'] ?? $comparison['key'])),
+        );
 
         return $comparison;
     }
@@ -879,6 +1566,39 @@ final class ReplayInvoicesCommand extends Command
             ->exists();
     }
 
+    /**
+     * The aggregate hour fields, which are reported and never gate.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function hourFields(array $row): array
+    {
+        $fields = [];
+        foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
+            $fields[$field] = $row[$field] ?? null;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param  array<string, mixed>  $before
+     * @param  array<string, mixed>  $after
+     * @return list<string>
+     */
+    private function hourNotes(array $before, array $after): array
+    {
+        $notes = [];
+        foreach (['hours_worked', 'hours_billed_at_rate', 'retainer_hours_included'] as $field) {
+            if (($before[$field] ?? null) !== ($after[$field] ?? null)) {
+                $notes[] = sprintf('%s %s -> %s', $field, $this->show($before[$field] ?? null), $this->show($after[$field] ?? null));
+            }
+        }
+
+        return $notes;
+    }
+
     private function show(mixed $value): string
     {
         return $value === null ? 'null' : (string) $value;
@@ -902,7 +1622,7 @@ final class ReplayInvoicesCommand extends Command
         $unexplained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
         $missing = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'missing');
         $extra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
-        $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
+        $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'match_legacy_period', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green>money identical</>', (string) count($matched));
@@ -936,6 +1656,20 @@ final class ReplayInvoicesCommand extends Command
 
         $absolute = array_sum(array_map(static fn (array $c): int => abs((int) $c['money_delta']), [...$unexplained, ...$missing, ...$extra]));
         $this->components->twoColumnDetail('unexplained money divergence (minor units)', (string) $absolute);
+
+        // A line repriced with a compensating quantity moves no net total, so
+        // the figure above can read zero on a run that failed. Saying so here
+        // keeps the summary honest without opening the detail report.
+        $sameTotal = count(array_filter(
+            $unexplained,
+            static fn (array $c): bool => (int) $c['money_delta'] === 0 && ($c['line_money_differs'] ?? false) === true,
+        ));
+        if ($sameTotal > 0) {
+            $this->components->twoColumnDetail(
+                '<fg=red>of which charge the same total by different lines</>',
+                (string) $sameTotal,
+            );
+        }
 
         foreach ($outcome['generation'] as $failure) {
             $this->components->warn('generation failed - '.$failure);

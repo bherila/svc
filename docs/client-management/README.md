@@ -40,6 +40,37 @@ places where SVC deliberately diverges.
 | Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
 | Activity timeline | [overview.md](overview.md) | Storage only |
 
+### What the replay treats as a money difference
+
+The bar is that money is exact. That is now judged per line rather than per
+invoice: a line whose price, quantity or tax moved is a money difference even
+where the invoice total lands in the same place, because a charge the client did
+not have is not the same money differently arranged. What stays reported rather
+than blocking is the same money attributed differently - a changed service date,
+project, or recurring item with every amount identical.
+
+A line's *type* is on the reporting side too. A charge reclassified from one
+category to another with every amount identical is the same money under a
+different name, and reclassification between the capacity-dependent types is
+one of the things this port changes on purpose.
+
+Hours are the documented exception and still never gate: the source stored
+fractional hours and this schema derives them from whole minutes.
+
+Charges are paired in two passes: on everything about where a charge is filed,
+then - for whatever that could not pair - on what the charge is. Where several
+identically worded charges have all moved and carry different prices, pairing
+cannot say which became which, and the replay refuses to certify rather than
+assume. That costs a report on a narrow case and never passes a repricing.
+
+The four deliberate corrections can waive a divergence in *which* lines a period
+carries - a line added, removed, or reclassified. They never waive a difference
+in what an existing line costs: a charge keeps its identity across a repricing
+and loses it when it is reclassified, added or removed, so prices are compared
+per identity and only where the same charge appears on both sides - a correction is a claim about composition, not about price, and the
+per-line notes are type-prefixed, so without that rule a repriced line would be
+excused by the very correction that explains why its type moved at all.
+
 ### Generation never touches a settled invoice
 
 The four corrections below change what a period costs. That is intended for work
@@ -223,10 +254,9 @@ be outstanding when this bills a real client.
 | Activity timeline | Rows are written; nothing reads them. | #77 |
 | Correction range can resell a sold cycle | A disjoint monthly correction derives the same `cycle_start` as the invoice that already sold that retainer, and the service-period overlap guard does not see it. Bills the retainer and its recurring items twice. | #79 |
 | Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
-| Replay compares line totals per type | Two lines of the same type moving by opposite amounts report no difference, and the snapshotted unit and tax amounts are discarded. The command's cent-level claim is overstated until this is a multiset comparison of individual lines. | #81 |
 | Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |
 | Fresh imports drop opening balances | `starting_unused_hours` and `starting_negative_hours` are repaired by the backfill command but absent from `ExternalImportService`'s invoice mapping, so a new onboarding stores nulls. | #83 |
-| Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. The drivers differ on defaults, `uuid` and JSON handling. Nothing has been attributed to it; CI matches production deliberately, so a switch has to happen in both places at once. | #78 |
+| Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. At 10.6 the two grammars emit identical SQL for this schema — `typeUuid` returns `char(36)` on both, and the JSON selector difference is unreachable because nothing queries a JSON path. It diverges at server **10.7**, where the `mariadb` driver switches to a native `uuid` type: 30 `uuid()` columns would then differ by when their table was created. The trigger is a server upgrade rather than a code change. | #78 |
 
 ### What the replay says now
 
