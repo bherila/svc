@@ -96,11 +96,17 @@ final class ExternalImportService
      * @var list<string>
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
-        '/^Work items applied to retainer \(/',
+        // "Work items applied to retainer (N)" and its cadence-qualified form,
+        // "... applied to monthly retainer (N applied to 2026-01 cycle)".
+        '/^Work items applied to(?: [a-z-]+)? retainer \(/',
         '/^Deferred work items applied to retainer \(/',
+        '/^Deferred work items billed on agreement termination \(/',
         '/^Interim overage hours /',
         '/^Subcontractor: /',
-        '/^.+ Retainer \(/',
+        // The whole fee line, not a shape ending in "Retainer (": a "Gold
+        // Retainer (2025 tier)" an operator typed is not this, and normalising
+        // it would merge two allocations.
+        '/^.+ Retainer \([^()]* hours\) - .+ through .+$/',
     ];
 
     private const IDENTIFIABLE_BY_DESCRIPTION = [
@@ -1058,6 +1064,17 @@ final class ExternalImportService
         if ($exclusiveClaimantTable !== null
             && (in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)
                 || $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $replacementKey)->exists())) {
+            return null;
+        }
+
+        // A line nobody holds is not thereby this task's. An owner whose claim
+        // was cleared before its first import leaves the replacement looking
+        // free to both holder checks, and the two lines then describe different
+        // deliverables. Where the source records descriptions, they have to
+        // agree exactly - a milestone's is its title, so it names the thing.
+        if ($exclusiveClaimantTable !== null
+            && in_array('description', $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache), true)
+            && trim((string) ($supersededRow['description'] ?? '')) !== trim((string) ($replacement['description'] ?? ''))) {
             return null;
         }
 
