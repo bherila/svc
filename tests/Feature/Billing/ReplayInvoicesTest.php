@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -15,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use ReflectionMethod;
 use Tests\TestCase;
 
 /**
@@ -268,6 +270,112 @@ final class ReplayInvoicesTest extends TestCase
     }
 
     /**
+     * Charges are paired by what their wording says they are for, with only the
+     * amounts a composer writes into that wording removed. Removing every digit
+     * instead would make "Phase 1" and "Phase 2" one charge - and two charges
+     * that exchange prices leave every total, count and distinct amount
+     * unchanged, so pairing is the only thing that can see the swap.
+     */
+    public function test_charge_wording_keeps_the_numbers_that_are_not_amounts(): void
+    {
+        $withoutAmounts = new ReflectionMethod(ReplayInvoicesCommand::class, 'withoutAmounts');
+
+        $phaseOne = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 1');
+        $phaseTwo = (string) $withoutAmounts->invoke(null, 'Milestone: Phase 2');
+        $this->assertNotSame($phaseOne, $phaseTwo);
+
+        // The amounts, though, have to go: the composer writes them from the
+        // very price and quantity the comparison exists to detect.
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (12:30 @ $150.00/hr)'),
+            (string) $withoutAmounts->invoke(null, 'Deferred work items billed on agreement termination (99:00 @ $9.00/hr)'),
+        );
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (15:00 applied to February 2024 pool)'),
+            (string) $withoutAmounts->invoke(null, 'Work items applied to retainer (2:30 applied to February 2024 pool)'),
+        );
+    }
+
+    /**
+     * Two charges exchanging prices leaves the invoice total, the line count
+     * and the set of distinct amounts all unchanged. Nothing that looks at the
+     * invoice as a whole can see it; only pairing each charge to its own
+     * counterpart can.
+     */
+    public function test_two_charges_that_swap_prices_are_not_a_match(): void
+    {
+        $this->generatedHistory();
+
+        $invoiceId = ClientInvoiceLine::query()->where('type', 'prior_month_retainer')->value('client_invoice_id');
+        $lines = ClientInvoiceLine::query()->where('client_invoice_id', $invoiceId)->orderBy('sort_order')->get();
+        $this->assertGreaterThanOrEqual(2, $lines->count(), 'This fixture needs two lines on one invoice.');
+
+        /** @var ClientInvoiceLine $a */
+        $a = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $lines->last();
+        $this->assertNotSame((int) $a->total_amount, (int) $b->total_amount, 'The two lines must differ for a swap to mean anything.');
+
+        $carry = ['unit_amount' => (int) $a->unit_amount, 'quantity' => (string) $a->quantity, 'total_amount' => (int) $a->total_amount];
+        $a->forceFill(['unit_amount' => (int) $b->unit_amount, 'quantity' => (string) $b->quantity, 'total_amount' => (int) $b->total_amount])->save();
+        $b->forceFill($carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A charge whose wording changes along with its price has no counterpart to
+     * be paired with, so pairing cannot see the repricing. What gives it away
+     * is that the invoice now states an amount it did not state before.
+     */
+    public function test_a_repricing_that_takes_its_wording_with_it_still_gates(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->orderByDesc('total_amount')->firstOrFail();
+
+        // Nothing recognisable survives to pair on, and the invoice total is
+        // untouched, so only the amounts themselves say anything happened.
+        $line->forceFill([
+            'description' => 'An entirely different charge',
+            'unit_amount' => (int) $line->unit_amount + 700,
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($line->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
+     * A charge that moves project and changes price at the same time. Filing
+     * the move under attribution must not take the repricing with it.
+     */
+    public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
+    {
+        $this->generatedHistory();
+
+        /** @var ClientInvoiceLine $line */
+        $line = ClientInvoiceLine::query()->orderByDesc('total_amount')->firstOrFail();
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Somewhere else',
+        ]);
+
+        $unit = (int) $line->unit_amount;
+        $this->assertSame(0, $unit % 2, 'This fixture needs an even unit amount to halve.');
+
+        // Half the price at twice the quantity, so the invoice total is
+        // untouched, and filed under a different project at the same time.
+        $line->forceFill([
+            'client_project_id' => $project->id,
+            'unit_amount' => intdiv($unit, 2),
+            'quantity' => (string) ((float) $line->quantity * 2),
+        ])->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($line->invoice()->firstOrFail()->invoice_number));
+    }
+
+    /**
      * The safety property. The command deletes and regenerates every invoice to
      * do its work, so the only thing standing between it and production data is
      * the unconditional rollback.
@@ -392,6 +500,30 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /** The verdict the replay records for one invoice, via its report file. */
+    private function verdictFor(string $invoiceNumber): ?string
+    {
+        $report = tempnam(sys_get_temp_dir(), 'svc-replay-');
+
+        try {
+            $this->artisan('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--report' => $report,
+            ])->run();
+
+            /** @var array{comparisons: list<array<string, mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+
+        $verdicts = array_column($detail['comparisons'], 'verdict', 'invoice_number');
+
+        return $verdicts[$invoiceNumber] ?? null;
+    }
+
     private function fingerprint(): string
     {
         $parts = [];

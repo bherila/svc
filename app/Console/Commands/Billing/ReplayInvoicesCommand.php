@@ -833,7 +833,15 @@ final class ReplayInvoicesCommand extends Command
      */
     private static function withoutAmounts(string $description): string
     {
-        return (string) preg_replace('/\d[\d.,:]*/', '#', $description);
+        // Only the shapes a composer emits from an amount: a currency figure, a
+        // duration, and a spelled-out hour count. Removing every digit would
+        // make "Phase 1" and "Phase 2" the same charge, and a swap of their
+        // prices would then compare as no difference at all.
+        return (string) preg_replace(
+            ['/[$£€]\s?[\d,]+(?:\.\d+)?/u', '/\b\d+:\d{2}\b/', '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i'],
+            ['#', '#', '#'],
+            $description,
+        );
     }
 
     private static function decimalString(mixed $value): string
@@ -892,11 +900,12 @@ final class ReplayInvoicesCommand extends Command
         // its identity across a repricing and loses it when the line is
         // reclassified, added, or removed - which is the distinction the two
         // sides of the split need.
+        // What the charge is, and nothing about where it was filed. Type, date
+        // and project are attribution: a line that moves project *and* changes
+        // price would otherwise have no counterpart to compare against, and the
+        // repricing would disappear into the move.
         $identity = static fn (array $line): string => implode('|', [
-            (string) $line['type'],
-            (string) $line['line_date'],
             (string) $line['recurring_item_id'],
-            (string) $line['project_id'],
             (string) $line['identity_hash'],
         ]);
 
@@ -937,6 +946,25 @@ final class ReplayInvoicesCommand extends Command
 
                 break;
             }
+        }
+
+        // Pairing by identity cannot see an amount that exists on one side and
+        // nowhere on the other - a charge whose wording changed with its price,
+        // say. Comparing the distinct amounts the invoice states catches that
+        // without counting them, so a line merely added or removed at an amount
+        // still present elsewhere stays composition.
+        $distinctPrices = static function (array $lines) use ($priceTuple): array {
+            $seen = [];
+            foreach ($lines as $line) {
+                $seen[$priceTuple($line)] = true;
+            }
+            ksort($seen);
+
+            return $seen;
+        };
+
+        if ($distinctPrices($before) !== $distinctPrices($after)) {
+            $repriced = true;
         }
 
         $beforeCounts = $tally($before);
