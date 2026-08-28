@@ -83,10 +83,15 @@ concepts map across, the namespaces do not.
 
 ## How this code fails, and what has been done about it
 
-Two review passes over the port found 22 defects that its tests did not. They
-were not 22 unrelated mistakes. Almost all were one of three shapes, and each
+Five review passes over the port found 62 defects that its tests did not. They
+were not 62 unrelated mistakes. Almost all were one of five shapes, and each
 shape now has something structural holding it shut rather than a fix at the site
 where it was noticed.
+
+The first three are about the code. The last two are about the things built to
+check the code, which turned out to fail in their own characteristic ways — and
+those are worse, because a broken check does not merely miss a defect, it
+certifies its absence.
 
 **A rule stated in one place and restated in another.** "Which work draws on the
 retainer" was written out at four call sites and correct at three. The project
@@ -131,6 +136,35 @@ When a fallback answers a question about permission or money, the safe default i
 the restrictive one. `isSettledValue()` and `hasChargedValue()` treat an
 unrecognised status as untouchable.
 
+**A check that measures its own interference.** The replay blanks invoices so
+the generator can rebuild them, and left the payment rows behind. But
+`OverpaymentCreditService` derives credit from payment rows measured against
+`total_amount`, so every settled invoice in history read as overpaid by its full
+amount and every regenerated invoice drew on a credit pool that had never
+existed. Eight of the divergences the harness reported were its own. It had also
+been clearing ad-hoc invoices — which it never regenerates and never compares —
+releasing their claims to the cadence generator, which then billed the same work
+again and reported the second charge as a finding.
+
+A harness that mutates state to observe it has to be asked what else reads that
+state. Both fixes were subtractive: stop touching what is not being compared.
+
+**A check that reports success for a case it never examined.**
+`svc:billing:rehearse-generation` caught exceptions to decide whether generation
+was safe, but `generateAllInvoicesForAgreement()` catches each period's throwable
+and returns it as a skip carrying an `error` — so every period of every company
+could fail and the command would still print that generation is safe to run. The
+same shape, twice more: the restore verifier walked the source and skipped
+anything it could not map, so a restore missing rows produced no drift and read
+as verified; and the rehearsal called an empty workspace safe.
+
+The rule these share: a check must distinguish *passed* from *did not run*. Where
+it cannot, it must fail. `svc:billing:backfill-ledger` is held to the same
+standard from the other direction — it writes, so reporting is the default and
+`--apply` is the flag, and the whole repair is one transaction, because the
+checks that decide whether to trust the source can only be answered after the
+entire source has been walked.
+
 ### The engine gap underneath all of it
 
 The suite ran on SQLite while production runs MariaDB, and SQLite accepts what
@@ -169,24 +203,100 @@ the reason to believe the command was safe to point at production.
 
 ## What is not finished
 
-Tracked on the epic (#14) and the issues named here. Nothing below blocks the
-billing engine itself, which is implemented and green on both engines.
+Tracked on the epic (#14) and the issues named here. The engine is implemented
+and green on both database engines; what is listed below is either work not
+started, or a defect found by review and not yet fixed. Three of the latter
+(#79, #80, #82) change what a client would be charged.
 
-One thing to know before merging: **PR #71 is the base of #72 and is frozen.**
-Seven findings raised against #71 were fixed on #72's branch rather than its
-own, so #71 in isolation still contains them - a portal that lists unapproved
-time, an agreement validator that throws an unrenderable exception, invoice
-lines exposing internal ids, and the `one_time` cadence billing monthly. Merge
-#71 and #72 together, or land the fixes on #71 first.
+#71 and #72 are both on `main`. Five review findings were merged with them
+rather than silently, and two of those move money: a monthly correction range
+can resell a cycle an earlier invoice already sold (#79), and a draft interim
+invoice claims work the cadence invoice then cannot see (#80). Neither should
+be outstanding when this bills a real client.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | **Ran, and the last classification of its result was wrong.** Of 42 comparable invoices the run reported 4 exact, 8 the same total through differently arranged lines, 10 explained by a deliberate correction, 15 unexplained, 5 structural — and two independent reviews found the same load-bearing error in it. `retainer` sat in the capacity-dependent allowlist, so ten whole-invoice disappearances were waived as deliberate on the strength of `rollover_months > 0`. No capacity correction can move a contracted fee. The classifier is narrower now and those ten are unresolved again. The harness itself also needs work before its numbers mean anything: it preserves payment rows while zeroing invoice totals, so the credit ledger reads every historical payment as an overpayment and manufactures the credits that make up eight of the fifteen. Counts here are not a verdict. | #73 |
+| Replay against production data | **Ran again on the fixed harness. 11 of 42 reproduce exactly, 13 do not, and the reason is no longer capacity arithmetic.** See below. | #73 |
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor `retainer` and `direct` modes | Only flat-hourly has a representation here. No source rows use any mode, so this is a gap in the model rather than in the data. Flat-hourly work is excluded from retainer draw and billed as its own line, and a cost in another currency is refused rather than billed unconverted. | #76 |
 | Activity timeline | Rows are written; nothing reads them. | #77 |
+| Correction range can resell a sold cycle | A disjoint monthly correction derives the same `cycle_start` as the invoice that already sold that retainer, and the service-period overlap guard does not see it. Bills the retainer and its recurring items twice. | #79 |
+| Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
+| Replay compares line totals per type | Two lines of the same type moving by opposite amounts report no difference, and the snapshotted unit and tax amounts are discarded. The command's cent-level claim is overstated until this is a multiset comparison of individual lines. | #81 |
+| Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |
+| Fresh imports drop opening balances | `starting_unused_hours` and `starting_negative_hours` are repaired by the backfill command but absent from `ExternalImportService`'s invoice mapping, so a new onboarding stores nulls. | #83 |
 | Laravel `mariadb` driver | Production sets `DB_CONNECTION=mysql` against a MariaDB 10.6 server. The drivers differ on defaults, `uuid` and JSON handling. Nothing has been attributed to it; CI matches production deliberately, so a switch has to happen in both places at once. | #78 |
+
+### What the replay says now
+
+Three passes at this, and the first two were measuring the harness rather than
+the engine. That is worth saying plainly, because the numbers in each version of
+this document were stated with more confidence than they had earned.
+
+**The harness was manufacturing its own findings.** It blanked invoices for
+regeneration and left the payment rows behind, so the credit ledger read every
+settled invoice in history as overpaid by its full amount. Eight divergences
+were its own doing.
+
+**The classifier was waiving what it most needed to report.** `retainer` sat in
+the capacity-dependent allowlist, so ten whole-invoice disappearances were
+explained away on the strength of `rollover_months > 0`. No capacity correction
+can move a contracted fee.
+
+**And the import was reading rows the source had deleted.** This was the big
+one, and it hid behind the other two. Of 78 invoices, 49 were soft-deleted in
+the source; of 822 invoice lines, 764; of 455 time entries, 184. All of it
+arrived as live data.
+
+| | first run | harness fixed | import fixed |
+| --- | ---: | ---: | ---: |
+| reproduce exactly | 4 / 42 | 11 / 42 | **19 / 24** |
+| same total, lines arranged differently | 8 | 13 | **0** |
+| explained by a deliberate correction | 10 | 0 | 0 |
+| unexplained | 15 | 13 | **5** |
+| distinct reasons the generator refused | — | 5 | **1** |
+
+The one remaining refusal is `zero_activity_non_retainer`, which is a deliberate
+skip rather than a failure. Of the five unexplained, four are legacy-period
+pairings whose cycle total moves, and one is a recurring-item increase.
+
+#### A conclusion this document got wrong
+
+An earlier version of this section said:
+
+> **14 of the 78 historical invoices have a stored total that does not equal the
+> sum of their lines**, ten of them settled. Those cannot be asked of the engine
+> as if they were a target.
+
+That was wrong, and it was wrong in the most expensive direction: it attributed
+a defect in this code to the data it was reading, which is the one conclusion
+that stops you looking. An independent review reached it too, from the same
+exported artifacts, which is worth remembering the next time two sources agree.
+
+Counting only the lines the source still has, the number of invoices whose total
+disagrees with their own lines is **zero**. The source is consistent. The import
+was summing deleted lines into the totals.
+
+The same root cause accounted for the rest of it: the ten periods holding up to
+seven invoices each were all deleted drafts, and every refusal the generator
+gave was against a deleted row occupying the period. Two whole investigations -
+one into duplicate invoices, one into a half-open period convention - dissolved
+when the deleted rows stopped being imported.
+
+#### What is left
+
+- **Four legacy-period pairings** whose cycle total moves. These are the
+  one-cycle offset: the predecessor billed `period == cycle`, this engine sells
+  the month ahead, and pairing whole invoices by cycle aligns the retainer while
+  misaligning the work.
+- **One recurring-item increase** of a single unit.
+- **Attribution is still by opportunity, not causation.** There are four
+  corrections and sixteen combinations of them. A divergence is explained when
+  disabling one correction moves the result back to history, with a trace naming
+  the lot that expired or the entries whose allocation changed - not when a
+  feature happens to be enabled. Until that exists, read "explained" as "not yet
+  shown to be a regression".
 
 Interim overage invoices deserve a specific caveat: they are implemented and
 tested, and production has never produced one (75 cadence-period invoices, 3
