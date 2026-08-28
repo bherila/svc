@@ -57,6 +57,12 @@ one of the things this port changes on purpose.
 Hours are the documented exception and still never gate: the source stored
 fractional hours and this schema derives them from whole minutes.
 
+Charges are paired in two passes: on everything about where a charge is filed,
+then - for whatever that could not pair - on what the charge is. Where several
+identically worded charges have all moved and carry different prices, pairing
+cannot say which became which, and the replay refuses to certify rather than
+assume. That costs a report on a narrow case and never passes a repricing.
+
 The four deliberate corrections can waive a divergence in *which* lines a period
 carries - a line added, removed, or reclassified. They never waive a difference
 in what an existing line costs: a charge keeps its identity across a repricing

@@ -993,10 +993,28 @@ final class ReplayInvoicesCommand extends Command
                 static fn (array $line): bool => ! isset($otherMap[$filedAs($line)]),
             ));
 
-            $repriced = $comparePrices(
-                $pricesBy($residual($before, $beforeFiled, $afterFiled), $identity),
-                $pricesBy($residual($after, $afterFiled, $beforeFiled), $identity),
-            );
+            $beforeResidual = $pricesBy($residual($before, $beforeFiled, $afterFiled), $identity);
+            $afterResidual = $pricesBy($residual($after, $afterFiled, $beforeFiled), $identity);
+            $repriced = $comparePrices($beforeResidual, $afterResidual);
+
+            // Fail closed where pairing cannot decide. If several charges share
+            // this looser identity and carry different prices, their filing has
+            // all changed and nothing links which became which - two of them
+            // exchanging prices is indistinguishable from each keeping its own.
+            // Certifying that as unchanged would pass a repricing; refusing
+            // costs a report on the narrow case where several identically
+            // worded charges move at once.
+            if (! $repriced) {
+                foreach ([$beforeResidual, $afterResidual] as $side) {
+                    foreach ($side as $prices) {
+                        if (count($prices) > 1) {
+                            $repriced = true;
+
+                            break 2;
+                        }
+                    }
+                }
+            }
         }
 
         // Pairing by identity cannot see an amount that exists on one side and

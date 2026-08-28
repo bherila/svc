@@ -525,6 +525,68 @@ final class ReplayInvoicesTest extends TestCase
      * A charge that moves project and changes price at the same time. Filing
      * the move under attribution must not take the repricing with it.
      */
+    /**
+     * Two concurrent charges that both move and exchange prices. Nothing links
+     * which became which, so pairing cannot decide - and where it cannot
+     * decide it must not certify, or a repricing passes as a pair of moves.
+     */
+    public function test_two_concurrent_charges_that_both_move_and_swap_are_not_certified(): void
+    {
+        $here = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
+        ]);
+        $there = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
+        ]);
+
+        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        if ($subcontracted->count() < 2) {
+            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
+        }
+
+        $elsewhere = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Elsewhere',
+        ]);
+        $beyond = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Beyond',
+        ]);
+
+        /** @var ClientInvoiceLine $a */
+        $a = $subcontracted->firstOrFail();
+        /** @var ClientInvoiceLine $b */
+        $b = $subcontracted->last();
+
+        // Both filed somewhere else than the engine files them, and their
+        // prices exchanged. The first pass can pair neither, and under the
+        // second they are one identity carrying the same two prices.
+        $carry = ['unit_amount' => (int) $a->unit_amount, 'total_amount' => (int) $a->total_amount, 'description' => (string) $a->description];
+        $a->forceFill(['client_project_id' => $elsewhere->id, 'unit_amount' => (int) $b->unit_amount,
+            'total_amount' => (int) $b->total_amount, 'description' => (string) $b->description])->save();
+        $b->forceFill(['client_project_id' => $beyond->id] + $carry)->save();
+
+        $this->assertSame('money_differs', $this->verdictFor($a->invoice()->firstOrFail()->invoice_number));
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();
