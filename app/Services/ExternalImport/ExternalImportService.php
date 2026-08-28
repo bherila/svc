@@ -113,7 +113,7 @@ final class ExternalImportService
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         '/^Work items applied to(?: (?:monthly|quarterly|semiannual|annual))? retainer \(/' => false,
         '/^Deferred work items applied to retainer \(/' => false,
-        '/^Deferred work items billed on agreement termination \(/' => true,
+        '/^Deferred work items billed on agreement termination \([\d.,]+ @ .+\/hr\)$/' => true,
         '/^Interim overage hours /' => false,
         '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
     ];
@@ -1484,10 +1484,35 @@ final class ExternalImportService
             // where losing to the predicate returns zero. Both mean the line
             // was taken, so both are read the same way rather than one of them
             // failing the whole run after earlier tables have committed.
+            // Two live tasks naming one line is two deliverables with one
+            // line between them. Left to the write, the lower id would take it
+            // and the constraint would reject the other - and nothing here says
+            // the lower id is the one the line billed.
+            if (($this->observedClaimsByLine()['client_tasks'][(string) ($row['client_invoice_line_id'] ?? '')] ?? 0) > 1) {
+                $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] = ($counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0) + 1;
+
+                continue;
+            }
+
             try {
                 $updated = $this->reserveMilestoneLine($destinationName, (int) $run->workspace_id, $taskId, $lineId);
             } catch (UniqueConstraintViolationException) {
                 $updated = 0;
+            } catch (QueryException $exception) {
+                // The line can go between the checks above and this write, the
+                // way it can on the time-entry side, and that arrives as a
+                // foreign key failure. It means the parent is missing.
+                if (DB::connection($destinationName)->table('client_invoice_lines')->where('id', $lineId)->exists()) {
+                    throw $exception;
+                }
+
+                $milestoneCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['missing_milestone_invoice_link_parent'] = ($counts['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0) + 1;
+
+                continue;
             }
 
             if ($updated === 0) {

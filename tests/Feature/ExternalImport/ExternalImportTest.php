@@ -1251,6 +1251,58 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    /**
+     * The termination prefix on somebody's own wording is not that line. Its
+     * whole group is replaced when it matches, so a prefix-only matcher would
+     * merge two allocations that the parenthetical distinguishes.
+     */
+    public function test_termination_wording_that_is_not_the_generated_syntax_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Two live tasks naming one line is two deliverables with one line between
+     * them. Left to the write, the lower id takes it and the constraint rejects
+     * the other - and nothing says the lower id is the one the line billed.
+     */
+    public function test_a_live_milestone_line_two_tasks_claim_is_given_to_neither(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (24, 13, 'The other deliverable', 'Names the same line', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (261, 11, NULL, 'SYN-261', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (262, 261, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 262, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 24)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(2, $summary['counts']['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+            'Neither task may take a line that might have billed the other',
+        );
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();
