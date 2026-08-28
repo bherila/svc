@@ -55,9 +55,6 @@ Unused retainer hours can roll over to future months (configurable via `rollover
 - **`rollover_months = N`**: Unused hours survive for N months *after* the month
   they were earned. `1` keeps January's remainder spendable through February and
   expires it at the end of it; `2` carries it through March.
-- **`rollover_months = -1`**: Unlimited. Unused hours never expire.
-  `RolloverCalculator::UNLIMITED` is the name for it; any negative value is read
-  the same way.
 
 > This section previously said `1` meant hours were usable only in the month
 > they were earned, which is off by one against `RolloverCalculator` and against
@@ -67,14 +64,6 @@ Unused retainer hours can roll over to future months (configurable via `rollover
 > carries exactly `1`, so the two readings disagreed about all of them, and no
 > rollover divergence in the replay could be adjudicated while both statements
 > stood.
-
-The sentinel shares the window's column rather than adding a boolean beside it,
-because "how long do unused hours survive?" is one question. That required
-widening `rollover_months` from `unsignedInteger`, which could not hold it —
-MySQL refuses the write and SQLite accepts it, so the feature would have looked
-correct in the test suite and failed in production. `RolloverCalculator` answers
-the window through `isSpendable()` and `carriesForever()`; a caller comparing
-`rollover_months > 0` reads unlimited as off.
 
 Expiry is by elapsed calendar months, not by walking stored balances. The
 predecessor aged rollover by stepping through months that held a non-zero

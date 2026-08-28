@@ -85,7 +85,7 @@ final class DeliberateCorrections
         // Enabling rollover is not enough to reach that. The divergence needs a
         // month inside the window that consumed its entire retainer, because a
         // month with anything left over aged correctly in the original too.
-        if ($withinCapacity && $facts->rolloverMonths !== 0 && $facts->fullyUsedMonthInRolloverWindow) {
+        if ($withinCapacity && $facts->rolloverMonths > 0 && $facts->fullyUsedMonthInRolloverWindow) {
             $explanations[] = [
                 'key' => 'rollover_expiry_ages_by_calendar',
                 'summary' => 'Rollover ages by elapsed calendar months; the original could not see a fully-used month.',

@@ -2,8 +2,6 @@
 
 namespace App\Support\Billing;
 
-use App\Services\Billing\RolloverCalculator;
-
 /**
  * What is true of one agreement and period, for {@see DeliberateCorrections}.
  *
@@ -21,13 +19,7 @@ use App\Services\Billing\RolloverCalculator;
 final class CorrectionFacts
 {
     public function __construct(
-        /**
-         * How many months the agreement carries unused hours forward.
-         *
-         * Zero means none. Negative is {@see RolloverCalculator::UNLIMITED} and
-         * means they never expire, so a rule that asks whether rollover is on
-         * has to test against zero rather than reading `> 0`.
-         */
+        /** How many months the agreement carries unused hours forward. */
         public readonly int $rolloverMonths,
 
         /**
