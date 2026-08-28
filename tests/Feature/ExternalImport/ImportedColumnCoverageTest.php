@@ -33,8 +33,6 @@ final class ImportedColumnCoverageTest extends TestCase
      */
     private const GLOBALLY_EXEMPT = [
         'id' => 'Database-assigned.',
-        'created_at' => 'Stamped by the insert path from the source row dates.',
-        'updated_at' => 'Stamped by the insert path from the source row dates.',
         'deleted_at' => 'The importer does not carry deletions; a deleted source row is not imported at all.',
         'lock_version' => 'Optimistic locking counter; only ever incremented by the persistence layer.',
     ];
@@ -63,7 +61,6 @@ final class ImportedColumnCoverageTest extends TestCase
             'access_scope' => 'Project-level client scoping is an SVC concept the source had no column for, and it is opt-in: inferring a scope on import would narrow every portal at once.',
         ],
         'client_time_entries' => [
-            'subcontractor_cost_currency' => 'Source stores a bare hourly rate with no currency; the agreement currency is authoritative.',
             'subcontractor_cost_metadata' => 'SVC-only; the source has no structured subcontractor cost.',
             'is_visible_to_client' => 'Source has no per-entry client visibility. Defaults closed, which is the safe direction.',
             'client_visible_description' => 'Source has no client-safe description. Left null so the portal shows nothing rather than an internal note.',

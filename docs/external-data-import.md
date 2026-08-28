@@ -36,6 +36,15 @@ that source-side integer IDs can be reused.
    is left alone, because repointing a billed row is not a decision an import
    pass gets to make.
 
+A reconciliation pass reads the source directly rather than through the row the
+importer just wrote, so it skips any row whose snapshot this run refused: a
+`source_changed` row keeps its old ledger item, and linking from it would splice
+unobserved source state into financial records. The ledger is keyed on the
+source identity rather than on a workspace, so both passes also carry a
+workspace predicate - a public id can resolve to a row owned by a tenant this
+run is not importing into, and a blocked write is reported rather than counted
+as a link.
+
 Every destination column an importer owns is either mapped, reconciled in step
 8, or listed as exempt with a reason in `ImportedColumnCoverageTest`. A column
 that is merely fillable is not covered - the model accepts it and nothing ever
