@@ -984,6 +984,52 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertTrue($row['line_repriced'], 'The claim links the two versions when the wording cannot.');
     }
 
+    /**
+     * Two deliverables alike in every field the invoice shows. If the claim is
+     * not compared, a milestone billed against the wrong one reproduces
+     * exactly - the charge is right and the thing it paid for is not.
+     */
+    public function test_a_milestone_claimed_by_a_different_task_is_not_a_match(): void
+    {
+        $tasks = [];
+        $this->generatedHistory(function (ClientAgreement $agreement) use (&$tasks): void {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Deliverables',
+            ]);
+
+            // Identical in title, completion and price - so nothing but the
+            // claim tells the two charges apart.
+            foreach ([1, 2] as $ignored) {
+                $tasks[] = ClientTask::query()->create([
+                    'workspace_id' => $this->workspace->id,
+                    'client_project_id' => $project->id,
+                    'title' => 'Phase one',
+                    'status' => 'completed',
+                    'completed_at' => '2024-02-20',
+                    'milestone_price_amount' => 250000,
+                ]);
+            }
+        });
+
+        $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
+            ->where('type', 'milestone')->orderBy('id')->first();
+        $this->assertInstanceOf(ClientInvoiceLine::class, $line, 'The fixture must bill a milestone.');
+        $invoice = $line->invoice()->firstOrFail();
+
+        // History billed this charge against the other deliverable.
+        $claimant = ClientTask::query()->where('workspace_id', $this->workspace->id)
+            ->where('client_invoice_line_id', $line->id)->firstOrFail();
+        $other = ClientTask::query()->where('workspace_id', $this->workspace->id)
+            ->whereKeyNot($claimant->getKey())->firstOrFail();
+
+        $claimant->forceFill(['client_invoice_line_id' => null])->save();
+        $other->forceFill(['client_invoice_line_id' => $line->id])->save();
+
+        $this->assertNotSame('match', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
     {
         $this->generatedHistory();

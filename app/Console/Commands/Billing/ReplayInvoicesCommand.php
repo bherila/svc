@@ -1005,7 +1005,7 @@ final class ReplayInvoicesCommand extends Command
             $counts = [];
             foreach ($lines as $line) {
                 $signature = sprintf(
-                    '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s desc %s',
+                    '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
                     (string) $line['type'],
                     (int) $line['unit_amount'],
                     (string) $line['quantity'],
@@ -1015,6 +1015,7 @@ final class ReplayInvoicesCommand extends Command
                     ((string) $line['agreement_id']) === '' ? 'none' : (string) $line['agreement_id'],
                     ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
                     ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
+                    ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
                     (string) $line['description_hash'],
                 );
                 $counts[$signature] = ($counts[$signature] ?? 0) + 1;
@@ -1039,6 +1040,7 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['recurring_item_id'],
             (string) $line['project_id'],
             (string) $line['agreement_id'],
+            (string) $line['claimed_by'],
             (string) $line['identity_hash'],
         ]);
 
