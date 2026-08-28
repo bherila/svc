@@ -85,6 +85,48 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
+    /**
+     * The repair now writes a link between two tenant-owned financial rows, so
+     * the mapping it resolves has to name a row this workspace owns. A source
+     * key is the same integer in every tenant imported from one predecessor,
+     * and the foreign key here is not workspace-composite.
+     */
+    public function test_a_backfilled_milestone_link_never_resolves_another_workspaces_line(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        // An invoice line that genuinely belongs to somebody else, with source
+        // line 901 mapped to it under this workspace's own run - so only the
+        // destination-side ownership check stands between the task and it.
+        $other = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $otherInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'THEIRS-1', 'status' => 'draft', 'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+        $otherLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $other->id, 'client_invoice_id' => $otherInvoice->id,
+            'type' => 'milestone', 'description' => 'Theirs', 'quantity' => '1.0000',
+            'unit_amount' => 100000, 'tax_amount' => 0, 'total_amount' => 100000, 'sort_order' => 0,
+        ]);
+
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '901')
+            ->update(['target_public_id' => $otherLine->public_id]);
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $task->refresh();
+        $this->assertNull($task->client_invoice_line_id);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();

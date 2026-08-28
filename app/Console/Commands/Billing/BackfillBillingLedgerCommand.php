@@ -329,13 +329,33 @@ final class BackfillBillingLedgerCommand extends Command
             return;
         }
 
-        $counters['written']++;
-        if (! $dryRun) {
-            $this->db()->table($table)
-                ->where('id', $id)
-                ->where('workspace_id', $this->workspaceId)
-                ->update($changes);
+        if ($dryRun) {
+            $counters['written']++;
+
+            return;
         }
+
+        $query = $this->db()->table($table)
+            ->where('id', $id)
+            ->where('workspace_id', $this->workspaceId);
+
+        // Fill-only has to be decided in the write, not in the read above.
+        // Between the two, generation can fill one of these columns - a
+        // milestone's invoice line, say - and an unconditional update would
+        // replace that billing decision with a stale value from the source.
+        foreach (array_keys($changes) as $column) {
+            $query->whereNull($column);
+        }
+
+        if ($query->update($changes) === 0) {
+            // Someone filled one of them in between. Leave it; a re-run picks
+            // up whatever is still genuinely empty.
+            $counters['changed']++;
+
+            return;
+        }
+
+        $counters['written']++;
     }
 
     /**

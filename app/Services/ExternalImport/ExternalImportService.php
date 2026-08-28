@@ -761,18 +761,23 @@ final class ExternalImportService
             return;
         }
 
+        // Streamed, not materialised. Fingerprinting needs every column, and a
+        // long billed-time history would otherwise be held in memory in full
+        // after the imports have already succeeded.
         $rows = SourceRows::for($source, $sourceRuntimeName, 'client_time_entries')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
-            ->get();
-        $linkCounts['source_rows'] = $rows->count();
+            ->cursor();
 
         foreach ($rows as $rawRow) {
+            $linkCounts['source_rows']++;
             $row = (array) $rawRow;
             $sourceKey = (string) ($row['id'] ?? '');
 
             if (! $this->observedThisRun('client_time_entries', $sourceKey, $row, $ledgerItems)) {
                 $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_source_changed'] = ($counts['failure_reasons']['time_link_source_changed'] ?? 0) + 1;
 
                 continue;
             }
@@ -853,15 +858,20 @@ final class ExternalImportService
         $rows = SourceRows::for($source, $sourceRuntimeName, 'client_tasks')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
-            ->get();
-        $milestoneCounts['source_rows'] = $rows->count();
+            ->cursor();
 
         foreach ($rows as $rawRow) {
+            $milestoneCounts['source_rows']++;
             $row = (array) $rawRow;
             $sourceKey = (string) ($row['id'] ?? '');
 
+            // A rejected link is not a cosmetic skip: the milestone stays
+            // unlinked, and an unlinked completed milestone is one the next
+            // generation run charges for again. The run must not report clean.
             if (! $this->observedThisRun('client_tasks', $sourceKey, $row, $ledgerItems)) {
                 $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_source_changed'] = ($counts['failure_reasons']['milestone_link_source_changed'] ?? 0) + 1;
 
                 continue;
             }

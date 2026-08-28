@@ -448,6 +448,42 @@ class ExternalImportTest extends TestCase
         $this->assertSame(1, $summary['milestone_link_counts']['rejected']);
         $this->assertSame(0, $summary['milestone_link_counts']['linked']);
         $this->assertNull(DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+
+        // An unlinked milestone is one the next generation run bills again, so
+        // the rejection has to reach the run status rather than living only in
+        // the link counters.
+        $this->assertNotSame('completed', $summary['status']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_source_changed'] ?? 0);
+    }
+
+    public function test_a_billed_time_link_refuses_rows_owned_by_another_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (111, 11, NULL, 'SYN-111', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (112, 111, NULL, NULL, 'Synthetic billed line', '1', '100.00', '100.00', 'time', 1)");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (113, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 112)");
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+
+        $pivotsAfterOwner = DB::table('client_invoice_line_time_entries')->count();
+
+        // Both rows belong to the owning workspace; a run for another tenant
+        // resolves them through the same identity-keyed ledger.
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['failed']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_outside_workspace'] ?? 0);
+        // No pivot row was added, and none carries the other tenant's id.
+        $this->assertSame($pivotsAfterOwner, DB::table('client_invoice_line_time_entries')->count());
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
     }
 
     public function test_imported_rows_keep_the_dates_the_source_recorded(): void
