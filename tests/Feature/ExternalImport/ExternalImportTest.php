@@ -1150,6 +1150,55 @@ class ExternalImportTest extends TestCase
         );
     }
 
+    /**
+     * A rate of 2000.00 is an amount, not a year. Reading its first four digits
+     * as a cycle would leave 2000.N, which differs from 2001.N when the rate
+     * moves - refusing a recovery that should have happened.
+     */
+    public function test_a_year_shaped_amount_is_still_an_amount(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer at 2000.00' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer at 2001.00' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A milestone establishes identity through an exclusive claimant and an
+     * unheld line, and never reads a description - so a source without that
+     * column must not lose milestone recovery along with the aggregate kind.
+     */
+    public function test_a_milestone_is_recovered_from_a_source_with_no_description_column(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        // No description column at all.
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (211, 11, NULL, 'SYN-211', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (212, 211, NULL, NULL, '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (213, 211, NULL, NULL, '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 212, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['milestone_link_counts']['recovered']);
+        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
+        $this->assertNotNull(ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();

@@ -741,13 +741,44 @@ final class ExternalImportService
     private static function descriptionShape(mixed $description): string
     {
         // Longest first, so a range is matched whole rather than as two labels.
-        $keep = '(?:19|20)\d{2}(?:-(?:\d{2}(?:-\d{2})?|Q[1-4]))?';
+        // The lookahead is what stops a year-shaped amount being read as a
+        // year: a deferred termination line carries a rate of 2000.00, and
+        // matching its first four digits would leave 2000.N - which then
+        // differs from 2001.N when the rate moves, and refuses a recovery that
+        // should have happened.
+        $keep = '(?:19|20)\d{2}(?:-(?:\d{2}(?:-\d{2})?|Q[1-4]))?(?![.,:]?\d)';
 
         return (string) preg_replace_callback(
             '/'.$keep.'\.\.'.$keep.'|'.$keep.'|\d+(?:[.,:]\d+)*/',
             static fn (array $m): string => preg_match('/^\d/', $m[0]) === 1 && preg_match('/^(?:'.$keep.'\.\.'.$keep.'|'.$keep.')$/', $m[0]) === 1 ? $m[0] : 'N',
             trim((string) ($description ?? '')),
         );
+    }
+
+    /**
+     * Take a milestone line for one task, if it is still there to take.
+     *
+     * Two guards saying the same thing, because either can be the one that
+     * catches it. The predicate settles it inside a single statement where a
+     * reader a statement earlier could be overtaken; the unique index settles
+     * it when two statements are in flight at once. The caller reads a refusal
+     * from either the same way.
+     */
+    private function reserveMilestoneLine(string $destinationName, int $workspaceId, int $taskId, int $lineId): int
+    {
+        return DB::connection($destinationName)->table('client_tasks')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $taskId)
+            ->whereNull('client_invoice_line_id')
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->fromSub(
+                DB::connection($destinationName)->table('client_tasks')
+                    ->select('id')
+                    ->where('workspace_id', $workspaceId)
+                    ->where('client_invoice_line_id', $lineId)
+                    ->where('id', '!=', $taskId),
+                'holders',
+            ))
+            ->update(['client_invoice_line_id' => $lineId]);
     }
 
     /**
@@ -898,11 +929,17 @@ final class ExternalImportService
         }
 
         $columns = $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache);
-        // The description is required here even though the importer tolerates
-        // its absence, because without one there is nothing but the type left
-        // and the type was never enough. Two empty descriptions are not a
-        // match; they are the absence of the evidence a match needs.
-        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description'] as $required) {
+        // The description is required where it is the evidence - an aggregate
+        // claim has nothing but the type without it, and the type was never
+        // enough. A milestone establishes identity another way, through an
+        // exclusive claimant and an unheld line, so demanding a column it never
+        // reads would only disable a recovery that is sound without it.
+        $columnsNeeded = ['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at'];
+        if ($exclusiveClaimantTable === null) {
+            $columnsNeeded[] = 'description';
+        }
+
+        foreach ($columnsNeeded as $required) {
             if (! in_array($required, $columns, true)) {
                 return null;
             }
@@ -1404,19 +1441,16 @@ final class ExternalImportService
             // application stops two tasks holding one line. The availability
             // question is therefore asked by the write rather than before it:
             // a reader that answered it a statement earlier can be overtaken.
-            $updated = DB::connection($destinationName)->table('client_tasks')
-                ->where('workspace_id', $run->workspace_id)
-                ->where('id', $taskId)
-                ->whereNull('client_invoice_line_id')
-                ->whereNotExists(fn ($query) => $query->selectRaw('1')->fromSub(
-                    DB::connection($destinationName)->table('client_tasks')
-                        ->select('id')
-                        ->where('workspace_id', $run->workspace_id)
-                        ->where('client_invoice_line_id', $lineId)
-                        ->where('id', '!=', $taskId),
-                    'holders',
-                ))
-                ->update(['client_invoice_line_id' => $lineId]);
+            // The predicate and the constraint answer the same question, and
+            // either can be the one that answers it: losing to the index throws
+            // where losing to the predicate returns zero. Both mean the line
+            // was taken, so both are read the same way rather than one of them
+            // failing the whole run after earlier tables have committed.
+            try {
+                $updated = $this->reserveMilestoneLine($destinationName, (int) $run->workspace_id, $taskId, $lineId);
+            } catch (UniqueConstraintViolationException) {
+                $updated = 0;
+            }
 
             if ($updated === 0) {
                 // Nothing written, for one of two reasons: this task already
