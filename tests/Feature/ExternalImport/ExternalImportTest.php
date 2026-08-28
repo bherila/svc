@@ -723,6 +723,42 @@ class ExternalImportTest extends TestCase
         $this->assertSame(1, $held, 'Only the task that genuinely holds the live line may point at it');
     }
 
+    /**
+     * The pivot is unique on the entry. An operator billing it in the gap
+     * between the two reads leaves a link this import has no business
+     * repointing - and inserting beside it would violate the constraint and
+     * throw the run after earlier tables had committed.
+     */
+    public function test_a_recovered_claim_leaves_a_destination_link_the_operator_made(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The operator moves the entry onto a different line after the import.
+        $entryId = ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->value('id');
+        $other = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id'),
+            'type' => 'adjustment', 'description' => 'Billed by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+        ]);
+        DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)
+            ->update(['client_invoice_line_id' => $other->id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)->count());
+        $this->assertSame(
+            (int) $other->id,
+            (int) DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)->value('client_invoice_line_id'),
+        );
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();

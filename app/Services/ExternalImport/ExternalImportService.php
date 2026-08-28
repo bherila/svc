@@ -47,7 +47,11 @@ final class ExternalImportService
      * two reads simply vanishes from the second. Without this the pass has
      * nothing to notice its absence against.
      *
-     * @var array<string, array<string, true>>
+     * The value is the line each claim named, not just that it had one, so a
+     * later question about which claims competed can be answered from what
+     * this run observed rather than from a second read that may have moved.
+     *
+     * @var array<string, array<string, string>>
      */
     private array $linkedSourceKeys = [];
 
@@ -224,7 +228,7 @@ final class ExternalImportService
             $sourceKey = (string) ($row[$keyColumn] ?? '');
             $seenKeys[$sourceKey] = true;
             if (($row['client_invoice_line_id'] ?? null) !== null && $sourceKey !== '') {
-                $this->linkedSourceKeys[$table][$sourceKey] = true;
+                $this->linkedSourceKeys[$table][$sourceKey] = (string) $row['client_invoice_line_id'];
             }
             if ($sourceKey === '') {
                 $counts['failed']++;
@@ -713,18 +717,18 @@ final class ExternalImportService
         $claimed = [];
 
         if (count($superseded) > 1) {
-            // Only live claimants count. A claim on a row the source has
-            // deleted is not competing for anything, because that row is not
-            // imported and never reaches the reconciliation loop.
-            foreach (['client_time_entries', 'client_tasks'] as $table) {
-                if (! in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $table, $queryCache), true)) {
-                    continue;
-                }
+            $keys = array_flip(array_map(strval(...), $superseded));
 
-                foreach (SourceRows::for($source, $sourceRuntimeName, $table)
-                    ->whereIn('client_invoice_line_id', $superseded)
-                    ->pluck('client_invoice_line_id') as $claim) {
-                    $claimed[(string) $claim] = true;
+            // The claims this run observed, not the ones the source still
+            // shows. A competitor deleted or cleared between the two reads
+            // would otherwise disappear from the count and leave the survivor
+            // looking unambiguous - and vanishedLinkCount() reports that
+            // afterwards without undoing a link written on the strength of it.
+            foreach (['client_time_entries', 'client_tasks'] as $table) {
+                foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
+                    if (isset($keys[$lineKey])) {
+                        $claimed[$lineKey] = true;
+                    }
                 }
             }
         }
@@ -833,13 +837,14 @@ final class ExternalImportService
         $replacement = (array) $replacements->first();
         $replacementKey = (string) ($replacement['client_invoice_line_id'] ?? '');
 
-        // The row being resolved names a superseded line, so anything holding
-        // the replacement is necessarily a different row.
+        // Asked of what this run observed, not of the source now. A claim
+        // cleared between the two reads would otherwise make the replacement
+        // look unheld, and the row being resolved would take a line its
+        // neighbour was holding when anybody last looked. The row being
+        // resolved named a superseded line, so anything holding the
+        // replacement is necessarily a different row.
         if ($exclusiveClaimantTable !== null
-            && in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $exclusiveClaimantTable, $queryCache), true)
-            && SourceRows::for($source, $sourceRuntimeName, $exclusiveClaimantTable)
-                ->where('client_invoice_line_id', $replacementKey)
-                ->exists()) {
+            && in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)) {
             return null;
         }
 
@@ -1072,16 +1077,36 @@ final class ExternalImportService
                 continue;
             }
 
-            $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
-            $exists = $query->where('workspace_id', $run->workspace_id)
-                ->where('client_invoice_line_id', $lineId)
+            // Fill a hole only, the same rule the milestone pass follows, and
+            // for the same reason: repointing a billed row is not a decision an
+            // import pass gets to make. Asking only whether this exact pair
+            // exists is not enough - the pivot is unique on the entry, so an
+            // entry an operator billed onto some other line in the gap between
+            // the two reads would take the insert into a constraint violation
+            // and throw the whole run after earlier tables had committed.
+            $held = DB::connection($destinationName)->table('client_invoice_line_time_entries')
+                ->where('workspace_id', $run->workspace_id)
                 ->where('client_time_entry_id', $timeId)
-                ->exists();
-            if ($exists) {
-                $linkCounts['idempotent']++;
+                ->value('client_invoice_line_id');
+
+            if ($held !== null) {
+                if ((int) $held === $lineId) {
+                    $linkCounts['idempotent']++;
+
+                    continue;
+                }
+
+                // The destination says this work was billed somewhere else.
+                // Leaving it alone is right, but the run has not reconciled the
+                // link and must not report as though it had.
+                $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_destination_claims_another_line'] = ($counts['failure_reasons']['time_link_destination_claims_another_line'] ?? 0) + 1;
 
                 continue;
             }
+
+            $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
 
             $query->insert([
                 'workspace_id' => $run->workspace_id,
