@@ -114,10 +114,14 @@ final class ExternalImportService
         // Every one anchored end to end, not by its opening. A prefix is
         // something an operator can write too, and matching on one lets this
         // strip a figure that names the allocation rather than prices it.
-        '/^Work items applied to retainer \([\d.,]+ applied to .+ pool\)$/' => false,
-        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,]+ applied to .+ cycle\)$/' => false,
-        '/^Deferred work items applied to retainer \([\d.,]+\)$/' => false,
-        '/^Deferred work items billed on agreement termination \([\d.,]+ @ .+\/hr\)$/' => true,
+        //
+        // The figure class admits a colon because the source writes hours as
+        // H:MM - the migrated retainer draws read "(9:55)" and "(10:00)", not
+        // "(9.9168)". Anchoring without it matched nothing there at all.
+        '/^Work items applied to retainer \([\d.,:]+ applied to .+ pool\)$/' => false,
+        '/^Work items applied to (?:monthly|quarterly|semiannual|annual) retainer \([\d.,:]+ applied to .+ cycle\)$/' => false,
+        '/^Deferred work items applied to retainer \([\d.,:]+\)$/' => false,
+        '/^Deferred work items billed on agreement termination \([\d.,:]+ @ .+\/hr\)$/' => true,
         '/^Interim overage hours for [A-Z][a-z]+ \d{4}$/' => false,
         '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \([^()]* hours\) - .+ through .+$/' => false,
     ];
