@@ -1078,6 +1078,78 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
     }
 
+    /**
+     * PeriodLabel writes cycles as 2026-01, 2026-Q1 and 2026-01..2026-03.
+     * Keeping only the year would merge every month of a year into one charge.
+     */
+    public function test_two_cycles_in_one_year_are_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (9.9168) 2026-01' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10.0000) 2026-02' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Two empty descriptions are not a match; they are the absence of the
+     * evidence a match needs, and the type alone was never enough.
+     */
+    public function test_a_replacement_with_no_description_is_never_recovered(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '' WHERE client_invoice_line_id IN (122, 123)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Two tasks naming one superseded line is two deliverables with one line
+     * between them. Nothing says which it billed, so handing the survivor to
+     * whichever task is processed first would mark the other billed for good.
+     */
+    public function test_two_tasks_claiming_one_superseded_line_are_both_refused(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (21, 13, 'The other deliverable', 'Also claimed it', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (201, 11, NULL, 'SYN-201', 'issued', '2026-01-10', '2026-02-10', '5000.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (202, 201, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (203, 201, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        // Both tasks name the same superseded line.
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 202, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 21)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+            'Neither task may take a line that might have billed the other',
+        );
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();

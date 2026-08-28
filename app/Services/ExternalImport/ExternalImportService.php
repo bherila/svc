@@ -59,7 +59,7 @@ final class ExternalImportService
     /**
      * linkedSourceKeys inverted, built once per run.
      *
-     * @var array<string, true>|null
+     * @var array<string, int>|null
      */
     private ?array $observedClaimsByLine = null;
 
@@ -725,8 +725,11 @@ final class ExternalImportService
      *
      * Dates are not mutable figures. A retainer description carries the cycle
      * it is for, and February 2024 is not February 2025 - deleting every number
-     * would say they were the same charge. So years and ISO dates survive and
-     * everything else numeric does not.
+     * would say they were the same charge. Nor is it enough to keep the year:
+     * PeriodLabel writes cycles as 2026-01, 2026-Q1, 2026 and 2026-01..2026-03,
+     * so a normaliser that kept only the year would merge every month of one
+     * year into a single charge. Every shape it emits survives, along with full
+     * dates; everything else numeric does not.
      *
      * The replay normalises the same descriptions for a different question -
      * whether a line it generated is the line that was billed - and answers it
@@ -737,17 +740,26 @@ final class ExternalImportService
      */
     private static function descriptionShape(mixed $description): string
     {
+        // Longest first, so a range is matched whole rather than as two labels.
+        $keep = '(?:19|20)\d{2}(?:-(?:\d{2}(?:-\d{2})?|Q[1-4]))?';
+
         return (string) preg_replace_callback(
-            '/\d{4}-\d{2}-\d{2}|\d+(?:[.,:]\d+)*/',
-            static fn (array $m): string => preg_match('/^(?:\d{4}-\d{2}-\d{2}|(?:19|20)\d{2})$/', $m[0]) === 1 ? $m[0] : 'N',
+            '/'.$keep.'\.\.'.$keep.'|'.$keep.'|\d+(?:[.,:]\d+)*/',
+            static fn (array $m): string => preg_match('/^\d/', $m[0]) === 1 && preg_match('/^(?:'.$keep.'\.\.'.$keep.'|'.$keep.')$/', $m[0]) === 1 ? $m[0] : 'N',
             trim((string) ($description ?? '')),
         );
     }
 
     /**
-     * Every line this run observed a claim on, indexed by the line's source key.
+     * How many claims this run observed on each line, by the line's source key.
      *
-     * @return array<string, true>
+     * Counted rather than flagged. A milestone task's claim is exclusive, so
+     * two tasks naming one superseded line is not one claim seen twice - it is
+     * two deliverables and no way to tell which the line billed. Collapsing
+     * them to a single entry made that look unambiguous, and reconciliation
+     * would then hand the survivor to whichever task came first by id.
+     *
+     * @return array<string, int>
      */
     private function observedClaimsByLine(): array
     {
@@ -758,7 +770,7 @@ final class ExternalImportService
         $byLine = [];
         foreach (['client_time_entries', 'client_tasks'] as $table) {
             foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
-                $byLine[$lineKey] = true;
+                $byLine[$lineKey] = ($byLine[$lineKey] ?? 0) + 1;
             }
         }
 
@@ -886,7 +898,11 @@ final class ExternalImportService
         }
 
         $columns = $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache);
-        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at'] as $required) {
+        // The description is required here even though the importer tolerates
+        // its absence, because without one there is nothing but the type left
+        // and the type was never enough. Two empty descriptions are not a
+        // match; they are the absence of the evidence a match needs.
+        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description'] as $required) {
             if (! in_array($required, $columns, true)) {
                 return null;
             }
@@ -941,8 +957,11 @@ final class ExternalImportService
         // between generations of one line. Not every number, though: a retainer
         // description carries the cycle it is for, and February 2024 is not
         // February 2025.
+        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null);
+
         if ($exclusiveClaimantTable === null
-            && self::descriptionShape($supersededRow['description'] ?? null) !== self::descriptionShape($replacement['description'] ?? null)) {
+            && ($supersededShape === ''
+                || $supersededShape !== self::descriptionShape($replacement['description'] ?? null))) {
             return null;
         }
 
@@ -960,6 +979,15 @@ final class ExternalImportService
         if ($exclusiveClaimantTable !== null
             && (in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)
                 || $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $replacementKey)->exists())) {
+            return null;
+        }
+
+        // And the superseded line has to have been one claim, not two. Two
+        // tasks naming it is two deliverables with one line between them, and
+        // nothing here says which it billed - handing the survivor to whichever
+        // task is processed first would mark the other billed for good.
+        if ($exclusiveClaimantTable !== null
+            && ($this->observedClaimsByLine()[$supersededKey] ?? 0) > 1) {
             return null;
         }
 
