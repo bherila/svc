@@ -286,11 +286,27 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertNotSame($phaseOne, $phaseTwo);
 
         // A milestone title is user text appended whole, so a figure in it
-        // names the charge rather than pricing it. Only the trailing
-        // parenthetical a composer writes is normalised.
+        // names the charge rather than pricing it. Nothing outside the
+        // descriptions the billing services generate is normalised - including
+        // a title that happens to end in a parenthetical of its own.
         $this->assertNotSame(
             (string) $withoutAmounts->invoke(null, 'Milestone: Package $100'),
             (string) $withoutAmounts->invoke(null, 'Milestone: Package $200'),
+        );
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($100)'),
+            (string) $withoutAmounts->invoke(null, 'Milestone: Package ($200)'),
+        );
+
+        // And a generated line keeps everything that names its cycle while
+        // losing the hours it was priced from.
+        $this->assertSame(
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (99 hours) - Feb 1, 2024 through Feb 29, 2024'),
+        );
+        $this->assertNotSame(
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Feb 1, 2024 through Feb 29, 2024'),
+            (string) $withoutAmounts->invoke(null, 'Monthly Retainer (10 hours) - Mar 1, 2024 through Mar 31, 2024'),
         );
 
         // The amounts, though, have to go: the composer writes them from the
@@ -663,42 +679,7 @@ final class ReplayInvoicesTest extends TestCase
      */
     public function test_a_charge_misfiled_onto_an_occupied_key_is_still_paired(): void
     {
-        $here = ClientProject::query()->create([
-            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Here',
-        ]);
-        $there = ClientProject::query()->create([
-            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'There',
-        ]);
-
-        foreach ([[$here, 6000], [$there, 9000]] as [$project, $rate]) {
-            ClientTimeEntry::query()->create([
-                'workspace_id' => $this->workspace->id,
-                'client_company_id' => $this->company->id,
-                'client_project_id' => $project->id,
-                'user_id' => $this->user->id,
-                'worked_on' => '2024-02-14',
-                'minutes' => 60,
-                'description' => 'Subcontracted work',
-                'is_billable' => true,
-                'is_deferred' => false,
-                'status' => 'approved',
-                'currency' => 'USD',
-                'subcontractor_cost_amount' => $rate,
-                'subcontractor_cost_currency' => 'USD',
-            ]);
-        }
-
-        $this->generatedHistory();
-
-        $subcontracted = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
-        if ($subcontracted->count() < 2) {
-            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
-        }
-
-        /** @var ClientInvoiceLine $a */
-        $a = $subcontracted->firstOrFail();
-        /** @var ClientInvoiceLine $b */
-        $b = $subcontracted->last();
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
 
         // History filed this charge under the other project - where a charge
         // already sits - and repriced it to match.
@@ -743,6 +724,47 @@ final class ReplayInvoicesTest extends TestCase
             ->forceFill(['client_agreement_id' => $other->id])->save();
 
         $this->assertSame('composition_differs', $this->verdictFor((string) $invoice->invoice_number));
+    }
+
+    /**
+     * A charge that moves onto an occupied key while keeping its own price. The
+     * destination key gains a price without anything being repriced, so
+     * comparing the two price sets whole calls it a repricing; matching the
+     * occurrences first leaves only the move.
+     */
+    public function test_a_charge_that_moves_without_repricing_stays_composition(): void
+    {
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
+
+        // Filed under the other project, at its own price. Every amount the
+        // invoice states is unchanged; only where one charge sits moved.
+        $a->forceFill(['client_project_id' => $b->client_project_id])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertFalse($row['line_repriced'], 'Nothing was repriced; a charge moved.');
+        $this->assertSame('composition_differs', $row['verdict']);
+    }
+
+    /**
+     * Two charges collapsed onto one key and both repriced. The key is shared,
+     * and each side is left holding a price the other does not state - which is
+     * the first pass's whole question, asked of two charges at once.
+     */
+    public function test_two_charges_filed_onto_one_key_and_repriced_are_caught(): void
+    {
+        [$a, $b] = $this->twoConcurrentSubcontractorCharges();
+
+        // Both filed where the second sits, and both repriced to figures the
+        // engine never produces.
+        $a->forceFill(['client_project_id' => $b->client_project_id, 'unit_amount' => 1111, 'total_amount' => 1111])->save();
+        $b->forceFill(['unit_amount' => 2222, 'total_amount' => 2222])->save();
+
+        $row = $this->comparisonFor((string) $a->invoice()->firstOrFail()->invoice_number);
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row['line_repriced']);
     }
 
     public function test_a_charge_that_moves_and_reprices_is_not_filed_as_a_move(): void
@@ -920,6 +942,56 @@ final class ReplayInvoicesTest extends TestCase
      * A whole-database fingerprint, so the safety assertion cannot pass by
      * checking only the rows that happened to be remembered.
      */
+    /**
+     * One worker on two projects, billed once per project.
+     *
+     * The composer words these two identically apart from the rate each quotes,
+     * so nothing but the project tells them apart - which is what makes them
+     * the fixture for every question about pairing concurrent charges.
+     *
+     * @return array{0: ClientInvoiceLine, 1: ClientInvoiceLine}
+     */
+    private function twoConcurrentSubcontractorCharges(): array
+    {
+        foreach ([['Here', 6000], ['There', 9000]] as [$name, $rate]) {
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => $name,
+            ]);
+
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-02-14',
+                'minutes' => 60,
+                'description' => 'Subcontracted work',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+                'subcontractor_cost_amount' => $rate,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+        }
+
+        $this->generatedHistory();
+
+        $lines = ClientInvoiceLine::query()->where('type', 'subcontractor')->orderBy('id')->get();
+        if ($lines->count() < 2) {
+            $this->markTestSkipped('This fixture did not produce two concurrent subcontractor lines.');
+        }
+
+        /** @var ClientInvoiceLine $first */
+        $first = $lines->firstOrFail();
+        /** @var ClientInvoiceLine $last */
+        $last = $lines->last();
+
+        return [$first, $last];
+    }
+
     /**
      * The whole comparison row the replay records for one invoice.
      *

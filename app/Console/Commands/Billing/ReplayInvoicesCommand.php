@@ -11,6 +11,7 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -854,28 +855,33 @@ final class ReplayInvoicesCommand extends Command
      */
     private static function withoutAmounts(string $description): string
     {
-        // Every amount a composer writes goes in a trailing parenthetical -
-        // "(1:00 @ 60.00 USD/hr)", "(12.5 hours)" - and the one description
-        // built from user text, "Milestone: <title>", appends that title
-        // without one. So only the parenthetical is normalised: a milestone
-        // called "Package $100" keeps the figure that names it, and two such
-        // milestones stay different charges.
-        return (string) preg_replace_callback(
-            '/\(([^()]*)\)\s*$/',
-            static fn (array $m): string => '('.preg_replace(
-                [
-                    // What InvoiceLineComposer::formatMoney() writes: a plain
-                    // decimal beside its currency code, never a symbol.
-                    '/\b[\d,]+\.\d{2}\s+[A-Z]{3}\b/',
-                    '/[$£€]\s?[\d,]+(?:\.\d+)?/u',
-                    '/\b\d+:\d{2}\b/',
-                    '/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/i',
-                ],
-                ['#', '#', '#', '#'],
-                $m[1],
-            ).')',
-            $description,
-        );
+        // Anchored to the descriptions the billing services actually generate,
+        // rather than to a shape a description happens to have. The one built
+        // from user text - "Milestone: <title>" - is deliberately absent, so a
+        // milestone called "Package ($100)" keeps the figure that names it even
+        // though it ends in a parenthetical like the generated ones do.
+        $templates = [
+            '/^(Deferred work items applied to retainer) \(.*\)$/',
+            '/^(Deferred work items billed on agreement termination) \(.*\)$/',
+            '/^(Subcontractor: .*?) \(.*\)$/',
+            '/^(Work items applied to(?: .+?)? retainer) \(.*\)$/',
+            '/^(Interim overage hours for) .+$/',
+        ];
+
+        foreach ($templates as $template) {
+            if (preg_match($template, $description, $matches) === 1) {
+                return $matches[1].' (#)';
+            }
+        }
+
+        // The retainer fee line carries its hours in the middle and the cycle
+        // dates at the end. The dates name which cycle and stay; only the hours
+        // are derived from an amount.
+        if (preg_match('/^(.+ Retainer) \(.*\)( - .+)$/', $description, $matches) === 1) {
+            return $matches[1].' (#)'.$matches[2];
+        }
+
+        return $description;
     }
 
     private static function decimalString(mixed $value): string
@@ -984,11 +990,25 @@ final class ReplayInvoicesCommand extends Command
             return $map;
         };
 
+        // Prices that appear on both sides under one key are the same charges;
+        // what is left over on each side is what actually differs. Comparing
+        // the sets whole would call a charge that merely moved onto an occupied
+        // key a repricing, because the destination set gains a price without
+        // anything being repriced.
         $comparePrices = static function (array $beforeMap, array $afterMap): bool {
             foreach ($beforeMap as $key => $prices) {
-                // Only charges present on both sides. A key on one side alone
-                // is a line added or removed - composition, not a repricing.
-                if (isset($afterMap[$key]) && $afterMap[$key] !== $prices) {
+                if (! isset($afterMap[$key])) {
+                    // A key on one side alone is a line added or removed -
+                    // composition, not a repricing.
+                    continue;
+                }
+
+                $beforeOnly = array_diff_key($prices, $afterMap[$key]);
+                $afterOnly = array_diff_key($afterMap[$key], $prices);
+
+                // Both sides left holding a price the other does not: the same
+                // charge at a different price.
+                if ($beforeOnly !== [] && $afterOnly !== []) {
                     return true;
                 }
             }
@@ -1008,18 +1028,38 @@ final class ReplayInvoicesCommand extends Command
             // A charge misfiled onto a key the other side already uses would
             // otherwise take that side's genuine line out of the residual with
             // it, and both would disappear from the comparison together.
-            $residual = static function (array $lines, array $otherLines) use ($filedAs): array {
-                $available = [];
+            // Consumed in two rounds, exact first. A charge that matches the
+            // other side in filing *and* price is unambiguously the same charge
+            // unchanged; taking those out first stops a moved line being paired
+            // against its unmoved neighbour and reported as a repricing.
+            $residual = static function (array $lines, array $otherLines) use ($filedAs, $priceTuple): array {
+                $exact = [];
+                $filed = [];
                 foreach ($otherLines as $other) {
                     $key = $filedAs($other);
-                    $available[$key] = ($available[$key] ?? 0) + 1;
+                    $exact[$key."\0".$priceTuple($other)] = ($exact[$key."\0".$priceTuple($other)] ?? 0) + 1;
+                    $filed[$key] = ($filed[$key] ?? 0) + 1;
+                }
+
+                $remaining = [];
+                foreach ($lines as $line) {
+                    $key = $filedAs($line);
+                    $exactKey = $key."\0".$priceTuple($line);
+                    if (($exact[$exactKey] ?? 0) > 0) {
+                        $exact[$exactKey]--;
+                        $filed[$key]--;
+
+                        continue;
+                    }
+
+                    $remaining[] = $line;
                 }
 
                 $left = [];
-                foreach ($lines as $line) {
+                foreach ($remaining as $line) {
                     $key = $filedAs($line);
-                    if (($available[$key] ?? 0) > 0) {
-                        $available[$key]--;
+                    if (($filed[$key] ?? 0) > 0) {
+                        $filed[$key]--;
 
                         continue;
                     }
@@ -1147,13 +1187,30 @@ final class ReplayInvoicesCommand extends Command
             return $comparison;
         }
 
+        // Notes carry prose as well as line detail - a legacy pair explains its
+        // pairing in words - and every lowercase first word used to be read as
+        // a changed line type. One stray token makes confinedTo() reject every
+        // correction, so only real line types are taken.
+        // Line types, plus the three aggregate tokens a note can lead with that
+        // carry meaning here: 'subtotal', which DeliberateCorrections treats as
+        // capacity-dependent, and 'currency' and 'tax', which no correction
+        // covers and which must therefore stay in the list so they refuse one.
+        // Anything else leading a note is prose, and dropping it matters: an
+        // unrecognised token makes confinedTo() reject every correction.
+        $meaningful = [
+            ...array_map(static fn (InvoiceLineType $type): string => $type->value, InvoiceLineType::cases()),
+            'subtotal',
+            'currency',
+            'tax',
+        ];
+
         $changed = [];
         foreach ((array) ($comparison['notes'] ?? []) as $note) {
-            if (preg_match('/^([a-z_]+) /', (string) $note, $matches) === 1) {
+            if (preg_match('/^([a-z_]+) /', (string) $note, $matches) === 1 && in_array($matches[1], $meaningful, true)) {
                 $changed[] = $matches[1];
             }
         }
-        $changed = array_values(array_unique(array_diff($changed, ['line'])));
+        $changed = array_values(array_unique($changed));
 
         $comparison['explained_by'] = DeliberateCorrections::explaining(
             $changed,
@@ -1339,7 +1396,10 @@ final class ReplayInvoicesCommand extends Command
         // A line repriced with a compensating quantity moves no net total, so
         // the figure above can read zero on a run that failed. Saying so here
         // keeps the summary honest without opening the detail report.
-        $sameTotal = count(array_filter($unexplained, static fn (array $c): bool => (int) $c['money_delta'] === 0));
+        $sameTotal = count(array_filter(
+            $unexplained,
+            static fn (array $c): bool => (int) $c['money_delta'] === 0 && ($c['line_money_differs'] ?? false) === true,
+        ));
         if ($sameTotal > 0) {
             $this->components->twoColumnDetail(
                 '<fg=red>of which charge the same total by different lines</>',
