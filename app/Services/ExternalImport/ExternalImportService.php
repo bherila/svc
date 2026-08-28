@@ -1042,6 +1042,16 @@ final class ExternalImportService
             return null;
         }
 
+        // And the same agreement. One invoice can carry lines from more than
+        // one, and two agreements can have a line of the same type reading the
+        // same way - the words describe the work, not which contract it fell
+        // under. This is the one piece of identity the source records as a
+        // reference rather than as prose, so it is used where it exists.
+        if (in_array('client_agreement_id', $columns, true)
+            && (string) ($supersededRow['client_agreement_id'] ?? '') !== (string) ($replacement['client_agreement_id'] ?? '')) {
+            return null;
+        }
+
         // Held to the same fingerprint check as the row carrying the link. A
         // replacement edited since this run observed it describes a snapshot
         // this run never saw, and a billing link must not be written from one.
