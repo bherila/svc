@@ -679,77 +679,6 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * A milestone line is one line per task, so two superseded milestone lines
-     * stand for two deliverables. If regeneration kept only one, resolving both
-     * claims to the survivor would mark the dropped task billed and nothing
-     * would ever charge for it.
-     */
-    public function test_two_claimed_superseded_lines_never_collapse_onto_one_survivor(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (15, 13, 'Second milestone', 'The one regeneration dropped', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (141, 11, NULL, 'SYN-141', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (142, 141, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (143, 141, NULL, NULL, 'Superseded line for task 15', '1', '2500.00', '2500.00', 'milestone', 2, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (144, 141, NULL, NULL, 'The only line regeneration kept', '1', '2500.00', '2500.00', 'milestone', 3, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 142, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 143, milestone_price = 2500.00 WHERE id = 15');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
-        $this->assertSame(2, $summary['counts']['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0);
-        $this->assertSame(
-            0,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-            'Marking the dropped deliverable billed would mean nothing ever charges for it',
-        );
-    }
-
-    /**
-     * A milestone task holds its line in a column because a milestone is one
-     * deliverable that cannot be split. So a live line another task already
-     * holds is not available to this one: attaching the dropped milestone to
-     * its neighbour's line would mark it billed and nothing would charge for it.
-     */
-    public function test_a_replacement_another_milestone_already_holds_is_not_available(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (16, 13, 'The milestone that kept its line', 'Still billed', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (151, 11, NULL, 'SYN-151', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (152, 151, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (153, 151, NULL, NULL, 'The line task 16 still holds', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        // Task 14's line was superseded; task 16 holds the only live one.
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 152, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 153, milestone_price = 2500.00 WHERE id = 16');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $held = ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count();
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0);
-        // Task 16 keeps the line it always had; task 14 is left unlinked and
-        // reported rather than quietly attached to a deliverable it is not.
-        $this->assertSame(1, $held, 'Only the task that genuinely holds the live line may point at it');
-    }
-
-    /**
      * The pivot is unique on the entry. An operator billing it in the gap
      * between the two reads leaves a link this import has no business
      * repointing - and inserting beside it would violate the constraint and
@@ -782,47 +711,6 @@ class ExternalImportTest extends TestCase
         $this->assertSame(
             (int) $other->id,
             (int) DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)->value('client_invoice_line_id'),
-        );
-    }
-
-    /**
-     * A row can hold the replacement from an earlier import while the claim
-     * that put it there has since been cleared at the source. It is then absent
-     * from what this run observed, so only the destination knows the line is
-     * spoken for.
-     */
-    public function test_a_replacement_held_in_the_destination_is_not_available_either(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (18, 13, 'The milestone that kept its line', 'Still billed', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (171, 11, NULL, 'SYN-171', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (172, 171, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (173, 171, NULL, NULL, 'The line task 18 holds', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 172, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 173, milestone_price = 2500.00 WHERE id = 18');
-
-        app(ExternalImportService::class)->run('external', $workspace->slug, true);
-        $held = ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count();
-
-        // Task 18's claim is cleared at the source. The destination link it
-        // already established stays, and the next run cannot see the claim.
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = NULL WHERE id = 18');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(1, $held, 'Task 18 took its line on the first run');
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(
-            1,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-            'The line is still held by one task, not two',
         );
     }
 
@@ -912,60 +800,6 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * The column is indexed but not constrained, so nothing below the
-     * application stops two tasks holding one milestone line. A reader that
-     * found it free a statement earlier can be overtaken, so the write asks.
-     */
-    public function test_a_milestone_line_taken_between_the_check_and_the_write_is_not_taken_twice(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (19, 13, 'The task that gets there first', 'Assigned mid-run', NULL, '2026-01-05', '2026-01-06', NULL, NULL)");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (181, 11, NULL, 'SYN-181', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (182, 181, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (183, 181, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 182, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-
-        // Somebody assigns the surviving line to task 19 at the moment the
-        // availability check has just found it free, so only the write itself
-        // can still catch it.
-        DB::listen(function ($query) use ($workspace): void {
-            static $done = false;
-            // The destination check, not the source read of the same shape:
-            // only the destination one is workspace-scoped.
-            if ($done || ! str_contains($query->sql, 'exists')
-                || ! str_contains($query->sql, 'client_tasks')
-                || ! str_contains($query->sql, 'client_invoice_line_id')
-                || ! str_contains($query->sql, 'workspace_id')) {
-                return;
-            }
-            $done = true;
-            $line = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
-            $other = ClientTask::query()->where('workspace_id', $workspace->getKey())
-                ->whereNull('client_invoice_line_id')->orderByDesc('id')->value('id');
-            if ($line !== null && $other !== null) {
-                DB::table('client_tasks')->where('id', $other)->update(['client_invoice_line_id' => $line]);
-            }
-        });
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_taken_by_another_task'] ?? 0);
-        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
-        $this->assertSame(
-            1,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-            'One deliverable, one line, one holder',
-        );
-    }
-
-    /**
      * Same type is not the same line. Two retainer draws on one invoice are
      * two pools, and only the words say which - so a replacement whose
      * description says something else is not this line regenerated.
@@ -1001,39 +835,6 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(1, $summary['link_counts']['recovered']);
         $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
-    }
-
-    /**
-     * A claimant deleted before this run began was never observed, and has no
-     * destination row either - so only an unfiltered look at the source can
-     * notice that the line it holds is spoken for.
-     */
-    public function test_a_replacement_held_by_a_deleted_task_is_not_available(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN deleted_at TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (20, 13, 'The deleted owner', 'Gone before this run', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL, '2026-01-12 09:00:00')");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (191, 11, NULL, 'SYN-191', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (192, 191, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (193, 191, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 192, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 193 WHERE id = 20');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(
-            0,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-            'The deleted task still owns its deliverable',
-        );
     }
 
     /**
@@ -1119,38 +920,6 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * Two tasks naming one superseded line is two deliverables with one line
-     * between them. Nothing says which it billed, so handing the survivor to
-     * whichever task is processed first would mark the other billed for good.
-     */
-    public function test_two_tasks_claiming_one_superseded_line_are_both_refused(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (21, 13, 'The other deliverable', 'Also claimed it', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (201, 11, NULL, 'SYN-201', 'issued', '2026-01-10', '2026-02-10', '5000.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (202, 201, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (203, 201, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        // Both tasks name the same superseded line.
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 202, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 21)');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(
-            0,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-            'Neither task may take a line that might have billed the other',
-        );
-    }
-
-    /**
      * A figure outside the composer's parenthetical is treated as naming the
      * charge, because nothing here can tell a rate from a date without
      * classifying numbers - and every attempt at that lost to some format the
@@ -1194,66 +963,6 @@ class ExternalImportTest extends TestCase
     }
 
     /**
-     * A milestone establishes identity through an exclusive claimant and an
-     * unheld line, and never reads a description - so a source without that
-     * column must not lose milestone recovery along with the aggregate kind.
-     */
-    public function test_a_milestone_is_recovered_from_a_source_with_no_description_column(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        // No description column at all.
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (211, 11, NULL, 'SYN-211', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (212, 211, NULL, NULL, '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (213, 211, NULL, NULL, '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 212, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(1, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
-        $this->assertNotNull(ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
-    }
-
-    /**
-     * A rival deleted before the run began was never observed, and it may be
-     * the deliverable the superseded line actually billed - so the live task
-     * must not take the survivor on the strength of being the only one left.
-     */
-    public function test_a_rival_deleted_before_the_run_still_makes_the_claim_ambiguous(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN deleted_at TEXT');
-        $pdo->exec("INSERT INTO client_tasks VALUES (22, 13, 'The deleted rival', 'Claimed it too', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL, '2026-01-12 09:00:00')");
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (221, 11, NULL, 'SYN-221', 'issued', '2026-01-10', '2026-02-10', '5000.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (222, 221, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (223, 221, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        // Both the live task and the deleted one named the superseded line.
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 222, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 22)');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(
-            0,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-        );
-    }
-
-    /**
      * An operator can bill the deliverable on a different line between the two
      * reads. The import leaves that alone, but it has not reconciled the claim
      * and must not report as if it had.
@@ -1269,9 +978,8 @@ class ExternalImportTest extends TestCase
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
         $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
         $pdo->exec("INSERT INTO client_invoices VALUES (231, 11, NULL, 'SYN-231', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (232, 231, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (233, 231, NULL, NULL, 'Milestone', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 232, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (233, 231, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 233, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
 
         app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
@@ -1361,6 +1069,36 @@ class ExternalImportTest extends TestCase
     }
 
     /**
+     * A milestone whose line was superseded is reported, not guessed at.
+     *
+     * Nothing available says which task an unheld line belongs to: an invoice
+     * line carries no task reference, and its description is the task's title,
+     * which nothing makes unique. So the claim is left unlinked and counted,
+     * where an aggregate claim is recovered.
+     */
+    public function test_a_milestone_naming_a_superseded_line_is_reported_rather_than_resolved(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (133, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertNull(ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+    }
+
+    /**
      * "Gold Retainer (2025 tier)" is somebody's own wording that happens to end
      * the way a fee line starts. The matcher wants the whole generated shape,
      * not a phrase that resembles it.
@@ -1379,36 +1117,6 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(0, $summary['link_counts']['recovered']);
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
-    }
-
-    /**
-     * A line nobody holds is not thereby this task's. An owner whose claim was
-     * cleared before its first import leaves the replacement looking free to
-     * both holder checks, and the two lines then name different deliverables.
-     */
-    public function test_a_free_milestone_line_naming_another_deliverable_is_refused(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (251, 11, NULL, 'SYN-251', 'issued', '2026-01-10', '2026-02-10', '5000.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (252, 251, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        // Nobody holds it, and it is not the same deliverable.
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (253, 251, NULL, NULL, 'Milestone: data migration', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 252, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $this->assertSame(0, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(
-            0,
-            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
-        );
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
@@ -1434,32 +1142,6 @@ class ExternalImportTest extends TestCase
         // Refusing to resolve the claim again must not undo the link the run
         // that did read the replacement already established.
         $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->count());
-    }
-
-    public function test_a_milestone_naming_a_superseded_line_is_billed_by_its_replacement(): void
-    {
-        $user = User::factory()->create();
-        Config::set('external-import.user_bindings.7', $user->public_id);
-        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
-        $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
-        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
-        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
-        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (133, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
-        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
-
-        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
-
-        $liveLineId = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
-        $taskLink = ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id');
-
-        $this->assertSame(1, $summary['milestone_link_counts']['recovered']);
-        $this->assertSame(1, $summary['milestone_link_counts']['linked']);
-        $this->assertNotNull($taskLink);
-        $this->assertSame((int) $liveLineId, (int) $taskLink);
     }
 
     public function test_a_milestone_link_refuses_a_task_owned_by_another_workspace(): void

@@ -147,7 +147,7 @@ final class ExternalImportService
         /** @var ImportCounts $counts */
         $counts = $this->emptyCounts($inventory);
         $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
-        $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
+        $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $this->linkedSourceKeys = [];
         $this->observedClaimsByLine = null;
         $queryCache = $this->newQueryCache();
@@ -940,21 +940,21 @@ final class ExternalImportService
      * that exactly one live line on that invoice shares the superseded line's
      * type. The other is that exactly one superseded line of that type is still
      * claimed: not every type is one line per invoice, and a type that is one
-     * line per item - a milestone is one line per task, a subcontractor charge
-     * one per rate - can have several superseded lines standing for several
-     * different things. Collapsing those onto the single line that survived
-     * would mark work billed that the regenerated invoice dropped, and nothing
-     * would ever charge for it.
+     * line per item - a subcontractor charge is one per rate - can have several
+     * superseded lines standing for several different things. Collapsing those
+     * onto the single line that survived would mark work billed that the
+     * regenerated invoice dropped, and nothing would ever charge for it.
      *
-     * Where the claim is exclusive there is a third direction to check. A
-     * milestone task holds its line in a column because a milestone is one
-     * deliverable that cannot be split, so a live line another task already
-     * holds is not available to this one - a dropped milestone would otherwise
-     * be marked billed by attaching it to the survivor its neighbour owns. A
-     * time entry's claim is a pivot row precisely because one line bills many
-     * entries, so the same test there would refuse the ordinary case: the
-     * replacement in the migrated data is already claimed by nineteen live
-     * entries, and the twenty being recovered belong on it beside them.
+     * This is for aggregate claims only. A milestone's claim was recovered here
+     * too until it became clear that nothing available establishes which task
+     * an unheld line belongs to: an invoice line carries no task reference, and
+     * a description is the task's title, which nothing makes unique. Six rounds
+     * of narrowing - the claimant, the holder at the source, the holder here,
+     * the rival count, the title - each closed a case and left another, and the
+     * last one has no evidence left to appeal to. A milestone whose line was
+     * superseded is now reported unlinked rather than guessed at. It has never
+     * arisen in the migrated data; the two milestones there link from live
+     * lines in the ordinary way.
      *
      * Anything less than certain is refused and reported rather than guessed.
      *
@@ -969,8 +969,6 @@ final class ExternalImportService
         int $workspaceId,
         array $ledgerItems,
         array &$queryCache,
-        ?string $exclusiveClaimantTable = null,
-        ?int $claimantId = null,
     ): ?int {
         if ($supersededKey === '') {
             return null;
@@ -982,12 +980,7 @@ final class ExternalImportService
         // enough. A milestone establishes identity another way, through an
         // exclusive claimant and an unheld line, so demanding a column it never
         // reads would only disable a recovery that is sound without it.
-        $columnsNeeded = ['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at'];
-        if ($exclusiveClaimantTable === null) {
-            $columnsNeeded[] = 'description';
-        }
-
-        foreach ($columnsNeeded as $required) {
+        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description'] as $required) {
             if (! in_array($required, $columns, true)) {
                 return null;
             }
@@ -1013,7 +1006,7 @@ final class ExternalImportService
         // Where the claimant cannot establish identity, the type has to. One
         // superseded subcontractor line and one live one are two different
         // groups of work as often as they are the same line twice.
-        if ($exclusiveClaimantTable === null && ! in_array((string) $lineType, self::IDENTIFIABLE_BY_DESCRIPTION, true)) {
+        if (! in_array((string) $lineType, self::IDENTIFIABLE_BY_DESCRIPTION, true)) {
             return null;
         }
 
@@ -1044,55 +1037,8 @@ final class ExternalImportService
         // February 2025.
         $supersededShape = self::descriptionShape($supersededRow['description'] ?? null);
 
-        if ($exclusiveClaimantTable === null
-            && ($supersededShape === ''
-                || $supersededShape !== self::descriptionShape($replacement['description'] ?? null))) {
-            return null;
-        }
-
-        // Asked of what this run observed, not of the source now. A claim
-        // cleared between the two reads would otherwise make the replacement
-        // look unheld, and the row being resolved would take a line its
-        // neighbour was holding when anybody last looked. The row being
-        // resolved named a superseded line, so anything holding the
-        // replacement is necessarily a different row.
-        //
-        // And of the source unfiltered, because a claimant deleted before this
-        // run began was never observed at all: it is in neither the ledger nor
-        // the destination, so nothing else here can notice that the line it
-        // held is spoken for.
-        if ($exclusiveClaimantTable !== null
-            && (in_array($replacementKey, $this->linkedSourceKeys[$exclusiveClaimantTable] ?? [], true)
-                || $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $replacementKey)->exists())) {
-            return null;
-        }
-
-        // A line nobody holds is not thereby this task's. An owner whose claim
-        // was cleared before its first import leaves the replacement looking
-        // free to both holder checks, and the two lines then describe different
-        // deliverables. Where the source records descriptions, they have to
-        // agree exactly - a milestone's is its title, so it names the thing.
-        if ($exclusiveClaimantTable !== null
-            && in_array('description', $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache), true)
-            && trim((string) ($supersededRow['description'] ?? '')) !== trim((string) ($replacement['description'] ?? ''))) {
-            return null;
-        }
-
-        // And the superseded line has to have been one claim, not two. Two
-        // tasks naming it is two deliverables with one line between them, and
-        // nothing here says which it billed - handing the survivor to whichever
-        // task is processed first would mark the other billed for good.
-        //
-        // Counted both ways, because each misses what the other sees. A rival
-        // deleted before the run began was never observed, so the snapshot does
-        // not know about it; a rival deleted between the two reads is gone from
-        // the source, so a count taken now does not either. Either one being
-        // more than one means the old line had two deliverables to choose
-        // between, and nothing here says which it billed.
-        if ($exclusiveClaimantTable !== null && max(
-            $this->observedClaimsByLine()[$exclusiveClaimantTable][$supersededKey] ?? 0,
-            $source->table($exclusiveClaimantTable)->where('client_invoice_line_id', $supersededKey)->count(),
-        ) > 1) {
+        if ($supersededShape === ''
+            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null)) {
             return null;
         }
 
@@ -1107,18 +1053,6 @@ final class ExternalImportService
         $lineId = $this->internalId($destinationName, 'client_invoice_lines', $publicId);
 
         if ($lineId === null || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, $workspaceId)) {
-            return null;
-        }
-
-        // And here, not only in the source. A row can hold the replacement from
-        // an earlier import while the claim that put it there has since been
-        // cleared at the source - so it is absent from what this run observed,
-        // and the source-side question above cannot see it.
-        if ($exclusiveClaimantTable !== null && DB::connection($destinationName)->table($exclusiveClaimantTable)
-            ->where('workspace_id', $workspaceId)
-            ->where('client_invoice_line_id', $lineId)
-            ->when($claimantId !== null, fn ($query) => $query->where('id', '!=', $claimantId))
-            ->exists()) {
             return null;
         }
 
@@ -1422,7 +1356,7 @@ final class ExternalImportService
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
-     * @param  array{source_rows:int,linked:int,idempotent:int,recovered:int,rejected:int,failed:int}  $milestoneCounts
+     * @param  array{source_rows:int,linked:int,idempotent:int,rejected:int,failed:int}  $milestoneCounts
      * @param  array<string, mixed>  $counts
      */
     private function reconcileMilestoneTaskInvoiceLinks(
@@ -1467,17 +1401,6 @@ final class ExternalImportService
             $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $taskId = $this->internalId($destinationName, 'client_tasks', $taskPublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
-
-            // Same hazard as a time entry's claim, and the same recovery: a
-            // milestone naming a superseded line was billed, and an unlinked
-            // milestone is one the next generation run charges for again.
-            if ($taskId !== null && $lineId === null) {
-                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache, 'client_tasks', $taskId);
-
-                if ($lineId !== null) {
-                    $milestoneCounts['recovered']++;
-                }
-            }
 
             if ($taskId === null || $lineId === null) {
                 $milestoneCounts['failed']++;

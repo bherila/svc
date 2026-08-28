@@ -51,11 +51,12 @@ that source-side integer IDs can be reused.
    keeps the ordinary case working: an invoice regenerated twenty-one times
    carries twenty-one superseded copies of one aggregate line, and only the last
    is named by anything. Where the claim is exclusive there is a third
-   direction: a milestone task holds its line in a column because a milestone
-   cannot be split, so a live line another task already holds - at the source or
-   in this system - is not available to this one. A time entry's claim is a
-   pivot row precisely because one line bills many entries, so the same test
-   there would refuse the ordinary case. What replaces it is the description:
+   direction, and it is why only aggregate claims are recovered at all. A
+   milestone's claim was recovered here too until it became clear that nothing
+   available says which task an unheld line belongs to: an invoice line carries
+   no task reference, and its description is the task's title, which nothing
+   makes unique. A milestone whose line was superseded is reported unlinked
+   instead. What identifies an aggregate line is the description:
    the type alone never identifies a line, because a generator writes a retainer
    draw per pool and can add a deferred one beside it. The words say which, so
    they have to agree, and only the figure the composer writes at the front of
