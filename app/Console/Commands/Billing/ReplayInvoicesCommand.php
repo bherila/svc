@@ -1001,23 +1001,45 @@ final class ReplayInvoicesCommand extends Command
      */
     private function lineMultisetDifferences(array $before, array $after): array
     {
-        $tally = static function (array $lines): array {
+        // The key carries every value whole. Shortening anything inside it -
+        // a claim's uuid, say - makes two different charges compare equal, so
+        // abbreviation belongs in what is printed and nowhere else.
+        $signatureOf = static fn (array $line): string => implode('|', [
+            (string) $line['type'],
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+            (string) $line['project_id'],
+            (string) $line['agreement_id'],
+            (string) $line['line_date'],
+            (string) $line['recurring_item_id'],
+            (string) $line['claimed_by'],
+            (string) $line['description_hash'],
+        ]);
+
+        $describe = static fn (array $line): string => sprintf(
+            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
+            (string) $line['type'],
+            (int) $line['unit_amount'],
+            (string) $line['quantity'],
+            (int) $line['tax_amount'],
+            (int) $line['total_amount'],
+            ((string) $line['project_id']) === '' ? 'none' : (string) $line['project_id'],
+            ((string) $line['agreement_id']) === '' ? 'none' : (string) $line['agreement_id'],
+            ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
+            ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
+            ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
+            (string) $line['description_hash'],
+        );
+
+        /** @var array<string, string> $described */
+        $described = [];
+        $tally = static function (array $lines) use ($signatureOf, $describe, &$described): array {
             $counts = [];
             foreach ($lines as $line) {
-                $signature = sprintf(
-                    '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
-                    (string) $line['type'],
-                    (int) $line['unit_amount'],
-                    (string) $line['quantity'],
-                    (int) $line['tax_amount'],
-                    (int) $line['total_amount'],
-                    ((string) $line['project_id']) === '' ? 'none' : (string) $line['project_id'],
-                    ((string) $line['agreement_id']) === '' ? 'none' : (string) $line['agreement_id'],
-                    ((string) $line['line_date']) === '' ? 'no date' : (string) $line['line_date'],
-                    ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
-                    ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
-                    (string) $line['description_hash'],
-                );
+                $signature = $signatureOf($line);
+                $described[$signature] = $describe($line);
                 $counts[$signature] = ($counts[$signature] ?? 0) + 1;
             }
 
@@ -1355,7 +1377,7 @@ final class ReplayInvoicesCommand extends Command
                 continue;
             }
 
-            $notes[] = sprintf('%s [%+d]', $signature, $a - $b);
+            $notes[] = sprintf('%s [%+d]', $described[$signature] ?? $signature, $a - $b);
         }
 
         // The types of the lines that actually differ, which is not the same as
@@ -1364,7 +1386,7 @@ final class ReplayInvoicesCommand extends Command
         // never hear that the type was involved at all.
         $typeOf = [];
         foreach ([...$before, ...$after] as $line) {
-            $typeOf[$tally([$line]) === [] ? '' : array_key_first($tally([$line]))] = (string) $line['type'];
+            $typeOf[$signatureOf($line)] = (string) $line['type'];
         }
 
         $changedTypes = [];

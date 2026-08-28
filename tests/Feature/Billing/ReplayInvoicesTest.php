@@ -999,18 +999,23 @@ final class ReplayInvoicesTest extends TestCase
                 'name' => 'Deliverables',
             ]);
 
-            // Identical in title, completion and price - so nothing but the
-            // claim tells the two charges apart.
-            foreach ([1, 2] as $ignored) {
-                $tasks[] = ClientTask::query()->create([
-                    'workspace_id' => $this->workspace->id,
-                    'client_project_id' => $project->id,
-                    'title' => 'Phase one',
-                    'status' => 'completed',
-                    'completed_at' => '2024-02-20',
-                    'milestone_price_amount' => 250000,
-                ]);
-            }
+            // One deliverable the engine bills, and one it does not - so the
+            // invoice carries a single milestone line and nothing but its
+            // claim can say which deliverable it paid for.
+            $tasks[] = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+                'status' => 'completed',
+                'completed_at' => '2024-02-20',
+                'milestone_price_amount' => 250000,
+            ]);
+
+            $tasks[] = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Phase one',
+            ]);
         });
 
         $line = ClientInvoiceLine::query()->where('workspace_id', $this->workspace->id)
@@ -1024,9 +1029,16 @@ final class ReplayInvoicesTest extends TestCase
         $other = ClientTask::query()->where('workspace_id', $this->workspace->id)
             ->whereKeyNot($claimant->getKey())->firstOrFail();
 
+        // Same leading characters, so a comparison key that shortens the claim
+        // cannot tell these two apart.
+        $prefix = substr((string) $claimant->public_id, 0, 8);
+        $other->forceFill(['public_id' => $prefix.substr((string) Str::uuid(), 8)])->save();
+
         $claimant->forceFill(['client_invoice_line_id' => null])->save();
         $other->forceFill(['client_invoice_line_id' => $line->id])->save();
 
+        $this->assertSame($prefix, substr((string) $other->public_id, 0, 8));
+        $this->assertNotSame((string) $claimant->public_id, (string) $other->public_id);
         $this->assertNotSame('match', $this->verdictFor((string) $invoice->invoice_number));
     }
 
