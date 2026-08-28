@@ -81,7 +81,7 @@ final class ExternalImportService
                     continue;
                 }
 
-                $this->importSpec($sourceConnection, $spec, $run, $destinationName, $counts, $queryCache, $ledgerItems);
+                $this->importSpec($sourceConnection, $this->sourceGuard->runtimeName($source), $spec, $run, $destinationName, $counts, $queryCache, $ledgerItems);
             }
 
             $this->reconcileImportedInvoices($run, $destinationName);
@@ -179,11 +179,12 @@ final class ExternalImportService
      * @param  QueryCache  $queryCache
      * @param  array<string, ExternalImportItem>  $ledgerItems
      */
-    private function importSpec(ConnectionInterface $source, array $spec, ExternalImportRun $run, string $destinationName, array &$counts, array &$queryCache, array &$ledgerItems): void
+    private function importSpec(ConnectionInterface $source, string $sourceRuntimeName, array $spec, ExternalImportRun $run, string $destinationName, array &$counts, array &$queryCache, array &$ledgerItems): void
     {
         $table = (string) $spec['source_table'];
         $keyColumn = (string) $spec['source_key'];
-        $cursor = $source->table($table)->orderBy($keyColumn)->cursor();
+        // Deleted rows are not imported. See SourceRows.
+        $cursor = SourceRows::for($source, $sourceRuntimeName, $table)->orderBy($keyColumn)->cursor();
         $itemsForTable = $this->loadLedgerItems($run, $table, $destinationName);
         foreach ($itemsForTable as $sourceKey => $item) {
             $ledgerItems[$this->ledgerItemKey($table, (string) $sourceKey)] = $item;
@@ -696,7 +697,7 @@ final class ExternalImportService
             return;
         }
 
-        $rows = $source->table('client_time_entries')
+        $rows = SourceRows::for($source, $sourceRuntimeName, 'client_time_entries')
             ->whereNotNull('client_invoice_line_id')
             ->orderBy('id')
             ->get(['id', 'client_invoice_line_id']);
