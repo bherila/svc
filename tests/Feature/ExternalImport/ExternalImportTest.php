@@ -576,6 +576,29 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
     }
 
+    public function test_a_zero_source_timestamp_does_not_fail_the_row(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        // MySQL's zero date is a legal value there and rejected by a strict
+        // destination. Carried verbatim it fails the insert, fails the row, and
+        // takes every child that needed this project as a parent with it.
+        $pdo->exec("UPDATE client_projects SET created_at = '0000-00-00 00:00:00', updated_at = '' WHERE id = 13");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $project = DB::table('client_projects')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertNotNull($project);
+        $this->assertNotNull($project->created_at);
+        $this->assertStringStartsNotWith('0000-00-00', (string) $project->created_at);
+        // The task below it still arrived, which is what a failed parent costs.
+        $this->assertSame(1, DB::table('client_tasks')->where('workspace_id', $workspace->getKey())->count());
+    }
+
     public function test_imported_rows_keep_the_dates_the_source_recorded(): void
     {
         $user = User::factory()->create();

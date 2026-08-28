@@ -297,7 +297,7 @@ final class BackfillBillingLedgerCommand extends Command
      * @param  array<string, array{id:int, fingerprint:string}>  $map
      * @param  array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int}  $counters
      */
-    private function resolve(array $map, object $row, string $key, array &$counters): ?int
+    private function resolve(array $map, object $row, string $key, array &$counters, bool $requireFingerprint = false): ?int
     {
         $mapping = $map[(string) $row->{$key}] ?? null;
         if ($mapping === null) {
@@ -306,7 +306,12 @@ final class BackfillBillingLedgerCommand extends Command
             return null;
         }
 
-        if (! $this->skipRowFingerprint && Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
+        // A verified restore switches the whole-row fingerprint off, because
+        // verification has already compared the columns that carry source data
+        // and named the drift it accepts. It cannot speak for a remapped
+        // foreign key - those are deliberately outside what it compares - so a
+        // caller about to write a billing relationship asks for the check back.
+        if (($requireFingerprint || ! $this->skipRowFingerprint) && Fingerprint::row((array) $row) !== $mapping['fingerprint']) {
             $counters['changed']++;
 
             return null;
@@ -600,12 +605,16 @@ final class BackfillBillingLedgerCommand extends Command
 
         $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, &$counters): void {
             foreach ($rows as $row) {
-                $id = $this->resolve($map, $row, 'id', $counters);
+                $sourceLink = $row->client_invoice_line_id ?? null;
+
+                // Writing which line billed a milestone is writing a financial
+                // relationship, so this row has to be the row that was
+                // imported - not one a restore's accepted drift covered for.
+                $id = $this->resolve($map, $row, 'id', $counters, $sourceLink !== null);
                 if ($id === null) {
                     continue;
                 }
 
-                $sourceLink = $row->client_invoice_line_id ?? null;
                 $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
 
                 // The source says this milestone was billed and this repair

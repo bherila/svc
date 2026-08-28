@@ -468,7 +468,7 @@ final class ExternalImportService
         // Source timestamps, carried for every type. importRow() falls back to
         // now() where the source table has no such column, so an imported row
         // dates from when it happened rather than from when it was imported.
-        $attributes = ['public_id' => $publicId, 'workspace_id' => $workspaceId, 'created_at' => $row['created_at'] ?? null, 'updated_at' => $row['updated_at'] ?? null];
+        $attributes = ['public_id' => $publicId, 'workspace_id' => $workspaceId, 'created_at' => self::sourceTimestamp($row['created_at'] ?? null), 'updated_at' => self::sourceTimestamp($row['updated_at'] ?? null)];
 
         return match ($type) {
             'company' => $attributes + [
@@ -1171,6 +1171,25 @@ final class ExternalImportService
         }
 
         return self::minorUnits($value);
+    }
+
+    /**
+     * A source timestamp, or null where the source is not really carrying one.
+     *
+     * MySQL's zero date is a legal value there and rejected outright by a
+     * strict destination, and importRow()'s null-coalescing fallback does not
+     * see it - so copying it verbatim fails the insert, fails the row, and
+     * cascades into every child that needed it as a parent.
+     */
+    private static function sourceTimestamp(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+
+        return $text === '' || str_starts_with($text, '0000-00-00') ? null : $text;
     }
 
     private static function minorUnits(mixed $value): int
