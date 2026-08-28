@@ -52,9 +52,14 @@ that source-side integer IDs can be reused.
    carries twenty-one superseded copies of one aggregate line, and only the last
    is named by anything. Where the claim is exclusive there is a third
    direction: a milestone task holds its line in a column because a milestone
-   cannot be split, so a live line another task already holds is not available
-   to this one. A time entry's claim is a pivot row precisely because one line
-   bills many entries, so the same test there would refuse the ordinary case.
+   cannot be split, so a live line another task already holds - at the source or
+   in this system - is not available to this one. A time entry's claim is a
+   pivot row precisely because one line bills many entries, so the same test
+   there would refuse the ordinary case. What replaces it is a restriction on
+   type: a time entry's claim is recovered only for line types the generator
+   emits once per invoice. The rest it emits per item - a milestone per task, a
+   subcontractor charge per rate group - and there nothing establishes which of
+   two lines of a type a superseded one stood for.
    Anything less than certain is refused and reported:
    attaching work to a line that did not bill it suppresses a charge that is
    owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -

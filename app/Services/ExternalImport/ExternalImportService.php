@@ -8,6 +8,7 @@ use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,6 +55,29 @@ final class ExternalImportService
      * @var array<string, array<string, string>>
      */
     private array $linkedSourceKeys = [];
+
+    /**
+     * Line types that stand for a whole invoice rather than one item on it.
+     *
+     * InvoiceLineComposer emits each of these once per invoice. The rest it
+     * emits from a loop - a milestone per task, a subcontractor charge per
+     * (user, project, rate, currency) group, a recurring_item per item - so two
+     * lines of one of those types are two different things, and which one a
+     * superseded line stood for cannot be read off its type.
+     *
+     * The distinction only has to be made where the claimant cannot make it. A
+     * milestone task's claim is exclusive, so counting claims settles the
+     * identity; a time entry's is not, so nothing but the type is left, and the
+     * type is not enough.
+     *
+     * @var list<string>
+     */
+    private const WHOLE_INVOICE_LINE_TYPES = [
+        'retainer',
+        'prior_month_retainer',
+        'prior_month_billable',
+        'additional_hours',
+    ];
 
     /** @var QueryCache */
     private array $activeQueryCache;
@@ -789,6 +813,7 @@ final class ExternalImportService
         array $ledgerItems,
         array &$queryCache,
         ?string $exclusiveClaimantTable = null,
+        ?int $claimantId = null,
     ): ?int {
         if ($supersededKey === '') {
             return null;
@@ -815,6 +840,13 @@ final class ExternalImportService
         $lineType = $supersededRow['line_type'] ?? null;
 
         if ($invoiceKey === null || $lineType === null) {
+            return null;
+        }
+
+        // Where the claimant cannot establish identity, the type has to. One
+        // superseded subcontractor line and one live one are two different
+        // groups of work as often as they are the same line twice.
+        if ($exclusiveClaimantTable === null && ! in_array((string) $lineType, self::WHOLE_INVOICE_LINE_TYPES, true)) {
             return null;
         }
 
@@ -859,6 +891,18 @@ final class ExternalImportService
         $lineId = $this->internalId($destinationName, 'client_invoice_lines', $publicId);
 
         if ($lineId === null || ! $this->ownedByRunWorkspace($destinationName, 'client_invoice_lines', $lineId, $workspaceId)) {
+            return null;
+        }
+
+        // And here, not only in the source. A row can hold the replacement from
+        // an earlier import while the claim that put it there has since been
+        // cleared at the source - so it is absent from what this run observed,
+        // and the source-side question above cannot see it.
+        if ($exclusiveClaimantTable !== null && DB::connection($destinationName)->table($exclusiveClaimantTable)
+            ->where('workspace_id', $workspaceId)
+            ->where('client_invoice_line_id', $lineId)
+            ->when($claimantId !== null, fn ($query) => $query->where('id', '!=', $claimantId))
+            ->exists()) {
             return null;
         }
 
@@ -1108,13 +1152,27 @@ final class ExternalImportService
 
             $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
 
-            $query->insert([
-                'workspace_id' => $run->workspace_id,
-                'client_invoice_line_id' => $lineId,
-                'client_time_entry_id' => $timeId,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            // The read above narrows the window; it cannot close it. The pivot
+            // is unique on the entry, so an operator billing it in the gap
+            // still collides - and an uncaught collision throws the whole run
+            // after earlier tables have committed. The constraint is the
+            // arbiter, and losing to it means the same thing the read meant.
+            try {
+                $query->insert([
+                    'workspace_id' => $run->workspace_id,
+                    'client_invoice_line_id' => $lineId,
+                    'client_time_entry_id' => $timeId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_destination_claims_another_line'] = ($counts['failure_reasons']['time_link_destination_claims_another_line'] ?? 0) + 1;
+
+                continue;
+            }
+
             $linkCounts['inserted']++;
         }
 
@@ -1183,7 +1241,7 @@ final class ExternalImportService
             // milestone naming a superseded line was billed, and an unlinked
             // milestone is one the next generation run charges for again.
             if ($taskId !== null && $lineId === null) {
-                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache, 'client_tasks');
+                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache, 'client_tasks', $taskId);
 
                 if ($lineId !== null) {
                     $milestoneCounts['recovered']++;
