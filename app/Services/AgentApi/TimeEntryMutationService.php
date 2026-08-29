@@ -12,6 +12,7 @@ use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -243,6 +244,12 @@ final class TimeEntryMutationService
             ->whereKey($entry->client_project_id)
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $entry->client_company_id)
+            // The company closes the chain. Matching the project to the entry
+            // proves only that the two agree with each other; both can name a
+            // company of another workspace, and the walk leaves this tenant
+            // at the last link rather than the first.
+            ->whereHas('clientCompany', fn (Builder $company): Builder => $company
+                ->where('workspace_id', $workspace->id))
             ->first();
 
         abort_unless($project instanceof ClientProject, 404);

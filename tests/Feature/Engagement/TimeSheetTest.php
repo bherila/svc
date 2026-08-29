@@ -1868,6 +1868,152 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * Matching the entry to its project proves only that those two agree.
+     * Both can name a company belonging to another workspace, and then the
+     * ownership walk leaves this tenant at the last link rather than the
+     * first.
+     */
+    public function test_a_write_refuses_a_company_owned_by_another_workspace(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'name' => 'Company Of Another Tenant',
+            'slug' => 'company-of-another-tenant',
+        ]);
+        // This workspace's project, naming that workspace's company.
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $foreignCompany->id,
+            'name' => 'Muddled Project',
+            'status' => 'active',
+        ]);
+        $entry = $this->entry([
+            'client_company_id' => $foreignCompany->id,
+            'client_project_id' => $project->id,
+            'minutes' => 60,
+        ]);
+
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => AgentApiVersion::for($entry),
+                'minutes' => 75,
+            ])
+            ->assertNotFound();
+
+        $this->assertSame(60, (int) $entry->fresh()?->minutes);
+    }
+
+    /**
+     * Two retainers covering different projects run side by side. Asked
+     * across the whole company, the later-starting one ends the other - and
+     * on a shared start date the id tie-break does, removing one strip
+     * outright.
+     */
+    public function test_a_retainer_is_not_superseded_by_one_covering_another_project(): void
+    {
+        $other = $this->otherProject();
+        $this->monthlyRetainer('Retainer For One Project', $this->project->id);
+        $this->monthlyRetainer('Retainer For The Other', $other->id);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
+                $props = $page->toArray()['props'];
+
+                $this->assertNotEmpty($props['months']);
+                $this->assertEqualsCanonicalizing(
+                    ['Retainer For One Project', 'Retainer For The Other'],
+                    array_column($props['months'][0]['capacity'], 'agreement'),
+                    'A concurrent retainer on another project ended this one.',
+                );
+            });
+    }
+
+    /**
+     * The window has a near edge too, and hiding an accepted write is no
+     * better there: a year mistyped as 2006 saved and vanished exactly as
+     * 2099 did.
+     */
+    public function test_a_date_before_the_window_is_refused_rather_than_hidden(): void
+    {
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2006-07-04',
+                'minutes' => 60,
+                'description' => 'Mistyped year',
+            ])
+            ->assertSessionHasErrors('worked_on');
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+
+        // The far edge of the window is still inside it.
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2025-08-01',
+                'minutes' => 60,
+                'description' => 'The oldest month the sheet shows',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(1, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * A period retainer anchored mid-month puts the tail of one cycle and the
+     * head of the next in one calendar month. Bounded by the month alone, the
+     * earlier row swallowed the later cycle's pending work as well as its own.
+     */
+    public function test_pending_work_stops_at_its_own_cycle_boundary(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Quarterly Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'quarterly',
+            'status' => 'active',
+            'period_retainer_minutes' => 3000,
+            'starts_on' => '2026-02-15',
+        ]);
+
+        // May is a boundary month: the second cycle starts on the 15th.
+        $this->entry(['worked_on' => '2026-05-05', 'minutes' => 60]);
+        $this->entry(['worked_on' => '2026-05-20', 'minutes' => 90]);
+
+        $this->travelTo('2026-05-25');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string, capacity: list<array{cycle_start: string, pending_minutes: int}>}>} $props */
+                $props = $page->toArray()['props'];
+                $may = null;
+
+                foreach ($props['months'] as $month) {
+                    if ($month['key'] === '2026-05') {
+                        $may = $month;
+                    }
+                }
+
+                $this->assertNotNull($may);
+                $this->assertCount(2, $may['capacity']);
+                $this->assertSame(
+                    [60, 90],
+                    array_column($may['capacity'], 'pending_minutes'),
+                    'A cycle claimed pending work belonging to the next one.',
+                );
+            });
+    }
+
+    /**
      * The class of bug, not one instance of it.
      *
      * Each finding so far has been one field escaping one filter, and the fix

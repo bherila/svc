@@ -16,6 +16,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -35,9 +36,6 @@ use Inertia\Response;
  */
 class TimeSheetController extends Controller
 {
-    /** Months of history offered in the period filter. */
-    private const MONTH_WINDOW = 12;
-
     public function __invoke(
         Request $request,
         Workspace $workspace,
@@ -237,12 +235,12 @@ class TimeSheetController extends Controller
         return $visible->visibleTo($user, $workspace)
             ->where('client_company_id', $company->id)
             ->whereIn('client_project_id', $ofThisCompany)
-            ->where('worked_on', '>=', self::windowStart($workspace->timezone)->toDateString())
+            ->where('worked_on', '>=', TimeSheetWindow::start($workspace->timezone)->toDateString())
             // And an upper one. The window is described to the reader as the
             // last twelve months and capacity is built only to the end of the
             // current one, so a mistyped year sorts a month card above every
             // real one and stays there.
-            ->where('worked_on', '<=', CarbonImmutable::now($workspace->timezone)->endOfMonth()->toDateString())
+            ->where('worked_on', '<=', TimeSheetWindow::end($workspace->timezone)->toDateString())
             // A task reaches the row on the strength of the id the entry
             // holds; it passes no check of its own, exactly as the tasks
             // offered in the log form did.
@@ -289,20 +287,6 @@ class TimeSheetController extends Controller
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $company->id))
             ->exists();
-    }
-
-    /**
-     * First month the sheet displays; entries and capacity share it.
-     *
-     * Read on the workspace's own clock. The server's month rolls over before
-     * a workspace west of UTC has finished the old one, and for those hours
-     * the window advertised as the last twelve months is a different twelve
-     * months from the one the operator is logging into - the browser dates new
-     * work locally.
-     */
-    private static function windowStart(string $timezone): CarbonImmutable
-    {
-        return CarbonImmutable::now($timezone)->startOfMonth()->subMonths(self::MONTH_WINDOW - 1);
     }
 
     /**
@@ -414,8 +398,8 @@ class TimeSheetController extends Controller
             ->filter(fn (ClientAgreement $agreement): bool => $agreement->billsOnARecurringCadence()
                 && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null));
 
-        $through = CarbonImmutable::now($timezone)->endOfMonth();
-        $from = self::windowStart($timezone)->format('Y-m');
+        $through = TimeSheetWindow::end($timezone);
+        $from = TimeSheetWindow::start($timezone)->format('Y-m');
         $capacity = [];
 
         foreach ($displayed as $agreement) {
@@ -425,7 +409,17 @@ class TimeSheetController extends Controller
             // both claim the months after the handover, and the figure stops
             // being the one the invoice uses.
             $end = $through;
-            $successor = $selector->successorAgreementForGeneration($agreements, $agreement);
+            // Only an agreement of the same scope replaces this one. Two
+            // retainers covering different projects run side by side, and
+            // asked across the whole company the later-starting one ends the
+            // other - or, on a shared start date, the id tie-break does, and
+            // one of them loses its strip outright.
+            $successor = $selector->successorAgreementForGeneration(
+                $agreements->filter(
+                    fn (ClientAgreement $candidate): bool => $candidate->client_project_id === $agreement->client_project_id,
+                )->values(),
+                $agreement,
+            );
 
             if ($successor?->starts_on !== null) {
                 $handover = CarbonImmutable::parse($successor->starts_on)->subDay()->endOfDay();
@@ -446,7 +440,7 @@ class TimeSheetController extends Controller
                 $end->toMutable(),
             );
 
-            foreach ($ledger as $month) {
+            foreach ($ledger as $index => $month) {
                 if ($month->yearMonth < $from) {
                     continue;
                 }
@@ -484,6 +478,24 @@ class TimeSheetController extends Controller
 
                 if ($end->lt($segmentEnd)) {
                     $segmentEnd = $end->startOfDay();
+                }
+
+                // And where its own cycle ends. A period retainer anchored
+                // mid-month puts the tail of one cycle and the head of the
+                // next in the same calendar month; bounded by the month
+                // alone, the earlier row swallowed the later cycle's work as
+                // well as its own.
+                $nextCycle = $ledger[$index + 1] ?? null;
+
+                if ($nextCycle !== null
+                    && $nextCycle->yearMonth === $month->yearMonth
+                    && $nextCycle->cycleStart !== null
+                    && $nextCycle->cycleStart !== $month->cycleStart) {
+                    $handsOver = CarbonImmutable::parse($nextCycle->cycleStart)->subDay()->startOfDay();
+
+                    if ($handsOver->lt($segmentEnd)) {
+                        $segmentEnd = $handsOver;
+                    }
                 }
 
                 $pending = $entries
