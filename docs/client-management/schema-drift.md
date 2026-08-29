@@ -76,7 +76,7 @@ already caused a defect.
 
 Everything above is only findable if the tests run on the engine that ships.
 They did not. The suite ran on in-memory SQLite; production is **MariaDB 10.6**,
-reached through Laravel's `mysql` driver with `strict => true`. SQLite hides
+reached through Laravel's `mariadb` driver with `strict => true`. SQLite hides
 schema drift in two distinct ways, and both have now cost real defects.
 
 **It stores what it is handed.** SQLite's column types are advisory, so
@@ -100,9 +100,9 @@ so the local loop remains fast — the MariaDB run is the one that has to be tru
 To run it locally against any MySQL-compatible server:
 
 ```bash
-DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 \
+DB_CONNECTION=mariadb DB_HOST=127.0.0.1 DB_PORT=3306 \
 DB_DATABASE=svc_testing DB_USERNAME=root DB_PASSWORD=secret \
-DB_EXPECT_DRIVER=mysql php artisan test
+DB_EXPECT_DRIVER=mariadb php artisan test
 ```
 
 PHPUnit does not overwrite variables already set in the environment, so these
@@ -117,6 +117,21 @@ asserts strict mode is on, because without `STRICT_TRANS_TABLES` MariaDB
 truncates rather than refuses and is no more informative than SQLite. The
 production server's own `sql_mode` does **not** include it; Laravel's `strict`
 connection flag sets it per session, which is what the assertion checks.
+
+The driver now names the server honestly: both production and the hosted job use
+Laravel's `mariadb` connection. At MariaDB 10.6 this is schema-equivalent to the
+old `mysql` connection for this application. The equivalence ends at 10.7,
+where Laravel starts compiling `uuid()` columns as native `uuid` instead of
+`char(36)`. The current migration inventory has 31 logical UUID columns: 29
+declared with `uuid()` (discounting the repeated alteration of
+`identity_memberships.public_id`) and two Passport `foreignUuid()` client IDs.
+`svc:database:status` runs before every deployment migration and refuses 10.7+
+until a fresh inventory and one deliberate migration cover every UUID and
+foreign-UUID column. The hosted MariaDB job runs the same guard; a driver typo
+or a premature image upgrade is therefore a test failure rather than silent
+schema drift. That job also creates a JSON column through Laravel's MariaDB
+grammar and proves malformed JSON is rejected, preserving the validation
+behavior of the existing production schema.
 
 ### What the first MariaDB run found
 
@@ -136,14 +151,12 @@ passed unchanged:
 - A query-log assertion matched `from "external_import_items"`; MySQL uses
   backticks.
 
-### One thing left alone
+### The driver now names the server
 
-Production sets `DB_CONNECTION=mysql` against a MariaDB server. Laravel has had
-a separate `mariadb` driver since 11.x, and the two grammars differ on defaults,
-`uuid`, and JSON handling. Nothing has been attributed to it, and changing a
-live connection driver is not a test-infrastructure change — but the CI job
-matches production deliberately, so a switch would need making in both places at
-once.
+An earlier version of this document left production on `DB_CONNECTION=mysql`
+and made the CI job mirror it. #78 closes that mismatch in both places at once.
+The switch is a no-op at the current MariaDB 10.6 version for this schema, and
+the pre-migration deployment guard above makes the 10.7 UUID boundary explicit.
 
 ## Verifying a source that moved
 
