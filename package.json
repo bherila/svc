@@ -17,12 +17,17 @@
         "lint:check": "eslint .",
         "scan-sensitive": "node scripts/scan-sensitive.mjs",
         "scan-sensitive:test": "node scripts/test-sensitive-scan.mjs",
+        "test": "vitest run",
+        "test:watch": "vitest",
         "types:check": "tsc --noEmit"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.5",
         "@laravel/vite-plugin-wayfinder": "^0.1.7",
         "@stylistic/eslint-plugin": "^5.10.0",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.3",
+        "@testing-library/user-event": "^14.6.6",
         "@types/node": "^22.20.1",
         "babel-plugin-react-compiler": "^1.0.0",
         "eslint": "^9.39.5",
@@ -31,9 +36,11 @@
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-react": "^7.37.5",
         "eslint-plugin-react-hooks": "^7.1.1",
+        "jsdom": "^30.0.1",
         "prettier": "^3.9.6",
         "prettier-plugin-tailwindcss": "^0.8.1",
-        "typescript-eslint": "^8.67.0"
+        "typescript-eslint": "^8.67.0",
+        "vitest": "^4.1.11"
     },
     "dependencies": {
         "@base-ui/react": "^1.7.0",
