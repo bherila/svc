@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -315,6 +316,118 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->assertSame($pivotAfterFirst, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    public function test_generation_keeps_project_scoped_successor_chains_independent(): void
+    {
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Concurrent Project',
+        ]);
+        $outgoing = $this->scopedMonthlyAgreement($this->project, 'Outgoing', '2024-01-01', '2024-01-31');
+        $this->scopedMonthlyAgreement($otherProject, 'Concurrent', '2024-03-01');
+        $this->scopedMonthlyAgreement($this->project, 'Replacement', '2024-06-01');
+        $gapWork = $this->entry('2024-04-15', 120);
+
+        $this->travelTo(Carbon::parse('2024-06-15'));
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+
+        $billedByAgreement = $gapWork->refresh()
+            ->invoiceLines()
+            ->with('invoice')
+            ->get()
+            ->pluck('invoice.client_agreement_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            [$outgoing->id],
+            $billedByAgreement,
+            'An unrelated project agreement must not truncate the outgoing project\'s catch-up segment.',
+        );
+    }
+
+    public function test_generation_refuses_a_broken_project_chain_before_writing_any_invoice(): void
+    {
+        $this->monthlyAgreement(endsOn: '2024-01-31');
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other Client',
+            'slug' => 'generation-other-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Other Project',
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $otherProject->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2024-04-15',
+            'minutes' => 120,
+            'description' => 'Broken catch-up work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+
+        $this->travelTo(Carbon::parse('2024-06-15'));
+
+        try {
+            app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+            $this->fail('Generation must stop before writing an invoice from a broken project chain.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('client_invoice_lines', 0);
+        $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
+    }
+
+    public function test_generation_refuses_company_time_stored_under_another_workspace(): void
+    {
+        $this->monthlyAgreement(endsOn: '2024-01-31');
+        $otherWorkspace = Workspace::query()->create([
+            'name' => 'Generation Other Workspace',
+            'slug' => 'generation-other-workspace',
+        ]);
+        $foreignProject = ClientProject::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Malformed Foreign Project',
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $foreignProject->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2024-04-15',
+            'minutes' => 120,
+            'description' => 'Work hidden by an ordinary workspace scope',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+
+        $this->travelTo(Carbon::parse('2024-06-15'));
+
+        try {
+            app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+            $this->fail('Generation must detect a company row claiming another workspace.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('client_invoice_lines', 0);
+        $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
+    }
+
     /**
      * A partial range inside a non-monthly cycle has no defined retainer, so it
      * is refused rather than guessed at.
@@ -374,6 +487,30 @@ final class ClientInvoicingServiceTest extends TestCase
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'title' => 'Monthly retainer',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => $startsOn,
+            'ends_on' => $endsOn,
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'catch_up_threshold_minutes' => 60,
+            'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
+            'rollover_months' => 2,
+        ]);
+    }
+
+    private function scopedMonthlyAgreement(
+        ClientProject $project,
+        string $title,
+        string $startsOn,
+        ?string $endsOn = null,
+    ): ClientAgreement {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $project->id,
+            'title' => $title,
             'status' => 'active',
             'currency' => 'USD',
             'starts_on' => $startsOn,

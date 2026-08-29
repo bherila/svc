@@ -82,9 +82,13 @@ final class AgreementSelector
     /**
      * The segment that takes over from this one, if any.
      *
-     * Ties on start date are broken by id so that two agreements activated the
-     * same day still have a defined order; without that the walk could bill one
-     * segment twice and the other never.
+     * Only an agreement covering the same project scope can replace another.
+     * Two project retainers under one company run concurrently; treating the
+     * earlier agreement from an unrelated project as a successor truncates the
+     * outgoing segment and leaves its gap-period work unbilled.
+     *
+     * Ties on start date within one scope are broken by id so that two genuine
+     * replacements activated the same day still have a defined order.
      *
      * @param  Collection<int, ClientAgreement>  $agreements
      */
@@ -96,7 +100,9 @@ final class AgreementSelector
         }
 
         return $agreements->first(function (ClientAgreement $candidate) use ($agreement, $startsOn): bool {
-            if ($candidate->id === $agreement->id || $candidate->starts_on === null) {
+            if ($candidate->id === $agreement->id
+                || $candidate->starts_on === null
+                || $candidate->client_project_id !== $agreement->client_project_id) {
                 return false;
             }
 

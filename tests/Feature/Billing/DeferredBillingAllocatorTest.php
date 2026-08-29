@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\DeferredBillingAllocator;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -129,6 +130,27 @@ final class DeferredBillingAllocatorTest extends TestCase
         $this->assertCount(2, $outstanding);
     }
 
+    public function test_allocation_refuses_deferred_time_owned_by_another_companys_project(): void
+    {
+        $this->deferredAgainstAnotherCompany();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('project outside this client company');
+
+        $this->allocate(10.0);
+    }
+
+    public function test_termination_refuses_deferred_time_owned_by_another_companys_project(): void
+    {
+        $this->deferredAgainstAnotherCompany();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('project outside this client company');
+
+        app(DeferredBillingAllocator::class)
+            ->collectForTermination($this->company, Carbon::parse('2026-03-31'));
+    }
+
     private function allocate(float $capacityHours): DeferredAllocationResult
     {
         return app(DeferredBillingAllocator::class)
@@ -148,6 +170,34 @@ final class DeferredBillingAllocatorTest extends TestCase
             'is_billable' => $billable,
             'is_deferred' => $deferred,
             'status' => $status,
+            'currency' => 'USD',
+        ]);
+    }
+
+    private function deferredAgainstAnotherCompany(): ClientTimeEntry
+    {
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other Deferred Client',
+            'slug' => 'other-deferred-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Other Deferred Project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $otherProject->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-03-01',
+            'minutes' => 60,
+            'description' => 'Mismatched deferred work',
+            'is_billable' => true,
+            'is_deferred' => true,
+            'status' => 'approved',
             'currency' => 'USD',
         ]);
     }

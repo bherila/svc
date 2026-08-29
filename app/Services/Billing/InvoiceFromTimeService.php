@@ -17,6 +17,7 @@ final class InvoiceFromTimeService
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly InvoiceNumberAllocator $numbers,
+        private readonly TimeEntryProjectChainGuard $projectChainGuard,
     ) {}
 
     /** @param array<string, mixed> $attributes
@@ -76,6 +77,14 @@ final class InvoiceFromTimeService
         if ($entriesById->count() !== count($timeEntryIds)) {
             throw new DomainException('One or more selected time entries were not found.');
         }
+        // Validate after locking the selected entries. Their project link can
+        // no longer change between this check and the invoice-line write.
+        $this->projectChainGuard->assertProjectChainsAgree(
+            $company,
+            ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($entriesById->modelKeys()),
+        );
         $lines = $this->normalizeManualLines($workspace, $company, $manualLines);
         /** @var array<int, int> $subtotalOverrides */
         $subtotalOverrides = [];

@@ -103,6 +103,13 @@ money, so they are named here rather than left to be rediscovered:
   month. The original applied it whenever a cycle opened mid-month, re-billing an
   anchor the previous cycle had already charged.
 
+Before any of those billing paths use a time entry, SVC also verifies that the
+entry's project belongs to the same workspace and client company named by the
+entry. Those keys are independent in this schema. An inconsistent chain stops
+billing with a reconciliation error: including it can overbill another project,
+while silently filtering it can underbill the client. The read-only time sheet
+withholds its capacity strip under the same condition.
+
 Also absent by choice: `first_cycle_proration` governs how the opening cycle is
 *priced*, not where its boundaries fall — the active-date anchor wins on
 boundaries, as the original's own tests assert.

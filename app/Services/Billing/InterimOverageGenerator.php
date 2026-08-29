@@ -53,6 +53,7 @@ final class InterimOverageGenerator
         private readonly InvoiceLineComposer $invoiceLineComposer = new InvoiceLineComposer,
         private readonly InvoiceNumberAllocator $invoiceNumberAllocator = new InvoiceNumberAllocator,
         private readonly AllocationService $allocationService = new AllocationService,
+        private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
     ) {}
 
     /**
@@ -127,6 +128,11 @@ final class InterimOverageGenerator
             // Serialize generation for this agreement; the invoice rows this
             // guards against may not exist yet, so the agreement is the lock.
             ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
+
+            // Callers may supply a cached ledger, bypassing its own integrity
+            // check. Keep the assertion at this public write boundary so no
+            // direct or delegated interim path can invoice a broken chain.
+            $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
             $issuedCycleInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::CadencePeriod, $cycle)
                 ->whereIn('status', InvoiceStatus::charged())
