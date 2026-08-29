@@ -23,6 +23,7 @@ final class DatabaseStatusCommandTest extends TestCase
         yield 'current production' => ['mariadb', '10.6.28-MariaDB', true];
         yield 'compatibility prefix' => ['mariadb', '5.5.5-10.6.28-MariaDB', true];
         yield 'native uuid boundary' => ['mariadb', '10.7.0-MariaDB', false];
+        yield 'distro suffix cannot hide a future server' => ['mariadb', '5.5.5-10.11.8-MariaDB-0ubuntu0.24.04.1', false];
         yield 'future MariaDB' => ['mariadb', '11.8.3-MariaDB', false];
         yield 'wrong Laravel driver' => ['mysql', '10.6.28-MariaDB', false];
         yield 'wrong server family' => ['mariadb', '8.4.0-MySQL', false];

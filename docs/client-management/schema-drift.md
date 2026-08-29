@@ -76,7 +76,7 @@ already caused a defect.
 
 Everything above is only findable if the tests run on the engine that ships.
 They did not. The suite ran on in-memory SQLite; production is **MariaDB 10.6**,
-reached through Laravel's `mysql` driver with `strict => true`. SQLite hides
+reached through Laravel's `mariadb` driver with `strict => true`. SQLite hides
 schema drift in two distinct ways, and both have now cost real defects.
 
 **It stores what it is handed.** SQLite's column types are advisory, so
@@ -146,14 +146,12 @@ passed unchanged:
 - A query-log assertion matched `from "external_import_items"`; MySQL uses
   backticks.
 
-### One thing left alone
+### The driver now names the server
 
-Production sets `DB_CONNECTION=mysql` against a MariaDB server. Laravel has had
-a separate `mariadb` driver since 11.x, and the two grammars differ on defaults,
-`uuid`, and JSON handling. Nothing has been attributed to it, and changing a
-live connection driver is not a test-infrastructure change — but the CI job
-matches production deliberately, so a switch would need making in both places at
-once.
+An earlier version of this document left production on `DB_CONNECTION=mysql`
+and made the CI job mirror it. #78 closes that mismatch in both places at once.
+The switch is a no-op at the current MariaDB 10.6 version for this schema, and
+the pre-migration deployment guard above makes the 10.7 UUID boundary explicit.
 
 ## Verifying a source that moved
 

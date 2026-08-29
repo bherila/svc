@@ -70,9 +70,12 @@ final class DatabaseStatusCommand extends Command
             return false;
         }
 
-        preg_match_all('/\d+\.\d+\.\d+/', $serverVersion, $matches);
-        $versions = $matches[0];
-        $version = $versions === [] ? null : end($versions);
+        $foundVersion = preg_match(
+            '/(\d+\.\d+\.\d+)-MariaDB(?:-|$)/i',
+            $serverVersion,
+            $matches,
+        );
+        $version = $foundVersion === 1 ? $matches[1] : null;
 
         return is_string($version) && version_compare($version, '10.7.0', '<');
     }
