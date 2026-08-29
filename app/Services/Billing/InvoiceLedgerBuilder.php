@@ -17,6 +17,7 @@ class InvoiceLedgerBuilder
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RetainerCalculator $retainerCalculator = new RetainerCalculator,
+        private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
     ) {}
 
     /**
@@ -44,14 +45,22 @@ class InvoiceLedgerBuilder
             return [];
         }
 
-        $billableEntries = ClientTimeEntry::query()
+        $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
+            ->whereBetween('worked_on', [$activeDate, $ledgerEnd]);
+
+        // Validate before applying the agreement's project scope. A malformed
+        // entry can point at another company's project and thereby fall outside
+        // one scoped agreement while being counted by another. Filtering first
+        // would turn a data-integrity failure into a silent undercharge.
+        $this->projectChainGuard->assertProjectChainsAgree($company, $companyEntries);
+
+        $billableEntries = (clone $companyEntries)
             ->where('is_billable', true)
             ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
-            ->whereBetween('worked_on', [$activeDate, $ledgerEnd])
             ->get();
 
         if ($agreement->retainer_hours !== null) {

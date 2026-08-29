@@ -15,6 +15,7 @@ use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -57,6 +58,62 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(2.0, $ledger[0]->hoursWorked);
         $this->assertSame(10.0, $ledger[0]->retainerHours);
         $this->assertSame(8.0, $ledger[0]->closing->unusedHours);
+    }
+
+    public function test_the_ledger_refuses_time_whose_project_belongs_to_another_company(): void
+    {
+        $company = $this->company();
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $company->workspace_id,
+            'name' => 'Other Ledger Client',
+            'slug' => 'other-ledger-client-'.uniqid(),
+        ]);
+        $otherProject = $this->project($otherCompany);
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+        ]);
+
+        $this->entry($company, $otherProject, [
+            'date_worked' => '2026-01-15',
+            'minutes_worked' => 120,
+            'is_billable' => true,
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('project outside this client company');
+
+        (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-01-31'),
+        );
+    }
+
+    public function test_the_ledger_refuses_time_whose_project_belongs_to_another_workspace(): void
+    {
+        $company = $this->company();
+        $otherCompany = $this->company();
+        $otherProject = $this->project($otherCompany);
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+        ]);
+
+        $this->entry($company, $otherProject, [
+            'date_worked' => '2026-01-15',
+            'minutes_worked' => 120,
+            'is_billable' => true,
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('project outside this client company');
+
+        (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-01-31'),
+        );
     }
 
     public function test_summarize_legacy_monthly_ledger_counts_mid_month_boundary_once(): void

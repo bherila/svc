@@ -30,6 +30,10 @@ use InvalidArgumentException;
  */
 final class AllocationService
 {
+    public function __construct(
+        private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+    ) {}
+
     /**
      * Recombine every fully unbilled fragment group for a company.
      *
@@ -71,7 +75,7 @@ final class AllocationService
      */
     private function group(Workspace $workspace, ClientCompany $company, int $rootId): Collection
     {
-        return ClientTimeEntry::query()
+        $group = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->where(function ($query) use ($rootId): void {
@@ -81,6 +85,16 @@ final class AllocationService
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
+
+        // Validate after taking the same row locks recombination relies on, so
+        // a concurrent edit cannot move a fragment to another project's chain
+        // between the integrity check and the destructive merge.
+        $this->projectChainGuard->assertProjectChainsAgree(
+            $company,
+            ClientTimeEntry::query()->whereKey($group->modelKeys()),
+        );
+
+        return $group;
     }
 
     /**

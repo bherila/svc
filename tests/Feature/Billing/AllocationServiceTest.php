@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\TimeEntrySplitter;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -124,6 +125,36 @@ final class AllocationServiceTest extends TestCase
 
         $this->assertSame(0, app(AllocationService::class)->recombineUnlinkedFragments($other, $otherCompany));
         $this->assertSame(2, $this->entryCount());
+    }
+
+    public function test_recombination_refuses_fragments_whose_project_belongs_to_another_company(): void
+    {
+        $entry = $this->entry(180);
+        $parts = app(TimeEntrySplitter::class)->splitEntry($entry, 120);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other Client',
+            'slug' => 'alloc-other-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Other Project',
+        ]);
+
+        foreach ($parts as $part) {
+            $part->forceFill(['client_project_id' => $otherProject->id])->save();
+        }
+
+        try {
+            $this->recombine();
+            $this->fail('A mismatched project chain must stop fragment recombination.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertSame(2, $this->entryCount());
+        $this->assertSame(180, ClientTimeEntry::query()->sum('minutes'));
     }
 
     private function recombine(): int

@@ -21,6 +21,10 @@ use Illuminate\Support\Collection;
  */
 class DeferredBillingAllocator
 {
+    public function __construct(
+        private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+    ) {}
+
     /**
      * Select deferred entries that fit in the remaining retainer capacity.
      *
@@ -92,6 +96,8 @@ class DeferredBillingAllocator
             $query->where('worked_on', '<=', $upTo);
         }
 
+        $this->projectChainGuard->assertProjectChainsAgree($company, $query);
+
         return $query->get();
     }
 
@@ -102,7 +108,7 @@ class DeferredBillingAllocator
      */
     protected function loadCandidates(ClientCompany $company, Carbon $upTo): Collection
     {
-        return ClientTimeEntry::query()
+        $query = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
@@ -111,8 +117,11 @@ class DeferredBillingAllocator
             ->whereDoesntHave('invoiceLines')
             ->where('worked_on', '<=', $upTo)
             ->orderBy('worked_on', 'asc')
-            ->orderBy('id', 'asc')
-            ->get()
+            ->orderBy('id', 'asc');
+
+        $this->projectChainGuard->assertProjectChainsAgree($company, $query);
+
+        return $query->get()
             ->map(fn (ClientTimeEntry $entry) => DeferredEntryCandidate::fromEntry($entry));
     }
 

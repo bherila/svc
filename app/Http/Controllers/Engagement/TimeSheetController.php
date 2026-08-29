@@ -16,10 +16,10 @@ use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -44,6 +44,7 @@ class TimeSheetController extends Controller
         InvoiceLedgerBuilder $ledgers,
         AgentTimeEntryQuery $visible,
         AgreementSelector $selector,
+        TimeEntryProjectChainGuard $projectChainGuard,
     ): Response {
         Gate::authorize('view', $workspace);
         $user = $request->user();
@@ -145,7 +146,7 @@ class TimeSheetController extends Controller
         // rows would.
         $capacityByMonth = $selectedCompany !== null
             && ($whollyVisible[$selectedCompany->id] ?? false)
-            && $this->ledgerInputsAgree($workspace, $selectedCompany)
+            && $this->ledgerInputsAgree($projectChainGuard, $workspace, $selectedCompany)
                 ? $this->capacityByMonth($ledgers, $selector, $selectedCompany, $entries, $workspace->timezone)
                 : [];
 
@@ -280,18 +281,19 @@ class TimeSheetController extends Controller
      * This fails closed rather than filtering: a total assembled from a set
      * the ledger did not agree to is not the number the invoice will use, and
      * a strip that quietly means something else is worse than no strip.
-     * Correcting the ledger's own predicate belongs with the billing slice
-     * and its tests, not here.
+     * Billing now refuses the same broken ownership chain instead of counting
+     * or filtering it. The read-only screen remains broader and quieter: any
+     * inconsistent entry withholds the aggregate rather than turning a page
+     * view into an exception.
      */
-    private function ledgerInputsAgree(Workspace $workspace, ClientCompany $company): bool
-    {
-        return ! ClientTimeEntry::query()
+    private function ledgerInputsAgree(
+        TimeEntryProjectChainGuard $projectChainGuard,
+        Workspace $workspace,
+        ClientCompany $company,
+    ): bool {
+        return $projectChainGuard->projectChainsAgree($company, ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $company->id)
-            ->whereDoesntHave('project', fn (Builder $project): Builder => $project
-                ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $company->id))
-            ->exists();
+            ->where('client_company_id', $company->id));
     }
 
     /**

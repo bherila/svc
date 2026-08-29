@@ -8,6 +8,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceFromTimeService;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -28,7 +29,7 @@ final class InvoiceFromTimeServiceTest extends TestCase
         $this->assertSame(12000, $invoice->total_amount);
         $this->assertSame($project->id, $invoice->lines->sole()->client_project_id);
         $this->assertTrue($invoice->lines->sole()->timeEntries()->whereKey($entry->id)->exists());
-        $this->expectException(\DomainException::class);
+        $this->expectException(DomainException::class);
         app(InvoiceFromTimeService::class)->create($workspace, $company, ['invoice_number' => 'SVC-00002', 'currency' => 'USD'], [$entry->public_id]);
     }
 
@@ -68,5 +69,42 @@ final class InvoiceFromTimeServiceTest extends TestCase
             $expectedLine = intdiv($entry->minutes * $rate, 60) + (($entry->minutes * $rate) % 60 >= 30 ? 1 : 0);
             $this->assertSame($expectedLine, $line->total_amount, (string) $entry->minutes);
         }
+    }
+
+    public function test_it_refuses_selected_time_whose_project_belongs_to_another_company(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Invoice integrity', 'slug' => 'invoice-integrity']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Client', 'slug' => 'integrity-client']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Other Client', 'slug' => 'integrity-other']);
+        $otherProject = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $otherCompany->id, 'name' => 'Other Project']);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $otherProject->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 60,
+            'description' => 'Mismatched work',
+            'is_billable' => true,
+            'status' => 'approved',
+            'billing_rate_amount' => 12000,
+            'currency' => 'USD',
+        ]);
+
+        try {
+            app(InvoiceFromTimeService::class)->create(
+                $workspace,
+                $company,
+                ['invoice_number' => 'SVC-INTEGRITY', 'currency' => 'USD'],
+                [$entry->public_id],
+            );
+            $this->fail('A mismatched project chain must stop explicit invoicing.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('client_invoice_lines', 0);
+        $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
     }
 }
