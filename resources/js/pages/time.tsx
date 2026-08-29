@@ -192,6 +192,7 @@ export default function TimeSheet({
     // simply stays a draft and the click looks like it did nothing.
     const [notice, setNotice] = useState<string | null>(null);
     const [approving, setApproving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     const reportFailure = (errors: Record<string, string>) => {
         setNotice(
@@ -254,13 +255,24 @@ export default function TimeSheet({
         );
     };
 
+    // Same hazard as approval: the version travelled with the row, so a
+    // second click spends one the first has already used - the entry is
+    // deleted and the operator is told it failed.
     const remove = (entry: TimeEntry) => {
+        if (deleting) {
+            return;
+        }
+
+        setDeleting(true);
         router.delete(`/workspaces/${workspace.id}/time-entries/${entry.id}`, {
             data: { expected_version: entry.version },
             preserveScroll: true,
             onSuccess: () => setNotice(null),
             onError: reportFailure,
-            onFinish: () => setPendingDelete(null),
+            onFinish: () => {
+                setDeleting(false);
+                setPendingDelete(null);
+            },
         });
     };
 
@@ -454,6 +466,7 @@ export default function TimeSheet({
                             render={
                                 <Button
                                     variant="destructive"
+                                    disabled={deleting}
                                     onClick={() =>
                                         pendingDelete !== null &&
                                         remove(pendingDelete)

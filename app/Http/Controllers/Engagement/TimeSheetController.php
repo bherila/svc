@@ -219,9 +219,24 @@ class TimeSheetController extends Controller
         // owner or manager reads all of them, a contributor only their own, a
         // viewer none. Restating it here is how the two drift; the sheet asks
         // the same question the agent API asks.
+        // The visible ids span the workspace, so naming them alone admits an
+        // entry filed under this company while pointing at another company's
+        // project - rendered, totalled and attributed here on the strength of
+        // a key that says nothing about which company it belongs to.
+        $ofThisCompany = $company->projects
+            ->pluck('id')
+            ->intersect($visibleProjectIds)
+            ->values()
+            ->all();
+
+        if ($ofThisCompany === []) {
+            /** @var EloquentCollection<int, ClientTimeEntry> */
+            return new EloquentCollection;
+        }
+
         return $visible->visibleTo($user, $workspace)
             ->where('client_company_id', $company->id)
-            ->whereIn('client_project_id', $visibleProjectIds)
+            ->whereIn('client_project_id', $ofThisCompany)
             ->where('worked_on', '>=', self::windowStart($workspace->timezone)->toDateString())
             // And an upper one. The window is described to the reader as the
             // last twelve months and capacity is built only to the end of the
@@ -370,8 +385,6 @@ class TimeSheetController extends Controller
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            // Ordered as the selector expects, because it breaks ties on id.
-            ->orderBy('id')
             // What the billing engine ignores cannot be capacity here.
             // `AgreementSelector` and `AgreementBillingRateResolver` both
             // exclude drafts; a proposed retainer carrying a start date would
@@ -380,7 +393,13 @@ class TimeSheetController extends Controller
             // historical months still need theirs.
             ->where('status', '!=', 'draft')
             ->whereNotNull('starts_on')
+            // Ordered as the selector expects: it returns the first later
+            // candidate in collection order, so `starts_on` has to lead and
+            // `id` is only the tie-break. Sorted by id first, a March renewal
+            // inserted before a February one is read as January's successor
+            // and January keeps running through February beside it.
             ->orderBy('starts_on')
+            ->orderBy('id')
             ->get();
 
         // Succession is decided over every agreement in force, not only the
@@ -439,13 +458,37 @@ class TimeSheetController extends Controller
                 // month as comfortably inside its retainer.
                 $over = max(0.0, $month->hoursWorked - $month->opening->totalAvailable);
 
-                // Pending work belongs to the strip it can actually reach.
-                // A retainer scoped to one project is never drawn on by work
-                // logged against another, so reporting a company-wide total
-                // beside it claims a demand on capacity that cannot arrive.
+                // Pending work belongs to the strip it can actually reach,
+                // and to the segment that will hold it. A retainer scoped to
+                // one project is never drawn on by work logged against
+                // another; and where a renewal or a mid-month cadence puts
+                // two rows in one calendar month, an entry lands in whichever
+                // of them covers its date. Matching on the month alone gave
+                // both rows the whole month's total.
+                $monthStart = CarbonImmutable::createFromFormat('Y-m-d', $month->yearMonth.'-01')->startOfDay();
+                $segmentStart = $monthStart;
+
+                foreach ([$agreement->starts_on, $month->cycleStart] as $boundary) {
+                    if ($boundary === null || $boundary === '') {
+                        continue;
+                    }
+
+                    $candidate = CarbonImmutable::parse((string) $boundary)->startOfDay();
+
+                    if ($candidate->gt($segmentStart)) {
+                        $segmentStart = $candidate;
+                    }
+                }
+
+                $segmentEnd = $monthStart->endOfMonth()->startOfDay();
+
+                if ($end->lt($segmentEnd)) {
+                    $segmentEnd = $end->startOfDay();
+                }
+
                 $pending = $entries
-                    ->filter(fn (ClientTimeEntry $entry): bool => $entry->worked_on->format('Y-m') === $month->yearMonth
-                        && $entry->willDrawOnRetainerWhenApproved()
+                    ->filter(fn (ClientTimeEntry $entry): bool => $entry->willDrawOnRetainerWhenApproved()
+                        && $entry->worked_on->betweenIncluded($segmentStart, $segmentEnd)
                         && ($agreement->client_project_id === null
                             || $entry->client_project_id === $agreement->client_project_id))
                     ->sum('minutes');

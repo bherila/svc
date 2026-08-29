@@ -1699,6 +1699,175 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * Every permission here is asked of the project, and `ProjectAccess`
+     * resolves a role against the project's own workspace - so an entry of
+     * this workspace pointing at another's project was authorised against
+     * that other workspace. Someone who manages there and merely views here
+     * could approve this workspace's time and stamp its rate.
+     */
+    public function test_approval_cannot_borrow_a_role_from_another_workspaces_project(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $foreign = $this->foreignWorkspace();
+
+        // An outsider here, in charge over there.
+        $outsider = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $outsider->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $outsider->id,
+            'role' => ProjectRole::Viewer->value,
+        ]);
+        $foreign['workspace']->memberships()->create(['user_id' => $outsider->id, 'role' => 'admin']);
+
+        $entry = $this->entry(['client_project_id' => $foreign['project']->id]);
+
+        $this->actingAs($outsider)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertNull($entry->fresh()?->billing_rate_amount);
+    }
+
+    /**
+     * The selector returns the first later candidate in collection order, so
+     * `starts_on` has to lead the sort and `id` is only the tie-break. Sorted
+     * by id first, a renewal inserted out of order is read as the wrong
+     * successor and the agreement it replaced keeps running beside it.
+     */
+    public function test_succession_follows_start_dates_not_insertion_order(): void
+    {
+        $this->datedRetainer('January Retainer', '2026-01-01');
+        $this->datedRetainer('March Retainer', '2026-03-01');
+        $this->datedRetainer('February Retainer', '2026-02-01');
+
+        $this->travelTo('2026-03-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
+                $props = $page->toArray()['props'];
+                $february = null;
+
+                foreach ($props['months'] as $month) {
+                    if ($month['key'] === '2026-02') {
+                        $february = $month;
+                    }
+                }
+
+                $this->assertNotNull($february);
+                $this->assertSame(
+                    ['February Retainer'],
+                    array_column($february['capacity'], 'agreement'),
+                    'January was superseded in February and still claims it.',
+                );
+            });
+    }
+
+    /**
+     * A handover mid-month puts two rows in one calendar month, and an entry
+     * lands in whichever segment covers its date. Matching on the month alone
+     * gave both strips the whole month's pending total.
+     */
+    public function test_pending_work_lands_in_the_segment_that_covers_its_date(): void
+    {
+        $this->datedRetainer('Before The Handover', '2026-01-01');
+        $this->datedRetainer('After The Handover', '2026-02-15');
+
+        $this->entry(['worked_on' => '2026-02-05', 'minutes' => 60]);
+        $this->entry(['worked_on' => '2026-02-20', 'minutes' => 90]);
+
+        $this->travelTo('2026-02-25');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-02')
+                ->has('months.0.capacity', 2)
+                ->where('months.0.capacity.0.agreement', 'Before The Handover')
+                ->where('months.0.capacity.0.pending_minutes', 60)
+                ->where('months.0.capacity.1.agreement', 'After The Handover')
+                ->where('months.0.capacity.1.pending_minutes', 90));
+    }
+
+    /**
+     * The visible project ids span the workspace, so naming them alone
+     * admitted an entry filed under this company while pointing at another
+     * company's project - rendered and totalled here on the strength of a key
+     * that says nothing about which company it belongs to.
+     */
+    public function test_an_entry_naming_another_companys_project_is_not_shown_here(): void
+    {
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Second Client',
+            'slug' => 'second-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Second Client Project',
+            'status' => 'active',
+        ]);
+
+        $mine = $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry([
+            'worked_on' => '2026-07-05',
+            'minutes' => 300,
+            'client_project_id' => $otherProject->id,
+            'description' => 'Work belonging to the other client',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time?company={$this->company->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.entries', 1)
+                ->where('months.0.entries.0.id', $mine->public_id)
+                ->where('months.0.total_minutes', 60));
+    }
+
+    /**
+     * A date the sheet will not show must not be accepted. The write
+     * succeeded, the dialog closed as though it had saved, and the row was
+     * gone from the only screen offering correction or deletion.
+     */
+    public function test_a_date_beyond_the_window_is_refused_rather_than_hidden(): void
+    {
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2099-08-29',
+                'minutes' => 60,
+                'description' => 'Mistyped year',
+            ])
+            ->assertSessionHasErrors('worked_on');
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+
+        // The end of the current month is still inside the window.
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2026-07-31',
+                'minutes' => 60,
+                'description' => 'Later this month',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(1, ClientTimeEntry::query()->count());
+    }
+
+    /**
      * The class of bug, not one instance of it.
      *
      * Each finding so far has been one field escaping one filter, and the fix
@@ -1970,6 +2139,20 @@ class TimeSheetTest extends TestCase
             'client_company_id' => $this->company->id,
             'name' => 'Project They Cannot See',
             'status' => 'active',
+        ]);
+    }
+
+    private function datedRetainer(string $title, string $startsOn): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => $title,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => $startsOn,
         ]);
     }
 

@@ -131,7 +131,7 @@ final class TimeEntryMutationService
         DB::transaction(function () use ($workspace, $actor, $entries): void {
             foreach ($entries as $item) {
                 $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->lockForUpdate()->firstOrFail();
-                abort_unless($this->access->canApproveTime($actor, $entry->project), 403);
+                abort_unless($this->access->canApproveTime($actor, $this->projectOf($workspace, $entry)), 403);
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
                 // The same freeze update and delete carry, for the same
                 // reason and then some: approval is where the rate is stamped,
@@ -200,9 +200,10 @@ final class TimeEntryMutationService
             409,
             'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
         );
+        $project = $this->projectOf($workspace, $entry);
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
-        abort_unless($this->access->canView($actor, $entry->project), 404);
-        abort_unless($this->access->canLogTime($actor, $entry->project), 403);
+        abort_unless($this->access->canView($actor, $project), 404);
+        abort_unless($this->access->canLogTime($actor, $project), 403);
     }
 
     private function taskFor(Workspace $workspace, ClientTimeEntry $entry, mixed $taskId): ?int
@@ -223,6 +224,30 @@ final class TimeEntryMutationService
         );
 
         return $task->id;
+    }
+
+    /**
+     * The entry's project, once it is established to be this workspace's.
+     *
+     * Every permission on this screen is asked of the project, and
+     * `ProjectAccess` resolves a role against the project's *own* workspace.
+     * So an entry of workspace A pointing at a project of workspace B - which
+     * the schema permits, the keys being independent - had its approval
+     * authorised against B: an actor who manages B and merely views A could
+     * approve A's time and stamp its rate. The project has to be shown to
+     * belong here before it is allowed to answer for anything.
+     */
+    private function projectOf(Workspace $workspace, ClientTimeEntry $entry): ClientProject
+    {
+        $project = ClientProject::query()
+            ->whereKey($entry->client_project_id)
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $entry->client_company_id)
+            ->first();
+
+        abort_unless($project instanceof ClientProject, 404);
+
+        return $project;
     }
 
     /**
