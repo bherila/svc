@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
@@ -89,6 +90,26 @@ class WorkspaceOperationsController extends Controller
                 ->latest('id')
                 ->get();
         $invoicesByCompany = $invoices->groupBy('client_company_id');
+
+        $activitiesByCompany = $companyIds === []
+            ? collect()
+            : ClientCompanyActivity::query()
+                ->fromSub(
+                    ClientCompanyActivity::query()
+                        ->select('client_company_activity.*')
+                        ->selectRaw(
+                            'ROW_NUMBER() OVER (PARTITION BY client_company_id ORDER BY created_at DESC, id DESC) AS activity_row_number',
+                        )
+                        ->where('workspace_id', $workspace->id)
+                        ->whereIn('client_company_id', $companyIds),
+                    'ranked_company_activity',
+                )
+                ->with('actor:id,name')
+                ->where('activity_row_number', '<=', 100)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('client_company_id');
 
         $attachmentRecordIds = [
             'proposal' => $proposals->pluck('public_id')->all(),
@@ -192,6 +213,15 @@ class WorkspaceOperationsController extends Controller
                         'currency' => $invoice->currency,
                         'due_date' => $invoice->due_date?->toDateString(),
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
+                    ])
+                    ->all(),
+                'activities' => ($activitiesByCompany->get($company->id) ?? collect())
+                    ->map(fn (ClientCompanyActivity $activity): array => [
+                        'id' => $activity->public_id,
+                        'action' => $activity->action,
+                        'actor_name' => $activity->actor?->name,
+                        'payload' => $activity->payload ?? [],
+                        'created_at' => $activity->created_at?->toISOString(),
                     ])
                     ->all(),
             ];

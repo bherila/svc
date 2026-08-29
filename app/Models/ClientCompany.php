@@ -72,6 +72,12 @@ class ClientCompany extends Model implements WorkspaceOwned
         return $this->hasMany(ClientTimeEntry::class);
     }
 
+    /** @return HasMany<ClientCompanyActivity, $this> */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(ClientCompanyActivity::class);
+    }
+
     /**
      * The agreement in force today, if any.
      *

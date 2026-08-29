@@ -1,5 +1,7 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
+import { ActivityTimeline } from '@/components/activity-timeline';
+import type { CompanyActivity } from '@/components/activity-timeline';
 import { todayIn } from '@/lib/time';
 
 type TimeEntry = {
@@ -71,6 +73,7 @@ type Client = {
     agreements: Agreement[];
     billing_schedules: BillingSchedule[];
     invoices: Invoice[];
+    activities: CompanyActivity[];
 };
 
 type Workspace = {
@@ -876,6 +879,17 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                             </article>
                                         ))}
                                     </div>
+                                </div>
+
+                                <div className="border-t border-slate-200 pt-5">
+                                    <h3 className="font-semibold">Activity</h3>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        The latest 100 recorded events for this
+                                        client.
+                                    </p>
+                                    <ActivityTimeline
+                                        activities={client.activities}
+                                    />
                                 </div>
                             </div>
                         </section>
