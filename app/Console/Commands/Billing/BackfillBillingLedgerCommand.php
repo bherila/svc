@@ -8,10 +8,10 @@ use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -55,6 +55,9 @@ final class BackfillBillingLedgerCommand extends Command
 
     private string $destination;
 
+    /** The runtime name the guard gave the source, for schema questions. */
+    private string $sourceConnection;
+
     private int $workspaceId;
 
     /**
@@ -73,6 +76,7 @@ final class BackfillBillingLedgerCommand extends Command
             $source = $guard->resolve((string) $this->option('source'));
             $guard->assertDistinctFromDestination($source);
             $legacy = $guard->connection($source);
+            $this->sourceConnection = $guard->runtimeName($source);
         } catch (SourceConfigurationException $e) {
             $this->components->error("Source unusable: {$e->getMessage()}");
 
@@ -411,16 +415,17 @@ final class BackfillBillingLedgerCommand extends Command
         $counters['written']++;
     }
 
-    /** Whether the source records which line billed a milestone at all. */
-    private function sourceRecordsTaskLinks(ConnectionInterface $legacy): bool
+    /**
+     * Whether the source records which line billed a milestone at all.
+     *
+     * Asked of the schema rather than by running a query and reading its
+     * failure: any database trouble at all looked like a missing column that
+     * way, and answering "no claims here" to a dropped connection would skip
+     * the contested-claim prepass and let an ambiguous line be committed.
+     */
+    private function sourceRecordsTaskLinks(string $sourceConnection): bool
     {
-        try {
-            $legacy->table('client_tasks')->select('client_invoice_line_id')->limit(1)->get();
-
-            return true;
-        } catch (QueryException) {
-            return false;
-        }
+        return Schema::connection($sourceConnection)->hasColumn('client_tasks', 'client_invoice_line_id');
     }
 
     /**
@@ -661,7 +666,7 @@ final class BackfillBillingLedgerCommand extends Command
         // column is a schema the row loop below tolerates, and a prepass that
         // queried it regardless would fail the whole command instead.
         $contested = [];
-        if ($lines !== [] && $this->sourceRecordsTaskLinks($legacy)) {
+        if ($lines !== [] && $this->sourceRecordsTaskLinks($this->sourceConnection)) {
             // Chunked, because this binds one placeholder per mapped line and
             // a workspace with a long invoice history has more of them than a
             // driver will accept in one statement - the task pass below is

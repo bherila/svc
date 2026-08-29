@@ -1000,7 +1000,7 @@ final class ExternalImportService
             // The first group only. A later one is prose the service did not
             // write and has no claim to being an amount.
             return (string) preg_replace(
-                $wholeGroup ? '/\([^()]*\)/' : '/\((\s*)\d[\d.,:]*/',
+                $wholeGroup ? '/\([^()]*\)/' : '/\((\s*)-?\d[\d.,:]*/',
                 $wholeGroup ? '(#)' : '($1#',
                 $text,
                 1,

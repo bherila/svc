@@ -1709,6 +1709,27 @@ class ExternalImportTest extends TestCase
         $this->assertSame(1, $summary['link_counts']['recovered']);
     }
 
+    /**
+     * HoursQuantity::format signs a negative quantity, and the pattern accepts
+     * one - so the replacement has to consume it too, or two generations of a
+     * signed line keep different shapes and the claim goes unrecovered.
+     */
+    public function test_a_signed_quantity_is_normalised_like_any_other(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (-9.9168 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (-10.0000 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
     {
         $user = User::factory()->create();
