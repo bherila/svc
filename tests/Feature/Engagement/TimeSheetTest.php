@@ -262,6 +262,78 @@ class TimeSheetTest extends TestCase
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }
 
+    /**
+     * An agreement with no start date cannot anchor a billing cycle, so it has
+     * no capacity to report and must not reach the ledger.
+     *
+     * This is the local half of a defect the MariaDB job caught: the filter
+     * originally named `active_date`, which is an accessor over `starts_on`
+     * rather than a column. MariaDB refuses the unknown column outright;
+     * SQLite degrades the double-quoted identifier to a string literal, so the
+     * predicate read as `where 'active_date' is not null`, admitted every row,
+     * and the suite stayed green. Asserting what the filter *excludes* is what
+     * makes it visible here rather than only in CI.
+     */
+    public function test_an_agreement_with_no_start_date_reports_no_capacity(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Undated Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => null,
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-07')
+                ->has('months.0.capacity', 0));
+    }
+
+    /**
+     * The capacity strip reads the ledger the invoice will read, so a dated
+     * agreement has to come through it.
+     */
+    public function test_a_dated_retainer_reports_its_capacity_for_the_month(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Dated Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        // Approved: the ledger counts approved work, because draft hours have
+        // not drawn on the retainer yet.
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 120, 'status' => 'approved']);
+        $this->entry(['worked_on' => '2026-07-05', 'minutes' => 30]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.capacity', 1)
+                ->where('months.0.capacity.0.agreement', 'Dated Agreement')
+                ->where('months.0.capacity.0.worked_hours', 2)
+                ->where('months.0.capacity.0.available_hours', 10)
+                ->where('months.0.capacity.0.unused_hours', 8)
+                // The draft half is reported separately rather than folded in.
+                ->where('months.0.pending_minutes', 30));
+    }
+
     public function test_the_sheet_shows_nothing_from_another_workspace(): void
     {
         $otherManager = User::factory()->create();

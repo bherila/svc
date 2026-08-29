@@ -180,11 +180,16 @@ class TimeSheetController extends Controller
             return [];
         }
 
+        // `active_date` and `termination_date` are the engine's names for
+        // `starts_on` and `ends_on` - accessors, not columns. Naming one in a
+        // predicate is invalid SQL, and SQLite hides it: an unresolvable
+        // double-quoted identifier degrades to a string literal, so the filter
+        // reads as `where 'active_date' is not null` and admits every row.
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->whereNotNull('active_date')
-            ->orderBy('active_date')
+            ->whereNotNull('starts_on')
+            ->orderBy('starts_on')
             ->get();
 
         $through = CarbonImmutable::now()->endOfMonth();
@@ -243,6 +248,14 @@ class TimeSheetController extends Controller
                 'total_minutes' => (int) $monthEntries->sum('minutes'),
                 'billable_minutes' => (int) $monthEntries->where('is_billable', true)->sum('minutes'),
                 'deferred_minutes' => (int) $monthEntries->where('is_deferred', true)->sum('minutes'),
+                // The ledger counts approved work only, so draft hours sit
+                // outside the capacity figures beside them. Reporting them
+                // separately is what stops "0 of 10 used" reading as "10 left"
+                // when half of it is logged and waiting.
+                'pending_minutes' => (int) $monthEntries
+                    ->where('status', 'draft')
+                    ->where('is_billable', true)
+                    ->sum('minutes'),
                 'capacity' => $capacityByMonth[$yearMonth] ?? [],
                 'entries' => $rows,
             ];

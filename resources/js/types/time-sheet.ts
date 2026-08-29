@@ -56,6 +56,7 @@ export type Month = {
     total_minutes: number;
     billable_minutes: number;
     deferred_minutes: number;
+    pending_minutes: number;
     capacity: Capacity[];
     entries: TimeEntry[];
 };

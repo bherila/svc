@@ -65,79 +65,98 @@ function stateOf(entry: TimeEntry): {
     return { label: 'Draft', variant: 'outline' };
 }
 
-function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
+function CapacityStrip({
+    capacity,
+    pendingMinutes,
+}: {
+    capacity: Capacity[];
+    pendingMinutes: number;
+}) {
     if (capacity.length === 0) {
         return null;
     }
 
     return (
-        <div className="flex flex-wrap gap-3">
-            {capacity.map((row) => {
-                const over = row.excess_hours > 0;
-                const used = row.worked_hours;
-                const available = row.available_hours;
-                const fraction =
-                    available > 0
-                        ? Math.min(1, used / available)
-                        : used > 0
-                          ? 1
-                          : 0;
+        <div className="grid gap-2">
+            {pendingMinutes > 0 && (
+                <p className="text-xs text-muted-foreground">
+                    Capacity counts approved work.{' '}
+                    <span className="font-medium text-foreground tabular-nums">
+                        {formatHours(pendingMinutes)}
+                    </span>{' '}
+                    is logged and awaiting approval.
+                </p>
+            )}
+            <div className="flex flex-wrap gap-3">
+                {capacity.map((row) => {
+                    const over = row.excess_hours > 0;
+                    const used = row.worked_hours;
+                    const available = row.available_hours;
+                    const fraction =
+                        available > 0
+                            ? Math.min(1, used / available)
+                            : used > 0
+                              ? 1
+                              : 0;
 
-                return (
-                    <div
-                        key={row.agreement}
-                        className="min-w-56 flex-1 rounded-lg border border-border bg-muted/40 p-3"
-                    >
-                        <p className="truncate text-xs font-medium text-muted-foreground">
-                            {row.agreement}
-                        </p>
-                        <p className="mt-1 font-medium tabular-nums">
-                            <span
-                                className={
-                                    over ? 'text-destructive' : undefined
-                                }
-                            >
-                                {formatDecimalHours(used)}
-                            </span>
-                            <span className="text-muted-foreground">
-                                {' '}
-                                / {formatDecimalHours(available)} h
-                            </span>
-                        </p>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
-                            <div
-                                className={cn(
-                                    'h-full rounded-full',
-                                    over ? 'bg-destructive' : 'bg-emerald-500',
+                    return (
+                        <div
+                            key={row.agreement}
+                            className="min-w-56 flex-1 rounded-lg border border-border bg-muted/40 p-3"
+                        >
+                            <p className="truncate text-xs font-medium text-muted-foreground">
+                                {row.agreement}
+                            </p>
+                            <p className="mt-1 font-medium tabular-nums">
+                                <span
+                                    className={
+                                        over ? 'text-destructive' : undefined
+                                    }
+                                >
+                                    {formatDecimalHours(used)}
+                                </span>
+                                <span className="text-muted-foreground">
+                                    {' '}
+                                    / {formatDecimalHours(available)} h
+                                </span>
+                            </p>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                                <div
+                                    className={cn(
+                                        'h-full rounded-full',
+                                        over
+                                            ? 'bg-destructive'
+                                            : 'bg-emerald-500',
+                                    )}
+                                    style={{ width: `${fraction * 100}%` }}
+                                />
+                            </div>
+                            <p className="mt-1.5 text-xs tabular-nums">
+                                {over ? (
+                                    <span className="text-destructive">
+                                        {formatDecimalHours(row.excess_hours)} h
+                                        over
+                                    </span>
+                                ) : (
+                                    <span className="text-muted-foreground">
+                                        {formatDecimalHours(row.unused_hours)} h
+                                        left
+                                    </span>
                                 )}
-                                style={{ width: `${fraction * 100}%` }}
-                            />
+                                {row.remaining_rollover > 0 && (
+                                    <span className="text-muted-foreground">
+                                        {' · '}
+                                        {formatDecimalHours(
+                                            row.remaining_rollover,
+                                        )}{' '}
+                                        h rollover
+                                    </span>
+                                )}
+                            </p>
                         </div>
-                        <p className="mt-1.5 text-xs tabular-nums">
-                            {over ? (
-                                <span className="text-destructive">
-                                    {formatDecimalHours(row.excess_hours)} h
-                                    over
-                                </span>
-                            ) : (
-                                <span className="text-muted-foreground">
-                                    {formatDecimalHours(row.unused_hours)} h
-                                    left
-                                </span>
-                            )}
-                            {row.remaining_rollover > 0 && (
-                                <span className="text-muted-foreground">
-                                    {' · '}
-                                    {formatDecimalHours(
-                                        row.remaining_rollover,
-                                    )}{' '}
-                                    h rollover
-                                </span>
-                            )}
-                        </p>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -418,7 +437,10 @@ function MonthCard({
                         )}
                     </p>
                 </div>
-                <CapacityStrip capacity={month.capacity} />
+                <CapacityStrip
+                    capacity={month.capacity}
+                    pendingMinutes={month.pending_minutes}
+                />
             </CardHeader>
 
             <CardContent>
