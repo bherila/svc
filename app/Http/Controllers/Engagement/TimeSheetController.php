@@ -46,10 +46,16 @@ class TimeSheetController extends Controller
         abort_unless($user instanceof User, 401);
         $canManage = Gate::forUser($user)->allows('manage', $workspace);
 
+        // Each relation is constrained by the workspace as well as by its
+        // parent. The schema carries independent foreign keys rather than
+        // composite workspace/parent ones, so a row owned by another
+        // workspace but pointing at a visible parent satisfies the join - and
+        // a task reaches the payload without passing any access check of its
+        // own, on the strength of the project it names.
         $companies = $workspace->clientCompanies()
             ->with([
-                'projects' => fn ($query) => $query->orderBy('name'),
-                'projects.tasks' => fn ($query) => $query->orderBy('title'),
+                'projects' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('name'),
+                'projects.tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
             ])
             ->orderBy('name')
             ->get();

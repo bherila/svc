@@ -130,13 +130,13 @@ class TimeSheetTest extends TestCase
                 'expected_version' => $version,
                 'minutes' => 75,
             ])
-            ->assertStatus(409);
+            ->assertSessionHasErrors('engagement');
 
         $this->actingAs($this->manager)
             ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$onIssued->public_id}", [
                 'expected_version' => AgentApiVersion::for($onIssued),
             ])
-            ->assertStatus(409);
+            ->assertSessionHasErrors('engagement');
 
         $this->assertSame(60, (int) $onDraft->fresh()?->minutes);
         $this->assertNotSoftDeleted($onIssued);
@@ -154,7 +154,9 @@ class TimeSheetTest extends TestCase
                 'expected_version' => $stale,
                 'minutes' => 30,
             ])
-            ->assertStatus(409);
+            // A conflict an operator can act on reaches them as a message the
+            // dialog renders, not as a bare status the page cannot show.
+            ->assertSessionHasErrors('engagement');
 
         $this->assertSame(90, (int) $entry->fresh()?->minutes);
     }
@@ -658,7 +660,7 @@ class TimeSheetTest extends TestCase
             ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => $version]],
             ])
-            ->assertStatus(409);
+            ->assertSessionHasErrors('engagement');
 
         $this->assertSame('draft', $entry->fresh()?->status);
         $this->assertNull($entry->fresh()?->billing_rate_amount);
@@ -697,7 +699,11 @@ class TimeSheetTest extends TestCase
             $version = AgentApiVersion::for($entry);
             $this->attachToInvoice($entry, 'issued');
 
-            $write($entry, $version)->assertStatus(409, "{$verb} was allowed on an invoiced entry");
+            $write($entry, $version)->assertSessionHasErrors(
+                'engagement',
+                null,
+                'default',
+            );
 
             $this->assertSame(60, (int) $entry->fresh()?->minutes, "{$verb} altered an invoiced entry");
             $this->assertSame('draft', $entry->fresh()?->status, "{$verb} altered an invoiced entry");
@@ -797,6 +803,109 @@ class TimeSheetTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('filters.company_id', $this->company->public_id)
                 ->has('months.0.entries', 1));
+    }
+
+    /**
+     * The web routes translate a conflict into something the dialog can
+     * render; a JSON caller is written against the status and keeps it. Both
+     * halves of that live in one branch, so both are asserted.
+     */
+    public function test_a_json_caller_still_receives_the_conflict_status(): void
+    {
+        $entry = $this->entry(['minutes' => 60]);
+        $version = AgentApiVersion::for($entry);
+        $this->attachToInvoice($entry, 'issued');
+
+        $this->actingAs($this->manager)
+            ->patchJson("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => $version,
+                'minutes' => 75,
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame(60, (int) $entry->fresh()?->minutes);
+    }
+
+    /**
+     * The browser can now name a task, which makes the task id a
+     * tenant-owned identifier arriving from outside. Both ways of getting it
+     * wrong are refused, and neither leaves an entry behind - a rejected
+     * write that still logs the time is the failure worth catching.
+     */
+    public function test_a_task_from_outside_the_project_cannot_be_attached_from_the_browser(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignTask = ClientTask::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_project_id' => $foreign['project']->id,
+            'title' => 'Foreign Task',
+            'status' => 'open',
+        ]);
+
+        $siblingProject = $this->otherProject();
+        $siblingTask = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $siblingProject->id,
+            'title' => 'Sibling Task',
+            'status' => 'open',
+        ]);
+
+        $url = "/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries";
+        $payload = [
+            'worked_on' => '2026-07-04',
+            'minutes' => 60,
+            'description' => 'Synthetic work',
+        ];
+
+        // Another workspace's task is not found at all.
+        $this->actingAs($this->manager)
+            ->post($url, $payload + ['task_id' => $foreignTask->public_id])
+            ->assertNotFound();
+
+        // This workspace's task, but another project's: refused by the
+        // workflow, which is the check the workspace predicate cannot make.
+        $this->actingAs($this->manager)
+            ->post($url, $payload + ['task_id' => $siblingTask->public_id])
+            ->assertSessionHasErrors('engagement');
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * A task is serialized on the strength of the project it names, and
+     * nothing else - it passes no access check of its own. The schema carries
+     * independent foreign keys rather than composite workspace/parent ones, so
+     * a row owned elsewhere that points at a visible project satisfies the
+     * join.
+     */
+    public function test_a_task_owned_by_another_workspace_is_not_serialized(): void
+    {
+        $foreign = $this->foreignWorkspace();
+
+        ClientTask::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Foreign Task Title',
+            'status' => 'open',
+        ]);
+        ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Local Task Title',
+            'status' => 'open',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                $payload = (string) json_encode($page->toArray());
+
+                $this->assertStringNotContainsString('Foreign Task Title', $payload);
+                $this->assertStringContainsString('Local Task Title', $payload);
+            });
     }
 
     /**
@@ -993,6 +1102,29 @@ class TimeSheetTest extends TestCase
         DB::disableQueryLog();
 
         return $count;
+    }
+
+    /**
+     * A second workspace with its own company and project.
+     *
+     * @return array{workspace: Workspace, project: ClientProject}
+     */
+    private function foreignWorkspace(): array
+    {
+        $workspace = Workspace::query()->create(['name' => 'Other Tenant', 'slug' => 'other-tenant']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Other Client',
+            'slug' => 'other-client',
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Other Project',
+            'status' => 'active',
+        ]);
+
+        return ['workspace' => $workspace, 'project' => $project];
     }
 
     /** A workspace member who belongs to one of the company's two projects. */

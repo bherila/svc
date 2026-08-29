@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class TimeEntryController extends EngagementController
 {
@@ -84,6 +85,8 @@ class TimeEntryController extends EngagementController
             $entry = $entries->update($workspace, $timeEntry, $user, $request->validated());
         } catch (DomainException $exception) {
             return $this->reportFailure($request, new EngagementException($exception->getMessage()));
+        } catch (HttpExceptionInterface $exception) {
+            return $this->reportConflict($request, $exception);
         }
 
         return $this->respond(
@@ -104,7 +107,11 @@ class TimeEntryController extends EngagementController
         abort_unless($user instanceof User, 401);
         $validated = $request->validate(['expected_version' => ['required', 'string']]);
 
-        $entries->delete($workspace, $timeEntry, $user, $validated['expected_version']);
+        try {
+            $entries->delete($workspace, $timeEntry, $user, $validated['expected_version']);
+        } catch (HttpExceptionInterface $exception) {
+            return $this->reportConflict($request, $exception);
+        }
 
         return $this->respond(
             $request,
@@ -137,6 +144,8 @@ class TimeEntryController extends EngagementController
             $entries->approve($workspace, $user, $validated['entries']);
         } catch (DomainException $exception) {
             return $this->reportFailure($request, new EngagementException($exception->getMessage()));
+        } catch (HttpExceptionInterface $exception) {
+            return $this->reportConflict($request, $exception);
         }
 
         return $this->respond(

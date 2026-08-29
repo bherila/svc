@@ -308,7 +308,9 @@ export default function TimeSheet({
                                 </Select>
                             )}
 
-                            {company !== undefined && (
+                            {company?.projects.some(
+                                (project) => project.can_log_time,
+                            ) && (
                                 <Button onClick={() => openDialog(null)}>
                                     <PlusIcon />
                                     Log time

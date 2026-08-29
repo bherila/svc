@@ -25,6 +25,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { todayLocal } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
+/** Sentinel for the clearing option; task ids are uuids, so it collides with none. */
+const NO_TASK = '__no_task__';
+
 type Draft = {
     project_id: string;
     task_id: string;
@@ -209,15 +212,33 @@ export function TimeEntryDialog({
                             <div className="grid gap-1.5">
                                 <Label htmlFor="task">Task</Label>
                                 <Select
-                                    value={draft.task_id}
+                                    value={
+                                        draft.task_id === ''
+                                            ? NO_TASK
+                                            : draft.task_id
+                                    }
                                     onValueChange={(value: string | null) =>
-                                        set('task_id', value ?? '')
+                                        set(
+                                            'task_id',
+                                            value === null || value === NO_TASK
+                                                ? ''
+                                                : value,
+                                        )
                                     }
                                 >
                                     <SelectTrigger id="task" className="w-full">
                                         <SelectValue placeholder="No task" />
                                     </SelectTrigger>
                                     <SelectContent>
+                                        {/* A task is optional, so the list has
+                                            to be able to say so. Without this
+                                            the choice is one-way: nothing in
+                                            the menu returns the entry to
+                                            unattributed once a task is
+                                            picked. */}
+                                        <SelectItem value={NO_TASK}>
+                                            No task
+                                        </SelectItem>
                                         {project.tasks.map((task) => (
                                             <SelectItem
                                                 key={task.id}
