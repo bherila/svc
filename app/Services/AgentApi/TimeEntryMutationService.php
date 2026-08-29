@@ -58,6 +58,14 @@ final class TimeEntryMutationService
                 'worked_on', 'minutes', 'description', 'is_billable', 'is_deferred',
                 'is_visible_to_client', 'client_visible_description',
             ]);
+
+            // Task attribution is optional, so an entry saved against the
+            // wrong one has to be correctable while it is still a draft -
+            // including back to none, which is why an explicit null differs
+            // from an absent key here.
+            if (array_key_exists('task_id', $data)) {
+                $attributes['client_task_id'] = $this->taskFor($workspace, $entry, $data['task_id']);
+            }
             abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
@@ -195,6 +203,26 @@ final class TimeEntryMutationService
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
         abort_unless($this->access->canView($actor, $entry->project), 404);
         abort_unless($this->access->canLogTime($actor, $entry->project), 403);
+    }
+
+    private function taskFor(Workspace $workspace, ClientTimeEntry $entry, mixed $taskId): ?int
+    {
+        if (! is_string($taskId) || $taskId === '') {
+            return null;
+        }
+
+        $task = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('public_id', $taskId)
+            ->firstOrFail();
+
+        abort_unless(
+            $task->client_project_id === $entry->client_project_id,
+            422,
+            'The task must belong to the selected project.',
+        );
+
+        return $task->id;
     }
 
     /**

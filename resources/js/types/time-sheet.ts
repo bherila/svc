@@ -51,6 +51,8 @@ export type Capacity = {
     over_hours: number;
     carried_deficit_hours: number;
     remaining_rollover: number;
+    /** Draft work that will draw on *this* retainer once approved. */
+    pending_minutes: number;
 };
 
 export type Month = {
@@ -59,7 +61,6 @@ export type Month = {
     total_minutes: number;
     billable_minutes: number;
     deferred_minutes: number;
-    pending_minutes: number;
     capacity: Capacity[];
     entries: TimeEntry[];
 };

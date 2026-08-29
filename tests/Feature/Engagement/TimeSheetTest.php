@@ -362,8 +362,9 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.capacity.0.worked_hours', 2)
                 ->where('months.0.capacity.0.available_hours', 10)
                 ->where('months.0.capacity.0.unused_hours', 8)
-                // The draft half is reported separately rather than folded in.
-                ->where('months.0.pending_minutes', 30));
+                // The draft half is reported beside the retainer it will draw
+                // on, rather than folded into the used figure.
+                ->where('months.0.capacity.0.pending_minutes', 30));
     }
 
     /**
@@ -1209,6 +1210,7 @@ class TimeSheetTest extends TestCase
      */
     public function test_deferred_drafts_are_not_counted_as_pending_capacity(): void
     {
+        $this->monthlyRetainer('Deferred Pending Retainer');
         $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
         $this->entry(['worked_on' => '2026-07-05', 'minutes' => 90, 'is_deferred' => true]);
 
@@ -1218,7 +1220,7 @@ class TimeSheetTest extends TestCase
             ->get("/workspaces/{$this->workspace->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('months.0.pending_minutes', 60)
+                ->where('months.0.capacity.0.pending_minutes', 60)
                 ->where('months.0.deferred_minutes', 90)
                 ->where('months.0.total_minutes', 150));
     }
@@ -1443,6 +1445,7 @@ class TimeSheetTest extends TestCase
      */
     public function test_subcontractor_drafts_are_not_counted_as_pending_capacity(): void
     {
+        $this->monthlyRetainer('Subcontractor Pending Retainer');
         $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
         $this->entry([
             'worked_on' => '2026-07-05',
@@ -1456,7 +1459,7 @@ class TimeSheetTest extends TestCase
             ->get("/workspaces/{$this->workspace->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('months.0.pending_minutes', 60)
+                ->where('months.0.capacity.0.pending_minutes', 60)
                 ->where('months.0.total_minutes', 180));
     }
 
@@ -1513,6 +1516,186 @@ class TimeSheetTest extends TestCase
                 "Tasks were read for more projects than the reader can see: {$sql}",
             );
         }
+    }
+
+    /**
+     * A renewal ends its predecessor whether or not anyone wrote an
+     * `ends_on` date - invoice generation stops the old segment at the new
+     * one's start, and the strip has to be the figure the invoice uses.
+     */
+    public function test_a_renewal_ends_its_predecessors_capacity(): void
+    {
+        $this->monthlyRetainer('Original Retainer');
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Renewal Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 900,
+            'starts_on' => '2026-08-01',
+        ]);
+
+        $this->travelTo('2026-08-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
+                $props = $page->toArray()['props'];
+                $august = null;
+
+                foreach ($props['months'] as $month) {
+                    if ($month['key'] === '2026-08') {
+                        $august = $month;
+                    }
+                }
+
+                $this->assertNotNull($august);
+                $this->assertSame(
+                    ['Renewal Retainer'],
+                    array_column($august['capacity'], 'agreement'),
+                    'The superseded agreement still claims the month its successor took over.',
+                );
+            });
+    }
+
+    /**
+     * A retainer scoped to one project is never drawn on by work logged
+     * against another, so a company-wide pending figure beside it announced a
+     * demand on capacity that could not arrive.
+     */
+    public function test_pending_work_is_counted_against_the_retainer_that_can_reach_it(): void
+    {
+        $other = $this->otherProject();
+        $this->monthlyRetainer('Project Scoped Retainer', $this->project->id);
+
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry([
+            'worked_on' => '2026-07-05',
+            'minutes' => 300,
+            'client_project_id' => $other->id,
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.capacity', 1)
+                // Only the hour logged against the covered project.
+                ->where('months.0.capacity.0.pending_minutes', 60)
+                ->where('months.0.total_minutes', 360));
+    }
+
+    /**
+     * The window has an upper bound as well as a lower one. Capacity is built
+     * only to the end of the current month, so a mistyped year sorted a month
+     * card above every real one and stayed there.
+     */
+    public function test_work_dated_beyond_the_window_is_not_shown(): void
+    {
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry(['worked_on' => '2099-08-29', 'minutes' => 60, 'description' => 'Mistyped year']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months', 1)
+                ->where('months.0.key', '2026-07'));
+    }
+
+    /**
+     * `user_id` is an independent key and proves no membership, so a row
+     * could name a person from outside the workspace entirely - the one field
+     * on this screen that identifies someone rather than describing work.
+     */
+    public function test_a_worker_from_outside_the_workspace_is_not_named(): void
+    {
+        $outsider = User::factory()->create(['name' => 'Outsider Who Never Joined']);
+        $this->entry(['worked_on' => '2026-07-04', 'user_id' => $outsider->id]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                $payload = (string) json_encode($page->toArray());
+
+                $this->assertStringNotContainsString('Outsider Who Never Joined', $payload);
+            });
+    }
+
+    /**
+     * Task attribution is optional, so an entry saved against the wrong task
+     * has to be correctable while it is still a draft - including back to
+     * none, which is why an explicit null differs from an absent key.
+     */
+    public function test_a_draft_can_have_its_task_corrected_or_cleared(): void
+    {
+        $first = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'First Task',
+            'status' => 'open',
+        ]);
+        $second = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Second Task',
+            'status' => 'open',
+        ]);
+
+        $entry = $this->entry(['client_task_id' => $first->id]);
+        $url = "/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}";
+
+        $this->actingAs($this->manager)
+            ->patch($url, [
+                'expected_version' => AgentApiVersion::for($entry),
+                'task_id' => $second->public_id,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($second->id, $entry->fresh()?->client_task_id);
+
+        $this->actingAs($this->manager)
+            ->patch($url, [
+                'expected_version' => AgentApiVersion::for($entry->fresh()),
+                'task_id' => null,
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($entry->fresh()?->client_task_id);
+    }
+
+    /** A task of another project cannot be attached by correcting a draft. */
+    public function test_correcting_a_task_cannot_reach_another_projects_task(): void
+    {
+        $sibling = $this->otherProject();
+        $siblingTask = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $sibling->id,
+            'title' => 'Sibling Task',
+            'status' => 'open',
+        ]);
+
+        $entry = $this->entry();
+
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => AgentApiVersion::for($entry),
+                'task_id' => $siblingTask->public_id,
+            ])
+            ->assertStatus(422);
+
+        $this->assertNull($entry->fresh()?->client_task_id);
     }
 
     /**
@@ -1787,6 +1970,21 @@ class TimeSheetTest extends TestCase
             'client_company_id' => $this->company->id,
             'name' => 'Project They Cannot See',
             'status' => 'active',
+        ]);
+    }
+
+    private function monthlyRetainer(string $title, ?int $projectId = null): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $projectId,
+            'title' => $title,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
         ]);
     }
 

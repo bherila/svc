@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\AgentApi\AgentApiVersion;
 use Carbon\CarbonImmutable;
@@ -43,6 +44,7 @@ class TimeSheetController extends Controller
         ProjectAccess $access,
         InvoiceLedgerBuilder $ledgers,
         AgentTimeEntryQuery $visible,
+        AgreementSelector $selector,
     ): Response {
         Gate::authorize('view', $workspace);
         $user = $request->user();
@@ -145,7 +147,7 @@ class TimeSheetController extends Controller
         $capacityByMonth = $selectedCompany !== null
             && ($whollyVisible[$selectedCompany->id] ?? false)
             && $this->ledgerInputsAgree($workspace, $selectedCompany)
-                ? $this->capacityByMonth($ledgers, $selectedCompany, $workspace->timezone)
+                ? $this->capacityByMonth($ledgers, $selector, $selectedCompany, $entries, $workspace->timezone)
                 : [];
 
         return Inertia::render('time', [
@@ -221,13 +223,25 @@ class TimeSheetController extends Controller
             ->where('client_company_id', $company->id)
             ->whereIn('client_project_id', $visibleProjectIds)
             ->where('worked_on', '>=', self::windowStart($workspace->timezone)->toDateString())
+            // And an upper one. The window is described to the reader as the
+            // last twelve months and capacity is built only to the end of the
+            // current one, so a mistyped year sorts a month card above every
+            // real one and stays there.
+            ->where('worked_on', '<=', CarbonImmutable::now($workspace->timezone)->endOfMonth()->toDateString())
             // A task reaches the row on the strength of the id the entry
             // holds; it passes no check of its own, exactly as the tasks
             // offered in the log form did.
             ->with([
                 'project',
                 'task' => fn ($query) => $query->where('workspace_id', $workspace->id),
-                'user',
+                // `user_id` is an independent key and proves no membership,
+                // so a row could name someone from outside the workspace
+                // entirely. A name is the one field here that identifies a
+                // person rather than describing work.
+                'user' => fn ($query) => $query->whereHas(
+                    'workspaces',
+                    fn ($workspaces) => $workspaces->whereKey($workspace->id),
+                ),
             ])
             ->orderByDesc('worked_on')
             ->orderByDesc('id')
@@ -334,10 +348,16 @@ class TimeSheetController extends Controller
      * a running balance, so asking it for a single month in isolation would
      * drop the rollover that month inherited.
      *
-     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>
+     * @param  EloquentCollection<int, ClientTimeEntry>  $entries
+     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>
      */
-    private function capacityByMonth(InvoiceLedgerBuilder $ledgers, ?ClientCompany $company, string $timezone): array
-    {
+    private function capacityByMonth(
+        InvoiceLedgerBuilder $ledgers,
+        AgreementSelector $selector,
+        ?ClientCompany $company,
+        EloquentCollection $entries,
+        string $timezone,
+    ): array {
         if ($company === null) {
             return [];
         }
@@ -350,6 +370,8 @@ class TimeSheetController extends Controller
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
+            // Ordered as the selector expects, because it breaks ties on id.
+            ->orderBy('id')
             // What the billing engine ignores cannot be capacity here.
             // `AgreementSelector` and `AgreementBillingRateResolver` both
             // exclude drafts; a proposed retainer carrying a start date would
@@ -359,7 +381,12 @@ class TimeSheetController extends Controller
             ->where('status', '!=', 'draft')
             ->whereNotNull('starts_on')
             ->orderBy('starts_on')
-            ->get()
+            ->get();
+
+        // Succession is decided over every agreement in force, not only the
+        // ones with a strip: an hourly renewal still ends the retainer it
+        // replaced, and filtering first would hide exactly that successor.
+        $displayed = $agreements
             // Only an agreement that actually grants recurring capacity has
             // capacity to report. An hourly-only agreement would render a
             // permanently empty strip beside its hours, and a one-time
@@ -372,7 +399,23 @@ class TimeSheetController extends Controller
         $from = self::windowStart($timezone)->format('Y-m');
         $capacity = [];
 
-        foreach ($agreements as $agreement) {
+        foreach ($displayed as $agreement) {
+            // A renewal ends its predecessor whether or not anyone wrote an
+            // `ends_on` date, and invoice generation stops the old segment at
+            // the new one's start. Without the same boundary the two strips
+            // both claim the months after the handover, and the figure stops
+            // being the one the invoice uses.
+            $end = $through;
+            $successor = $selector->successorAgreementForGeneration($agreements, $agreement);
+
+            if ($successor?->starts_on !== null) {
+                $handover = CarbonImmutable::parse($successor->starts_on)->subDay()->endOfDay();
+
+                if ($handover->lt($end)) {
+                    $end = $handover;
+                }
+            }
+
             // Built from the agreement's start every time, because the ledger
             // is a running balance and the displayed months inherit rollover
             // from the ones before them. Only what is displayed is trimmed:
@@ -381,7 +424,7 @@ class TimeSheetController extends Controller
             $ledger = $ledgers->buildAgreementLedgerThrough(
                 $company,
                 $agreement,
-                $through->toMutable(),
+                $end->toMutable(),
             );
 
             foreach ($ledger as $month) {
@@ -395,6 +438,17 @@ class TimeSheetController extends Controller
                 // Reading `excessHours` alone reports every over-capacity
                 // month as comfortably inside its retainer.
                 $over = max(0.0, $month->hoursWorked - $month->opening->totalAvailable);
+
+                // Pending work belongs to the strip it can actually reach.
+                // A retainer scoped to one project is never drawn on by work
+                // logged against another, so reporting a company-wide total
+                // beside it claims a demand on capacity that cannot arrive.
+                $pending = $entries
+                    ->filter(fn (ClientTimeEntry $entry): bool => $entry->worked_on->format('Y-m') === $month->yearMonth
+                        && $entry->willDrawOnRetainerWhenApproved()
+                        && ($agreement->client_project_id === null
+                            || $entry->client_project_id === $agreement->client_project_id))
+                    ->sum('minutes');
 
                 $capacity[$month->yearMonth][] = [
                     'agreement' => (string) $agreement->title,
@@ -412,6 +466,7 @@ class TimeSheetController extends Controller
                     // carried in - distinct from this month's own overage.
                     'carried_deficit_hours' => round($month->closing->negativeBalance, 2),
                     'remaining_rollover' => round($month->closing->remainingRollover, 2),
+                    'pending_minutes' => (int) $pending,
                 ];
             }
         }
@@ -422,7 +477,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */
@@ -465,13 +520,6 @@ class TimeSheetController extends Controller
                 // outside the capacity figures beside them. Reporting them
                 // separately is what stops "0 of 10 used" reading as "10 left"
                 // when half of it is logged and waiting.
-                // Asked of the model rather than restated here: this figure
-                // claims the work will draw on the retainer when approved,
-                // which is the ledger's rule, and a copy of it drifts the
-                // moment the ledger gains an exclusion.
-                'pending_minutes' => (int) $monthEntries
-                    ->filter(fn (ClientTimeEntry $entry): bool => $entry->willDrawOnRetainerWhenApproved())
-                    ->sum('minutes'),
                 'capacity' => $capacityByMonth[$yearMonth] ?? [],
                 'entries' => $rows,
             ];

@@ -23,6 +23,10 @@ class UpdateTimeEntryRequest extends FormRequest
             'is_deferred' => ['sometimes', 'boolean'],
             'is_visible_to_client' => ['sometimes', 'boolean'],
             'client_visible_description' => ['nullable', 'string', 'max:10000'],
+            // Nullable rather than absent-or-string: clearing an attribution
+            // is a change the operator has to be able to make, and an omitted
+            // key cannot say "none" while `null` can.
+            'task_id' => ['sometimes', 'nullable', 'string'],
         ];
     }
 }

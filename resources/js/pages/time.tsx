@@ -65,28 +65,13 @@ function stateOf(entry: TimeEntry): {
     return { label: 'Draft', variant: 'outline' };
 }
 
-function CapacityStrip({
-    capacity,
-    pendingMinutes,
-}: {
-    capacity: Capacity[];
-    pendingMinutes: number;
-}) {
+function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
     if (capacity.length === 0) {
         return null;
     }
 
     return (
         <div className="grid gap-2">
-            {pendingMinutes > 0 && (
-                <p className="text-xs text-muted-foreground">
-                    Capacity counts approved work.{' '}
-                    <span className="font-medium text-foreground tabular-nums">
-                        {formatHours(pendingMinutes)}
-                    </span>{' '}
-                    is logged and awaiting approval.
-                </p>
-            )}
             <div className="flex flex-wrap gap-3">
                 {capacity.map((row, index) => {
                     const over = row.over_hours > 0;
@@ -176,6 +161,14 @@ function CapacityStrip({
                                     </span>
                                 )}
                             </p>
+                            {row.pending_minutes > 0 && (
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    <span className="font-medium text-foreground tabular-nums">
+                                        {formatHours(row.pending_minutes)}
+                                    </span>{' '}
+                                    awaiting approval
+                                </p>
+                            )}
                         </div>
                     );
                 })}
@@ -512,10 +505,7 @@ function MonthCard({
                         )}
                     </p>
                 </div>
-                <CapacityStrip
-                    capacity={month.capacity}
-                    pendingMinutes={month.pending_minutes}
-                />
+                <CapacityStrip capacity={month.capacity} />
             </CardHeader>
 
             <CardContent>

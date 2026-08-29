@@ -143,10 +143,12 @@ export function TimeEntryDialog({
                 : null,
         };
 
+        const taskId = draft.task_id === '' ? null : draft.task_id;
+
         if (entry !== null) {
             router.patch(
                 `/workspaces/${workspaceId}/time-entries/${entry.id}`,
-                { ...shared, expected_version: entry.version },
+                { ...shared, task_id: taskId, expected_version: entry.version },
                 finish,
             );
 
@@ -155,7 +157,7 @@ export function TimeEntryDialog({
 
         router.post(
             `/workspaces/${workspaceId}/projects/${draft.project_id}/time-entries`,
-            { ...shared, task_id: draft.task_id === '' ? null : draft.task_id },
+            { ...shared, task_id: taskId },
             finish,
         );
     };
@@ -206,51 +208,53 @@ export function TimeEntryDialog({
                         </div>
                     )}
 
-                    {entry === null &&
-                        project !== undefined &&
-                        project.tasks.length > 0 && (
-                            <div className="grid gap-1.5">
-                                <Label htmlFor="task">Task</Label>
-                                <Select
-                                    value={
-                                        draft.task_id === ''
-                                            ? NO_TASK
-                                            : draft.task_id
-                                    }
-                                    onValueChange={(value: string | null) =>
-                                        set(
-                                            'task_id',
-                                            value === null || value === NO_TASK
-                                                ? ''
-                                                : value,
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger id="task" className="w-full">
-                                        <SelectValue placeholder="No task" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {/* A task is optional, so the list has
+                    {/* Offered while editing too: the project cannot change
+                        on an existing entry, so its tasks stay valid, and an
+                        entry filed against the wrong one was otherwise stuck
+                        with it for good. */}
+                    {project !== undefined && project.tasks.length > 0 && (
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="task">Task</Label>
+                            <Select
+                                value={
+                                    draft.task_id === ''
+                                        ? NO_TASK
+                                        : draft.task_id
+                                }
+                                onValueChange={(value: string | null) =>
+                                    set(
+                                        'task_id',
+                                        value === null || value === NO_TASK
+                                            ? ''
+                                            : value,
+                                    )
+                                }
+                            >
+                                <SelectTrigger id="task" className="w-full">
+                                    <SelectValue placeholder="No task" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {/* A task is optional, so the list has
                                             to be able to say so. Without this
                                             the choice is one-way: nothing in
                                             the menu returns the entry to
                                             unattributed once a task is
                                             picked. */}
-                                        <SelectItem value={NO_TASK}>
-                                            No task
+                                    <SelectItem value={NO_TASK}>
+                                        No task
+                                    </SelectItem>
+                                    {project.tasks.map((task) => (
+                                        <SelectItem
+                                            key={task.id}
+                                            value={task.id}
+                                        >
+                                            {task.title}
                                         </SelectItem>
-                                        {project.tasks.map((task) => (
-                                            <SelectItem
-                                                key={task.id}
-                                                value={task.id}
-                                            >
-                                                {task.title}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        )}
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
 
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-1.5">
