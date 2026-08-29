@@ -122,11 +122,16 @@ The driver now names the server honestly: both production and the hosted job use
 Laravel's `mariadb` connection. At MariaDB 10.6 this is schema-equivalent to the
 old `mysql` connection for this application. The equivalence ends at 10.7,
 where Laravel starts compiling `uuid()` columns as native `uuid` instead of
-`char(36)`. Production already has thirty `char(36)` UUID columns, so
+`char(36)`. The current migration inventory has 31 logical UUID columns: 29
+declared with `uuid()` (discounting the repeated alteration of
+`identity_memberships.public_id`) and two Passport `foreignUuid()` client IDs.
 `svc:database:status` runs before every deployment migration and refuses 10.7+
-until those columns receive one deliberate migration. The hosted MariaDB job
-runs the same guard; a driver typo or a premature image upgrade is therefore a
-test failure rather than silent schema drift.
+until a fresh inventory and one deliberate migration cover every UUID and
+foreign-UUID column. The hosted MariaDB job runs the same guard; a driver typo
+or a premature image upgrade is therefore a test failure rather than silent
+schema drift. That job also creates a JSON column through Laravel's MariaDB
+grammar and proves malformed JSON is rejected, preserving the validation
+behavior of the existing production schema.
 
 ### What the first MariaDB run found
 

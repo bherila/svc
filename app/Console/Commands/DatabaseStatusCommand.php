@@ -61,8 +61,8 @@ final class DatabaseStatusCommand extends Command
     /**
      * MariaDBGrammar changes uuid() from char(36) to native uuid at 10.7.
      * Production's existing UUID columns are char(36), so a server upgrade
-     * must remain blocked until a deliberate schema migration moves all thirty
-     * columns together.
+     * must remain blocked until a deliberate schema migration moves every UUID
+     * and foreign-UUID column together.
      */
     public static function isUuidGrammarCompatible(string $driver, string $serverVersion): bool
     {

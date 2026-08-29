@@ -263,7 +263,7 @@ be outstanding when this bills a real client.
 | Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
 | Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |
 | Fresh imports drop opening balances | `starting_unused_hours` and `starting_negative_hours` are repaired by the backfill command but absent from `ExternalImportService`'s invoice mapping, so a new onboarding stores nulls. | #83 |
-| Laravel `mariadb` driver | Production and the hosted MariaDB job use the matching `mariadb` driver. A deploy-time and test-time guard refuses server 10.7+, where Laravel switches new `uuid()` columns to native `uuid`, until the 30 existing `char(36)` UUID columns receive a deliberate migration. | #78 |
+| Laravel `mariadb` driver | Production and the hosted MariaDB job use the matching `mariadb` driver. A deploy-time and test-time guard refuses server 10.7+, where Laravel switches new `uuid()` columns to native `uuid`, until a fresh inventory and deliberate migration cover all UUID columns (currently 31 logical columns: 29 `uuid()` and two `foreignUuid()`). | #78 |
 
 ### What the replay says now
 

@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -96,10 +98,34 @@ final class DatabaseDriverTest extends TestCase
     }
 
     /**
+     * MariaDB exposes JSON as a LONGTEXT alias with a JSON_VALID constraint.
+     * Creating the probe through Laravel's grammar proves the mariadb driver
+     * preserves that validation instead of silently accepting arbitrary text.
+     */
+    public function test_a_json_column_rejects_malformed_json_on_mariadb(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mariadb') {
+            $this->markTestSkipped('The JSON schema-parity assertion belongs to the MariaDB driver.');
+        }
+
+        Schema::create('driver_json_probe', function (Blueprint $table): void {
+            $table->json('payload');
+        });
+
+        try {
+            $this->expectException(QueryException::class);
+            DB::table('driver_json_probe')->insert(['payload' => 'not-json']);
+        } finally {
+            Schema::dropIfExists('driver_json_probe');
+        }
+    }
+
+    /**
      * Laravel's MariaDB grammar switches uuid() from char(36) to native uuid
      * at 10.7. Production's existing UUID columns are char(36), so the server
-     * must not cross that boundary until all thirty UUID columns are migrated
-     * together. The deploy runs this same command before migrations.
+     * must not cross that boundary until every existing UUID and foreign-UUID
+     * column is migrated together. The deploy runs this same command before
+     * migrations.
      */
     public function test_the_mariadb_driver_matches_the_existing_uuid_schema(): void
     {
