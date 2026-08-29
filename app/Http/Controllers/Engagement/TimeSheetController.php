@@ -44,6 +44,7 @@ class TimeSheetController extends Controller
         Gate::authorize('view', $workspace);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
+        $canManage = Gate::forUser($user)->allows('manage', $workspace);
 
         $companies = $workspace->clientCompanies()
             ->with([
@@ -53,8 +54,33 @@ class TimeSheetController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Membership of the workspace is not access to every project in it.
+        // Without this, a member scoped to one project reads every other
+        // project's descriptions, workers, invoice links and capacity.
+        $visibleProjectIds = [];
+
+        foreach ($companies as $company) {
+            foreach ($company->projects as $project) {
+                if ($access->canView($user, $project)) {
+                    $visibleProjectIds[] = $project->id;
+                }
+            }
+        }
+
+        $companies = $companies
+            ->each(function (ClientCompany $company) use ($visibleProjectIds): void {
+                $company->setRelation(
+                    'projects',
+                    $company->projects->filter(
+                        fn (ClientProject $project): bool => in_array($project->id, $visibleProjectIds, true),
+                    )->values(),
+                );
+            })
+            ->filter(fn (ClientCompany $company): bool => $company->projects->isNotEmpty())
+            ->values();
+
         $selectedCompany = $this->selectedCompany($request, $companies);
-        $entries = $this->entries($workspace, $selectedCompany);
+        $entries = $this->entries($workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
         $capacityByMonth = $this->capacityByMonth($ledgers, $selectedCompany);
 
@@ -73,7 +99,10 @@ class TimeSheetController extends Controller
                 'projects' => $company->projects->map(fn (ClientProject $project): array => [
                     'id' => $project->public_id,
                     'name' => $project->name,
-                    'can_log_time' => $access->canLogTime($user, $project),
+                    // Both halves, because the write requires both. Project
+                    // access alone would advertise a form whose POST is
+                    // refused by the workspace gate on `store()`.
+                    'can_log_time' => $canManage && $access->canLogTime($user, $project),
                     'tasks' => $project->tasks->map(fn (ClientTask $task): array => [
                         'id' => $task->public_id,
                         'title' => $task->title,
@@ -99,11 +128,12 @@ class TimeSheetController extends Controller
     /**
      * Entries for the window, newest first.
      *
+     * @param  list<int>  $visibleProjectIds
      * @return EloquentCollection<int, ClientTimeEntry>
      */
-    private function entries(Workspace $workspace, ?ClientCompany $company): EloquentCollection
+    private function entries(Workspace $workspace, ?ClientCompany $company, array $visibleProjectIds): EloquentCollection
     {
-        if ($company === null) {
+        if ($company === null || $visibleProjectIds === []) {
             /** @var EloquentCollection<int, ClientTimeEntry> */
             return new EloquentCollection;
         }
@@ -113,6 +143,7 @@ class TimeSheetController extends Controller
         return ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
+            ->whereIn('client_project_id', $visibleProjectIds)
             ->where('worked_on', '>=', $from->toDateString())
             ->with(['project', 'task', 'user'])
             ->orderByDesc('worked_on')
@@ -172,7 +203,7 @@ class TimeSheetController extends Controller
      * a running balance, so asking it for a single month in isolation would
      * drop the rollover that month inherited.
      *
-     * @return array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, excess_hours: float, remaining_rollover: float}>>
+     * @return array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>
      */
     private function capacityByMonth(InvoiceLedgerBuilder $ledgers, ?ClientCompany $company): array
     {
@@ -190,7 +221,14 @@ class TimeSheetController extends Controller
             ->where('client_company_id', $company->id)
             ->whereNotNull('starts_on')
             ->orderBy('starts_on')
-            ->get();
+            ->get()
+            // Only an agreement that actually grants recurring capacity has
+            // capacity to report. An hourly-only agreement would render a
+            // permanently empty strip beside its hours, and a one-time
+            // agreement carrying retainer fields would appear to grant the
+            // same hours again every month after the one it was sold for.
+            ->filter(fn (ClientAgreement $agreement): bool => $agreement->billsOnARecurringCadence()
+                && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null));
 
         $through = CarbonImmutable::now()->endOfMonth();
         $capacity = [];
@@ -203,12 +241,22 @@ class TimeSheetController extends Controller
             );
 
             foreach ($ledger as $month) {
+                // `closing->excessHours` is populated only when the ledger is
+                // built to bill excess immediately, which this one is not - it
+                // carries the overage forward as a negative balance instead.
+                // Reading `excessHours` alone reports every over-capacity
+                // month as comfortably inside its retainer.
+                $over = max(0.0, $month->hoursWorked - $month->opening->totalAvailable);
+
                 $capacity[$month->yearMonth][] = [
                     'agreement' => (string) $agreement->title,
                     'available_hours' => round($month->opening->totalAvailable, 2),
                     'worked_hours' => round($month->hoursWorked, 2),
                     'unused_hours' => round($month->closing->unusedHours, 2),
-                    'excess_hours' => round($month->closing->excessHours, 2),
+                    'over_hours' => round($over, 2),
+                    // The running deficit, which includes what earlier months
+                    // carried in - distinct from this month's own overage.
+                    'carried_deficit_hours' => round($month->closing->negativeBalance, 2),
                     'remaining_rollover' => round($month->closing->remainingRollover, 2),
                 ];
             }
@@ -220,7 +268,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, excess_hours: float, remaining_rollover: float}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>  $capacityByMonth
      * @return list<array<string, mixed>>
      */
     private function months(
@@ -234,9 +282,18 @@ class TimeSheetController extends Controller
             fn (ClientTimeEntry $entry): string => $entry->worked_on->format('Y-m'),
         );
 
+        // A month with capacity and no entries is exactly when an operator
+        // most wants the strip - the current month, before the first entry is
+        // logged. Grouping entries alone would omit it.
+        $keys = array_unique([...array_keys($grouped->all()), ...array_keys($capacityByMonth)]);
+        rsort($keys);
+
         $months = [];
 
-        foreach ($grouped as $yearMonth => $monthEntries) {
+        foreach ($keys as $yearMonth) {
+            $yearMonth = (string) $yearMonth;
+            /** @var EloquentCollection<int, ClientTimeEntry> $monthEntries */
+            $monthEntries = $grouped->get($yearMonth) ?? new EloquentCollection;
             $rows = $monthEntries
                 ->map(fn (ClientTimeEntry $entry): array => $this->row($entry, $invoicesByEntry, $access, $user))
                 ->values()
@@ -277,13 +334,13 @@ class TimeSheetController extends Controller
         $invoice = $invoicesByEntry[$entry->id] ?? null;
         $project = $entry->project;
 
-        // A draft invoice is regenerated from its entries, so a row attached to
-        // one is still the operator's to change. An issued or paid invoice has
-        // been sent, and the entry behind it is frozen whatever its own status
-        // says.
-        $onSentInvoice = $invoice !== null && ! in_array($invoice['status'], ['draft'], true);
+        // Any invoice line freezes the entry, and the screen says the same
+        // thing the mutation service does. The predecessor unlinked an entry
+        // from a draft invoice and regenerated it; reproducing that needs the
+        // generator, so until it exists this refuses rather than letting an
+        // edit leave a draft charging the old quantity.
         $editable = $entry->status === 'draft'
-            && ! $onSentInvoice
+            && $invoice === null
             && ($entry->user_id === $user->id || $access->isWorkspaceManager($user, $entry->workspace))
             && $access->canLogTime($user, $project);
 
@@ -310,7 +367,7 @@ class TimeSheetController extends Controller
             'invoice' => $invoice,
             'can_edit' => $editable,
             'can_approve' => $entry->status === 'draft'
-                && ! $onSentInvoice
+                && $invoice === null
                 && $access->canApproveTime($user, $project),
         ];
     }

@@ -125,6 +125,18 @@ final class TimeEntryMutationService
     {
         abort_unless($entry->workspace_id === $workspace->id, 404);
         abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be changed.');
+        // Status alone is not enough. An entry can still read `draft` while a
+        // line already bills it - issuing rewrites attached time, but nothing
+        // guarantees the two are in step, and the gap is exactly where an edit
+        // would change what a sent invoice charged. Nor is it enough to check
+        // the invoice is a draft: a draft is regenerated from its entries, but
+        // this path changes only the entry, so the line would keep billing the
+        // old quantity until something else recomposed it.
+        abort_if(
+            $entry->invoiceLines()->exists(),
+            409,
+            'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
+        );
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
         abort_unless($this->access->canView($actor, $entry->project), 404);
         abort_unless($this->access->canLogTime($actor, $entry->project), 403);

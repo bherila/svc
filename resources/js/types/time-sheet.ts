@@ -46,7 +46,8 @@ export type Capacity = {
     available_hours: number;
     worked_hours: number;
     unused_hours: number;
-    excess_hours: number;
+    over_hours: number;
+    carried_deficit_hours: number;
     remaining_rollover: number;
 };
 

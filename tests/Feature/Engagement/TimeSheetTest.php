@@ -7,11 +7,13 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\ProjectRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -74,7 +76,14 @@ class TimeSheetTest extends TestCase
                 ->where('months.1.billable_minutes', 0));
     }
 
-    public function test_an_entry_on_a_sent_invoice_is_frozen_and_one_on_a_draft_is_not(): void
+    /**
+     * A line that bills an entry freezes it, draft invoice or not. The
+     * predecessor unlinked an entry from a draft and regenerated the invoice;
+     * this system has no path that recomposes a draft from an edited entry, so
+     * allowing the edit would leave the draft charging the old quantity right
+     * up until it was issued.
+     */
+    public function test_an_entry_on_any_invoice_is_frozen(): void
     {
         $onDraft = $this->entry(['worked_on' => '2026-07-04']);
         $onIssued = $this->entry(['worked_on' => '2026-07-05']);
@@ -93,27 +102,40 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.entries.0.can_edit', false)
                 ->where('months.0.entries.0.can_approve', false)
                 ->where('months.0.entries.1.invoice.status', 'draft')
-                ->where('months.0.entries.1.can_edit', true));
+                ->where('months.0.entries.1.can_edit', false)
+                ->where('months.0.entries.1.can_approve', false));
     }
 
     /**
-     * A draft invoice is regenerated from its entries, so the row behind one is
-     * still the operator's. Editing it through the screen has to work, or the
-     * badge would be telling the truth while the button lied.
+     * The screen hiding a control is not a rule. An operator holding a version
+     * read before the invoice existed can still send the request, so the guard
+     * has to live where the write happens - and it covers the agent API by
+     * being there rather than here.
      */
-    public function test_an_entry_attached_to_a_draft_invoice_can_still_be_edited(): void
+    public function test_the_invoice_freeze_holds_against_a_direct_request(): void
     {
-        $entry = $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
-        $this->attachToInvoice($entry, 'draft');
+        $onDraft = $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $onIssued = $this->entry(['worked_on' => '2026-07-05', 'minutes' => 60]);
+        $version = AgentApiVersion::for($onDraft);
+
+        $this->attachToInvoice($onDraft, 'draft');
+        $this->attachToInvoice($onIssued, 'issued');
 
         $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
-                'expected_version' => AgentApiVersion::for($entry),
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$onDraft->public_id}", [
+                'expected_version' => $version,
                 'minutes' => 75,
             ])
-            ->assertRedirect();
+            ->assertStatus(409);
 
-        $this->assertSame(75, (int) $entry->fresh()?->minutes);
+        $this->actingAs($this->manager)
+            ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$onIssued->public_id}", [
+                'expected_version' => AgentApiVersion::for($onIssued),
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame(60, (int) $onDraft->fresh()?->minutes);
+        $this->assertNotSoftDeleted($onIssued);
     }
 
     public function test_an_edit_that_read_a_stale_version_is_refused(): void
@@ -332,6 +354,174 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.capacity.0.unused_hours', 8)
                 // The draft half is reported separately rather than folded in.
                 ->where('months.0.pending_minutes', 30));
+    }
+
+    /**
+     * Membership of a workspace is not access to every project in it.
+     *
+     * The `view` gate on the workspace passes for an ordinary member, so
+     * without a project filter the sheet hands them every other project's
+     * descriptions, workers, invoice links and capacity.
+     */
+    public function test_a_member_sees_only_the_projects_they_belong_to(): void
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Project They Cannot See',
+            'status' => 'active',
+        ]);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+
+        $mine = $this->entry(['worked_on' => '2026-07-04', 'description' => 'Theirs to see']);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $otherProject->id,
+            'user_id' => $this->manager->id,
+            'worked_on' => '2026-07-05',
+            'minutes' => 60,
+            'description' => 'Not theirs to see',
+            'status' => 'draft',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('companies.0.projects', 1)
+                ->where('companies.0.projects.0.name', 'Synthetic Project')
+                ->has('months.0.entries', 1)
+                ->where('months.0.entries.0.id', $mine->public_id));
+    }
+
+    /**
+     * The screen must not offer a form whose submission is refused. Logging
+     * goes through the workspace `manage` gate, so project access alone is not
+     * enough to advertise it.
+     */
+    public function test_a_member_without_the_manage_gate_is_not_offered_the_log_form(): void
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('companies.0.projects.0.can_log_time', false));
+
+        // And the endpoint agrees, which is the half that matters.
+        $this->actingAs($member)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2026-07-04',
+                'minutes' => 30,
+                'description' => 'Refused',
+            ])
+            ->assertForbidden();
+    }
+
+    /**
+     * The month an operator most wants the capacity strip for is the current
+     * one, before anything is logged against it.
+     */
+    public function test_a_month_with_capacity_and_no_entries_still_appears(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Dated Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-07')
+                ->has('months.0.entries', 0)
+                ->has('months.0.capacity', 1)
+                ->where('months.0.capacity.0.available_hours', 10));
+    }
+
+    /**
+     * With the ledger carrying excess forward rather than billing it, the
+     * overage lives in the closing negative balance and `excessHours` stays
+     * zero. Reading `excessHours` alone reports an over-capacity month as
+     * comfortably inside its retainer, in green.
+     */
+    public function test_work_beyond_the_retainer_is_reported_as_over(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Small Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 60,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 240, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.capacity.0.available_hours', 1)
+                ->where('months.0.capacity.0.worked_hours', 4)
+                ->where('months.0.capacity.0.over_hours', 3)
+                ->where('months.0.capacity.0.unused_hours', 0));
+    }
+
+    /**
+     * An hourly-only agreement grants no recurring capacity, so a strip for it
+     * would report a permanent zero beside real hours.
+     */
+    public function test_an_agreement_with_no_retainer_reports_no_capacity(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Hourly Only',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'hourly_rate_amount' => 15000,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
     }
 
     public function test_the_sheet_shows_nothing_from_another_workspace(): void

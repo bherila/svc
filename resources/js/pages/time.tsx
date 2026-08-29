@@ -89,7 +89,7 @@ function CapacityStrip({
             )}
             <div className="flex flex-wrap gap-3">
                 {capacity.map((row) => {
-                    const over = row.excess_hours > 0;
+                    const over = row.over_hours > 0;
                     const used = row.worked_hours;
                     const available = row.available_hours;
                     const fraction =
@@ -134,13 +134,22 @@ function CapacityStrip({
                             <p className="mt-1.5 text-xs tabular-nums">
                                 {over ? (
                                     <span className="text-destructive">
-                                        {formatDecimalHours(row.excess_hours)} h
+                                        {formatDecimalHours(row.over_hours)} h
                                         over
                                     </span>
                                 ) : (
                                     <span className="text-muted-foreground">
                                         {formatDecimalHours(row.unused_hours)} h
                                         left
+                                    </span>
+                                )}
+                                {row.carried_deficit_hours > row.over_hours && (
+                                    <span className="text-destructive">
+                                        {' · '}
+                                        {formatDecimalHours(
+                                            row.carried_deficit_hours,
+                                        )}{' '}
+                                        h carried deficit
                                     </span>
                                 )}
                                 {row.remaining_rollover > 0 && (
@@ -171,6 +180,16 @@ export default function TimeSheet({
     const [dialogOpen, setDialogOpen] = useState(false);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
+    // Approval can fail for a reason the row cannot show - most often a
+    // billable entry with no agreement rate to stamp. Without this the row
+    // simply stays a draft and the click looks like it did nothing.
+    const [notice, setNotice] = useState<string | null>(null);
+
+    const reportFailure = (errors: Record<string, string>) => {
+        setNotice(
+            Object.values(errors)[0] ?? 'That action could not be completed.',
+        );
+    };
 
     const company = useMemo(
         () =>
@@ -206,7 +225,14 @@ export default function TimeSheet({
                     expected_version: entry.version,
                 })),
             },
-            { preserveScroll: true, onSuccess: () => setSelected([]) },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSelected([]);
+                    setNotice(null);
+                },
+                onError: reportFailure,
+            },
         );
     };
 
@@ -214,6 +240,8 @@ export default function TimeSheet({
         router.delete(`/workspaces/${workspace.id}/time-entries/${entry.id}`, {
             data: { expected_version: entry.version },
             preserveScroll: true,
+            onSuccess: () => setNotice(null),
+            onError: reportFailure,
             onFinish: () => setPendingDelete(null),
         });
     };
@@ -277,6 +305,22 @@ export default function TimeSheet({
                             )}
                         </div>
                     </header>
+
+                    {notice !== null && (
+                        <div
+                            role="alert"
+                            className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                        >
+                            <p>{notice}</p>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => setNotice(null)}
+                            >
+                                Dismiss
+                            </Button>
+                        </div>
+                    )}
 
                     {selectedEntries.length > 0 && (
                         <div className="mt-6 flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">

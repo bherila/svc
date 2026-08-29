@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { todayLocal } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
 type Draft = {
@@ -56,7 +57,7 @@ function draftFor(company: CompanyOption, entry: TimeEntry | null): Draft {
     return {
         project_id: loggable?.id ?? '',
         task_id: '',
-        worked_on: new Date().toISOString().slice(0, 10),
+        worked_on: todayLocal(),
         minutes: 30,
         description: '',
         is_billable: true,
