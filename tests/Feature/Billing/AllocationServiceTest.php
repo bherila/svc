@@ -154,7 +154,7 @@ final class AllocationServiceTest extends TestCase
         }
 
         $this->assertSame(2, $this->entryCount());
-        $this->assertSame(180, ClientTimeEntry::query()->sum('minutes'));
+        $this->assertSame(180, (int) ClientTimeEntry::query()->sum('minutes'));
     }
 
     private function recombine(): int
