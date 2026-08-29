@@ -289,6 +289,68 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertSame(0.0, (float) $invoice->hours_billed_at_rate);
     }
 
+    public function test_removing_the_last_interim_overage_reapplies_credit_to_manual_lines(): void
+    {
+        $settled = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'OVERPAID-HISTORY',
+            'status' => 'paid',
+            'currency' => 'USD',
+            'subtotal_amount' => 10000,
+            'tax_amount' => 0,
+            'total_amount' => 10000,
+            'paid_amount' => 15000,
+            'balance_amount' => 0,
+        ]);
+        $settled->payments()->create([
+            'workspace_id' => $this->workspace->id,
+            'status' => 'succeeded',
+            'amount' => 15000,
+            'refunded_amount' => 0,
+            'currency' => 'USD',
+            'method' => 'ach',
+            'received_on' => '2026-06-30',
+        ]);
+        $agreement = $this->quarterlyAgreement();
+        $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 600]);
+        $invoice = app(ClientInvoicingService::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2026-07-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $invoice);
+        $this->assertTrue($invoice->lines()->where('type', 'credit')->exists());
+        $invoice->lines()->create([
+            'workspace_id' => $this->workspace->id,
+            'type' => 'adjustment',
+            'description' => 'Manual fee that remains',
+            'quantity' => '1.0000',
+            'unit_amount' => 3000,
+            'tax_amount' => 0,
+            'total_amount' => 3000,
+            'sort_order' => 99,
+        ]);
+        $invoice->recalculateTotals();
+        $billedEntry = ClientTimeEntry::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->whereHas('invoiceLines', fn ($lines) => $lines->where('client_invoice_id', $invoice->id))
+            ->firstOrFail();
+
+        app(TimeEntryMutationService::class)->delete(
+            $this->workspace,
+            $billedEntry,
+            $this->manager,
+            AgentApiVersion::for($billedEntry),
+        );
+
+        $invoice->refresh();
+        $credit = $invoice->lines()->where('type', 'credit')->sole();
+        $this->assertSame(-3000, (int) $credit->total_amount);
+        $this->assertSame(0, (int) $invoice->total_amount);
+        $this->assertSame(1, $invoice->lines()->where('type', 'adjustment')->count());
+    }
+
     public function test_disabling_interim_billing_makes_an_existing_interim_draft_fail_closed(): void
     {
         $agreement = $this->quarterlyAgreement();
@@ -367,6 +429,83 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertTrue($billedEntry->fresh()?->invoiceLines()
             ->where('client_invoice_id', $invoice->id)
             ->exists());
+    }
+
+    public function test_a_closing_cycle_interim_draft_fails_closed(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 600]);
+        $invoice = app(ClientInvoicingService::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2026-07-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $invoice);
+        $billedEntry = ClientTimeEntry::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->whereHas('invoiceLines', fn ($lines) => $lines->where('client_invoice_id', $invoice->id))
+            ->firstOrFail();
+        $originalMinutes = $billedEntry->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill([
+            'service_period_start' => $invoice->cycle_end->copy()->startOfMonth(),
+            'service_period_end' => $invoice->cycle_end,
+        ])->save();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $billedEntry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($billedEntry),
+                    'minutes' => max(1, $originalMinutes - 60),
+                ],
+            );
+            $this->fail('A closing-cycle interim draft must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('cannot cover the closing month', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $billedEntry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+    }
+
+    public function test_an_interim_draft_that_no_longer_matches_its_derived_period_fails_closed(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 600]);
+        $invoice = app(ClientInvoicingService::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2026-07-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $invoice);
+        $billedEntry = ClientTimeEntry::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->whereHas('invoiceLines', fn ($lines) => $lines->where('client_invoice_id', $invoice->id))
+            ->firstOrFail();
+        $originalMinutes = $billedEntry->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill(['service_period_start' => '2026-07-15'])->save();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $billedEntry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($billedEntry),
+                    'minutes' => max(1, $originalMinutes - 60),
+                ],
+            );
+            $this->fail('An interim draft with a mismatched period must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('no longer matches the agreement period and cycle', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $billedEntry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
     }
 
     public function test_a_migrated_null_kind_non_monthly_draft_regenerates_in_place(): void
@@ -695,6 +834,69 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_line_id' => $line->id,
             'client_time_entry_id' => $foreignEntry->id,
+        ]);
+    }
+
+    public function test_generated_regeneration_rejects_a_separate_foreign_invoice_allocation(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry();
+        $invoice = $this->generateJuly($agreement);
+        $originalTotal = (int) $invoice->total_amount;
+        $otherWorkspace = Workspace::query()->create(['name' => 'Foreign allocation', 'slug' => 'foreign-allocation']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Foreign Allocation Client',
+            'slug' => 'foreign-allocation-client',
+        ]);
+        $foreignInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'FOREIGN-ALLOCATION',
+            'status' => 'draft',
+            'invoice_kind' => 'ad_hoc',
+            'currency' => 'USD',
+            'subtotal_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'balance_amount' => 100,
+        ]);
+        $foreignLine = $foreignInvoice->lines()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'type' => 'time',
+            'description' => 'Foreign allocation line',
+            'quantity' => '1.0000',
+            'unit_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'sort_order' => 1,
+        ]);
+        DB::table('client_invoice_line_time_entries')->insert([
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_line_id' => $foreignLine->id,
+            'client_time_entry_id' => $entry->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                ['expected_version' => AgentApiVersion::for($entry), 'minutes' => 90],
+            );
+            $this->fail('A separate foreign invoice allocation must stop regeneration.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('allocation owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertSame(60, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+        $this->assertDatabaseHas('client_invoice_line_time_entries', [
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_line_id' => $foreignLine->id,
+            'client_time_entry_id' => $entry->id,
         ]);
     }
 

@@ -357,12 +357,14 @@ class TimeSheetController extends Controller
                 && $link->getAttribute('service_period_end') !== null;
             $hasCycle = $link->getAttribute('cycle_start') !== null
                 && $link->getAttribute('cycle_end') !== null;
+            $isNonClosingInterim = $hasServicePeriod
+                && $hasCycle
+                && (string) $link->getAttribute('service_period_end') < (string) $link->getAttribute('cycle_end');
             $regenerable = match ($kind) {
                 InvoiceKind::AdHoc => true,
                 InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
                 InvoiceKind::InterimOverage => $hasAgreement
-                    && $hasServicePeriod
-                    && $hasCycle
+                    && $isNonClosingInterim
                     && (bool) $link->getAttribute('agreement_bill_overage_interim'),
                 InvoiceKind::Terminal => false,
                 null => false,

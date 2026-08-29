@@ -77,6 +77,7 @@ final class TimeEntryMutationService
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {
+                $this->assertNoForeignAllocations($workspace, $entry);
                 $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
             }
 
@@ -109,6 +110,7 @@ final class TimeEntryMutationService
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {
+                $this->assertNoForeignAllocations($workspace, $entry);
                 $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
             }
 
@@ -364,6 +366,32 @@ final class TimeEntryMutationService
             ->wherePivot('workspace_id', $entry->workspace_id)
             ->whereHas('invoice', fn ($invoice) => $invoice->where('workspace_id', $entry->workspace_id))
             ->exists();
+    }
+
+    /** A hidden foreign pivot must never change local invoice selection. */
+    private function assertNoForeignAllocations(Workspace $workspace, ClientTimeEntry $entry): void
+    {
+        $hasForeignAllocation = DB::table('client_invoice_line_time_entries as pivot')
+            ->join('client_invoice_lines as lines', 'lines.id', '=', 'pivot.client_invoice_line_id')
+            ->join('client_invoices as invoices', 'invoices.id', '=', 'lines.client_invoice_id')
+            ->where('pivot.client_time_entry_id', $entry->id)
+            ->where(function ($query) use ($workspace, $entry): void {
+                $query->whereNull('pivot.workspace_id')
+                    ->orWhere('pivot.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('lines.workspace_id')
+                    ->orWhere('lines.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('invoices.workspace_id')
+                    ->orWhere('invoices.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('invoices.client_company_id')
+                    ->orWhere('invoices.client_company_id', '!=', $entry->client_company_id);
+            })
+            ->exists();
+
+        abort_if(
+            $hasForeignAllocation,
+            409,
+            'The time entry has an invoice allocation owned by another workspace or client company.',
+        );
     }
 
     /** @return list<int> */

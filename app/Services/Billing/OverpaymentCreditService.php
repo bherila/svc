@@ -5,9 +5,12 @@ namespace App\Services\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
+use App\Models\ClientInvoicePayment;
 use App\Services\Billing\Balances\OverpaymentLedger;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use Illuminate\Database\Eloquent\Builder;
+use RuntimeException;
 
 /**
  * Tracks overpayment-derived credits for a client company and applies them
@@ -46,8 +49,19 @@ class OverpaymentCreditService
             ->where('client_company_id', $company->id)
             ->where('currency', $currency)
             ->whereNotIn('status', ['void'])
-            ->with('payments')
+            ->with(['payments' => function ($payments) use ($company): void {
+                $payments->where('workspace_id', $company->workspace_id);
+            }])
             ->get();
+        $hasForeignPayments = ClientInvoicePayment::query()
+            ->whereIn('client_invoice_id', $invoices->modelKeys())
+            ->where(fn (Builder $payments): Builder => $payments
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $company->workspace_id))
+            ->exists();
+        if ($hasForeignPayments) {
+            throw new RuntimeException('An invoice in the credit ledger contains a payment owned by another workspace.');
+        }
         // The engine reasons in whole currency units; this schema stores minor
         // units. Convert at the boundary, never inside the arithmetic.
 
@@ -112,14 +126,20 @@ class OverpaymentCreditService
         if ($invoice->status !== 'draft') {
             return;
         }
+        $invoice->assertLineOwnership();
 
         $company = $invoice->clientCompany;
-        if (! $company) {
-            return;
+        if (! $company instanceof ClientCompany
+            || (int) $company->workspace_id !== (int) $invoice->workspace_id) {
+            throw new RuntimeException('The draft invoice does not belong to an available client company in its workspace.');
         }
 
         // Remove any stale credit lines from a previous regeneration pass.
-        $invoice->lines()->where('type', InvoiceLineType::Credit->value)->delete();
+        ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->where('type', InvoiceLineType::Credit->value)
+            ->delete();
 
         // The stored totals were reduced by the credit line just deleted, and
         // issue() trusts them. Recalculate on every path out of here, not only
@@ -134,7 +154,10 @@ class OverpaymentCreditService
         // Recompute the draft's pre-credit subtotal from line items (after the
         // stale credit was deleted above). We never take an invoice negative
         // — any excess credit stays in the pool for the next draft.
-        $subtotal = ((int) $invoice->lines()->sum('total_amount')) / 100;
+        $subtotal = ((int) ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->sum('total_amount')) / 100;
         $applied = round(min($available, max(0.0, $subtotal)), 2);
         if ($applied <= 0.0) {
             $this->recalculateTotals($invoice);
@@ -142,7 +165,10 @@ class OverpaymentCreditService
             return;
         }
 
-        $maxSortOrder = (int) ($invoice->lines()->max('sort_order') ?? 0);
+        $maxSortOrder = (int) (ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->max('sort_order') ?? 0);
 
         $appliedMinor = (int) round($applied * 100);
 
@@ -175,6 +201,7 @@ class OverpaymentCreditService
             ->where('client_invoices.workspace_id', $company->workspace_id)
             ->where('client_invoices.client_company_id', $company->id)
             ->where('client_invoices.currency', $currency)
+            ->where('client_invoice_lines.workspace_id', $company->workspace_id)
             ->whereIn('client_invoices.status', InvoiceStatus::charged())
             ->where('client_invoice_lines.type', InvoiceLineType::Credit->value)
             ->sum('client_invoice_lines.total_amount');
@@ -190,14 +217,6 @@ class OverpaymentCreditService
      */
     protected function recalculateTotals(ClientInvoice $invoice): void
     {
-        $totals = ClientInvoice::totalsFromLines(
-            (int) $invoice->lines()->sum('total_amount'),
-            (int) $invoice->lines()->sum('tax_amount'),
-        );
-        $paid = (int) $invoice->paid_amount;
-
-        $invoice->forceFill($totals + [
-            'balance_amount' => ClientInvoice::balanceOwed($totals['total_amount'], $paid),
-        ])->save();
+        $invoice->recalculateTotals();
     }
 }

@@ -245,10 +245,17 @@ final class ClientInvoicingService
         Carbon $monthStart,
         ?ClientAgreement $agreement = null,
         ?array $immediateLedger = null,
+        ?ClientInvoice $refreshInvoice = null,
     ): ?ClientInvoice {
         $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
-        return $this->interimOverageGenerator->generateInterimOverageInvoice($company, $monthStart, $agreement, $immediateLedger);
+        return $this->interimOverageGenerator->generateInterimOverageInvoice(
+            $company,
+            $monthStart,
+            $agreement,
+            $immediateLedger,
+            $refreshInvoice,
+        );
     }
 
     /**
@@ -297,12 +304,17 @@ final class ClientInvoicingService
             if (! (bool) $agreement->bill_overage_interim) {
                 throw new RuntimeException('Interim overage billing is disabled for this agreement.');
             }
+            if ($invoice->service_period_end->gte($invoice->cycle_end)) {
+                throw new RuntimeException('An interim draft cannot cover the closing month of its cadence cycle.');
+            }
             $this->assertUniqueRegenerationTarget($company, $agreement, $invoice, $kind);
 
             return $this->generateInterimOverageInvoice(
                 $company,
                 Carbon::instance($invoice->service_period_start),
                 $agreement,
+                null,
+                $invoice,
             );
         }
 
