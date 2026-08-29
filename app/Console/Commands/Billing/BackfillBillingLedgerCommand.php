@@ -6,8 +6,10 @@ use App\Services\ExternalImport\Fingerprint;
 use App\Services\ExternalImport\RestoreAgreementVerifier;
 use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
+use App\Support\Billing\InvoiceLineType;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +47,35 @@ final class BackfillBillingLedgerCommand extends Command
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
 
     /** Legacy primary keys differ per table; the ledger records them as strings. */
+    /**
+     * Tables SVC itself removes rows from in ordinary use.
+     *
+     * Editing a draft invoice hard-deletes its lines and recreates them
+     * (InvoiceLifecycleService::update), so a ledgered line legitimately stops
+     * resolving. Nothing else here removes an imported row, so one that no
+     * longer resolves means something is wrong rather than something happened.
+     *
+     * Time entries are deliberately not on this list even though they soft
+     * delete. The lookup below goes through the query builder rather than the
+     * model, so no global scope applies and a soft-deleted row resolves like
+     * any other - it never needs the waiver, and granting it anyway would waive
+     * the case the waiver is not for: an entry that is genuinely gone.
+     *
+     * @var list<string>
+     */
+    private const DELETED_IN_ORDINARY_USE = [
+        'client_invoice_lines',
+    ];
+
+    /**
+     * What a line's type is taken to be when the source does not record one.
+     *
+     * The importer reads such a line as an adjustment, and the restore verifier
+     * agrees, so this reads it the same way rather than inventing a third
+     * answer.
+     */
+    private const UNTYPED_SOURCE_LINE = 'adjustment';
+
     private const SOURCE_KEYS = [
         'client_invoices' => 'client_invoice_id',
         'client_invoice_lines' => 'client_invoice_line_id',
@@ -149,23 +180,32 @@ final class BackfillBillingLedgerCommand extends Command
         $this->db()->beginTransaction();
 
         try {
-            $totals = [];
-            foreach ([
-                'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
-                'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
-                'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
-                'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
-                'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
-            ] as $label => $step) {
-                $result = $step();
-                $totals[$label] = $result;
-                $this->components->twoColumnDetail(
-                    $label,
-                    sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
-                );
-            }
+            // Inside the transaction on purpose. Asked before it, a row deleted
+            // in the gap would be seen by the repairs and not by this gate -
+            // and an unmatched row is now a warning, so the run would commit
+            // over exactly the loss this refuses. Sharing the transaction's
+            // snapshot means the gate sees what the repairs see.
+            $verdict = $this->verdictForLedgerResolution($legacy, $identityHash, ! $dryRun);
 
-            $verdict = $this->verdictFor($totals, $declaredRestore);
+            if ($verdict === self::SUCCESS) {
+                $totals = [];
+                foreach ([
+                    'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
+                    'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
+                    'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
+                    'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
+                    'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
+                ] as $label => $step) {
+                    $result = $step();
+                    $totals[$label] = $result;
+                    $this->components->twoColumnDetail(
+                        $label,
+                        sprintf('%d matched, %d %s', $result['matched'], $result['written'], $dryRun ? 'would change' : 'updated'),
+                    );
+                }
+
+                $verdict = $this->verdictFor($totals);
+            }
         } catch (Throwable $e) {
             $this->db()->rollBack();
 
@@ -184,30 +224,94 @@ final class BackfillBillingLedgerCommand extends Command
     }
 
     /**
+     * Whether every ledger row still names a destination row this can repair.
+     */
+    private function verdictForLedgerResolution(ConnectionInterface $legacy, string $identityHash, bool $lock): int
+    {
+        // A ledger row saying "imported" whose destination row cannot be found
+        // is a different thing from a source row the ledger never recorded, and
+        // it used to hide inside the same counter. The backfill sees only that
+        // the source key does not resolve, so both arrive as `unmatched` - and
+        // now that an unmatched row is reported rather than fatal, an
+        // unrepairable financial row would pass silently. Separate them here,
+        // where the ledger can still be asked which of the two it is.
+        $fatal = [];
+        foreach (self::SOURCE_KEYS as $table => $_) {
+            $beyond = $this->ledgerTargetsBeyondRepair($table, $table, $identityHash, $lock);
+            $removable = in_array($table, self::DELETED_IN_ORDINARY_USE, true);
+
+            if ($beyond['unnamed'] > 0) {
+                // Waived by table is not good enough here. An ordinary deletion
+                // explains a row that was named and has gone; nothing explains
+                // one that was never named, so the waiver does not reach it.
+                $this->components->twoColumnDetail("  {$table}", sprintf('%d ledger row(s) name no destination at all', $beyond['unnamed']));
+                $fatal[$table] = true;
+            }
+
+            if ($beyond['lost'] > 0) {
+                // Waiving by table alone would cover a mapping that has simply
+                // stopped meaning anything, so the waiver has to be earned: an
+                // edit takes an invoice's lines all together, and a loss beside
+                // surviving siblings is not one.
+                $unexplained = $removable
+                    ? $this->lostLinesAnEditDoesNotExplain($legacy, $identityHash, $beyond['lost_keys'])
+                    : $beyond['lost'];
+
+                if (! $removable) {
+                    $detail = sprintf('%d ledger row(s) name a destination this workspace does not have', $beyond['lost']);
+                } elseif ($unexplained === 0) {
+                    $detail = sprintf('%d ledger row(s) name a destination this workspace does not have - removable in ordinary use', $beyond['lost']);
+                } else {
+                    $detail = sprintf('%d of %d lost ledger row(s) are not accounted for by an ordinary edit', $unexplained, $beyond['lost']);
+                }
+
+                $this->components->twoColumnDetail("  {$table}", $detail);
+
+                if ($unexplained > 0) {
+                    $fatal[$table] = true;
+                }
+            }
+
+        }
+
+        if ($fatal !== []) {
+            $this->components->error(sprintf(
+                'The ledger says rows were imported into %s that this workspace cannot follow to a destination. '.
+                'Nothing here removes them, so the destination has lost data the repair cannot restore; repairing '.
+                'the rest would report a clean run over a ledger that is not.',
+                implode(', ', array_keys($fatal)),
+            ));
+
+            return self::FAILURE;
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
      * Whether what was found justifies keeping the repairs.
      *
      * @param  array<string, array{matched:int, written:int, unmatched:int, changed:int, deferred:int, unresolved:int}>  $totals
      */
-    private function verdictFor(array $totals, ?string $declaredRestore): int
+    private function verdictFor(array $totals): int
     {
 
         $unmatched = array_sum(array_column($totals, 'unmatched'));
         if ($unmatched > 0) {
-            // A partial source is ordinary - an onboarding may import a subset.
-            // A partial *restore* is not: declaring one asserts it holds the
-            // rows the ledger recorded, so a gap means the declaration is
-            // wrong, and repairing half a ledger from it would be worse than
-            // repairing none.
-            if ($declaredRestore !== null) {
-                $this->components->error(
-                    "{$unmatched} source rows had no ledger mapping. A database declared a restore of ".
-                    "{$declaredRestore} must contain every row the ledger recorded; this one does not, ".
-                    'so the declaration does not hold.'
-                );
-
-                return self::FAILURE;
-            }
-
+            // Ordinary, and evidence of nothing. An onboarding may import a
+            // subset, and every source imported so far soft-deletes: the
+            // importer never ledgers a row the source has thrown away, so a
+            // healthy source has more rows than the ledger by exactly that
+            // many. Against the migrated data that is 997 rows - 49 invoices,
+            // 764 lines and 184 time entries, all deleted at the source.
+            //
+            // This used to fail a declared restore, which inverted the
+            // assertion it was making. A restore asserts that every *ledger*
+            // row is in the source, not that every source row is in the
+            // ledger; the first is a claim about completeness and the second is
+            // a claim the importer's own filtering makes false. The right
+            // direction is checked before any of this runs, in verifyRestore(),
+            // over every table this command repairs.
             $this->components->warn("{$unmatched} source rows had no ledger mapping for this source and were skipped.");
         }
 
@@ -458,7 +562,14 @@ final class BackfillBillingLedgerCommand extends Command
         $compared = 0;
         $missing = [];
 
-        foreach (RestoreAgreementVerifier::comparableColumns() as $table => $_) {
+        $comparable = RestoreAgreementVerifier::comparableColumns();
+
+        // Every table this command repairs, not only the ones whose columns are
+        // worth comparing. A restore asserts that the rows the ledger recorded
+        // are still there, and that claim is no weaker for a table the verifier
+        // has no columns for - an agreement or a task missing from the restore
+        // is a ledger row this command would then quietly decline to repair.
+        foreach (self::SOURCE_KEYS as $table => $sourceKey) {
             $idMap = array_map(static fn (array $m): int => $m['id'], $this->idMap($table, $table, $identityHash));
             if ($idMap === []) {
                 // The ledger recorded nothing from this table, so there is
@@ -466,10 +577,19 @@ final class BackfillBillingLedgerCommand extends Command
                 continue;
             }
 
+            if (! isset($comparable[$table])) {
+                $absent = $this->ledgerRowsAbsentFromSource($legacy, $table, $sourceKey, array_keys($idMap));
+                if ($absent > 0) {
+                    $missing[$table] = $absent;
+                }
+
+                continue;
+            }
+
             $result = $verifier->verify(
                 $legacy,
                 $table,
-                self::SOURCE_KEYS[$table],
+                $sourceKey,
                 $table,
                 $this->destination,
                 $idMap,
@@ -534,6 +654,396 @@ final class BackfillBillingLedgerCommand extends Command
         $this->skipRowFingerprint = true;
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Why this table's ledger rows do not resolve, kept apart by reason.
+     *
+     * idMap() drops all three silently - it can only return mappings it can
+     * resolve - so counting them means asking the same questions it asks and
+     * taking the difference. They are not the same finding, and collapsing
+     * them loses the only thing that decides whether a run may continue:
+     *
+     * - `unnamed`: the ledger says imported and names nothing. No deletion
+     *   path explains that, on any table.
+     * - `lost`: it named a row this workspace does not have. On a table SVC
+     *   removes rows from in ordinary use this is the system working.
+     *
+     * Both questions are asked only of this workspace's rows. A target another
+     * tenant owns is simply not found, and is not looked for: establishing
+     * which of the two it was would mean reading a row this command has no
+     * business reading, and a ledger row this workspace cannot follow is
+     * unrepairable whichever it turns out to be.
+     *
+     * @return array{unnamed:int, lost:int, lost_keys:list<string>}
+     */
+    private function ledgerTargetsBeyondRepair(string $sourceTable, string $destinationTable, string $identityHash, bool $lock): array
+    {
+        $items = $this->db()->table('external_import_items')
+            ->where('source_table', $sourceTable)
+            ->where('source_identity_hash', $identityHash)
+            ->where('status', 'imported')
+            ->whereIn(
+                'external_import_run_id',
+                $this->db()->table('external_import_runs')->where('workspace_id', $this->workspaceId)->select('id'),
+            )
+            ->get(['source_key', 'target_public_id']);
+
+        if ($items->isEmpty()) {
+            return ['unnamed' => 0, 'lost' => 0, 'lost_keys' => []];
+        }
+
+        $named = $items->filter(static fn (object $i): bool => $i->target_public_id !== null && $i->target_public_id !== '');
+        $unnamed = $items->count() - $named->count();
+        $publicIds = $named->pluck('target_public_id')->unique()->values()->all();
+
+        if ($publicIds === []) {
+            return ['unnamed' => $unnamed, 'lost' => 0, 'lost_keys' => []];
+        }
+
+        // Locked, not merely read - but only when this run can write. The gate
+        // runs in the repair's transaction, and a consistent read only fixes
+        // what this sees: a row deleted after it and before the repair reaches
+        // it makes the later update a current read that touches nothing, which
+        // applyRow() records as deferred and the run then commits over. Holding
+        // the rows until the transaction ends is what makes the gate's answer
+        // still true when it is used.
+        //
+        // A report is the default here, and it commits nothing, so it has no
+        // business holding every invoice and line in the workspace while it
+        // reads five source tables. Nobody should have to stop billing to run
+        // one.
+        $query = $this->db()->table($destinationTable)
+            ->whereIn('public_id', $publicIds)
+            ->where('workspace_id', $this->workspaceId);
+
+        $mine = [];
+        foreach (($lock ? $query->lockForUpdate() : $query)->pluck('public_id') as $id) {
+            $mine[(string) $id] = true;
+        }
+
+        // Rows, not distinct ids, so the counts read the way the messages do:
+        // how many ledger rows are in each state.
+        $lostKeys = [];
+        foreach ($named as $item) {
+            if (! isset($mine[(string) $item->target_public_id])) {
+                $lostKeys[] = (string) $item->source_key;
+            }
+        }
+
+        return ['unnamed' => $unnamed, 'lost' => count($lostKeys), 'lost_keys' => $lostKeys];
+    }
+
+    /** Whether the source records a line type at all. */
+    private function sourceHasLineType(ConnectionInterface $legacy): bool
+    {
+        try {
+            $legacy->table('client_invoice_lines')->select('line_type')->limit(1)->get();
+
+            return true;
+        } catch (QueryException) {
+            return false;
+        }
+    }
+
+    /**
+     * Which of these lost invoice lines an ordinary edit does not account for.
+     *
+     * Editing a draft invoice deletes every one of its lines and writes fresh
+     * ones (InvoiceLifecycleService::update), so an edit takes an invoice's
+     * ledgered lines all together. One line gone while its siblings still
+     * resolve is therefore not an edit - it is a mapping that has stopped
+     * meaning anything, and the waiver this table has must not cover it.
+     *
+     * Asked entirely of this workspace's rows and of the source, so no other
+     * tenant's record is read to answer it.
+     *
+     * The waiver is for a line a rewrite took, so it is granted only where a
+     * rewrite could have happened: on an invoice that arrived as a draft.
+     * Nothing rewrites an invoice past draft - InvoiceLifecycleService refuses
+     * on every path that touches lines - so a ledgered line missing from one
+     * that was already settled when it was imported was not replaced, it was
+     * lost, and no reading of its siblings changes that.
+     *
+     * The state it arrived in, not the state it is in: editing a draft and
+     * then issuing it is an ordinary sequence, and asking about the invoice
+     * now would call every line that edit legitimately removed unexplained.
+     *
+     * Two things this still cannot see, and neither is closed here. A ledger
+     * row whose target exists under another workspace reads exactly like a
+     * deleted one from inside this workspace; telling them apart needs that
+     * tenant's row, and reading it is not something a repair run for one
+     * tenant may do. And a draft rewritten down to nothing leaves nothing to
+     * read either. Both survive only where the invoice is still open, which is
+     * where a wrong repair costs least and an operator can still see it.
+     *
+     * @param  list<string>  $lostKeys
+     */
+    private function lostLinesAnEditDoesNotExplain(ConnectionInterface $legacy, string $identityHash, array $lostKeys): int
+    {
+        if ($lostKeys === []) {
+            return 0;
+        }
+
+        // The type is optional the same way the importer treats it - a source
+        // without the column has its lines read as adjustments - but the parent
+        // is not: without it there is no evidence to be had, and a waiver
+        // granted on no evidence is the thing this exists to stop.
+        $hasType = $this->sourceHasLineType($legacy);
+        $keyColumn = self::SOURCE_KEYS['client_invoice_lines'];
+        $fingerprints = $this->ledgerFingerprints('client_invoice_lines', $identityHash);
+        $invoiceOfLine = [];
+        $typeOfLine = [];
+
+        try {
+            foreach (array_chunk($lostKeys, 500) as $chunk) {
+                foreach ($legacy->table('client_invoice_lines')->whereIn($keyColumn, $chunk)->get() as $found) {
+                    $row = (array) $found;
+                    $key = (string) ($row[$keyColumn] ?? '');
+                    $fingerprint = $fingerprints[$key] ?? null;
+
+                    // The whole row, and required whatever a verified restore
+                    // said. What is read here is the parent and the type of a
+                    // row whose destination is gone - the only two facts the
+                    // waiver rests on - and a source row that has moved since
+                    // the import describes a line the import never saw. The
+                    // drift a restore verification accepts is drift in what it
+                    // compares; it does not speak for these, and resolve()
+                    // makes the same demand before writing a billing
+                    // relationship for the same reason.
+                    if ($fingerprint === null || Fingerprint::row($row) !== $fingerprint) {
+                        continue;
+                    }
+
+                    // A line with no parent has nothing to reason from, and a
+                    // cast would turn that null into an invoice named '' that
+                    // every other line is absent from - evidence out of
+                    // nothing, pointing the wrong way.
+                    if (($row['client_invoice_id'] ?? null) === null || (string) $row['client_invoice_id'] === '') {
+                        continue;
+                    }
+
+                    $invoiceOfLine[$key] = (string) $row['client_invoice_id'];
+                    $typeOfLine[$key] = $hasType ? (string) ($row['line_type'] ?? '') : self::UNTYPED_SOURCE_LINE;
+                }
+            }
+        } catch (QueryException) {
+            return count($lostKeys);
+        }
+
+        $invoices = array_values(array_unique(array_values($invoiceOfLine)));
+        if ($invoices === []) {
+            // The source does not have these lines either, so there is no
+            // parent to reason from. No evidence is not evidence of an edit.
+            return count($lostKeys);
+        }
+
+        // Every line of those invoices that still resolves, kept by whether the
+        // generator wrote it. Regeneration comes in two shapes: an edit through
+        // InvoiceLifecycleService::update() deletes every line, and
+        // InvoiceLineComposer::resetSystemGeneratedLines() deletes only the
+        // generated ones and leaves an operator's adjustments standing. So a
+        // surviving adjustment disproves nothing about a generated line that
+        // has gone, while a surviving generated line disproves both.
+        $ledgered = array_map(
+            static fn (array $m): int => $m['id'],
+            $this->idMap('client_invoice_lines', 'client_invoice_lines', $identityHash),
+        );
+        $generated = InvoiceLineType::systemGeneratedValues();
+
+        $survivors = [];
+        foreach (array_chunk($invoices, 500) as $chunk) {
+            foreach ($legacy->table('client_invoice_lines')
+                ->whereIn('client_invoice_id', $chunk)
+                ->get(array_filter([self::SOURCE_KEYS['client_invoice_lines'].' as line_key', 'client_invoice_id', $hasType ? 'line_type' : null])) as $row) {
+                if (! isset($ledgered[(string) $row->line_key])) {
+                    continue;
+                }
+
+                $type = $hasType ? (string) $row->line_type : self::UNTYPED_SOURCE_LINE;
+                $invoice = (string) $row->client_invoice_id;
+                $survivors[$invoice]['any'] = true;
+                if ($type === InvoiceLineType::Credit->value) {
+                    $survivors[$invoice]['credit'] = true;
+                }
+                if (in_array($type, $generated, true)) {
+                    $survivors[$invoice]['generated'] = true;
+                }
+            }
+        }
+
+        // Which of those invoices could have been rewritten at all. Asked of
+        // the source, and of the state it was imported in.
+        $rewritable = $this->invoicesImportedAsDrafts($legacy, $invoices, $identityHash);
+
+        $unexplained = 0;
+        foreach ($lostKeys as $key) {
+            $invoice = $invoiceOfLine[$key] ?? null;
+            if ($invoice === null) {
+                $unexplained++;
+
+                continue;
+            }
+
+            $lostType = $typeOfLine[$key] ?? self::UNTYPED_SOURCE_LINE;
+
+            // Which survivors can disprove the loss depends on what deletes a
+            // line of that type. A credit is replaced on its own by
+            // OverpaymentCreditService, so only a surviving credit says the
+            // credit-only pass did not run; any other generated line is
+            // replaced with all of them, so any surviving generated line does.
+            // Anything the generator does not write goes only with a full
+            // rewrite, and then every survivor counts.
+            if ($lostType === InvoiceLineType::Credit->value) {
+                $disproved = $survivors[$invoice]['credit'] ?? false;
+            } elseif (in_array($lostType, $generated, true)) {
+                $disproved = $survivors[$invoice]['generated'] ?? false;
+            } else {
+                $disproved = $survivors[$invoice]['any'] ?? false;
+            }
+
+            // A credit is the exception to the draft requirement, and it has to
+            // be. InvoiceLifecycleService::issue() calls
+            // capOverpaymentCreditAtIssue(), which deletes the credit line when
+            // the pool can no longer cover it, and then sets the status in the
+            // same transaction - so the invoice a credit legitimately vanished
+            // from is never a draft afterwards, and may be paid by the time
+            // anyone runs this. For a credit the surviving-sibling reading is
+            // all there is.
+            $couldHaveBeenRewritten = $lostType === InvoiceLineType::Credit->value
+                || isset($rewritable[$invoice]);
+
+            // Two ways to be unexplained, and they are different questions. A
+            // survivor that contradicts the deletion says the rewrite did not
+            // happen; an invoice that is no longer a draft says it could not
+            // have.
+            if ($disproved || ! $couldHaveBeenRewritten) {
+                $unexplained++;
+            }
+        }
+
+        return $unexplained;
+    }
+
+    /**
+     * The fingerprint the ledger stored for each of this table's imported rows.
+     *
+     * idMap() carries these too, but only for rows whose destination still
+     * resolves - which is exactly what the rows asked about here do not.
+     *
+     * @return array<string, string>
+     */
+    private function ledgerFingerprints(string $sourceTable, string $identityHash): array
+    {
+        $fingerprints = [];
+
+        foreach ($this->db()->table('external_import_items')
+            ->where('source_table', $sourceTable)
+            ->where('source_identity_hash', $identityHash)
+            ->where('status', 'imported')
+            ->whereIn(
+                'external_import_run_id',
+                $this->db()->table('external_import_runs')->where('workspace_id', $this->workspaceId)->select('id'),
+            )
+            ->get(['source_key', 'source_fingerprint']) as $item) {
+            $fingerprints[(string) $item->source_key] = (string) $item->source_fingerprint;
+        }
+
+        return $fingerprints;
+    }
+
+    /**
+     * Which of these source invoices arrived in a state that could still be
+     * edited.
+     *
+     * Asked of the invoice as it was imported, not as it stands now. The
+     * status now says nothing about whether a rewrite was possible: editing a
+     * draft and then issuing it is one ordinary sequence, and it leaves an
+     * issued invoice whose lines were legitimately replaced while it was a
+     * draft. What decides it is where the invoice started - an invoice
+     * imported already settled was never a draft here, so nothing this system
+     * does could have taken a line off it.
+     *
+     * Read from the source rather than the destination for the same reason,
+     * and held to the ledger fingerprint like the lost line itself: an invoice
+     * row edited since the import describes a state the import never saw.
+     *
+     * `status` where the source keeps one, and the settlement date where it
+     * does not. A source with neither cannot answer the question, and is
+     * treated as answering no.
+     *
+     * @param  list<string>  $sourceInvoiceKeys
+     * @return array<string, true> keyed by source invoice key
+     */
+    private function invoicesImportedAsDrafts(ConnectionInterface $legacy, array $sourceInvoiceKeys, string $identityHash): array
+    {
+        if ($sourceInvoiceKeys === []) {
+            return [];
+        }
+
+        $keyColumn = self::SOURCE_KEYS['client_invoices'];
+        $fingerprints = $this->ledgerFingerprints('client_invoices', $identityHash);
+        $drafts = [];
+
+        try {
+            foreach (array_chunk($sourceInvoiceKeys, 500) as $chunk) {
+                foreach ($legacy->table('client_invoices')->whereIn($keyColumn, $chunk)->get() as $found) {
+                    $row = (array) $found;
+                    $key = (string) ($row[$keyColumn] ?? '');
+                    $fingerprint = $fingerprints[$key] ?? null;
+
+                    if ($fingerprint === null || Fingerprint::row($row) !== $fingerprint) {
+                        continue;
+                    }
+
+                    // Which column answers is read off the row itself. The
+                    // whole row is already in hand, so asking the schema
+                    // separately would be a second question about something
+                    // this can already see.
+                    if (array_key_exists('status', $row)) {
+                        $editable = (string) ($row['status'] ?? '') === 'draft';
+                    } elseif (array_key_exists('paid_date', $row)) {
+                        $editable = ($row['paid_date'] ?? null) === null || (string) $row['paid_date'] === '';
+                    } else {
+                        continue;
+                    }
+
+                    if ($editable) {
+                        $drafts[$key] = true;
+                    }
+                }
+            }
+        } catch (QueryException) {
+            return [];
+        }
+
+        return $drafts;
+    }
+
+    /**
+     * How many of this table's ledger rows the source no longer has.
+     *
+     * The key column alone answers it, so the rows themselves are never read -
+     * this runs over tables the verifier compares nothing on, and reading them
+     * in full to ask a yes-or-no question would be the expensive way to learn
+     * the same thing.
+     *
+     * @param  list<array-key>  $ledgerKeys
+     */
+    private function ledgerRowsAbsentFromSource(ConnectionInterface $legacy, string $table, string $sourceKey, array $ledgerKeys): int
+    {
+        $expected = [];
+        foreach ($ledgerKeys as $key) {
+            $expected[(string) $key] = true;
+        }
+
+        foreach (array_chunk($ledgerKeys, 500) as $chunk) {
+            foreach ($legacy->table($table)->whereIn($sourceKey, $chunk)->pluck($sourceKey) as $present) {
+                unset($expected[(string) $present]);
+            }
+        }
+
+        return count($expected);
     }
 
     /** @return array{matched:int,written:int,unmatched:int,changed:int,deferred:int,unresolved:int} */

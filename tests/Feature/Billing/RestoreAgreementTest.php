@@ -104,10 +104,63 @@ final class RestoreAgreementTest extends TestCase
     }
 
     /**
-     * @param  array<string, string>  $driftInRestore
+     * The source soft-deletes, and the importer never ledgers a row the source
+     * has thrown away - so a faithful restore always holds rows the ledger does
+     * not name. Reading that as a broken declaration failed every healthy run:
+     * against the migrated data it refused 997 rows that were exactly the
+     * deleted ones.
      */
-    private function scenario(array $driftInRestore = []): void
+    public function test_a_source_row_the_ledger_never_recorded_does_not_fail_the_restore(): void
     {
+        $this->scenario(unledgeredSourceInvoices: [[
+            'client_invoice_id' => 502,
+            'invoice_number' => 'SVC-00002',
+            'status' => 'draft',
+            'invoice_total' => '250.00',
+            'period_start' => '2026-04-01',
+            'period_end' => '2026-04-30',
+            'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01',
+            'cycle_end' => '2026-04-30',
+        ]]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('1 source rows had no ledger mapping')
+            ->assertSuccessful();
+
+        // Reported, and the repair still ran.
+        $this->assertSame('cadence_period', ClientInvoice::query()->where('invoice_number', 'SVC-00001')->sole()->invoice_kind);
+    }
+
+    /**
+     * The direction that does matter, on a table the column comparison has
+     * nothing to say about. An agreement the restore has lost is a ledger row
+     * this command would otherwise quietly decline to repair.
+     */
+    public function test_a_ledger_row_absent_from_an_uncompared_table_is_refused(): void
+    {
+        $this->scenario(ledgerAnAgreementTheSourceLacks: true);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('client_agreements')
+            ->expectsOutputToContain('missing rows the ledger says were imported')
+            ->assertFailed();
+
+        $this->assertNull(
+            ClientInvoice::query()->sole()->invoice_kind,
+            'Nothing may be written from a restore that has lost rows the ledger recorded',
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $driftInRestore
+     * @param  list<array<string, mixed>>  $unledgeredSourceInvoices
+     */
+    private function scenario(
+        array $driftInRestore = [],
+        array $unledgeredSourceInvoices = [],
+        bool $ledgerAnAgreementTheSourceLacks = false,
+    ): void {
         $imported = [
             'client_invoice_id' => 501,
             'invoice_number' => 'SVC-00001',
@@ -120,7 +173,7 @@ final class RestoreAgreementTest extends TestCase
             'cycle_end' => '2026-03-31',
         ];
 
-        $this->writeSource($this->restoredPath, array_replace($imported, $driftInRestore));
+        $this->writeSource($this->restoredPath, array_replace($imported, $driftInRestore), $unledgeredSourceInvoices);
 
         // The source now lives at a new path and says so.
         Config::set('external-import.sources.external', [
@@ -149,8 +202,10 @@ final class RestoreAgreementTest extends TestCase
             'total_amount' => 100000,
         ]);
 
+        $runId = $this->runId($workspace->id);
+
         DB::table('external_import_items')->insert([
-            'external_import_run_id' => $this->runId($workspace->id),
+            'external_import_run_id' => $runId,
             'source_connection' => 'synthetic',
             'source_identity_hash' => app(SourceGuard::class)->resolve('external')['identity_hash'],
             'source_table' => 'client_invoices',
@@ -162,10 +217,45 @@ final class RestoreAgreementTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        if (! $ledgerAnAgreementTheSourceLacks) {
+            return;
+        }
+
+        // An agreement the ledger says was imported and the restore does not
+        // hold. Nothing about it is compared column by column, so its absence
+        // is only ever visible as absence.
+        $agreementPublicId = (string) Str::uuid();
+        DB::table('client_agreements')->insert([
+            'public_id' => $agreementPublicId,
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Restore Agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('external_import_items')->insert([
+            'external_import_run_id' => $runId,
+            'source_connection' => 'synthetic',
+            'source_identity_hash' => app(SourceGuard::class)->resolve('external')['identity_hash'],
+            'source_table' => 'client_agreements',
+            'source_key' => '601',
+            'target_type' => 'agreement',
+            'target_public_id' => $agreementPublicId,
+            'source_fingerprint' => 'irrelevant-for-a-declared-restore',
+            'status' => 'imported',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
-    /** @param array<string, mixed> $row */
-    private function writeSource(string $path, array $row): void
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  list<array<string, mixed>>  $unledgered
+     */
+    private function writeSource(string $path, array $row, array $unledgered = []): void
     {
         Config::set('database.connections.builder', ['driver' => 'sqlite', 'database' => $path, 'prefix' => '']);
         $c = DB::connection('builder');
@@ -177,6 +267,10 @@ final class RestoreAgreementTest extends TestCase
             'hours_billed_at_rate TEXT, starting_unused_hours TEXT, starting_negative_hours TEXT)'
         );
         $c->table('client_invoices')->insert($row);
+
+        foreach ($unledgered as $extra) {
+            $c->table('client_invoices')->insert($extra);
+        }
 
         // The backfill walks every table it repairs; the ones this scenario does
         // not exercise still have to exist to be read as empty.
