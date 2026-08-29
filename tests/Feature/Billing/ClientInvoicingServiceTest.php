@@ -315,6 +315,37 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->assertSame($pivotAfterFirst, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    public function test_generation_keeps_project_scoped_successor_chains_independent(): void
+    {
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Concurrent Project',
+        ]);
+        $outgoing = $this->scopedMonthlyAgreement($this->project, 'Outgoing', '2024-01-01', '2024-01-31');
+        $this->scopedMonthlyAgreement($otherProject, 'Concurrent', '2024-03-01');
+        $this->scopedMonthlyAgreement($this->project, 'Replacement', '2024-06-01');
+        $gapWork = $this->entry('2024-04-15', 120);
+
+        $this->travelTo(Carbon::parse('2024-06-15'));
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+
+        $billedByAgreement = $gapWork->refresh()
+            ->invoiceLines()
+            ->with('invoice')
+            ->get()
+            ->pluck('invoice.client_agreement_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            [$outgoing->id],
+            $billedByAgreement,
+            'An unrelated project agreement must not truncate the outgoing project\'s catch-up segment.',
+        );
+    }
+
     /**
      * A partial range inside a non-monthly cycle has no defined retainer, so it
      * is refused rather than guessed at.
@@ -374,6 +405,30 @@ final class ClientInvoicingServiceTest extends TestCase
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'title' => 'Monthly retainer',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => $startsOn,
+            'ends_on' => $endsOn,
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'catch_up_threshold_minutes' => 60,
+            'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
+            'rollover_months' => 2,
+        ]);
+    }
+
+    private function scopedMonthlyAgreement(
+        ClientProject $project,
+        string $title,
+        string $startsOn,
+        ?string $endsOn = null,
+    ): ClientAgreement {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $project->id,
+            'title' => $title,
             'status' => 'active',
             'currency' => 'USD',
             'starts_on' => $startsOn,

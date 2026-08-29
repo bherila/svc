@@ -216,7 +216,7 @@ POST /api/client/mgmt/companies/{company}/agreements/{agreement}/transition
 
 ### Outgoing Agreement Catch-up After Transition
 
-When an agreement has been terminated and a successor agreement exists for the same company, monthly catch-up generation for the outgoing agreement is bounded to the month immediately before the successor's `active_date`. Gap-month work between the termination date and the successor's first work period is still billed by the outgoing agreement; work on or after the successor's first work period is billed by the successor. A lone terminated agreement with no successor preserves the legacy unbounded post-termination catch-up.
+When an agreement has been terminated and a successor agreement exists for the same company **and the same project scope**, monthly catch-up generation for the outgoing agreement is bounded to the month immediately before the successor's `active_date`. Two retainers for different projects run concurrently and never succeed one another; company-wide agreements succeed only company-wide agreements. Gap-month work between the termination date and the successor's first work period is still billed by the outgoing agreement; work on or after the successor's first work period is billed by the successor. A lone terminated agreement with no same-scope successor preserves the legacy unbounded post-termination catch-up.
 
 ## Milestone Billing
 

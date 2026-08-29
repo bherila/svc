@@ -429,17 +429,10 @@ class TimeSheetController extends Controller
                 }
             }
 
-            // Only an agreement of the same scope replaces this one. Two
-            // retainers covering different projects run side by side, and
-            // asked across the whole company the later-starting one ends the
-            // other - or, on a shared start date, the id tie-break does, and
-            // one of them loses its strip outright.
-            $successor = $selector->successorAgreementForGeneration(
-                $agreements->filter(
-                    fn (ClientAgreement $candidate): bool => $candidate->client_project_id === $agreement->client_project_id,
-                )->values(),
-                $agreement,
-            );
+            // AgreementSelector owns the same-scope rule used by generation,
+            // so the screen cannot drift back to a different definition of a
+            // successor while still claiming to show the invoice's ledger.
+            $successor = $selector->successorAgreementForGeneration($agreements, $agreement);
 
             if ($successor?->starts_on !== null) {
                 $handover = CarbonImmutable::parse($successor->starts_on)->subDay()->endOfDay();
