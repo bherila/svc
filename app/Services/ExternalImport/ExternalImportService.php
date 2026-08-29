@@ -7,6 +7,7 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use App\Support\Billing\BillingCadence;
 use App\Support\Billing\PeriodLabel;
 use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
@@ -39,7 +40,8 @@ use Throwable;
  *     table_exists: array<array-key, bool>,
  *     table_columns: array<array-key, list<string>>,
  *     source_columns: array<array-key, list<string>>,
- *     sole_superseded_claim: array<array-key, bool>
+ *     sole_superseded_claim: array<array-key, bool>,
+ *     agreement_cycle_months: array<array-key, int|null>
  * }
  */
 final class ExternalImportService
@@ -168,10 +170,23 @@ final class ExternalImportService
     private const MONEY = '(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2} [A-Z]{3}';
 
     /**
+     * The wording each generator writes, and what the words commit it to.
+     *
+     * `months` is the cadence the wording names. It is checked twice and for
+     * two different reasons: against the span the text quotes, because a
+     * grammar cannot say how long a quarter is, and against the agreement the
+     * line was written under, because the composer takes the cadence word from
+     * that agreement and can write no other.
+     *
+     * The draw templates take positive hours only. Every path that writes one
+     * is guarded on there being something to apply - fragments present, or
+     * DeferredAllocationResult::hasBilled(), which is hoursBilled > 0 - so a
+     * draw of nothing is not a line either generator can produce.
+     *
      * @var array<string, array{whole: bool, types: list<string>, months?: int}>
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
-        '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
+        '/^Work items applied to retainer \('.self::POSITIVE_HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
         // One entry per cadence, because PeriodLabel writes a different shape
@@ -184,19 +199,19 @@ final class ExternalImportService
         // No range for monthly: the resolver builds those cycles between
         // startOfMonth and endOfMonth, so both ends always share a month and
         // PeriodLabel never reaches its range form.
-        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
+        '/^Work items applied to monthly retainer \('.self::POSITIVE_HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
         ],
-        '/^Work items applied to quarterly retainer \('.self::HOURS.' applied to (?:\d{4}-Q[1-4]|'.self::PERIOD_RANGE.') cycle\)$/' => [
+        '/^Work items applied to quarterly retainer \('.self::POSITIVE_HOURS.' applied to (?:\d{4}-Q[1-4]|'.self::PERIOD_RANGE.') cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 3,
         ],
-        '/^Work items applied to semiannual retainer \('.self::HOURS.' applied to '.self::PERIOD_RANGE.' cycle\)$/' => [
+        '/^Work items applied to semiannual retainer \('.self::POSITIVE_HOURS.' applied to '.self::PERIOD_RANGE.' cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 6,
         ],
-        '/^Work items applied to annual retainer \('.self::HOURS.' applied to (?:\d{4}|'.self::PERIOD_RANGE.') cycle\)$/' => [
+        '/^Work items applied to annual retainer \('.self::POSITIVE_HOURS.' applied to (?:\d{4}|'.self::PERIOD_RANGE.') cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 12,
         ],
-        '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => [
+        '/^Deferred work items applied to retainer \('.self::POSITIVE_HOURS.'\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
         '/^Deferred work items billed on agreement termination \('.self::POSITIVE_HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
@@ -784,6 +799,7 @@ final class ExternalImportService
             'table_columns' => [],
             'source_columns' => [],
             'sole_superseded_claim' => [],
+            'agreement_cycle_months' => [],
         ];
     }
 
@@ -1000,7 +1016,60 @@ final class ExternalImportService
      * direction: a refusal leaves work looking unbilled and reported, where a
      * wrong match marks it billed silently.
      */
-    private static function descriptionShape(mixed $description, string $lineType): string
+    /**
+     * How many months one billing cycle of this source agreement runs.
+     *
+     * The cadence word in a generated description comes from here, so this is
+     * what says whether the composer could have written it. Read from the
+     * source rather than from what was imported: the recovery is reasoning
+     * about two source rows, and the destination agreement may not exist yet
+     * when the line carrying the claim is read.
+     *
+     * A missing column reads as monthly, which is what both the importer and
+     * ClientAgreement::effectiveBillingCadence() do with an absent value - the
+     * fallback is the same one or the check would refuse lines the system
+     * would go on to write. A missing agreement is null, and nothing that
+     * names a cadence normalises without one.
+     *
+     * Not filtered by deleted_at: a terminated agreement still says what
+     * cadence its lines were written under, and that is all this asks.
+     *
+     * @param  QueryCache  $queryCache
+     */
+    private function sourceAgreementCycleMonths(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        string $agreementKey,
+        array &$queryCache,
+    ): ?int {
+        if ($agreementKey === '') {
+            return null;
+        }
+
+        if (array_key_exists($agreementKey, $queryCache['agreement_cycle_months'])) {
+            return $queryCache['agreement_cycle_months'][$agreementKey];
+        }
+
+        $columns = $this->sourceColumns($sourceRuntimeName, 'client_agreements', $queryCache);
+        $months = null;
+
+        if (in_array('id', $columns, true)) {
+            $row = $source->table('client_agreements')->where('id', $agreementKey)->first();
+
+            if ($row !== null) {
+                $cadence = in_array('billing_cadence', $columns, true)
+                    ? (string) (((array) $row)['billing_cadence'] ?? '')
+                    : '';
+                $months = (BillingCadence::tryFrom($cadence) ?? BillingCadence::Monthly)->monthsInCycle();
+            }
+        }
+
+        $queryCache['agreement_cycle_months'][$agreementKey] = $months;
+
+        return $months;
+    }
+
+    private static function descriptionShape(mixed $description, string $lineType, ?int $agreementMonths): string
     {
         // Not trimmed at all. The composer writes no padding, so a description
         // carrying some is not one of its - and trimming to recognise it made
@@ -1014,6 +1083,16 @@ final class ExternalImportService
             // whole group, which is a costly thing to do to a line it does not
             // describe.
             if (! in_array($lineType, $rule['types'], true)) {
+                continue;
+            }
+
+            // And bound to the cadence it names. createRetainerFeeLine and the
+            // cycle draw both take that word from the agreement's own cadence,
+            // so an annual wording under a monthly agreement is not something
+            // either could have written - two such lines are somebody's prose
+            // that happens to share a shape. An unknown cadence refuses the
+            // same way: a billing claim is not worth guessing at.
+            if (($rule['months'] ?? null) !== null && $rule['months'] !== $agreementMonths) {
                 continue;
             }
 
@@ -1323,10 +1402,16 @@ final class ExternalImportService
         // between generations of one line. Not every number, though: a retainer
         // description carries the cycle it is for, and February 2024 is not
         // February 2025.
-        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType);
+        $agreementMonths = $this->sourceAgreementCycleMonths(
+            $source,
+            $sourceRuntimeName,
+            (string) ($supersededRow['client_agreement_id'] ?? ''),
+            $queryCache,
+        );
+        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType, $agreementMonths);
 
         if ($supersededShape === ''
-            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType)) {
+            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType, $agreementMonths)) {
             return null;
         }
 

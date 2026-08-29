@@ -502,16 +502,22 @@ class ExternalImportTest extends TestCase
         bool $withSecondLiveLine = false,
         int $unclaimedEarlierGenerations = 0,
         bool $withEntryAlreadyOnTheReplacement = false,
+        string $cadence = 'monthly',
     ): void {
         $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
         $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        // The agreement these lines fall under. Its cadence is what the
+        // composer takes the cadence word in a generated description from, so
+        // a fixture without one cannot exercise those templates at all.
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, billing_cadence TEXT, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '{$cadence}', NULL)");
         $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, NULL, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
-        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, NULL, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, 41, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, 41, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
 
         if ($withSecondLiveLine) {
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, NULL, NULL, 'Deferred work items applied to retainer (11:00)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, 41, NULL, 'Deferred work items applied to retainer (11:00)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
         }
 
         // Earlier regenerations of the same aggregate line. Nothing names them
@@ -519,7 +525,7 @@ class ExternalImportTest extends TestCase
         // make the replacement look ambiguous.
         for ($i = 0; $i < $unclaimedEarlierGenerations; $i++) {
             $key = 200 + $i;
-            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, NULL, NULL, 'Deferred work items applied to retainer (8:00)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, 41, NULL, 'Deferred work items applied to retainer (8:00)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
         }
 
         $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
@@ -1059,7 +1065,7 @@ class ExternalImportTest extends TestCase
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo);
+        $this->supersededClaimSource($pdo, cadence: 'quarterly');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 123");
 
@@ -1446,13 +1452,13 @@ class ExternalImportTest extends TestCase
      * tells two allocations apart.
      */
     #[DataProvider('malformedGeneratedShapes')]
-    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live): void
+    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live, string $cadence): void
     {
         $user = User::factory()->create();
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence);
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
 
@@ -1470,13 +1476,13 @@ class ExternalImportTest extends TestCase
      * named at all.
      */
     #[DataProvider('generatedShapesThatStillRecover')]
-    public function test_a_cadence_label_the_generator_writes_still_recovers(string $type, string $superseded, string $live): void
+    public function test_a_cadence_label_the_generator_writes_still_recovers(string $type, string $superseded, string $live, string $cadence): void
     {
         $user = User::factory()->create();
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence);
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
 
@@ -1485,7 +1491,7 @@ class ExternalImportTest extends TestCase
         $this->assertSame(1, $summary['link_counts']['recovered']);
     }
 
-    /** @return array<string, array{0: string, 1: string, 2: string}> */
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string}> */
     public static function generatedShapesThatStillRecover(): array
     {
         return [
@@ -1495,6 +1501,7 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to annual retainer (9:55 applied to 2026-02..2027-01 cycle)',
                 'Work items applied to annual retainer (10:00 applied to 2026-02..2027-01 cycle)',
+                'annual',
             ],
             // Six whole months has no aligned form at all - PeriodLabel names
             // months, quarters and years, and a half year is none of them.
@@ -1502,12 +1509,14 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to semiannual retainer (9:55 applied to 2026-01..2026-06 cycle)',
                 'Work items applied to semiannual retainer (10:00 applied to 2026-01..2026-06 cycle)',
+                'semi_annual',
             ],
             // Three whole months not aligned to a quarter.
             'a quarterly cycle anchored off the quarter' => [
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-04 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-04 cycle)',
+                'quarterly',
             ],
             // Mid-month anchored: the span straddles one month more than the
             // cadence, and no aligned form can describe it.
@@ -1515,17 +1524,26 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-04 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-04 cycle)',
+                'quarterly',
+            ],
+            // The same wording under the agreement that would produce it.
+            'annual wording under an annual agreement' => [
+                'retainer',
+                'Annual Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Annual Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'annual',
             ],
             // Zero is a quantity the formatter does write - unsigned.
             'an unsigned zero' => [
                 'retainer',
                 'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
             ],
         ];
     }
 
-    /** @return array<string, array{0: string, 1: string, 2: string}> */
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string}> */
     public static function malformedGeneratedShapes(): array
     {
         return [
@@ -1533,101 +1551,150 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Deferred work items applied to retainer (9:99)',
                 'Deferred work items applied to retainer (10:99)',
+                'monthly',
             ],
             'a ninety-ninth month' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-99 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-99 cycle)',
+                'monthly',
             ],
             'a month that is not one' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Foo 1, 2026 through Foo 2, 2026',
                 'Monthly Retainer (10:00 hours) - Foo 1, 2026 through Foo 2, 2026',
+                'monthly',
             ],
             'a pool that is not a month' => [
                 'prior_month_retainer',
                 'Work items applied to retainer (9:55 applied to Gold 2026 pool)',
                 'Work items applied to retainer (10:00 applied to Gold 2026 pool)',
+                'monthly',
             ],
             'a day January does not have' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 99, 2026 through Jan 99, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 99, 2026 through Jan 99, 2026',
+                'monthly',
             ],
             'a day February does not have' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Feb 31, 2026 through Feb 31, 2026',
                 'Monthly Retainer (10:00 hours) - Feb 31, 2026 through Feb 31, 2026',
+                'monthly',
             ],
             'a range inside one month' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-01 cycle)',
+                'monthly',
             ],
             'a range that runs backwards' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-03..2026-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-03..2026-01 cycle)',
+                'monthly',
             ],
             'a range starting from a bare year' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026..2027-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026..2027-01 cycle)',
+                'monthly',
             ],
             'a range starting from a quarter' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-Q1..2027-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-Q1..2027-01 cycle)',
+                'monthly',
             ],
             'hours padded with a leading zero' => [
                 'prior_month_retainer',
                 'Deferred work items applied to retainer (09:55)',
                 'Deferred work items applied to retainer (010:00)',
+                'monthly',
             ],
             'money padded with leading zeros' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
+                'monthly',
             ],
             'a termination line of no decimal hours' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (0.0000 @ 100.00 USD/hr)',
                 'Deferred work items billed on agreement termination (0.0000 @ 200.00 USD/hr)',
+                'monthly',
             ],
             'a termination line of no hours' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (0:00 @ 100.00 USD/hr)',
                 'Deferred work items billed on agreement termination (0:00 @ 200.00 USD/hr)',
+                'monthly',
             ],
             'a fee span that ends before it starts' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 31, 2026 through Jan 1, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 31, 2026 through Jan 1, 2026',
+                'monthly',
             ],
             'a cadence with a period it cannot produce' => [
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026 cycle)',
+                'quarterly',
             ],
             'custom wording differing only in whitespace' => [
                 'prior_month_retainer',
                 ' Support package ',
                 'Support package',
+                'monthly',
             ],
             'generated wording carrying padding' => [
                 'prior_month_retainer',
                 ' Deferred work items applied to retainer (9:55)',
                 'Deferred work items applied to retainer (10:00) ',
+                'monthly',
             ],
             'a monthly fee line spanning a year' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'monthly',
             ],
             'a semiannual label spanning a year' => [
                 'prior_month_retainer',
                 'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
                 'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
+                'semi_annual',
+            ],
+            // The composer takes the cadence word from the agreement the line
+            // falls under, so annual wording under a monthly agreement is not
+            // something it could have written.
+            'annual wording under a monthly agreement' => [
+                'retainer',
+                'Annual Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Annual Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'monthly',
+            ],
+            'a cadence draw under the wrong agreement' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)',
+                'monthly',
+            ],
+            // Every path that writes a draw is guarded on there being hours to
+            // apply, so a draw of none, or of less than none, is not one.
+            'a draw of no hours' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (0:00 applied to January 2026 pool)',
+                'Work items applied to retainer (1:00 applied to January 2026 pool)',
+                'monthly',
+            ],
+            'a draw of negative hours' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (-1:00)',
+                'Deferred work items applied to retainer (1:00)',
+                'monthly',
             ],
             // HoursQuantity::format takes the sign after rounding, so zero is
             // never signed. Two lines that differ only by a sign it cannot
@@ -1636,11 +1703,13 @@ class ExternalImportTest extends TestCase
                 'retainer',
                 'Monthly Retainer (-0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
             ],
             'a signed decimal zero' => [
                 'retainer',
                 'Monthly Retainer (-0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'Monthly Retainer (0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
             ],
             // The only annual cycle running January to December is the calendar
             // year, and PeriodLabel calls that "2026". The range form of it is
@@ -1649,6 +1718,7 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to annual retainer (9:55 applied to 2026-01..2026-12 cycle)',
                 'Work items applied to annual retainer (10:00 applied to 2026-01..2026-12 cycle)',
+                'annual',
             ],
             // Same reasoning one cadence down: January through March is
             // "2026-Q1", so the range spelling of it is not generated either.
@@ -1656,16 +1726,19 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-03 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-03 cycle)',
+                'quarterly',
             ],
             'a monthly cycle labelled as a range' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-02 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-02 cycle)',
+                'monthly',
             ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 1,2.00 USD/hr)',
+                'monthly',
             ],
         ];
     }
@@ -1751,7 +1824,7 @@ class ExternalImportTest extends TestCase
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo);
+        $this->supersededClaimSource($pdo, cadence: 'quarterly');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 123");
 
@@ -1771,7 +1844,7 @@ class ExternalImportTest extends TestCase
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer', cadence: 'quarterly');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 123");
 
@@ -1791,7 +1864,7 @@ class ExternalImportTest extends TestCase
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer', cadence: 'quarterly');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 123");
 
