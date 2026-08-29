@@ -18,6 +18,7 @@ use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -302,7 +303,7 @@ class TimeSheetController extends Controller
      * the row can still be edited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<int, array{id: string, number: string|null, status: string}>
+     * @return array<int, array{id: string, number: string|null, status: string, regenerable: bool}>
      */
     private function invoicesByEntry(Workspace $workspace, EloquentCollection $entries): array
     {
@@ -326,18 +327,37 @@ class TimeSheetController extends Controller
                 'client_invoices.public_id as invoice_id',
                 'client_invoices.invoice_number as invoice_number',
                 'client_invoices.status as invoice_status',
+                'client_invoices.invoice_kind as invoice_kind',
+                'client_invoices.client_agreement_id as agreement_id',
+                'client_invoices.service_period_start as service_period_start',
+                'client_invoices.service_period_end as service_period_end',
+                'client_invoices.cycle_start as cycle_start',
+                'client_invoices.cycle_end as cycle_end',
             ])
             ->get();
 
         $byEntry = [];
 
         foreach ($links as $link) {
+            $kind = InvoiceKind::tryFrom((string) $link->getAttribute('invoice_kind')) ?? InvoiceKind::CadencePeriod;
+            $hasAgreement = $link->getAttribute('agreement_id') !== null;
+            $hasServicePeriod = $link->getAttribute('service_period_start') !== null
+                && $link->getAttribute('service_period_end') !== null;
+            $hasCycle = $link->getAttribute('cycle_start') !== null
+                && $link->getAttribute('cycle_end') !== null;
+            $regenerable = match ($kind) {
+                InvoiceKind::AdHoc => true,
+                InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
+                InvoiceKind::InterimOverage => $hasAgreement && $link->getAttribute('service_period_start') !== null,
+                InvoiceKind::Terminal => false,
+            };
             $byEntry[(int) $link->getAttribute('entry_id')] = [
                 'id' => (string) $link->getAttribute('invoice_id'),
                 'number' => $link->getAttribute('invoice_number') === null
                     ? null
                     : (string) $link->getAttribute('invoice_number'),
                 'status' => (string) $link->getAttribute('invoice_status'),
+                'regenerable' => $regenerable,
             ];
         }
 
@@ -541,7 +561,7 @@ class TimeSheetController extends Controller
 
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
      * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
@@ -594,7 +614,7 @@ class TimeSheetController extends Controller
     }
 
     /**
-     * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return array<string, mixed>
      */
@@ -621,7 +641,9 @@ class TimeSheetController extends Controller
         // the same transaction, so both a legacy draft-status allocation and
         // the approved time produced by the real generator remain editable.
         // Anything that has left draft still freezes the entry.
-        $isDraftInvoice = $invoice !== null && $invoice['status'] === 'draft';
+        $isDraftInvoice = $invoice !== null
+            && $invoice['status'] === 'draft'
+            && $invoice['regenerable'];
         $editableStatus = $entry->status === 'draft'
             || ($entry->status === 'approved' && $isDraftInvoice);
         $editableInvoice = $invoice === null || $isDraftInvoice;
@@ -650,7 +672,11 @@ class TimeSheetController extends Controller
                 'title' => $task->title,
             ],
             'worker' => $entry->user?->name,
-            'invoice' => $invoice,
+            'invoice' => $invoice === null ? null : [
+                'id' => $invoice['id'],
+                'number' => $invoice['number'],
+                'status' => $invoice['status'],
+            ],
             'can_edit' => $editable,
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null

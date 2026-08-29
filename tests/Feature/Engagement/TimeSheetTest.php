@@ -104,6 +104,22 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.entries.1.can_approve', false));
     }
 
+    public function test_a_draft_without_a_supported_regeneration_path_is_not_advertised_as_editable(): void
+    {
+        $entry = $this->entry(['worked_on' => '2026-07-04']);
+        $invoice = $this->attachToInvoice($entry, 'draft');
+        $invoice->forceFill(['invoice_kind' => 'terminal'])->save();
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.entries.0.invoice.status', 'draft')
+                ->where('months.0.entries.0.can_edit', false));
+    }
+
     /**
      * The screen hiding a control is not a rule. An operator holding a version
      * read before the invoice existed can still send the request, so the guard
