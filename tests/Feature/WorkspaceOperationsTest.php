@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
@@ -13,6 +14,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -116,6 +118,59 @@ class WorkspaceOperationsTest extends TestCase
         ]);
 
         $this->actingAs($outsider)->get($operationsPath)->assertForbidden();
+    }
+
+    public function test_operations_activity_is_workspace_scoped_and_bounded_per_company(): void
+    {
+        $manager = User::factory()->create(['name' => 'Synthetic Manager']);
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Activity', 'slug' => 'synthetic-activity']);
+        $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Synthetic Client',
+            'slug' => 'synthetic-client',
+        ]);
+
+        foreach (range(1, 101) as $eventNumber) {
+            $activity = ClientCompanyActivity::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'actor_user_id' => $manager->id,
+                'action' => $eventNumber === 101 ? 'agreement.transitioned' : 'invoice.generated',
+                'payload' => ['invoice_kind' => 'cadence_period'],
+            ]);
+            $activity->timestamps = false;
+            $activity->forceFill([
+                'created_at' => now()->subMinutes(101 - $eventNumber),
+                'updated_at' => now()->subMinutes(101 - $eventNumber),
+            ])->save();
+        }
+
+        $otherWorkspace = Workspace::query()->create(['name' => 'Foreign Activity', 'slug' => 'foreign-activity']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Foreign Client',
+            'slug' => 'foreign-client',
+        ]);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $otherCompany->id,
+            'action' => 'foreign.secret',
+            'payload' => ['changes' => ['private' => ['before', 'after']]],
+        ]);
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/operations")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('workspace.clients', 1)
+                ->has('workspace.clients.0.activities', 100)
+                ->where('workspace.clients.0.activities.0.action', 'agreement.transitioned')
+                ->where('workspace.clients.0.activities.0.actor_name', 'Synthetic Manager')
+                ->where('workspace.clients.0.activities.0.payload.invoice_kind', 'cadence_period')
+                ->where('workspace.clients.0.activities', fn (Collection $activities): bool => $activities
+                    ->pluck('action')
+                    ->doesntContain('foreign.secret')));
     }
 
     public function test_operations_queries_are_bounded_and_attachments_are_record_scoped(): void
