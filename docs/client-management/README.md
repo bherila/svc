@@ -398,6 +398,8 @@ documents below predate that convention and refer to bare integer keys.
   `app/Services/Billing/MoneyService.php`. The documents below were written
   against decimal-cast columns and quote dollar amounts accordingly.
 - Identifiers: external surfaces use `public_id` (UUID), never the integer key.
-- Testing: PHPUnit for backend. There is no frontend test runner in the
-  repository yet; the component tests these documents refer to were not
-  carried across.
+- Testing: PHPUnit covers backend behavior; Vitest and Testing Library cover
+  behavior under `resources/js` through `pnpm test`. Any control that starts an
+  Inertia mutation stays disabled until `onFinish`, and its component test must
+  prove a second activation cannot dispatch another request. `composer
+  ci:check` runs both suites.
