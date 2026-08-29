@@ -175,7 +175,10 @@ final class ExternalImportService
         // writes for an aligned cycle or a month range for one anchored to an
         // agreement's active date. The range is checked against the cadence
         // afterwards, because a grammar cannot say how long six months is.
-        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to (?:'.self::PERIOD_MONTH.'|'.self::PERIOD_RANGE.') cycle\)$/' => [
+        // No range for monthly: the resolver builds those cycles between
+        // startOfMonth and endOfMonth, so both ends always share a month and
+        // PeriodLabel never reaches its range form.
+        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
         ],
         '/^Work items applied to quarterly retainer \('.self::HOURS.' applied to (?:\d{4}-Q[1-4]|'.self::PERIOD_RANGE.') cycle\)$/' => [
@@ -866,7 +869,11 @@ final class ExternalImportService
                 return false;
             }
 
-            if ($months !== null && ! $to->isSameDay($from->copy()->addMonthsNoOverflow($months)->subDay())) {
+            // addMonths, not the no-overflow form: BillingCycleResolver uses
+            // addMonths()->subDay(), so a cycle starting on January 31 ends on
+            // April 30 rather than April 29, and a validator that disagreed
+            // would refuse the very lines it was written to recognise.
+            if ($months !== null && ! $to->isSameDay($from->copy()->addMonths($months)->subDay())) {
                 return false;
             }
         }
@@ -1588,6 +1595,12 @@ final class ExternalImportService
                 // duplicate. It means the parent is missing, which is what this
                 // run would have reported had it looked a moment later.
                 if (! $exception instanceof UniqueConstraintViolationException) {
+                    // Only the line is asked about, because only the line is
+                    // constrained: the pivot deliberately carries no foreign
+                    // key to client_time_entries, which the engagement slice
+                    // migrates independently. An entry deleted in the gap does
+                    // not raise this.
+                    //
                     // Scoped, like every other tenant-owned read here: a row
                     // this workspace does not own is not this run's parent,
                     // whatever the ownership check a moment earlier concluded.

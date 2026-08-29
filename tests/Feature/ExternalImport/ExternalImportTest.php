@@ -1566,6 +1566,11 @@ class ExternalImportTest extends TestCase
                 'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
                 'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
             ],
+            'a monthly cycle labelled as a range' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-02 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-02 cycle)',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
@@ -1678,6 +1683,26 @@ class ExternalImportTest extends TestCase
         $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+    }
+
+    /**
+     * BillingCycleResolver adds months with overflow, so a quarterly cycle
+     * starting on January 31 ends on April 30. A validator that used the
+     * no-overflow form would refuse the very lines it exists to recognise.
+     */
+    public function test_a_cycle_whose_month_overflowed_is_still_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 123");
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
