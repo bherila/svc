@@ -41,7 +41,7 @@ use Throwable;
  *     table_columns: array<array-key, list<string>>,
  *     source_columns: array<array-key, list<string>>,
  *     sole_superseded_claim: array<array-key, bool>,
- *     agreement_cycle_months: array<array-key, int|null>
+ *     agreement_context: array<array-key, array{months: int, terminated: bool}|null>
  * }
  */
 final class ExternalImportService
@@ -183,11 +183,15 @@ final class ExternalImportService
      * DeferredAllocationResult::hasBilled(), which is hoursBilled > 0 - so a
      * draw of nothing is not a line either generator can produce.
      *
-     * @var array<string, array{whole: bool, types: list<string>, months?: int}>
+     * @var array<string, array{whole: bool, types: list<string>, months?: int, terminated?: bool}>
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
+        // Monthly only, though the wording does not say so.
+        // generateMonthlyInvoiceForWorkPeriod writes this form; every other
+        // cadence goes through generateNonMonthlyInvoiceForPeriod, which names
+        // its cadence and says "cycle" rather than "pool".
         '/^Work items applied to retainer \('.self::POSITIVE_HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
-            'whole' => false, 'types' => ['prior_month_retainer'],
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
         ],
         // One entry per cadence, because PeriodLabel writes a different shape
         // for each: a month for monthly, a quarter for quarterly, a year for
@@ -214,8 +218,12 @@ final class ExternalImportService
         '/^Deferred work items applied to retainer \('.self::POSITIVE_HOURS.'\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
         ],
+        // addDeferredTerminationLine() is reachable only through the
+        // post-termination branch, so an agreement that was never terminated
+        // has no line of this shape - and this template erases its whole
+        // group, which is a costly thing to do to somebody's own charge.
         '/^Deferred work items billed on agreement termination \('.self::POSITIVE_HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
-            'whole' => true, 'types' => ['additional_hours'],
+            'whole' => true, 'types' => ['additional_hours'], 'terminated' => true,
         ],
         '/^Interim overage hours for '.self::POOL_MONTH.'$/' => [
             'whole' => false, 'types' => ['additional_hours'],
@@ -799,7 +807,7 @@ final class ExternalImportService
             'table_columns' => [],
             'source_columns' => [],
             'sole_superseded_claim' => [],
-            'agreement_cycle_months' => [],
+            'agreement_context' => [],
         ];
     }
 
@@ -1017,59 +1025,83 @@ final class ExternalImportService
      * wrong match marks it billed silently.
      */
     /**
-     * How many months one billing cycle of this source agreement runs.
+     * What the source agreement a line falls under says about its own billing.
      *
-     * The cadence word in a generated description comes from here, so this is
-     * what says whether the composer could have written it. Read from the
-     * source rather than from what was imported: the recovery is reasoning
-     * about two source rows, and the destination agreement may not exist yet
-     * when the line carrying the claim is read.
+     * The generators take the cadence word and the termination wording from
+     * the agreement, so this is what says whether they could have written a
+     * given description. Read from the source rather than from what was
+     * imported: the recovery is reasoning about two source rows, and the
+     * destination agreement may not exist yet when the line carrying the claim
+     * is read.
      *
-     * A missing column reads as monthly, which is what both the importer and
-     * ClientAgreement::effectiveBillingCadence() do with an absent value - the
-     * fallback is the same one or the check would refuse lines the system
-     * would go on to write. A missing agreement is null, and nothing that
-     * names a cadence normalises without one.
+     * Held to the same fingerprint as any other row used as evidence. An
+     * agreement edited since this run observed it - its cadence changed, say -
+     * describes a contract the run never saw, and shaping a description
+     * against it would recognise wording the imported snapshot could not have
+     * produced.
      *
-     * Not filtered by deleted_at: a terminated agreement still says what
-     * cadence its lines were written under, and that is all this asks.
+     * An absent cadence reads as monthly, which is what the importer and
+     * ClientAgreement::effectiveBillingCadence() both do with one, and a good
+     * deal of data relies on it. A cadence that was chosen and is not a
+     * recurring one - `one_time` above all - is not monthly and is not
+     * anything else either: billsOnARecurringCadence() stops the generator
+     * before it writes a cycle line at all, so no cadence wording under such
+     * an agreement is generated wording.
      *
+     * Not filtered by deleted_at: a terminated agreement still says what its
+     * lines were written under, and that is the whole point of asking.
+     *
+     * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
+     * @return array{months: int, terminated: bool}|null
      */
-    private function sourceAgreementCycleMonths(
+    private function sourceAgreementContext(
         ConnectionInterface $source,
         string $sourceRuntimeName,
         string $agreementKey,
+        array $ledgerItems,
         array &$queryCache,
-    ): ?int {
+    ): ?array {
         if ($agreementKey === '') {
             return null;
         }
 
-        if (array_key_exists($agreementKey, $queryCache['agreement_cycle_months'])) {
-            return $queryCache['agreement_cycle_months'][$agreementKey];
+        if (array_key_exists($agreementKey, $queryCache['agreement_context'])) {
+            return $queryCache['agreement_context'][$agreementKey];
         }
 
         $columns = $this->sourceColumns($sourceRuntimeName, 'client_agreements', $queryCache);
-        $months = null;
+        $context = null;
 
         if (in_array('id', $columns, true)) {
-            $row = $source->table('client_agreements')->where('id', $agreementKey)->first();
+            $found = $source->table('client_agreements')->where('id', $agreementKey)->first();
+            $row = $found === null ? null : (array) $found;
 
-            if ($row !== null) {
+            if ($row !== null && $this->observedThisRun('client_agreements', $agreementKey, $row, $ledgerItems)) {
                 $cadence = in_array('billing_cadence', $columns, true)
-                    ? (string) (((array) $row)['billing_cadence'] ?? '')
+                    ? (string) ($row['billing_cadence'] ?? '')
                     : '';
-                $months = (BillingCadence::tryFrom($cadence) ?? BillingCadence::Monthly)->monthsInCycle();
+                $months = $cadence === ''
+                    ? BillingCadence::Monthly->monthsInCycle()
+                    : BillingCadence::tryFrom($cadence)?->monthsInCycle();
+
+                if ($months !== null) {
+                    $context = [
+                        'months' => $months,
+                        'terminated' => in_array('termination_date', $columns, true)
+                            && self::sourceDate($row['termination_date'] ?? null) !== null,
+                    ];
+                }
             }
         }
 
-        $queryCache['agreement_cycle_months'][$agreementKey] = $months;
+        $queryCache['agreement_context'][$agreementKey] = $context;
 
-        return $months;
+        return $context;
     }
 
-    private static function descriptionShape(mixed $description, string $lineType, ?int $agreementMonths): string
+    /** @param  array{months: int, terminated: bool}|null  $agreement */
+    private static function descriptionShape(mixed $description, string $lineType, ?array $agreement): string
     {
         // Not trimmed at all. The composer writes no padding, so a description
         // carrying some is not one of its - and trimming to recognise it made
@@ -1092,7 +1124,14 @@ final class ExternalImportService
             // either could have written - two such lines are somebody's prose
             // that happens to share a shape. An unknown cadence refuses the
             // same way: a billing claim is not worth guessing at.
-            if (($rule['months'] ?? null) !== null && $rule['months'] !== $agreementMonths) {
+            if (($rule['months'] ?? null) !== null && $rule['months'] !== ($agreement['months'] ?? null)) {
+                continue;
+            }
+
+            // And bound to the circumstance it describes. Wording that says a
+            // line was billed on termination is written on one path only, and
+            // that path needs an agreement that ended.
+            if (($rule['terminated'] ?? false) && ($agreement['terminated'] ?? false) !== true) {
                 continue;
             }
 
@@ -1402,16 +1441,17 @@ final class ExternalImportService
         // between generations of one line. Not every number, though: a retainer
         // description carries the cycle it is for, and February 2024 is not
         // February 2025.
-        $agreementMonths = $this->sourceAgreementCycleMonths(
+        $agreement = $this->sourceAgreementContext(
             $source,
             $sourceRuntimeName,
             (string) ($supersededRow['client_agreement_id'] ?? ''),
+            $ledgerItems,
             $queryCache,
         );
-        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType, $agreementMonths);
+        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType, $agreement);
 
         if ($supersededShape === ''
-            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType, $agreementMonths)) {
+            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType, $agreement)) {
             return null;
         }
 
@@ -1420,7 +1460,14 @@ final class ExternalImportService
         // same way - the words describe the work, not which contract it fell
         // under. This is the one piece of identity the source records as a
         // reference rather than as prose, so it is used where it exists.
-        if ((string) ($supersededRow['client_agreement_id'] ?? '') !== (string) ($replacement['client_agreement_id'] ?? '')) {
+        // Both must name one, and the same one. Two nulls cast to '' compare
+        // equal, which is not two lines agreeing about their agreement - it is
+        // two lines saying nothing, and the templates without a cadence would
+        // have taken that as identity established.
+        $supersededAgreement = (string) ($supersededRow['client_agreement_id'] ?? '');
+
+        if ($supersededAgreement === ''
+            || $supersededAgreement !== (string) ($replacement['client_agreement_id'] ?? '')) {
             return null;
         }
 

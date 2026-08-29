@@ -503,6 +503,7 @@ class ExternalImportTest extends TestCase
         int $unclaimedEarlierGenerations = 0,
         bool $withEntryAlreadyOnTheReplacement = false,
         string $cadence = 'monthly',
+        ?string $terminatedOn = null,
     ): void {
         $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
         $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
@@ -510,8 +511,9 @@ class ExternalImportTest extends TestCase
         // The agreement these lines fall under. Its cadence is what the
         // composer takes the cadence word in a generated description from, so
         // a fixture without one cannot exercise those templates at all.
-        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, billing_cadence TEXT, deleted_at TEXT)');
-        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '{$cadence}', NULL)");
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, billing_cadence TEXT, termination_date TEXT, deleted_at TEXT)');
+        $termination = $terminatedOn === null ? 'NULL' : "'{$terminatedOn}'";
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '{$cadence}', {$termination}, NULL)");
         $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
         $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, 41, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
         $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, 41, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
@@ -1374,7 +1376,7 @@ class ExternalImportTest extends TestCase
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours');
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours', terminatedOn: '2026-01-31');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2025 tier/hr)' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2026 tier/hr)' WHERE client_invoice_line_id = 123");
 
@@ -1394,7 +1396,7 @@ class ExternalImportTest extends TestCase
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
         // The type the composer writes this description for.
-        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours');
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours', terminatedOn: '2026-01-31');
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (9:55 @ 150.00 USD/hr)' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (10:00 @ 175.00 USD/hr)' WHERE client_invoice_line_id = 123");
 
@@ -1451,14 +1453,58 @@ class ExternalImportTest extends TestCase
      * cannot produce is somebody's own text - and the figure in it may be what
      * tells two allocations apart.
      */
-    #[DataProvider('malformedGeneratedShapes')]
-    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live, string $cadence): void
+    /**
+     * Two lines that name no agreement at all are not two lines agreeing about
+     * one. Casting both nulls to '' made them compare equal, and the templates
+     * that name no cadence would have taken that as identity established.
+     */
+    public function test_a_claim_on_lines_naming_no_agreement_is_not_recovered(): void
     {
         $user = User::factory()->create();
         Config::set('external-import.user_bindings.7', $user->public_id);
         $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
         $pdo = new PDO('sqlite:'.$this->sourcePath);
-        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec('UPDATE client_invoice_lines SET client_agreement_id = NULL');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * An agreement this run never observed cannot say what the generator could
+     * have written under it. The cadence is read fresh from the source, so
+     * without holding that read to the ledger's fingerprint it would answer
+     * from a row the run never took in - a soft-deleted agreement here, which
+     * SourceRows keeps out of the import entirely, and equally an agreement
+     * whose cadence was edited between the two reads.
+     */
+    public function test_an_agreement_this_run_never_observed_shapes_nothing(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (9:55 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_agreements SET deleted_at = '2026-01-05 09:00:00' WHERE id = 41");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+    }
+
+    #[DataProvider('malformedGeneratedShapes')]
+    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live, string $cadence, ?string $terminatedOn): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence, terminatedOn: $terminatedOn);
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
         $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
 
@@ -1543,7 +1589,7 @@ class ExternalImportTest extends TestCase
         ];
     }
 
-    /** @return array<string, array{0: string, 1: string, 2: string, 3: string}> */
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string, 4: string|null}> */
     public static function malformedGeneratedShapes(): array
     {
         return [
@@ -1552,120 +1598,169 @@ class ExternalImportTest extends TestCase
                 'Deferred work items applied to retainer (9:99)',
                 'Deferred work items applied to retainer (10:99)',
                 'monthly',
+                null,
             ],
             'a ninety-ninth month' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-99 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-99 cycle)',
                 'monthly',
+                null,
             ],
             'a month that is not one' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Foo 1, 2026 through Foo 2, 2026',
                 'Monthly Retainer (10:00 hours) - Foo 1, 2026 through Foo 2, 2026',
                 'monthly',
+                null,
             ],
             'a pool that is not a month' => [
                 'prior_month_retainer',
                 'Work items applied to retainer (9:55 applied to Gold 2026 pool)',
                 'Work items applied to retainer (10:00 applied to Gold 2026 pool)',
                 'monthly',
+                null,
             ],
             'a day January does not have' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 99, 2026 through Jan 99, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 99, 2026 through Jan 99, 2026',
                 'monthly',
+                null,
             ],
             'a day February does not have' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Feb 31, 2026 through Feb 31, 2026',
                 'Monthly Retainer (10:00 hours) - Feb 31, 2026 through Feb 31, 2026',
                 'monthly',
+                null,
             ],
             'a range inside one month' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-01 cycle)',
                 'monthly',
+                null,
             ],
             'a range that runs backwards' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-03..2026-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-03..2026-01 cycle)',
                 'monthly',
+                null,
             ],
             'a range starting from a bare year' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026..2027-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026..2027-01 cycle)',
                 'monthly',
+                null,
             ],
             'a range starting from a quarter' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-Q1..2027-01 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-Q1..2027-01 cycle)',
                 'monthly',
+                null,
             ],
             'hours padded with a leading zero' => [
                 'prior_month_retainer',
                 'Deferred work items applied to retainer (09:55)',
                 'Deferred work items applied to retainer (010:00)',
                 'monthly',
+                null,
             ],
             'money padded with leading zeros' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
                 'monthly',
+                '2026-01-31',
             ],
             'a termination line of no decimal hours' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (0.0000 @ 100.00 USD/hr)',
                 'Deferred work items billed on agreement termination (0.0000 @ 200.00 USD/hr)',
                 'monthly',
+                '2026-01-31',
             ],
             'a termination line of no hours' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (0:00 @ 100.00 USD/hr)',
                 'Deferred work items billed on agreement termination (0:00 @ 200.00 USD/hr)',
                 'monthly',
+                '2026-01-31',
             ],
             'a fee span that ends before it starts' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 31, 2026 through Jan 1, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 31, 2026 through Jan 1, 2026',
                 'monthly',
+                null,
             ],
             'a cadence with a period it cannot produce' => [
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026 cycle)',
                 'quarterly',
+                null,
             ],
             'custom wording differing only in whitespace' => [
                 'prior_month_retainer',
                 ' Support package ',
                 'Support package',
                 'monthly',
+                null,
             ],
             'generated wording carrying padding' => [
                 'prior_month_retainer',
                 ' Deferred work items applied to retainer (9:55)',
                 'Deferred work items applied to retainer (10:00) ',
                 'monthly',
+                null,
             ],
             'a monthly fee line spanning a year' => [
                 'retainer',
                 'Monthly Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
                 'Monthly Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
                 'monthly',
+                null,
             ],
             'a semiannual label spanning a year' => [
                 'prior_month_retainer',
                 'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
                 'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
                 'semi_annual',
+                null,
+            ],
+            // addDeferredTerminationLine() runs only on the post-termination
+            // path, so this wording under an agreement that never ended is
+            // somebody quoting it - and this template erases the whole group.
+            'termination wording under a live agreement' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 200.00 USD/hr)',
+                'monthly',
+                null,
+            ],
+            // The pool wording is written by the monthly path alone; every
+            // other cadence names itself and says "cycle".
+            'pool wording under an annual agreement' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (9:55 applied to January 2026 pool)',
+                'Work items applied to retainer (10:00 applied to January 2026 pool)',
+                'annual',
+                null,
+            ],
+            // A cadence that was chosen and does not repeat. The generator
+            // stops at billsOnARecurringCadence() before writing a cycle line
+            // at all, so no cadence wording under it is generated wording.
+            'monthly wording under a one-time agreement' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'one_time',
+                null,
             ],
             // The composer takes the cadence word from the agreement the line
             // falls under, so annual wording under a monthly agreement is not
@@ -1675,12 +1770,14 @@ class ExternalImportTest extends TestCase
                 'Annual Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
                 'Annual Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
                 'monthly',
+                null,
             ],
             'a cadence draw under the wrong agreement' => [
                 'prior_month_retainer',
                 'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)',
                 'monthly',
+                null,
             ],
             // Every path that writes a draw is guarded on there being hours to
             // apply, so a draw of none, or of less than none, is not one.
@@ -1689,12 +1786,14 @@ class ExternalImportTest extends TestCase
                 'Work items applied to retainer (0:00 applied to January 2026 pool)',
                 'Work items applied to retainer (1:00 applied to January 2026 pool)',
                 'monthly',
+                null,
             ],
             'a draw of negative hours' => [
                 'prior_month_retainer',
                 'Deferred work items applied to retainer (-1:00)',
                 'Deferred work items applied to retainer (1:00)',
                 'monthly',
+                null,
             ],
             // HoursQuantity::format takes the sign after rounding, so zero is
             // never signed. Two lines that differ only by a sign it cannot
@@ -1704,12 +1803,14 @@ class ExternalImportTest extends TestCase
                 'Monthly Retainer (-0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'monthly',
+                null,
             ],
             'a signed decimal zero' => [
                 'retainer',
                 'Monthly Retainer (-0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'Monthly Retainer (0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
                 'monthly',
+                null,
             ],
             // The only annual cycle running January to December is the calendar
             // year, and PeriodLabel calls that "2026". The range form of it is
@@ -1719,6 +1820,7 @@ class ExternalImportTest extends TestCase
                 'Work items applied to annual retainer (9:55 applied to 2026-01..2026-12 cycle)',
                 'Work items applied to annual retainer (10:00 applied to 2026-01..2026-12 cycle)',
                 'annual',
+                null,
             ],
             // Same reasoning one cadence down: January through March is
             // "2026-Q1", so the range spelling of it is not generated either.
@@ -1727,18 +1829,21 @@ class ExternalImportTest extends TestCase
                 'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-03 cycle)',
                 'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-03 cycle)',
                 'quarterly',
+                null,
             ],
             'a monthly cycle labelled as a range' => [
                 'prior_month_retainer',
                 'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-02 cycle)',
                 'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-02 cycle)',
                 'monthly',
+                null,
             ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
                 'Deferred work items billed on agreement termination (2:00 @ 1,2.00 USD/hr)',
                 'monthly',
+                '2026-01-31',
             ],
         ];
     }
