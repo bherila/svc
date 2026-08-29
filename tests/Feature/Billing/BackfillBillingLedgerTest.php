@@ -8,6 +8,8 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\ExternalImport\Fingerprint;
 use App\Services\ExternalImport\SourceGuard;
@@ -158,13 +160,18 @@ final class BackfillBillingLedgerTest extends TestCase
             ->where('source_key', '701')
             ->update(['target_public_id' => $otherTask->public_id]);
 
-        // Succeeds rather than fails, and that is right: a source row imported
-        // into another tenant is genuinely not this repair's business. What
-        // must not happen is the link being written into it.
+        // This used to succeed, on the reasoning that a row imported into
+        // another tenant is not this repair's business. The ledger rows it
+        // walks all belong to runs in this workspace, though, so one of them
+        // naming somebody else's row is this workspace's ledger being wrong
+        // rather than somebody else's data being irrelevant - and telling the
+        // two apart would mean reading a row this command has no business
+        // reading. It refuses, and the property this test exists for is
+        // unchanged: no link is written into either.
         $this->artisan('svc:billing:backfill-ledger', [
             '--workspace' => $this->workspacePublicId(),
             '--apply' => true,
-        ])->assertSuccessful();
+        ])->assertFailed();
 
         $task->refresh();
         $otherTask->refresh();
@@ -203,76 +210,610 @@ final class BackfillBillingLedgerTest extends TestCase
     }
 
     /**
-     * A milestone line bills one deliverable and the schema now says so, so two
-     * source tasks naming one line cannot both be applied. Deciding between
-     * them is not a repair's business - but neither is failing over it, which
-     * would roll back every other row.
+     * A ledger row saying "imported" whose destination row is gone reaches the
+     * backfill as an unmatched source key, indistinguishable from a source row
+     * the ledger never recorded. Nothing in SVC deletes an imported invoice, so
+     * one that no longer resolves is lost data, and repairing the rest would
+     * report a clean run over a ledger that is not.
      */
-    public function test_two_source_tasks_claiming_one_line_are_reported_not_fatal(): void
+    public function test_a_ledger_row_whose_destination_is_gone_stops_the_repair(): void
     {
-        [$invoice, , , $task] = $this->buildDestination();
-
-        $other = ClientTask::query()->create([
-            'workspace_id' => $invoice->workspace_id,
-            'client_project_id' => $task->client_project_id,
-            'title' => 'The other deliverable',
-        ]);
-        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 702, 'milestone_price' => '250.00']);
-        DB::connection('synthetic')->table('client_tasks')->where('id', 702)->update(['client_invoice_line_id' => 901]);
-        DB::connection('synthetic')->table('client_tasks')->where('id', 701)->update(['client_invoice_line_id' => 901]);
-        $this->ledger('client_tasks', '702', 'task', $other->public_id);
+        [$invoice] = $this->buildDestination();
+        DB::table('client_invoices')->where('id', $invoice->id)->delete();
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('this workspace cannot follow to a destination')
             ->assertFailed();
 
-        // Reported as unresolved rather than thrown, and neither task took it.
-        $this->assertNull($task->refresh()->client_invoice_line_id);
-        $this->assertNull($other->refresh()->client_invoice_line_id);
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
     }
 
     /**
-     * A line already held here is not free just because the source says
-     * nothing about it. An operator can have reconciled it by hand.
+     * Editing a draft invoice deletes every one of its lines and writes fresh
+     * ones, so a ledgered line that no longer resolves is the system working -
+     * as long as none of that invoice's other lines survived the edit.
      */
-    public function test_a_line_another_task_already_holds_here_is_reported_not_taken(): void
+    public function test_an_invoice_whose_lines_were_all_rewritten_is_reported_and_not_fatal(): void
     {
-        [$invoice, $line, , $task] = $this->buildDestination();
+        [$invoice] = $this->buildDestination();
 
-        $holder = ClientTask::query()->create([
-            'workspace_id' => $invoice->workspace_id,
-            'client_project_id' => $task->client_project_id,
-            'title' => 'Reconciled by hand',
-            'client_invoice_line_id' => $line->id,
+        // A second invoice with one imported line, so removing it leaves no
+        // surviving sibling: the shape an edit actually produces.
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 502, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01', 'cycle_end' => '2026-04-30', 'paid_date' => null,
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 502, 'line_type' => 'retainer', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
         ]);
 
-        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
-            ->assertFailed();
+        $second = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00002', 'currency' => 'USD', 'status' => 'draft',
+        ]);
+        $edited = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $second->id,
+            'type' => 'adjustment', 'description' => 'Edited away', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+        ]);
+        $this->ledger('client_invoices', '502', 'invoice', $second->public_id);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $edited->public_id);
 
-        $this->assertNull($task->refresh()->client_invoice_line_id);
-        $this->assertSame((int) $line->id, (int) $holder->refresh()->client_invoice_line_id);
+        DB::table('client_invoice_lines')->where('id', $edited->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('removable in ordinary use')
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
     }
 
     /**
-     * Two tasks from another tenant's onboarding arguing over a line this
-     * ledger never mapped is not this repair's business, and counting them
-     * unresolved rolls back a workspace that is fine. What makes an argument
-     * ours is the line being ours, not the claimants being mapped.
+     * The waiver has to be earned. An edit takes an invoice's lines all
+     * together, so one line gone while its siblings still resolve is not an
+     * edit - it is a mapping that has stopped meaning anything, and the table
+     * it is on does not excuse it.
      */
-    public function test_contested_claims_outside_this_workspace_do_not_stop_the_repair(): void
+    public function test_a_lost_line_beside_a_surviving_sibling_is_not_excused_by_its_table(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        // On the same invoice as line 901, which still resolves.
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 903, 'client_invoice_id' => 501, 'line_type' => 'retainer', 'line_date' => '2026-03-16',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+        $sibling = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Sibling', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 1,
+        ]);
+        $this->ledger('client_invoice_lines', '903', 'invoice_line', $sibling->public_id);
+
+        DB::table('client_invoice_lines')->where('id', $sibling->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('not accounted for by an ordinary edit')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * Regeneration comes in two shapes. An edit rewrites every line, but
+     * InvoiceLineComposer::resetSystemGeneratedLines() replaces only the
+     * generated ones and leaves an operator's adjustment standing - so a
+     * surviving adjustment disproves nothing about a generated line that went.
+     */
+    public function test_an_adjustment_left_standing_does_not_disprove_a_regenerated_line(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        // Its own invoice, so nothing here touches the milestone link.
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 503, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-05-01', 'cycle_end' => '2026-05-31', 'paid_date' => null,
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        foreach ([['906', 'retainer', '2026-05-10'], ['907', 'adjustment', '2026-05-11']] as [$key, $type, $date]) {
+            DB::connection('synthetic')->table('client_invoice_lines')->insert([
+                'client_invoice_line_id' => (int) $key, 'client_invoice_id' => 503, 'line_type' => $type,
+                'line_date' => $date, 'hours' => '0.0000', 'client_agreement_id' => 301,
+                'client_agreement_recurring_item_id' => null,
+            ]);
+        }
+
+        $third = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00003', 'currency' => 'USD', 'status' => 'draft',
+        ]);
+        $this->ledger('client_invoices', '503', 'invoice', $third->public_id);
+
+        $lines = [];
+        foreach ([['906', 'retainer', 'Regenerated away'], ['907', 'adjustment', 'Left standing']] as [$key, $type, $description]) {
+            $lines[$key] = ClientInvoiceLine::query()->create([
+                'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $third->id,
+                'type' => $type, 'description' => $description, 'quantity' => '1.0000',
+                'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+            ]);
+            $this->ledger('client_invoice_lines', $key, 'invoice_line', $lines[$key]->public_id);
+        }
+
+        // Only the generated line goes; the adjustment stays, as it does.
+        DB::table('client_invoice_lines')->where('id', $lines['906']->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('removable in ordinary use')
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * If the source has no such line either, there is no parent to reason from.
+     * No evidence is not evidence of an edit, and the table's waiver is not a
+     * substitute for the evidence it stands on.
+     */
+    public function test_a_lost_line_the_source_does_not_have_is_not_excused(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        $orphan = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'retainer', 'description' => 'Named by the ledger alone', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 4,
+        ]);
+
+        // Inserted directly: the ledger helper fingerprints the source row, and
+        // the point of this case is that there is no source row.
+        DB::table('external_import_items')->insert([
+            'external_import_run_id' => $this->runId(),
+            'source_connection' => 'synthetic',
+            'source_identity_hash' => $this->identityHash(),
+            'source_table' => 'client_invoice_lines',
+            'source_key' => '999',
+            'target_type' => 'invoice_line',
+            'target_public_id' => $orphan->public_id,
+            'source_fingerprint' => str_repeat('a', 64),
+            'status' => 'imported',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('client_invoice_lines')->where('id', $orphan->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('not accounted for by an ordinary edit')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * A credit is replaced on its own by OverpaymentCreditService, which leaves
+     * the retainer beside it standing - so that retainer says nothing about
+     * whether the credit was ordinarily regenerated.
+     */
+    public function test_a_surviving_retainer_does_not_disprove_a_regenerated_credit(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 504, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-06-01', 'cycle_end' => '2026-06-30', 'paid_date' => null,
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        foreach ([['908', 'credit'], ['909', 'retainer']] as [$key, $type]) {
+            DB::connection('synthetic')->table('client_invoice_lines')->insert([
+                'client_invoice_line_id' => (int) $key, 'client_invoice_id' => 504, 'line_type' => $type,
+                'line_date' => '2026-06-10', 'hours' => '0.0000', 'client_agreement_id' => 301,
+                'client_agreement_recurring_item_id' => null,
+            ]);
+        }
+
+        $fourth = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00004', 'currency' => 'USD', 'status' => 'draft',
+        ]);
+        $this->ledger('client_invoices', '504', 'invoice', $fourth->public_id);
+
+        $lines = [];
+        foreach ([['908', 'credit'], ['909', 'retainer']] as [$key, $type]) {
+            $lines[$key] = ClientInvoiceLine::query()->create([
+                'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $fourth->id,
+                'type' => $type, 'description' => ucfirst($type), 'quantity' => '1.0000',
+                'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+            ]);
+            $this->ledger('client_invoice_lines', $key, 'invoice_line', $lines[$key]->public_id);
+        }
+
+        // Only the credit goes, as the credit pass does.
+        DB::table('client_invoice_lines')->where('id', $lines['908']->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('removable in ordinary use')
+            ->assertSuccessful();
+    }
+
+    /**
+     * A report is the default and commits nothing, so it has no business
+     * holding every invoice and line in the workspace while it reads five
+     * source tables. Nobody should have to stop billing to run one.
+     */
+    public function test_a_report_takes_no_locks_and_an_apply_does(): void
     {
         $this->buildDestination();
 
-        // Two source tasks the ledger never mapped, arguing over a line it
-        // never mapped either. Both belong to somebody else's onboarding.
-        foreach ([801, 802] as $key) {
-            DB::connection('synthetic')->table('client_tasks')->insert(['id' => $key, 'milestone_price' => '100.00']);
-            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 999]);
+        $locking = [];
+        DB::listen(function ($query) use (&$locking): void {
+            if (str_contains(strtolower($query->sql), 'for update')) {
+                $locking[] = $query->sql;
+            }
+        });
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId()])->assertSuccessful();
+        $this->assertSame([], $locking, 'A report must not lock rows it will never write');
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])->assertSuccessful();
+
+        // SQLite compiles the clause to nothing, so the other half of this only
+        // bites on the MariaDB job - which is the engine the claim is about.
+        if (DB::connection()->getDriverName() === 'mysql') {
+            $this->assertNotSame([], $locking, 'A run that can write holds what the gate answered for');
+        } else {
+            $this->assertSame([], $locking);
         }
+    }
+
+    /**
+     * Waiving by table is not enough. An ordinary deletion explains a row that
+     * was named and has gone; nothing explains one that was never named, so
+     * the waiver must not reach it even on a table SVC does remove rows from.
+     */
+    public function test_an_unnamed_target_is_fatal_even_on_a_table_removable_in_ordinary_use(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        // A second imported line, claimed by nothing, so nulling its target
+        // exercises this and not the milestone link gate.
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 501, 'line_date' => '2026-03-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+        $second = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Second', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 1,
+        ]);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $second->public_id);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoice_lines')
+            ->where('source_key', '902')
+            ->update(['target_public_id' => null]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('name no destination at all')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * A ledger row this workspace cannot follow stops the repair, and it is
+     * never established whether the target is missing or merely somebody
+     * else's - asking would mean reading another tenant's row, which a run for
+     * this tenant may not do.
+     */
+    public function test_a_destination_owned_by_another_workspace_stops_the_repair(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        $other = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $theirs = ClientInvoice::query()->create([
+            'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'THEIR-00001', 'currency' => 'USD', 'status' => 'paid',
+        ]);
+        DB::table('external_import_items')
+            ->where('source_table', 'client_invoices')
+            ->update(['target_public_id' => $theirs->public_id]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('name a destination this workspace does not have')
+            ->assertFailed();
+
+        // Neither invoice was touched: not this workspace's row to repair, and
+        // certainly not the other tenant's.
+        $this->assertNull($invoice->refresh()->invoice_kind);
+        $this->assertNull($theirs->refresh()->invoice_kind);
+    }
+
+    /**
+     * Editing a draft and then issuing it is one ordinary sequence, and it
+     * leaves an issued invoice whose lines were legitimately replaced while it
+     * was still a draft. Asking what the invoice is now would call every line
+     * that edit removed unexplained and abort the repair; what decides it is
+     * the state the invoice arrived in.
+     */
+    public function test_lines_removed_by_an_edit_before_issuing_are_still_waived(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        // Imported as a draft - no settlement date - so an edit could have
+        // taken its line before anyone issued it.
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 502, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01', 'cycle_end' => '2026-04-30', 'paid_date' => null,
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 502, 'line_type' => 'retainer', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+
+        $second = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00002', 'currency' => 'USD', 'status' => 'draft',
+        ]);
+        $edited = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $second->id,
+            'type' => 'retainer', 'description' => 'Edited away', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+        ]);
+        $this->ledger('client_invoices', '502', 'invoice', $second->public_id);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $edited->public_id);
+
+        // Edited, then issued. Both happened after the import, in that order.
+        DB::table('client_invoice_lines')->where('id', $edited->id)->delete();
+        $second->update(['status' => 'issued']);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('removable in ordinary use')
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * The same shape as the edited invoice above, on an invoice that is no
+     * longer a draft. The waiver a removable table earns is for a line a
+     * rewrite took, and it used to be granted whenever no sibling survived to
+     * say otherwise - which is every single-line invoice, however the line
+     * went. Nothing rewrites an invoice past draft, so on a settled one there
+     * is no rewrite to waive and the loss is lost financial data.
+     */
+    public function test_a_lost_line_on_a_settled_invoice_is_not_waived_as_an_edit(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 502, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01', 'cycle_end' => '2026-04-30', 'paid_date' => '2026-05-02',
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 502, 'line_type' => 'retainer', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+
+        $settled = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00002', 'currency' => 'USD', 'status' => 'paid',
+        ]);
+        $lost = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $settled->id,
+            'type' => 'adjustment', 'description' => 'Not edited away - gone', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+        ]);
+        $this->ledger('client_invoices', '502', 'invoice', $settled->public_id);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $lost->public_id);
+
+        DB::table('client_invoice_lines')->where('id', $lost->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('not accounted for by an ordinary edit')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * A lost line the source still has, but with no invoice to belong to. The
+     * evidence for a waiver is entirely about the parent - which of its
+     * siblings survived, whether it is still a draft - so a line without one
+     * has none of it and keeps none of it.
+     *
+     * Two things refuse this, and the test pins the outcome rather than which:
+     * the parent is skipped rather than cast to an invoice named '', and no
+     * such invoice resolves to a draft here in any case. Removing either alone
+     * leaves this passing.
+     */
+    public function test_a_lost_line_whose_source_parent_is_missing_is_not_waived(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => null, 'line_type' => 'retainer', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+        $orphan = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'No parent at the source', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 3,
+        ]);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $orphan->public_id);
+
+        DB::table('client_invoice_lines')->where('id', $orphan->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('not accounted for by an ordinary edit')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * Not every line that leaves an invoice leaves a draft. Issuing calls
+     * capOverpaymentCreditAtIssue(), which deletes the credit line when the
+     * pool can no longer cover it and then sets the status in the same
+     * transaction - so the invoice a credit legitimately vanished from is
+     * never a draft afterwards, and may well be paid by the time anyone runs
+     * this. Requiring a draft there would reject a healthy ledger for good.
+     */
+    public function test_a_credit_removed_while_issuing_is_still_waived(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 502, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01', 'cycle_end' => '2026-04-30', 'paid_date' => '2026-05-02',
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 502, 'line_type' => 'credit', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+
+        $issued = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00002', 'currency' => 'USD', 'status' => 'paid',
+        ]);
+        $credit = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $issued->id,
+            'type' => 'credit', 'description' => 'Overpayment applied', 'quantity' => '1.0000',
+            'unit_amount' => -500, 'tax_amount' => 0, 'total_amount' => -500, 'sort_order' => 0,
+        ]);
+        $this->ledger('client_invoices', '502', 'invoice', $issued->public_id);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $credit->public_id);
+
+        DB::table('client_invoice_lines')->where('id', $credit->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('removable in ordinary use')
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * The waiver reads two fields off the lost line's source row - its parent
+     * and its type - and reasons about the invoice they name. A source row
+     * that has moved since the import describes a line the import never saw,
+     * so those fields are somebody else's evidence: moving the row under a
+     * draft with no matching sibling would buy a waiver for a loss that has
+     * nothing to do with that draft.
+     */
+    public function test_a_lost_line_whose_source_row_has_moved_is_not_waived(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        DB::connection('synthetic')->table('client_invoices')->insert([
+            'client_invoice_id' => 502, 'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-04-01', 'cycle_end' => '2026-04-30', 'paid_date' => null,
+            'retainer_hours_included' => '10.00', 'hours_worked' => '0.00', 'rollover_hours_used' => '0.00',
+            'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '0.00',
+        ]);
+        DB::connection('synthetic')->table('client_invoice_lines')->insert([
+            'client_invoice_line_id' => 902, 'client_invoice_id' => 502, 'line_type' => 'retainer', 'line_date' => '2026-04-15',
+            'hours' => '0.0000', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
+        ]);
+
+        $second = ClientInvoice::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_company_id' => $invoice->client_company_id,
+            'invoice_number' => 'SVC-00002', 'currency' => 'USD', 'status' => 'draft',
+        ]);
+        $edited = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $second->id,
+            'type' => 'adjustment', 'description' => 'Edited away', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 0,
+        ]);
+        $this->ledger('client_invoices', '502', 'invoice', $second->public_id);
+        $this->ledger('client_invoice_lines', '902', 'invoice_line', $edited->public_id);
+
+        DB::table('client_invoice_lines')->where('id', $edited->id)->delete();
+
+        // Ledgered, then moved. Whatever this row says about its parent now,
+        // it is not what was imported.
+        DB::connection('synthetic')->table('client_invoice_lines')
+            ->where('client_invoice_line_id', 902)
+            ->update(['line_date' => '2026-06-30']);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('not accounted for by an ordinary edit')
+            ->assertFailed();
+
+        $this->assertNull(ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * Time entries soft delete, but the lookup goes through the query builder
+     * rather than the model, so no global scope applies and a soft-deleted row
+     * resolves like any other. It never needs a waiver - and one granted anyway
+     * would cover the case it is not for: an entry that is genuinely gone.
+     */
+    public function test_a_time_entry_that_is_genuinely_gone_stops_the_repair(): void
+    {
+        [$invoice] = $this->buildDestination();
+
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_company_id' => $invoice->client_company_id,
+            'client_project_id' => ClientProject::query()->sole()->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-03-14',
+            'minutes' => 60,
+            'description' => 'Imported work',
+            'status' => 'approved',
+        ]);
+        $this->ledger('client_time_entries', '601', 'time_entry', $entry->public_id);
+
+        // Soft-deleted first: this must not be enough to stop anything.
+        $entry->delete();
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        DB::table('client_time_entries')->where('id', $entry->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->expectsOutputToContain('imported into client_time_entries that this workspace cannot follow to a destination')
+            ->assertFailed();
+    }
+
+    /**
+     * A task already carrying an operator's correction is not competing for
+     * anything, so a contested source line must not cost it the milestone
+     * price the repair could still restore.
+     */
+    public function test_a_corrected_task_is_repaired_despite_a_contested_source_line(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $corrected = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 8,
+        ]);
+        $task->forceFill(['client_invoice_line_id' => $corrected->id])->save();
+
+        // Two source tasks argue over the line the source names for this one.
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 804, 'milestone_price' => '100.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 804)->update(['client_invoice_line_id' => 901]);
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
             ->assertSuccessful();
 
-        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+        $this->assertSame((int) $corrected->id, (int) $task->refresh()->client_invoice_line_id);
+        $this->assertSame(18750, $task->milestone_price_amount);
     }
 
     /**
@@ -304,6 +845,28 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertNull($task->refresh()->client_invoice_line_id);
         $this->assertSame((int) $line->id, (int) $theirs->refresh()->client_invoice_line_id);
         $this->assertSame($invoice->workspace_id, $task->workspace_id);
+    }
+
+    /**
+     * A line already held here is not free just because the source says
+     * nothing about it. An operator can have reconciled it by hand.
+     */
+    public function test_a_line_another_task_already_holds_here_is_reported_not_taken(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $holder = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'Reconciled by hand',
+            'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame((int) $line->id, (int) $holder->refresh()->client_invoice_line_id);
     }
 
     /**
@@ -357,30 +920,54 @@ final class BackfillBillingLedgerTest extends TestCase
     }
 
     /**
-     * A task already carrying an operator's correction is not competing for
-     * anything, so a contested source line must not cost it the milestone
-     * price the repair could still restore.
+     * Two tasks from another tenant's onboarding arguing over a line this
+     * ledger never mapped is not this repair's business, and counting them
+     * unresolved rolls back a workspace that is fine. What makes an argument
+     * ours is the line being ours, not the claimants being mapped.
      */
-    public function test_a_corrected_task_is_repaired_despite_a_contested_source_line(): void
+    public function test_contested_claims_outside_this_workspace_do_not_stop_the_repair(): void
     {
-        [$invoice, , , $task] = $this->buildDestination();
+        $this->buildDestination();
 
-        $corrected = ClientInvoiceLine::query()->create([
-            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
-            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
-            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 8,
-        ]);
-        $task->forceFill(['client_invoice_line_id' => $corrected->id])->save();
-
-        // Two source tasks argue over the line the source names for this one.
-        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 804, 'milestone_price' => '100.00']);
-        DB::connection('synthetic')->table('client_tasks')->where('id', 804)->update(['client_invoice_line_id' => 901]);
+        // Two source tasks the ledger never mapped, arguing over a line it
+        // never mapped either. Both belong to somebody else's onboarding.
+        foreach ([801, 802] as $key) {
+            DB::connection('synthetic')->table('client_tasks')->insert(['id' => $key, 'milestone_price' => '100.00']);
+            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 999]);
+        }
 
         $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
             ->assertSuccessful();
 
-        $this->assertSame((int) $corrected->id, (int) $task->refresh()->client_invoice_line_id);
-        $this->assertSame(18750, $task->milestone_price_amount);
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * A milestone line bills one deliverable and the schema now says so, so two
+     * source tasks naming one line cannot both be applied. Deciding between
+     * them is not a repair's business - but neither is failing over it, which
+     * would roll back every other row.
+     */
+    public function test_two_source_tasks_claiming_one_line_are_reported_not_fatal(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $other = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'The other deliverable',
+        ]);
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 702, 'milestone_price' => '250.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 702)->update(['client_invoice_line_id' => 901]);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 701)->update(['client_invoice_line_id' => 901]);
+        $this->ledger('client_tasks', '702', 'task', $other->public_id);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        // Reported as unresolved rather than thrown, and neither task took it.
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertNull($other->refresh()->client_invoice_line_id);
     }
 
     public function test_it_writes_nothing_without_apply(): void
@@ -441,7 +1028,7 @@ final class BackfillBillingLedgerTest extends TestCase
     {
         $source = DB::connection('synthetic');
         $source->statement('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, invoice_kind TEXT, cycle_start TEXT, cycle_end TEXT, paid_date TEXT, retainer_hours_included TEXT, hours_worked TEXT, rollover_hours_used TEXT, unused_hours_balance TEXT, negative_hours_balance TEXT, hours_billed_at_rate TEXT)');
-        $source->statement('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, line_date TEXT, hours TEXT, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER)');
+        $source->statement('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, line_type TEXT, line_date TEXT, hours TEXT, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER)');
         $source->statement('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, catch_up_threshold_hours TEXT, rollover_months INTEGER, initial_rollover_hours TEXT, bill_overage_interim INTEGER, first_cycle_proration TEXT, agreement_link TEXT)');
         $source->statement('CREATE TABLE client_tasks (id INTEGER PRIMARY KEY, milestone_price TEXT, client_invoice_line_id INTEGER)');
         $source->statement('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, job_type TEXT)');
@@ -453,7 +1040,7 @@ final class BackfillBillingLedgerTest extends TestCase
             'unused_hours_balance' => '0.00', 'negative_hours_balance' => '0.00', 'hours_billed_at_rate' => '1.50',
         ]);
         $source->table('client_invoice_lines')->insert([
-            'client_invoice_line_id' => 901, 'line_date' => '2026-03-14',
+            'client_invoice_line_id' => 901, 'client_invoice_id' => 501, 'line_type' => 'milestone', 'line_date' => '2026-03-14',
             'hours' => '1.7500', 'client_agreement_id' => 301, 'client_agreement_recurring_item_id' => null,
         ]);
         $source->table('client_agreements')->insert([
