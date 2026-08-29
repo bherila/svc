@@ -247,7 +247,14 @@ export default function TimeSheet({
             {
                 preserveScroll: true,
                 onSuccess: () => {
-                    setSelected([]);
+                    // Only what was sent. Clearing the whole selection after
+                    // approving the first batch would discard the remainder
+                    // the button just told the operator was still to come.
+                    const sent = new Set(entries.map((entry) => entry.id));
+
+                    setSelected((current) =>
+                        current.filter((id) => !sent.has(id)),
+                    );
                     setNotice(null);
                 },
                 onError: reportFailure,
@@ -379,15 +386,19 @@ export default function TimeSheet({
                                 </Button>
                                 <Button
                                     size="sm"
-                                    disabled={
-                                        approving ||
-                                        selectedEntries.length > approvalLimit
+                                    disabled={approving}
+                                    onClick={() =>
+                                        approve(
+                                            selectedEntries.slice(
+                                                0,
+                                                approvalLimit,
+                                            ),
+                                        )
                                     }
-                                    onClick={() => approve(selectedEntries)}
                                 >
                                     <CheckIcon />
                                     {selectedEntries.length > approvalLimit
-                                        ? `Approve up to ${approvalLimit}`
+                                        ? `Approve ${approvalLimit} of ${selectedEntries.length}`
                                         : 'Approve'}
                                 </Button>
                             </div>
@@ -438,7 +449,7 @@ export default function TimeSheet({
                 <TimeEntryDialog
                     key={dialogEntry?.id ?? 'new'}
                     workspaceId={workspace.id}
-                    today={workspace.today}
+                    timezone={workspace.timezone}
                     company={company}
                     entry={dialogEntry}
                     open={dialogOpen}

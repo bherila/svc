@@ -145,7 +145,7 @@ final class TimeEntryMutationService
                     'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
                 );
                 abort_unless(AgentApiVersion::matches($entry, $item['expected_version']), 409, 'The time entry has changed; read it and retry.');
-                $rate = $this->approvalRate($entry, $item);
+                $rate = $this->approvalRate($workspace, $entry, $item);
                 $entry->forceFill([
                     'status' => 'approved',
                     'approved_by_user_id' => $actor->id,
@@ -163,7 +163,7 @@ final class TimeEntryMutationService
      * @param  array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}  $item
      * @return array{amount:int|null,currency:string|null,source:string|null}
      */
-    private function approvalRate(ClientTimeEntry $entry, array $item): array
+    private function approvalRate(Workspace $workspace, ClientTimeEntry $entry, array $item): array
     {
         if (! $entry->is_billable) {
             return ['amount' => null, 'currency' => $entry->currency, 'source' => null];
@@ -190,7 +190,11 @@ final class TimeEntryMutationService
         if ($entry->billing_rate_source === 'explicit' && $entry->billing_rate_amount !== null) {
             return [
                 'amount' => $entry->billing_rate_amount,
-                'currency' => $entry->currency,
+                // The amount is the operator's statement; a missing currency
+                // is not, and rows predating the workflow's default still
+                // carry one. Resolving the agreement rate would discard the
+                // amount, which is the thing this branch exists to keep.
+                'currency' => $entry->currency ?? $workspace->default_currency,
                 'source' => 'explicit',
             ];
         }

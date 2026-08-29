@@ -154,7 +154,7 @@ class TimeSheetController extends Controller
                 'id' => $workspace->public_id,
                 'name' => $workspace->name,
                 'default_currency' => $workspace->default_currency,
-                'today' => TimeSheetWindow::today($workspace->timezone),
+                'timezone' => $workspace->timezone,
             ],
             // Named by the request that enforces it, so the page cannot offer
             // a selection the write will refuse.

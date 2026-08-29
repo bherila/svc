@@ -70,8 +70,8 @@ export type TimeSheetProps = {
         id: string;
         name: string;
         default_currency: string;
-        /** Today on the workspace's calendar, for defaulting date fields. */
-        today: string;
+        /** The workspace's calendar; date defaults are read on it. */
+        timezone: string;
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;

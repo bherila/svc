@@ -2078,15 +2078,18 @@ class TimeSheetTest extends TestCase
         // Still 2026-08-31 in Los Angeles; UTC has reached September.
         $this->travelTo('2026-09-01 03:00:00');
 
+        // The calendar travels, not a date. A date computed here would be
+        // right at render and wrong by morning, and these pages are meant to
+        // be left open; the browser reads the clock against this.
         $this->actingAs($this->manager)
             ->get("/workspaces/{$this->workspace->public_id}/time")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('workspace.today', '2026-08-31'));
+            ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
         $this->actingAs($this->manager)
             ->get("/workspaces/{$this->workspace->public_id}/operations")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('workspace.today', '2026-08-31'));
+            ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
         // And that default is a date the write accepts.
         $this->actingAs($this->manager)
@@ -2125,6 +2128,64 @@ class TimeSheetTest extends TestCase
         $this->actingAs($this->manager)
             ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", ['entries' => $entries])
             ->assertSessionHasErrors('entries');
+    }
+
+    /**
+     * A rate with no currency is approved and then never billed.
+     *
+     * `InvoiceFromTimeService` takes only entries whose currency matches the
+     * invoice's, so an entry carrying an amount and no currency is approved,
+     * billable, rate-bearing - and silently absent from every invoice. The
+     * web create path recorded a rate as `explicit` on the amount alone and
+     * left the currency null, and keeping that rate at approval preserved the
+     * hole rather than the agreement resolution filling it.
+     */
+    public function test_time_logged_with_a_rate_is_never_left_without_a_currency(): void
+    {
+        $this->agreementWithAnHourlyRate();
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2026-07-04',
+                'minutes' => 60,
+                'description' => 'Logged with a rate and no currency',
+                'billing_rate_amount' => 22500,
+            ])
+            ->assertRedirect();
+
+        $entry = ClientTimeEntry::query()->firstOrFail();
+
+        $this->assertSame('explicit', $entry->billing_rate_source);
+        $this->assertSame($this->workspace->fresh()?->default_currency, $entry->currency);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(22500, (int) $entry->fresh()?->billing_rate_amount);
+        $this->assertNotNull($entry->fresh()?->currency);
+    }
+
+    /** And a row already stored without one still approves with one. */
+    public function test_approval_supplies_a_currency_an_older_entry_lacks(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $entry = $this->entry([
+            'billing_rate_amount' => 22500,
+            'billing_rate_source' => 'explicit',
+            'currency' => null,
+        ]);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(22500, (int) $entry->fresh()?->billing_rate_amount);
+        $this->assertSame($this->workspace->fresh()?->default_currency, $entry->fresh()?->currency);
     }
 
     /**

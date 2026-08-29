@@ -63,7 +63,14 @@ class TimeEntryWorkflow
             'billing_rate_amount' => $attributes['billing_rate_amount'] ?? null,
             // A rate supplied at creation is recorded, not inferred.
             'billing_rate_source' => isset($attributes['billing_rate_amount']) ? 'explicit' : null,
-            'currency' => isset($attributes['currency']) ? strtoupper($attributes['currency']) : null,
+            // Never null. `InvoiceFromTimeService` bills only entries whose
+            // currency matches the invoice's, so a rate-bearing entry with no
+            // currency is approved, billable, and then silently skipped by
+            // every invoice - the agent API's create path has always defaulted
+            // this, and only the web path left the hole.
+            'currency' => isset($attributes['currency'])
+                ? strtoupper($attributes['currency'])
+                : $workspace->default_currency,
             'status' => 'draft',
         ]);
     }

@@ -10,7 +10,6 @@ use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
-use App\Support\Engagement\TimeSheetWindow;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -203,11 +202,13 @@ class WorkspaceOperationsController extends Controller
                 'id' => $workspace->public_id,
                 'name' => $workspace->name,
                 'clients' => $clients,
-                // The browser's calendar is not the workspace's. Defaulting a
-                // date from `toISOString()` gives UTC's day, which the write
-                // validators - bounded by the workspace's own window - refuse
-                // for the hours the two disagree.
-                'today' => TimeSheetWindow::today($workspace->timezone),
+                // The browser's calendar is not the workspace's, and neither
+                // is UTC's. Defaulting a date from `toISOString()` gives UTC's
+                // day, which the write validators - bounded by the workspace's
+                // own window - refuse for the hours the two disagree. The
+                // calendar travels rather than a date, because this page can
+                // sit open past its own midnight.
+                'timezone' => $workspace->timezone,
             ],
         ]);
     }

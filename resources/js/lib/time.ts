@@ -75,17 +75,30 @@ export function formatDate(iso: string): string {
 }
 
 /**
- * Today, in the browser's own calendar.
+ * Today on a given calendar, computed now.
  *
- * `toISOString()` converts to UTC before formatting, so an operator west of
- * UTC in the evening gets tomorrow's date and one east of it after midnight
- * gets yesterday's - silently, on the field that decides which billing cycle
- * the work lands in.
+ * Two hazards, and only naming both avoids trading one for the other.
+ * `toISOString()` formats in UTC, so an operator west of it gets tomorrow's
+ * date in the evening - silently, on the field that decides which billing
+ * cycle the work lands in. And the workspace has a calendar of its own that
+ * the browser's need not match; the write validators bound the date by the
+ * workspace's window, so a browser ahead of it defaults to a date its own
+ * save refuses.
+ *
+ * Taking the date from the server would fix both and introduce a third: the
+ * sheet is a long-lived page, and a value baked in at render is yesterday's
+ * by morning. So the server sends the timezone and this reads the clock.
  */
-export function todayLocal(): string {
-    const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
+export function todayIn(timeZone: string): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(new Date());
 
-    return `${now.getFullYear()}-${month}-${day}`;
+    const value = (type: string) =>
+        parts.find((part) => part.type === type)?.value ?? '';
+
+    return `${value('year')}-${value('month')}-${value('day')}`;
 }

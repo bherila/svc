@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
+import { todayIn } from '@/lib/time';
 
 type TimeEntry = {
     id: string;
@@ -76,8 +77,8 @@ type Workspace = {
     id: string;
     name: string;
     clients: Client[];
-    /** Today on the workspace's calendar, not the browser's or UTC's. */
-    today: string;
+    /** The workspace's calendar; date defaults are read on it, not UTC's. */
+    timezone: string;
 };
 
 const inputClass =
@@ -161,18 +162,18 @@ function AttachmentPanel({
 function TimeEntryForm({
     workspaceId,
     project,
-    today,
+    timezone,
 }: {
     workspaceId: string;
     project: Project;
-    today: string;
+    timezone: string;
 }) {
     const form = useForm({
         // Not `new Date().toISOString()`: that is UTC's day, and the write
         // validators bound the date by the workspace's own window - so for
         // the hours the two calendars disagree, the untouched default was
         // refused.
-        worked_on: today,
+        worked_on: todayIn(timezone),
         minutes: '30',
         description: '',
         is_billable: true,
@@ -432,13 +433,18 @@ function InvoiceForm({
 function PaymentForm({
     workspaceId,
     invoice,
+    timezone,
 }: {
     workspaceId: string;
     invoice: Invoice;
+    timezone: string;
 }) {
     const form = useForm({
         amount: (invoice.balance_amount / 100).toFixed(2),
-        received_on: new Date().toISOString().slice(0, 10),
+        // Same calendar as the time form. Nothing validates this one, so
+        // a payment entered in the evening west of UTC simply lands in the
+        // next month's revenue without complaint.
+        received_on: todayIn(timezone),
         method: 'bank_transfer',
         reference: '',
         notes: '',
@@ -495,10 +501,12 @@ function BillingScheduleForm({
     workspaceId,
     clientId,
     agreement,
+    timezone,
 }: {
     workspaceId: string;
     clientId: string;
     agreement: Agreement;
+    timezone: string;
 }) {
     const supportedCadences = ['monthly', 'quarterly', 'semi_annual', 'annual'];
     const form = useForm({
@@ -506,7 +514,7 @@ function BillingScheduleForm({
         cadence: supportedCadences.includes(agreement.billing_cadence)
             ? agreement.billing_cadence
             : 'monthly',
-        next_run_on: new Date().toISOString().slice(0, 10),
+        next_run_on: todayIn(timezone),
         due_days: '30',
         currency: 'USD',
         description: '',
@@ -643,7 +651,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                             <TimeEntryForm
                                                 workspaceId={workspace.id}
                                                 project={project}
-                                                today={workspace.today}
+                                                timezone={workspace.timezone}
                                             />
                                             <ul className="mt-3 space-y-1 text-sm text-slate-600">
                                                 {project.time_entries.map(
@@ -754,6 +762,9 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                             workspace.id
                                                         }
                                                         clientId={client.id}
+                                                        timezone={
+                                                            workspace.timezone
+                                                        }
                                                         agreement={agreement}
                                                     />
                                                 )}
@@ -849,6 +860,9 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                                 workspace.id
                                                             }
                                                             invoice={invoice}
+                                                            timezone={
+                                                                workspace.timezone
+                                                            }
                                                         />
                                                     )}
                                                 <AttachmentPanel
