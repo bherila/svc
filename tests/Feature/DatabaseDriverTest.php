@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -92,5 +93,26 @@ final class DatabaseDriverTest extends TestCase
         } finally {
             DB::statement('drop temporary table if exists driver_probe');
         }
+    }
+
+    /**
+     * Laravel's MariaDB grammar switches uuid() from char(36) to native uuid
+     * at 10.7. Production's existing UUID columns are char(36), so the server
+     * must not cross that boundary until all thirty UUID columns are migrated
+     * together. The deploy runs this same command before migrations.
+     */
+    public function test_the_mariadb_driver_matches_the_existing_uuid_schema(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mariadb') {
+            $this->markTestSkipped('The UUID grammar boundary belongs to the MariaDB driver.');
+        }
+
+        $exitCode = Artisan::call('svc:database:status', ['--format' => 'json']);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('"driver":"mariadb"', $output);
+        $this->assertStringContainsString('"server_family":"mariadb"', $output);
+        $this->assertStringContainsString('"uuid_grammar_compatible":true', $output);
     }
 }

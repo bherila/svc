@@ -100,9 +100,9 @@ so the local loop remains fast — the MariaDB run is the one that has to be tru
 To run it locally against any MySQL-compatible server:
 
 ```bash
-DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 \
+DB_CONNECTION=mariadb DB_HOST=127.0.0.1 DB_PORT=3306 \
 DB_DATABASE=svc_testing DB_USERNAME=root DB_PASSWORD=secret \
-DB_EXPECT_DRIVER=mysql php artisan test
+DB_EXPECT_DRIVER=mariadb php artisan test
 ```
 
 PHPUnit does not overwrite variables already set in the environment, so these
@@ -117,6 +117,16 @@ asserts strict mode is on, because without `STRICT_TRANS_TABLES` MariaDB
 truncates rather than refuses and is no more informative than SQLite. The
 production server's own `sql_mode` does **not** include it; Laravel's `strict`
 connection flag sets it per session, which is what the assertion checks.
+
+The driver now names the server honestly: both production and the hosted job use
+Laravel's `mariadb` connection. At MariaDB 10.6 this is schema-equivalent to the
+old `mysql` connection for this application. The equivalence ends at 10.7,
+where Laravel starts compiling `uuid()` columns as native `uuid` instead of
+`char(36)`. Production already has thirty `char(36)` UUID columns, so
+`svc:database:status` runs before every deployment migration and refuses 10.7+
+until those columns receive one deliberate migration. The hosted MariaDB job
+runs the same guard; a driver typo or a premature image upgrade is therefore a
+test failure rather than silent schema drift.
 
 ### What the first MariaDB run found
 

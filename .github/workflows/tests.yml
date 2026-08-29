@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     # The default suite runs on in-memory SQLite; production is MariaDB 10.6
-    # reached through Laravel's `mysql` driver. SQLite stores whatever it is
+    # reached through Laravel's `mariadb` driver. SQLite stores whatever it is
     # handed, so a value MariaDB refuses passes there without comment - which is
     # how a `h:mm` string written into a decimal column survived 404 green
     # tests. Every schema difference between the two engines is invisible until
@@ -98,13 +98,13 @@ jobs:
     # came up would quietly fall back to SQLite and report a green run that
     # proved nothing.
     env:
-      DB_CONNECTION: mysql
+      DB_CONNECTION: mariadb
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_DATABASE: svc_testing
       DB_USERNAME: root
       DB_PASSWORD: testing
-      DB_EXPECT_DRIVER: mysql
+      DB_EXPECT_DRIVER: mariadb
 
     steps:
       - name: Checkout code
@@ -236,8 +236,9 @@ jobs:
              install -m 600 ~/.config/svc/database.env ~/svc-laravel/.db-credentials; \
              install -d -m 700 ~/svc-laravel/storage/app/private/svc-blobs; \
              cd ~/svc-laravel; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan migrate --force; \
              /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:database:status --format=json; \
+             /opt/cpanel/ea-php85/root/usr/bin/php artisan migrate --force; \
              /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache; \
              /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:storage:status --write --format=json; \
              stripe_exit=0; \
