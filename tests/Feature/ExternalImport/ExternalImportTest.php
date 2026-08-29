@@ -1462,6 +1462,69 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    /**
+     * The other side of the refusals above: a cadence label that is genuinely
+     * PeriodLabel's output still recovers its claim. Tightening the ranges to
+     * exclude the calendar-aligned spellings must not take the unaligned ones
+     * with it - those are the only way a six- or twelve-month cycle can be
+     * named at all.
+     */
+    #[DataProvider('generatedShapesThatStillRecover')]
+    public function test_a_cadence_label_the_generator_writes_still_recovers(string $type, string $superseded, string $live): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string}> */
+    public static function generatedShapesThatStillRecover(): array
+    {
+        return [
+            // Twelve whole months that are not the calendar year, so the range
+            // is what PeriodLabel writes.
+            'an annual cycle anchored after January' => [
+                'prior_month_retainer',
+                'Work items applied to annual retainer (9:55 applied to 2026-02..2027-01 cycle)',
+                'Work items applied to annual retainer (10:00 applied to 2026-02..2027-01 cycle)',
+            ],
+            // Six whole months has no aligned form at all - PeriodLabel names
+            // months, quarters and years, and a half year is none of them.
+            'a semiannual cycle on a calendar boundary' => [
+                'prior_month_retainer',
+                'Work items applied to semiannual retainer (9:55 applied to 2026-01..2026-06 cycle)',
+                'Work items applied to semiannual retainer (10:00 applied to 2026-01..2026-06 cycle)',
+            ],
+            // Three whole months not aligned to a quarter.
+            'a quarterly cycle anchored off the quarter' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-04 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-04 cycle)',
+            ],
+            // Mid-month anchored: the span straddles one month more than the
+            // cadence, and no aligned form can describe it.
+            'a quarterly cycle anchored mid-month' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-04 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-04 cycle)',
+            ],
+            // Zero is a quantity the formatter does write - unsigned.
+            'an unsigned zero' => [
+                'retainer',
+                'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+            ],
+        ];
+    }
+
     /** @return array<string, array{0: string, 1: string, 2: string}> */
     public static function malformedGeneratedShapes(): array
     {
@@ -1565,6 +1628,34 @@ class ExternalImportTest extends TestCase
                 'prior_month_retainer',
                 'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
                 'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
+            ],
+            // HoursQuantity::format takes the sign after rounding, so zero is
+            // never signed. Two lines that differ only by a sign it cannot
+            // write are not two generations of one line.
+            'a signed zero' => [
+                'retainer',
+                'Monthly Retainer (-0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+            ],
+            'a signed decimal zero' => [
+                'retainer',
+                'Monthly Retainer (-0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
+            ],
+            // The only annual cycle running January to December is the calendar
+            // year, and PeriodLabel calls that "2026". The range form of it is
+            // nobody's output.
+            'an annual cycle labelled as a calendar year range' => [
+                'prior_month_retainer',
+                'Work items applied to annual retainer (9:55 applied to 2026-01..2026-12 cycle)',
+                'Work items applied to annual retainer (10:00 applied to 2026-01..2026-12 cycle)',
+            ],
+            // Same reasoning one cadence down: January through March is
+            // "2026-Q1", so the range spelling of it is not generated either.
+            'a quarterly cycle labelled as a calendar quarter range' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-03 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-03 cycle)',
             ],
             'a monthly cycle labelled as a range' => [
                 'prior_month_retainer',

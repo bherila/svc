@@ -7,6 +7,7 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use App\Support\Billing\PeriodLabel;
 use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -128,8 +129,13 @@ final class ExternalImportService
      * descriptions come from the predecessor, and only some of its wording
      * survived into the composer; deriving the figures from the composer alone
      * refused every claim on a fee line.
+     *
+     * Signed only above zero. HoursQuantity::format takes the sign after
+     * rounding - `$totalMinutes < 0` is false for zero - so "-0:00" is a string
+     * it cannot produce, and admitting it would let somebody's own "-0:00" wear
+     * the same shape as a real "0:00" and take its claim.
      */
-    private const HOURS = '-?(?:0|[1-9]\d*)(?::[0-5]\d|\.\d+)';
+    private const HOURS = '(?:-?'.self::POSITIVE_HOURS.'|0(?::00|\.0+))';
 
     /**
      * Hours above zero, for the one template whose line cannot exist below it.
@@ -888,6 +894,30 @@ final class ExternalImportService
             $difference = ((int) $range[3] - (int) $range[1]) * 12 + ((int) $range[4] - (int) $range[2]);
 
             if ($difference !== $months && $difference !== $months - 1) {
+                return false;
+            }
+
+            if ($difference !== $months - 1) {
+                continue;
+            }
+
+            // One short of the cadence means the cycle runs whole calendar
+            // months, which fixes both its ends: it starts on the first and
+            // ends on the last of the month it names. PeriodLabel does not
+            // range every such span - a calendar quarter is "2026-Q1" and a
+            // calendar year is "2026" - so ask it, and refuse a range it would
+            // have written another way. "2026-01..2026-12" is the one that
+            // matters: the only annual cycle with those ends is the calendar
+            // year, and the year form is what it is called.
+            $start = Carbon::createFromFormat('Y-m-d', $range[1].'-'.$range[2].'-01');
+
+            if ($start === null) {
+                return false;
+            }
+
+            $start = $start->startOfDay();
+
+            if (PeriodLabel::for($start, $start->copy()->addMonths($months)->subDay()) !== $range[0]) {
                 return false;
             }
         }

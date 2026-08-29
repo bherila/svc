@@ -57,6 +57,14 @@ return new class extends Migration
             $table->unique('client_invoice_line_id', 'task_invoice_line_once');
         });
 
+        // Left behind by a previous down(), where it stood in for the index
+        // the unique one displaces. Now redundant again.
+        if (Schema::hasIndex('client_tasks', 'task_invoice_line_fk_idx')) {
+            Schema::table('client_tasks', function (Blueprint $table): void {
+                $table->dropIndex('task_invoice_line_fk_idx');
+            });
+        }
+
         // task_invoice_line_idx now duplicates this one for lookups by line,
         // and it is tempting to drop it. It stays: it leads on workspace_id,
         // and on MySQL it is the only index that does, so it is what supports
@@ -66,6 +74,16 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Creating the unique index made InnoDB discard the index it had made
+        // for task_invoice_line_fk - one index can serve both, and it keeps
+        // one. Dropping the unique one therefore takes the foreign key's
+        // support with it and fails with errno 1553, since
+        // task_invoice_line_idx cannot stand in: client_invoice_line_id is not
+        // its leading column. Give the foreign key an index of its own first.
+        Schema::table('client_tasks', function (Blueprint $table): void {
+            $table->index('client_invoice_line_id', 'task_invoice_line_fk_idx');
+        });
+
         Schema::table('client_tasks', function (Blueprint $table): void {
             $table->dropUnique('task_invoice_line_once');
         });

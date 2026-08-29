@@ -742,8 +742,17 @@ final class BackfillBillingLedgerCommand extends Command
                 // generation run can take the line between this and the write.
                 // applyRow() reports that collision rather than letting it
                 // escape, so the two together cover both orderings.
+                //
+                // This workspace's tasks only, though the index it stands in
+                // for is global. A holder in another workspace is malformed and
+                // must still stop the write, but task_invoice_line_once stops
+                // it on its own and applyRow() records the violation as the
+                // same unresolved - so the answer does not change, and reading
+                // another tenant's row to reach it would be a cost with no
+                // difference behind it.
                 if ($resolvedLink !== null && $fillsItsLink
                     && $this->db()->table('client_tasks')
+                        ->where('workspace_id', $this->workspaceId)
                         ->where('client_invoice_line_id', $resolvedLink)
                         ->where('id', '!=', $id)
                         ->exists()) {

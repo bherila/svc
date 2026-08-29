@@ -277,8 +277,10 @@ final class BackfillBillingLedgerTest extends TestCase
 
     /**
      * task_invoice_line_once is global, so a holder in another workspace
-     * collides just the same. A check narrower than the rule it predicts is
-     * not a prediction.
+     * collides just the same - and the repair must still stop. It is the index
+     * that says so here, not the conflict check: that check reads only this
+     * workspace's tasks, and the write it guards fails on the constraint,
+     * which applyRow() records as the same unresolved.
      */
     public function test_a_holder_in_another_workspace_is_seen_by_the_conflict_check(): void
     {
