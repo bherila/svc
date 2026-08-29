@@ -179,6 +179,8 @@ final class InterimOverageGenerator
 
             $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
             if ($targetOverageHours <= 0.0) {
+                $this->finishEmptiedDraft($existingInvoice);
+
                 return null;
             }
 
@@ -202,6 +204,8 @@ final class InterimOverageGenerator
             $entryHours = round(((int) $entries->sum('minutes')) / 60, 4);
             $overageHours = round(min($targetOverageHours, $entryHours), 4);
             if ($overageHours <= 0.0) {
+                $this->finishEmptiedDraft($existingInvoice);
+
                 return null;
             }
 
@@ -291,6 +295,25 @@ final class InterimOverageGenerator
 
             return $invoice->fresh(['lines']);
         });
+    }
+
+    /**
+     * Finish a refresh that removed the last generated overage line.
+     *
+     * `resetSystemGeneratedLines()` releases the pivots and deletes the line,
+     * but the invoice's cached money and overage-hour columns otherwise keep
+     * describing the charge that just disappeared. Issuance trusts those
+     * columns, so every early return after the reset must close the row too.
+     * Manual adjustment lines, if any, remain and are included in the total.
+     */
+    private function finishEmptiedDraft(?ClientInvoice $invoice): void
+    {
+        if (! $invoice instanceof ClientInvoice) {
+            return;
+        }
+
+        $invoice->update(['hours_billed_at_rate' => 0]);
+        $invoice->refresh()->recalculateTotals();
     }
 
     /**

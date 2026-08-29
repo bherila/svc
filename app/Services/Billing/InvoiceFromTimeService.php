@@ -151,6 +151,16 @@ final class InvoiceFromTimeService
             }
 
             $linkedLineIds = $links->pluck('line_id')->map(fn ($id): int => (int) $id)->unique()->values();
+            $hasForeignPivots = DB::table('client_invoice_line_time_entries')
+                ->whereIn('client_invoice_line_id', $linkedLineIds)
+                ->where(fn ($query) => $query
+                    ->whereNull('workspace_id')
+                    ->orWhere('workspace_id', '!=', $workspace->id))
+                ->exists();
+            if ($hasForeignPivots) {
+                throw new DomainException('The ad-hoc draft contains a time allocation owned by another workspace.');
+            }
+
             foreach (ClientInvoiceLine::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_invoice_id', $locked->id)

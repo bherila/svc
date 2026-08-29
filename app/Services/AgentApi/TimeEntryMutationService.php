@@ -84,9 +84,19 @@ final class TimeEntryMutationService
             // together. If the edited row was the overflow fragment, its
             // minutes now live on the lineage root and that is the record the
             // next sheet read will expose.
-            return ClientTimeEntry::query()->whereKey($entry->id)->first()
-                ?? ClientTimeEntry::query()->whereKey($lineageRootId)->first()
-                ?? throw new \RuntimeException('The time entry no longer exists.');
+            $survivor = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $entry->client_company_id)
+                ->first()
+                ?? ClientTimeEntry::query()
+                    ->whereKey($lineageRootId)
+                    ->where('workspace_id', $workspace->id)
+                    ->where('client_company_id', $entry->client_company_id)
+                    ->first();
+            abort_unless($survivor instanceof ClientTimeEntry, 409, 'The regenerated time entry has an inconsistent split lineage.');
+
+            return $survivor;
         });
     }
 

@@ -348,7 +348,7 @@ class TimeSheetController extends Controller
             $regenerable = match ($kind) {
                 InvoiceKind::AdHoc => true,
                 InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
-                InvoiceKind::InterimOverage => $hasAgreement && $link->getAttribute('service_period_start') !== null,
+                InvoiceKind::InterimOverage => $hasAgreement && $hasServicePeriod,
                 InvoiceKind::Terminal => false,
             };
             $byEntry[(int) $link->getAttribute('entry_id')] = [
