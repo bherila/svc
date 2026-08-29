@@ -16,6 +16,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\AgentApi\AgentApiVersion;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -57,7 +58,6 @@ class TimeSheetController extends Controller
         $companies = $workspace->clientCompanies()
             ->with([
                 'projects' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('name'),
-                'projects.tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
             ])
             ->orderBy('name')
             ->get();
@@ -117,6 +117,20 @@ class TimeSheetController extends Controller
             ->filter(fn (ClientCompany $company): bool => $company->projects->isNotEmpty())
             ->values();
 
+        // Tasks only now, and only for the projects that survived. Loading
+        // them alongside the projects read every hidden project's tasks and
+        // discarded them after - correct output, paid for at the size of the
+        // workspace rather than of what the reader can see.
+        //
+        // Loaded on the project instances rather than through the companies:
+        // a nested `load('projects.tasks')` re-runs the projects query and
+        // puts the filtered-out ones back.
+        (new EloquentCollection($companies->flatMap(
+            fn (ClientCompany $company): EloquentCollection => $company->projects,
+        )->all()))->load([
+            'tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
+        ]);
+
         $selectedCompany = $this->selectedCompany($request, $companies);
         $entries = $this->entries($visible, $user, $workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
@@ -128,9 +142,11 @@ class TimeSheetController extends Controller
         // computed from work they cannot see: those disclose the agreement
         // titles and the volume of the work behind them just as plainly as the
         // rows would.
-        $capacityByMonth = $selectedCompany !== null && ($whollyVisible[$selectedCompany->id] ?? false)
-            ? $this->capacityByMonth($ledgers, $selectedCompany, $workspace->timezone)
-            : [];
+        $capacityByMonth = $selectedCompany !== null
+            && ($whollyVisible[$selectedCompany->id] ?? false)
+            && $this->ledgerInputsAgree($workspace, $selectedCompany)
+                ? $this->capacityByMonth($ledgers, $selectedCompany, $workspace->timezone)
+                : [];
 
         return Inertia::render('time', [
             'workspace' => [
@@ -216,6 +232,34 @@ class TimeSheetController extends Controller
             ->orderByDesc('worked_on')
             ->orderByDesc('id')
             ->get();
+    }
+
+    /**
+     * Does every hour the ledger will count belong to a project of this
+     * company?
+     *
+     * The ledger gathers a company's work by `client_company_id` alone, and
+     * `client_project_id` is an independent key - so an entry naming this
+     * company while pointing at a project of another one, or of another
+     * workspace, contributes its hours to a total published here even though
+     * the row query excludes it. That is hidden volume disclosed as an
+     * aggregate.
+     *
+     * This fails closed rather than filtering: a total assembled from a set
+     * the ledger did not agree to is not the number the invoice will use, and
+     * a strip that quietly means something else is worse than no strip.
+     * Correcting the ledger's own predicate belongs with the billing slice
+     * and its tests, not here.
+     */
+    private function ledgerInputsAgree(Workspace $workspace, ClientCompany $company): bool
+    {
+        return ! ClientTimeEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->whereDoesntHave('project', fn (Builder $project): Builder => $project
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id))
+            ->exists();
     }
 
     /**
@@ -421,15 +465,12 @@ class TimeSheetController extends Controller
                 // outside the capacity figures beside them. Reporting them
                 // separately is what stops "0 of 10 used" reading as "10 left"
                 // when half of it is logged and waiting.
+                // Asked of the model rather than restated here: this figure
+                // claims the work will draw on the retainer when approved,
+                // which is the ledger's rule, and a copy of it drifts the
+                // moment the ledger gains an exclusion.
                 'pending_minutes' => (int) $monthEntries
-                    ->where('status', 'draft')
-                    ->where('is_billable', true)
-                    // Deferred work is excluded from the ledger until it is
-                    // allocated, so approving it draws nothing. Counting it
-                    // here as work poised to consume the retainer overstates
-                    // the claim on capacity, and goes on overstating it after
-                    // approval; it is already reported on its own line.
-                    ->where('is_deferred', false)
+                    ->filter(fn (ClientTimeEntry $entry): bool => $entry->willDrawOnRetainerWhenApproved())
                     ->sum('minutes'),
                 'capacity' => $capacityByMonth[$yearMonth] ?? [],
                 'entries' => $rows,

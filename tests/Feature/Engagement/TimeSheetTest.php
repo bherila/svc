@@ -1330,6 +1330,192 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * The ledger gathers a company's work by `client_company_id` alone, and
+     * `client_project_id` is an independent key - so an entry naming this
+     * company while pointing at another company's project is excluded from
+     * the rows and counted in the total above them.
+     */
+    public function test_capacity_is_withheld_when_an_entry_names_a_project_of_another_company(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Retainer With Muddled Inputs',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+        $url = "/workspaces/{$this->workspace->public_id}/time";
+
+        // Consistent to begin with: the strip is there.
+        $this->actingAs($this->manager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
+
+        // This entry is this company's as far as the ledger is concerned, and
+        // its hours are another company's work.
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $foreign['project']->id,
+            'user_id' => $this->manager->id,
+            'worked_on' => '2026-07-06',
+            'minutes' => 300,
+            'description' => 'Hours from somewhere else',
+            'status' => 'approved',
+        ]);
+
+        $this->actingAs($this->manager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
+    }
+
+    /**
+     * Deferred work joins the ledger once an invoice carries it, and the
+     * invoice has to be this workspace's. An unscoped check let another
+     * tenant's association decide whether this tenant's deferred hours count
+     * against its own retainer.
+     */
+    public function test_a_foreign_allocation_does_not_admit_deferred_time_to_the_ledger(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Deferred Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+
+        $foreignInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'FOREIGN-DEFER-1',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        $foreignLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_invoice_id' => $foreignInvoice->id,
+            'type' => 'time',
+            'description' => 'Foreign line',
+            'quantity' => '1',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'sort_order' => 1,
+        ]);
+
+        $deferred = $this->entry([
+            'worked_on' => '2026-07-04',
+            'minutes' => 180,
+            'status' => 'approved',
+            'is_deferred' => true,
+        ]);
+        $deferred->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.capacity', 1)
+                // Deferred and not allocated here, so it draws nothing.
+                ->where('months.0.capacity.0.worked_hours', 0));
+    }
+
+    /**
+     * Subcontractor time bills at its own cost and `scopeRetainerBillable()`
+     * excludes it, so approving it draws nothing. Reported as pending it
+     * overstated the claim on the retainer, and the total stayed wrong after
+     * approval removed it.
+     */
+    public function test_subcontractor_drafts_are_not_counted_as_pending_capacity(): void
+    {
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry([
+            'worked_on' => '2026-07-05',
+            'minutes' => 120,
+            'subcontractor_cost_amount' => 5000,
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.pending_minutes', 60)
+                ->where('months.0.total_minutes', 180));
+    }
+
+    /**
+     * Hidden work is not merely filtered out of the payload, it is not read.
+     * Loading tasks alongside the projects meant a member scoped to one
+     * project paid for every task in the workspace.
+     */
+    public function test_hidden_projects_tasks_are_never_loaded(): void
+    {
+        $member = $this->memberOfTheOneProject();
+        $hidden = $this->otherProject();
+
+        foreach (range(1, 3) as $index) {
+            ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $hidden->id,
+                'title' => "Hidden Task {$index}",
+                'status' => 'open',
+            ]);
+        }
+
+        $this->travelTo('2026-07-20');
+
+        /** @var list<string> $statements */
+        $statements = [];
+        DB::listen(function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk();
+
+        $taskReads = array_filter(
+            array_map(self::unquote(...), $statements),
+            fn (string $sql): bool => str_contains($sql, 'from client_tasks'),
+        );
+
+        $this->assertNotEmpty($taskReads, 'Tasks were never read, so this asserted nothing.');
+
+        foreach ($taskReads as $sql) {
+            // The eager load inlines the parent ids rather than binding them,
+            // so the set it read is right there in the statement.
+            $this->assertSame(
+                1,
+                preg_match('/client_project_id in \(([^)]*)\)/', $sql, $matches),
+                "Tasks were read without naming their projects: {$sql}",
+            );
+
+            $this->assertSame(
+                [(string) $this->project->id],
+                array_map(trim(...), explode(',', $matches[1])),
+                "Tasks were read for more projects than the reader can see: {$sql}",
+            );
+        }
+    }
+
+    /**
      * The class of bug, not one instance of it.
      *
      * Each finding so far has been one field escaping one filter, and the fix

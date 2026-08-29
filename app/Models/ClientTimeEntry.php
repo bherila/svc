@@ -137,6 +137,25 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Would approving this draft draw on a retainer?
+     *
+     * The same conditions {@see scopeRetainerBillable} and
+     * {@see scopeDeferredOnlyOnceAllocated} impose, asked of work that has
+     * not been approved yet - so a screen reporting what is poised to consume
+     * capacity reports the same set the ledger will count. Subcontractor time
+     * bills at its own cost and deferred time waits for an invoice; neither
+     * draws on the retainer, and counting them overstates the claim on it
+     * before approval and leaves the total wrong after.
+     */
+    public function willDrawOnRetainerWhenApproved(): bool
+    {
+        return $this->status === 'draft'
+            && $this->is_billable
+            && ! $this->is_deferred
+            && $this->subcontractor_cost_amount === null;
+    }
+
+    /**
      * Narrow to the work a given agreement is entitled to draw on.
      *
      * An agreement scoped to one project has its own retainer, and the
@@ -178,7 +197,17 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         return $query->where(
             fn (Builder $entry): Builder => $entry
                 ->where('is_deferred', false)
-                ->orWhereHas('invoiceLines'),
+                // The allocation has to be this entry's own tenant's. Line,
+                // pivot and invoice each carry a `workspace_id` and the schema
+                // does not require them to agree, so an unscoped check lets
+                // another workspace's row decide whether this one's deferred
+                // time counts - and the totals it feeds are read as this
+                // workspace's own.
+                ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => $lines
+                    ->whereColumn('client_invoice_lines.workspace_id', 'client_time_entries.workspace_id')
+                    ->whereColumn('client_invoice_line_time_entries.workspace_id', 'client_time_entries.workspace_id')
+                    ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                        ->whereColumn('client_invoices.workspace_id', 'client_time_entries.workspace_id'))),
         );
     }
 
