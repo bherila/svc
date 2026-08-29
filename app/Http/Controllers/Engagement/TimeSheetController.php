@@ -18,9 +18,11 @@ use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -302,7 +304,7 @@ class TimeSheetController extends Controller
      * the row can still be edited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<int, array{id: string, number: string|null, status: string}>
+     * @return array<int, array{id: string, number: string|null, status: string, regenerable: bool}>
      */
     private function invoicesByEntry(Workspace $workspace, EloquentCollection $entries): array
     {
@@ -313,6 +315,11 @@ class TimeSheetController extends Controller
         $links = ClientInvoiceLine::query()
             ->join('client_invoice_line_time_entries as pivot', 'pivot.client_invoice_line_id', '=', 'client_invoice_lines.id')
             ->join('client_invoices', 'client_invoices.id', '=', 'client_invoice_lines.client_invoice_id')
+            ->leftJoin('client_agreements', function (JoinClause $join) use ($workspace): void {
+                $join->on('client_agreements.id', '=', 'client_invoices.client_agreement_id')
+                    ->on('client_agreements.client_company_id', '=', 'client_invoices.client_company_id')
+                    ->where('client_agreements.workspace_id', '=', $workspace->id);
+            })
             // Every tenant-owned table in the join, not just the one the
             // query starts from: the schema's foreign keys are independent, so
             // a line owned here can name an invoice owned elsewhere, and the
@@ -326,18 +333,49 @@ class TimeSheetController extends Controller
                 'client_invoices.public_id as invoice_id',
                 'client_invoices.invoice_number as invoice_number',
                 'client_invoices.status as invoice_status',
+                'client_invoices.invoice_kind as invoice_kind',
+                'client_invoices.client_agreement_id as agreement_id',
+                'client_agreements.id as resolved_agreement_id',
+                'client_agreements.bill_overage_interim as agreement_bill_overage_interim',
+                'client_invoices.service_period_start as service_period_start',
+                'client_invoices.service_period_end as service_period_end',
+                'client_invoices.cycle_start as cycle_start',
+                'client_invoices.cycle_end as cycle_end',
             ])
             ->get();
 
         $byEntry = [];
 
         foreach ($links as $link) {
+            $rawKind = $link->getAttribute('invoice_kind');
+            $kind = $rawKind === null
+                ? InvoiceKind::CadencePeriod
+                : InvoiceKind::tryFrom((string) $rawKind);
+            $hasAgreement = $link->getAttribute('agreement_id') !== null
+                && $link->getAttribute('resolved_agreement_id') !== null;
+            $hasServicePeriod = $link->getAttribute('service_period_start') !== null
+                && $link->getAttribute('service_period_end') !== null;
+            $hasCycle = $link->getAttribute('cycle_start') !== null
+                && $link->getAttribute('cycle_end') !== null;
+            $isNonClosingInterim = $hasServicePeriod
+                && $hasCycle
+                && (string) $link->getAttribute('service_period_end') < (string) $link->getAttribute('cycle_end');
+            $regenerable = match ($kind) {
+                InvoiceKind::AdHoc => true,
+                InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
+                InvoiceKind::InterimOverage => $hasAgreement
+                    && $isNonClosingInterim
+                    && (bool) $link->getAttribute('agreement_bill_overage_interim'),
+                InvoiceKind::Terminal => false,
+                null => false,
+            };
             $byEntry[(int) $link->getAttribute('entry_id')] = [
                 'id' => (string) $link->getAttribute('invoice_id'),
                 'number' => $link->getAttribute('invoice_number') === null
                     ? null
                     : (string) $link->getAttribute('invoice_number'),
                 'status' => (string) $link->getAttribute('invoice_status'),
+                'regenerable' => $regenerable,
             ];
         }
 
@@ -541,7 +579,7 @@ class TimeSheetController extends Controller
 
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
      * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
@@ -594,7 +632,7 @@ class TimeSheetController extends Controller
     }
 
     /**
-     * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return array<string, mixed>
      */
@@ -616,13 +654,19 @@ class TimeSheetController extends Controller
             ? $task
             : null;
 
-        // Any invoice line freezes the entry, and the screen says the same
-        // thing the mutation service does. The predecessor unlinked an entry
-        // from a draft invoice and regenerated it; reproducing that needs the
-        // generator, so until it exists this refuses rather than letting an
-        // edit leave a draft charging the old quantity.
-        $editable = $entry->status === 'draft'
-            && $invoice === null
+        // Approved time is normally immutable, but a draft invoice has not
+        // charged anyone yet. Its mutation path now regenerates the invoice in
+        // the same transaction, so both a legacy draft-status allocation and
+        // the approved time produced by the real generator remain editable.
+        // Anything that has left draft still freezes the entry.
+        $isDraftInvoice = $invoice !== null
+            && $invoice['status'] === 'draft'
+            && $invoice['regenerable'];
+        $editableStatus = $entry->status === 'draft'
+            || ($entry->status === 'approved' && $isDraftInvoice);
+        $editableInvoice = $invoice === null || $isDraftInvoice;
+        $editable = $editableStatus
+            && $editableInvoice
             && ($entry->user_id === $userId || $isManager)
             && ($permissions[$entry->client_project_id]['log'] ?? false);
 
@@ -646,7 +690,11 @@ class TimeSheetController extends Controller
                 'title' => $task->title,
             ],
             'worker' => $entry->user?->name,
-            'invoice' => $invoice,
+            'invoice' => $invoice === null ? null : [
+                'id' => $invoice['id'],
+                'number' => $invoice['number'],
+                'status' => $invoice['status'],
+            ],
             'can_edit' => $editable,
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null

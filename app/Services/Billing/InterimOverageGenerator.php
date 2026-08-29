@@ -54,6 +54,7 @@ final class InterimOverageGenerator
         private readonly InvoiceNumberAllocator $invoiceNumberAllocator = new InvoiceNumberAllocator,
         private readonly AllocationService $allocationService = new AllocationService,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+        private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
     ) {}
 
     /**
@@ -70,6 +71,7 @@ final class InterimOverageGenerator
         Carbon $monthStart,
         ?ClientAgreement $agreement = null,
         ?array $immediateLedger = null,
+        ?ClientInvoice $refreshInvoice = null,
     ): ?ClientInvoice {
         $periodStart = $monthStart->copy()->startOfMonth()->startOfDay();
         $agreement ??= $this->agreementSelector->agreementCoveringDate($company, $periodStart->toImmutable());
@@ -93,6 +95,10 @@ final class InterimOverageGenerator
         }
 
         if (! (bool) $agreement->bill_overage_interim) {
+            if ($refreshInvoice instanceof ClientInvoice) {
+                throw new RuntimeException('Interim overage billing is disabled for this agreement.');
+            }
+
             return null;
         }
 
@@ -121,10 +127,14 @@ final class InterimOverageGenerator
 
         // The closing month of a cycle belongs to the cadence invoice.
         if ($periodEnd->gte($cycle->end)) {
+            if ($refreshInvoice instanceof ClientInvoice) {
+                throw new RuntimeException('An interim draft cannot cover the closing month of its cadence cycle.');
+            }
+
             return null;
         }
 
-        return DB::transaction(function () use ($company, $agreement, $cycle, $periodStart, $periodEnd, $immediateLedger): ?ClientInvoice {
+        return DB::transaction(function () use ($company, $agreement, $cycle, $periodStart, $periodEnd, $immediateLedger, $refreshInvoice): ?ClientInvoice {
             // Serialize generation for this agreement; the invoice rows this
             // guards against may not exist yet, so the agreement is the lock.
             ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
@@ -147,8 +157,16 @@ final class InterimOverageGenerator
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
                 ->where('status', '!=', 'void')
+                ->when(
+                    $refreshInvoice instanceof ClientInvoice,
+                    fn (Builder $query): Builder => $query->whereKey($refreshInvoice->id),
+                )
                 ->lockForUpdate()
                 ->first();
+
+            if ($refreshInvoice instanceof ClientInvoice && ! $existingInvoice instanceof ClientInvoice) {
+                throw new RuntimeException('The interim draft no longer matches the agreement period and cycle it would regenerate.');
+            }
 
             if ($existingInvoice instanceof ClientInvoice && $existingInvoice->isImmutable()) {
                 throw new RuntimeException("An issued interim invoice (#{$existingInvoice->invoice_number}) already exists for this period and cannot be modified.");
@@ -179,6 +197,8 @@ final class InterimOverageGenerator
 
             $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
             if ($targetOverageHours <= 0.0) {
+                $this->finishEmptiedDraft($existingInvoice);
+
                 return null;
             }
 
@@ -202,6 +222,8 @@ final class InterimOverageGenerator
             $entryHours = round(((int) $entries->sum('minutes')) / 60, 4);
             $overageHours = round(min($targetOverageHours, $entryHours), 4);
             if ($overageHours <= 0.0) {
+                $this->finishEmptiedDraft($existingInvoice);
+
                 return null;
             }
 
@@ -286,11 +308,30 @@ final class InterimOverageGenerator
                 'hours_billed_at_rate' => $overageHours,
             ]);
 
-            (new OverpaymentCreditService)->applyCreditsToDraftInvoice($invoice);
+            $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
             $invoice->recalculateTotals();
 
             return $invoice->fresh(['lines']);
         });
+    }
+
+    /**
+     * Finish a refresh that removed the last generated overage line.
+     *
+     * `resetSystemGeneratedLines()` releases the pivots and deletes the line,
+     * but the invoice's cached money and overage-hour columns otherwise keep
+     * describing the charge that just disappeared. Issuance trusts those
+     * columns, so every early return after the reset must close the row too.
+     * Manual adjustment lines, if any, remain and are included in the total.
+     */
+    private function finishEmptiedDraft(?ClientInvoice $invoice): void
+    {
+        if (! $invoice instanceof ClientInvoice) {
+            return;
+        }
+
+        $invoice->update(['hours_billed_at_rate' => 0]);
+        $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice->refresh());
     }
 
     /**

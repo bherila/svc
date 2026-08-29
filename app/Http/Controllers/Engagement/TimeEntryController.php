@@ -64,7 +64,7 @@ class TimeEntryController extends EngagementController
     }
 
     /**
-     * Change a draft entry.
+     * Change a draft entry, or approved time on a regenerable draft invoice.
      *
      * The rules that decide whether an entry may change at all - draft only,
      * the actor's own row or a manager's, a client-visible entry needing a

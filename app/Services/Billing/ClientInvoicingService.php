@@ -245,10 +245,174 @@ final class ClientInvoicingService
         Carbon $monthStart,
         ?ClientAgreement $agreement = null,
         ?array $immediateLedger = null,
+        ?ClientInvoice $refreshInvoice = null,
     ): ?ClientInvoice {
         $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
-        return $this->interimOverageGenerator->generateInterimOverageInvoice($company, $monthStart, $agreement, $immediateLedger);
+        return $this->interimOverageGenerator->generateInterimOverageInvoice(
+            $company,
+            $monthStart,
+            $agreement,
+            $immediateLedger,
+            $refreshInvoice,
+        );
+    }
+
+    /**
+     * Rebuild one existing generated draft in place.
+     *
+     * A time-entry mutation already knows the invoice that owned the entry.
+     * Sending that mutation through `generateAllInvoices()` would create every
+     * missing historical cycle as a side effect; routing from the draft's own
+     * kind and cycle keeps the write to the invoice the operator actually
+     * changed. The normal generators still do the rebuilding, so retainer,
+     * rollover, interim-overage, milestone, recurring-item, credit and manual
+     * adjustment behavior cannot drift into a second implementation here.
+     */
+    public function regenerateDraftInvoice(ClientInvoice $invoice): ?ClientInvoice
+    {
+        if ($invoice->status !== InvoiceStatus::Draft->value) {
+            throw new RuntimeException('Only a draft invoice can be regenerated.');
+        }
+
+        $company = ClientCompany::query()
+            ->whereKey($invoice->client_company_id)
+            ->where('workspace_id', $invoice->workspace_id)
+            ->first();
+        if (! $company instanceof ClientCompany) {
+            throw new RuntimeException('The draft invoice does not belong to an available client company.');
+        }
+
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
+        $agreement = ClientAgreement::query()
+            ->whereKey($invoice->client_agreement_id)
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->first();
+        if (! $agreement instanceof ClientAgreement) {
+            throw new RuntimeException('The generated draft invoice does not belong to an available agreement.');
+        }
+
+        $kind = InvoiceKind::tryFrom((string) $invoice->invoice_kind) ?? InvoiceKind::CadencePeriod;
+
+        if ($kind === InvoiceKind::InterimOverage) {
+            if ($invoice->service_period_start === null || $invoice->service_period_end === null
+                || $invoice->cycle_start === null || $invoice->cycle_end === null) {
+                throw new RuntimeException('The interim draft invoice has no complete service period and cycle to regenerate.');
+            }
+            if (! (bool) $agreement->bill_overage_interim) {
+                throw new RuntimeException('Interim overage billing is disabled for this agreement.');
+            }
+            if ($invoice->service_period_end->gte($invoice->cycle_end)) {
+                throw new RuntimeException('An interim draft cannot cover the closing month of its cadence cycle.');
+            }
+            $this->assertUniqueRegenerationTarget($company, $agreement, $invoice, $kind);
+
+            return $this->generateInterimOverageInvoice(
+                $company,
+                Carbon::instance($invoice->service_period_start),
+                $agreement,
+                null,
+                $invoice,
+            );
+        }
+
+        if ($kind !== InvoiceKind::CadencePeriod) {
+            throw new RuntimeException('This draft invoice kind has no generated-invoice regeneration path.');
+        }
+
+        if ($invoice->cycle_start !== null && $invoice->cycle_end !== null) {
+            $retainerPeriod = $this->makeBillingCycle(
+                Carbon::instance($invoice->cycle_start),
+                Carbon::instance($invoice->cycle_end),
+                false,
+            );
+            $this->assertUniqueRegenerationTarget($company, $agreement, $invoice, $kind, $retainerPeriod);
+
+            return $this->generateInvoiceForPeriod($company, $agreement, $retainerPeriod);
+        }
+
+        // Migrated cadence drafts can predate the restored cycle columns. The
+        // explicit-period entrypoint is the compatibility path already used by
+        // replay and applies the same immutable/overlap guards.
+        if ($invoice->service_period_start === null || $invoice->service_period_end === null) {
+            throw new RuntimeException('The cadence draft invoice has no billing period to regenerate.');
+        }
+        $this->assertUniqueRegenerationTarget($company, $agreement, $invoice, $kind);
+
+        return $this->generateInvoice(
+            $company,
+            Carbon::instance($invoice->service_period_start),
+            Carbon::instance($invoice->service_period_end),
+            $agreement,
+        );
+    }
+
+    /**
+     * Prove that the ordinary generator lookup resolves to the supplied draft.
+     *
+     * The schema intentionally has no unique agreement/kind/cycle key. A
+     * historical duplicate therefore makes `first()` choose whichever row the
+     * database happens to return, which can rebuild a sibling while the draft
+     * that actually owns the edited entry keeps its stale charge. Refusing an
+     * ambiguous set is safer than guessing which invoice the operator meant.
+     */
+    private function assertUniqueRegenerationTarget(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        ClientInvoice $source,
+        InvoiceKind $kind,
+        ?BillingCycle $retainerPeriod = null,
+    ): void {
+        $candidates = $this->scopedInvoices($company)
+            ->where('client_agreement_id', $agreement->id)
+            ->where('status', '!=', InvoiceStatus::Void->value);
+
+        if ($kind === InvoiceKind::InterimOverage) {
+            $candidates->where('invoice_kind', InvoiceKind::InterimOverage->value)
+                ->whereDate('service_period_start', $source->service_period_start?->toDateString())
+                ->whereDate('service_period_end', $source->service_period_end?->toDateString())
+                ->when($source->cycle_start !== null, fn (Builder $query): Builder => $query
+                    ->whereDate('cycle_start', $source->cycle_start?->toDateString()))
+                ->when($source->cycle_end !== null, fn (Builder $query): Builder => $query
+                    ->whereDate('cycle_end', $source->cycle_end?->toDateString()));
+        } elseif ($retainerPeriod instanceof BillingCycle
+            && $agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
+            $workCycle = $this->previousBillingCycle($agreement, $retainerPeriod);
+            $candidates
+                ->where(fn (Builder $kindQuery): Builder => $kindQuery
+                    ->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+                ->where(function (Builder $query) use ($workCycle, $retainerPeriod): void {
+                    $query->where(function (Builder $period) use ($workCycle): void {
+                        $period->whereDate('service_period_start', $workCycle->start->toDateString())
+                            ->whereDate('service_period_end', $workCycle->end->toDateString());
+                    })->orWhere(function (Builder $contained) use ($workCycle, $retainerPeriod): void {
+                        $contained->whereDate('cycle_start', $retainerPeriod->start->toDateString())
+                            ->whereDate('service_period_start', '<=', $workCycle->start->toDateString())
+                            ->whereDate('service_period_end', '>=', $workCycle->end->toDateString());
+                    });
+                });
+        } else {
+            $periodStart = $retainerPeriod instanceof BillingCycle
+                ? $this->previousBillingCycle($agreement, $retainerPeriod)->start
+                : $source->service_period_start;
+            $periodEnd = $retainerPeriod instanceof BillingCycle
+                ? $this->previousBillingCycle($agreement, $retainerPeriod)->end
+                : $source->service_period_end;
+            $candidates
+                ->where(fn (Builder $kindQuery): Builder => $kindQuery
+                    ->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+                ->whereDate('service_period_start', $periodStart?->toDateString())
+                ->whereDate('service_period_end', $periodEnd?->toDateString());
+        }
+
+        $ids = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        if ($ids !== [$source->id]) {
+            throw new RuntimeException('More than one invoice can satisfy this draft regeneration target; resolve the duplicate invoices first.');
+        }
     }
 
     /**
@@ -851,7 +1015,9 @@ final class ClientInvoicingService
 
             $invoice = $this->scopedInvoices($company)
                 ->where('client_agreement_id', $agreement->id)
-                ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+                ->where(fn (Builder $kind): Builder => $kind
+                    ->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
                 ->where('status', '!=', 'void')

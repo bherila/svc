@@ -2,6 +2,8 @@
 
 namespace App\Services\AgentApi;
 
+use App\Models\ClientAgreement;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
@@ -9,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementBillingRateResolver;
+use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
 use DomainException;
@@ -21,6 +24,7 @@ final class TimeEntryMutationService
     public function __construct(
         private readonly ProjectAccess $access,
         private readonly AgreementBillingRateResolver $rates,
+        private readonly DraftInvoiceTimeRegenerator $draftInvoices,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -50,8 +54,9 @@ final class TimeEntryMutationService
     /** @param array<string, mixed> $data */
     public function update(Workspace $workspace, ClientTimeEntry $entry, User $actor, array $data): ClientTimeEntry
     {
-        return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $data): ClientTimeEntry {
-            $this->assertDraftEditable($workspace, $entry, $actor);
+        return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $data): ClientTimeEntry {
+            $this->assertDraftEditable($workspace, $entry, $actor, $invoice);
+            $lineageRootId = $entry->split_from_time_entry_id ?? $entry->id;
             $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
             $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;
             $this->assertClientDescription($visible, $clientDescription);
@@ -71,17 +76,43 @@ final class TimeEntryMutationService
             $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
-            return $entry->fresh() ?? throw new \RuntimeException('The time entry no longer exists.');
+            if ($invoice instanceof ClientInvoice) {
+                $this->assertNoForeignAllocations($workspace, $entry);
+                $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
+            }
+
+            // Draft regeneration can put an unchanged split group back
+            // together. If the edited row was the overflow fragment, its
+            // minutes now live on the lineage root and that is the record the
+            // next sheet read will expose.
+            $survivor = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $entry->client_company_id)
+                ->first()
+                ?? ClientTimeEntry::query()
+                    ->whereKey($lineageRootId)
+                    ->where('workspace_id', $workspace->id)
+                    ->where('client_company_id', $entry->client_company_id)
+                    ->first();
+            abort_unless($survivor instanceof ClientTimeEntry, 409, 'The regenerated time entry has an inconsistent split lineage.');
+
+            return $survivor;
         });
     }
 
     public function delete(Workspace $workspace, ClientTimeEntry $entry, User $actor, string $expectedVersion): void
     {
-        $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $expectedVersion): null {
-            $this->assertDraftEditable($workspace, $entry, $actor);
+        $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $expectedVersion): null {
+            $this->assertDraftEditable($workspace, $entry, $actor, $invoice);
             abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => now()]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
+
+            if ($invoice instanceof ClientInvoice) {
+                $this->assertNoForeignAllocations($workspace, $entry);
+                $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
+            }
 
             return null;
         });
@@ -104,12 +135,46 @@ final class TimeEntryMutationService
      *
      * @template TReturn
      *
-     * @param  callable(ClientTimeEntry): TReturn  $write
+     * @param  callable(ClientTimeEntry, ?ClientInvoice): TReturn  $write
      * @return TReturn
      */
     private function serialized(Workspace $workspace, ClientTimeEntry $entry, callable $write): mixed
     {
         return DB::transaction(function () use ($workspace, $entry, $write) {
+            $probe = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->first();
+            abort_unless($probe instanceof ClientTimeEntry, 404);
+
+            // Generated invoices lock their agreement before the invoice and
+            // selected-time invoices lock the invoice before their entries.
+            // Take both families in that order so an edit cannot deadlock a
+            // concurrent refresh. Locking all agreements for this company also
+            // prevents a new cadence draft from selecting the entry between
+            // the allocation read and the entry write.
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $probe->client_company_id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get(['id']);
+
+            $prelinkedInvoiceIds = $this->allocatedInvoiceIds($probe);
+            $lockedInvoiceIds = ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where(function (Builder $query) use ($probe, $prelinkedInvoiceIds): void {
+                    $query->where('client_company_id', $probe->client_company_id);
+                    if ($prelinkedInvoiceIds !== []) {
+                        $query->orWhereIn('id', $prelinkedInvoiceIds);
+                    }
+                })
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+
             // Named here and not only in `assertDraftEditable()`: the route
             // binding does not scope the entry, so without this the lock is
             // taken on another tenant's row and released by the refusal a
@@ -122,7 +187,14 @@ final class TimeEntryMutationService
                 ->first();
             abort_unless($locked instanceof ClientTimeEntry, 404);
 
-            return $write($locked);
+            $invoice = $this->allocatedInvoice($locked);
+            abort_unless(
+                ! $invoice instanceof ClientInvoice || in_array($invoice->id, $lockedInvoiceIds, true),
+                409,
+                'The time entry invoice allocation changed; read it and retry.',
+            );
+
+            return $write($locked, $invoice);
         });
     }
 
@@ -202,22 +274,24 @@ final class TimeEntryMutationService
         return $this->rates->resolve($entry) + ['source' => 'agreement'];
     }
 
-    private function assertDraftEditable(Workspace $workspace, ClientTimeEntry $entry, User $actor): void
-    {
+    private function assertDraftEditable(
+        Workspace $workspace,
+        ClientTimeEntry $entry,
+        User $actor,
+        ?ClientInvoice $invoice,
+    ): void {
         abort_unless($entry->workspace_id === $workspace->id, 404);
-        abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be changed.');
-        // Status alone is not enough. An entry can still read `draft` while a
-        // line already bills it - issuing rewrites attached time, but nothing
-        // guarantees the two are in step, and the gap is exactly where an edit
-        // would change what a sent invoice charged. Nor is it enough to check
-        // the invoice is a draft: a draft is regenerated from its entries, but
-        // this path changes only the entry, so the line would keep billing the
-        // old quantity until something else recomposed it.
-        abort_if(
-            $this->isAllocated($entry),
-            409,
-            'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
-        );
+        if ($invoice instanceof ClientInvoice) {
+            abort_unless(
+                $invoice->client_company_id === $entry->client_company_id,
+                409,
+                'The time entry invoice allocation has an inconsistent client company.',
+            );
+            abort_unless($invoice->status === 'draft', 409, 'Time on an issued, paid, void, or unknown invoice cannot be changed.');
+            abort_unless(in_array($entry->status, ['draft', 'approved'], true), 409, 'Only unissued time entries can be changed.');
+        } else {
+            abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be changed.');
+        }
         $project = $this->projectOf($workspace, $entry);
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
         abort_unless($this->access->canView($actor, $project), 404);
@@ -292,6 +366,62 @@ final class TimeEntryMutationService
             ->wherePivot('workspace_id', $entry->workspace_id)
             ->whereHas('invoice', fn ($invoice) => $invoice->where('workspace_id', $entry->workspace_id))
             ->exists();
+    }
+
+    /** A hidden foreign pivot must never change local invoice selection. */
+    private function assertNoForeignAllocations(Workspace $workspace, ClientTimeEntry $entry): void
+    {
+        $hasForeignAllocation = DB::table('client_invoice_line_time_entries as pivot')
+            ->join('client_invoice_lines as lines', 'lines.id', '=', 'pivot.client_invoice_line_id')
+            ->join('client_invoices as invoices', 'invoices.id', '=', 'lines.client_invoice_id')
+            ->where('pivot.client_time_entry_id', $entry->id)
+            ->where(function ($query) use ($workspace, $entry): void {
+                $query->whereNull('pivot.workspace_id')
+                    ->orWhere('pivot.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('lines.workspace_id')
+                    ->orWhere('lines.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('invoices.workspace_id')
+                    ->orWhere('invoices.workspace_id', '!=', $workspace->id)
+                    ->orWhereNull('invoices.client_company_id')
+                    ->orWhere('invoices.client_company_id', '!=', $entry->client_company_id);
+            })
+            ->exists();
+
+        abort_if(
+            $hasForeignAllocation,
+            409,
+            'The time entry has an invoice allocation owned by another workspace or client company.',
+        );
+    }
+
+    /** @return list<int> */
+    private function allocatedInvoiceIds(ClientTimeEntry $entry): array
+    {
+        return array_values($entry->invoiceLines()
+            ->where('client_invoice_lines.workspace_id', $entry->workspace_id)
+            ->wherePivot('workspace_id', $entry->workspace_id)
+            ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                ->where('workspace_id', $entry->workspace_id))
+            ->pluck('client_invoice_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all());
+    }
+
+    private function allocatedInvoice(ClientTimeEntry $entry): ?ClientInvoice
+    {
+        $invoiceIds = $this->allocatedInvoiceIds($entry);
+        abort_unless(count($invoiceIds) <= 1, 409, 'The time entry is allocated to more than one invoice.');
+
+        if ($invoiceIds === []) {
+            return null;
+        }
+
+        return ClientInvoice::query()
+            ->whereKey($invoiceIds[0])
+            ->where('workspace_id', $entry->workspace_id)
+            ->first();
     }
 
     private function assertClientDescription(bool $visible, mixed $description): void

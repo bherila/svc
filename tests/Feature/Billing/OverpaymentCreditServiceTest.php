@@ -146,6 +146,70 @@ final class OverpaymentCreditServiceTest extends TestCase
         $this->assertSame(0.0, $this->service()->availableCreditForCompany($this->company, 'EUR'));
     }
 
+    public function test_a_foreign_payment_cannot_fund_this_workspaces_credit_pool(): void
+    {
+        $invoice = $this->invoice('SVC-FOREIGN-PAYMENT', 'paid', 10000);
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other credits', 'slug' => 'other-credits']);
+        $invoice->payments()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'status' => 'succeeded',
+            'amount' => 15000,
+            'currency' => 'USD',
+            'method' => 'ach',
+            'received_on' => '2026-03-01',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('payment owned by another workspace');
+
+        $this->service()->availableCreditForCompany($this->company, 'USD');
+    }
+
+    public function test_credit_application_refuses_a_foreign_invoice_line(): void
+    {
+        $draft = $this->invoice('SVC-FOREIGN-LINE', 'draft', 8000);
+        $this->line($draft, 'service', 8000);
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other credit line', 'slug' => 'other-credit-line']);
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_id' => $draft->id,
+            'type' => InvoiceLineType::Adjustment->value,
+            'description' => 'Foreign adjustment',
+            'quantity' => '1.0000',
+            'unit_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'sort_order' => 1,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('line owned by another workspace');
+
+        $this->service()->applyCreditsToDraftInvoice($draft);
+    }
+
+    public function test_credit_application_refuses_a_client_company_from_another_workspace(): void
+    {
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other credit company', 'slug' => 'other-credit-company']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Other Credit Client',
+            'slug' => 'other-credit-client',
+        ]);
+        $draft = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'SVC-FOREIGN-COMPANY',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('available client company in its workspace');
+
+        $this->service()->applyCreditsToDraftInvoice($draft);
+    }
+
     private function service(): OverpaymentCreditService
     {
         return app(OverpaymentCreditService::class);

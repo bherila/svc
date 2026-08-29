@@ -14,6 +14,7 @@ use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class InvoiceLineComposer
@@ -25,20 +26,50 @@ class InvoiceLineComposer
      */
     public function resetSystemGeneratedLines(ClientInvoice $invoice): void
     {
-        $systemLines = $invoice->lines()
+        $invoice->assertLineOwnership();
+        $systemLines = ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
             ->whereIn('type', InvoiceLineType::systemGeneratedValues())
             ->get();
+
+        $lineIds = $systemLines->modelKeys();
+        $hasForeignPivots = DB::table('client_invoice_line_time_entries')
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->where(fn ($query) => $query
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $invoice->workspace_id))
+            ->exists();
+        if ($hasForeignPivots) {
+            throw new RuntimeException('The draft contains a time allocation owned by another workspace.');
+        }
+
+        $hasForeignTasks = ClientTask::query()
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->where(fn ($query) => $query
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $invoice->workspace_id))
+            ->exists();
+        if ($hasForeignTasks) {
+            throw new RuntimeException('The draft contains a milestone allocation owned by another workspace.');
+        }
 
         foreach ($systemLines as $line) {
             // Time is linked through a pivot here, so releasing it is a detach
             // rather than nulling a column. Milestones keep a column, because a
             // deliverable is never split across lines.
             $line->timeEntries()->detach();
-            ClientTask::query()->where('client_invoice_line_id', $line->id)
+            ClientTask::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_line_id', $line->id)
                 ->update(['client_invoice_line_id' => null]);
         }
 
-        $invoice->lines()->whereIn('type', InvoiceLineType::systemGeneratedValues())->delete();
+        ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->whereIn('type', InvoiceLineType::systemGeneratedValues())
+            ->delete();
 
     }
 

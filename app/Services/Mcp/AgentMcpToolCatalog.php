@@ -24,8 +24,8 @@ final class AgentMcpToolCatalog
         if ($this->timeEntryWritesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('time_entries.log', 'Log time', 'Idempotently log up to 20 completed time entries.', [$writes, 'timeEntriesLog'], 'time_entries.log', false, false, true),
-                new ToolDefinition('time_entries.update', 'Update draft time', 'Update an authorized unapproved, uninvoiced draft time entry using its current version.', [$writes, 'timeEntriesUpdate'], 'time_entries.update', false, false, true),
-                new ToolDefinition('time_entries.delete', 'Delete draft time', 'Soft-delete an authorized unapproved, uninvoiced draft time entry using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
+                new ToolDefinition('time_entries.update', 'Update editable time', 'Update authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesUpdate'], 'time_entries.update', false, false, true),
+                new ToolDefinition('time_entries.delete', 'Delete editable time', 'Soft-delete authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
             ];
         }
         if ((bool) config('agent_api.writes_enabled')) {

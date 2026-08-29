@@ -109,6 +109,94 @@ final class InvoiceLineComposerTest extends TestCase
         $this->assertSame(0, $invoice->lines()->count());
     }
 
+    public function test_regeneration_refuses_a_generated_line_owned_by_another_workspace(): void
+    {
+        $invoice = $this->invoice();
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other composer', 'slug' => 'other-composer']);
+        $foreignLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => InvoiceLineType::AdditionalHours->value,
+            'description' => 'Foreign generated line',
+            'quantity' => '1',
+            'unit_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'sort_order' => 1,
+        ]);
+
+        try {
+            app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
+            $this->fail('A generated line from another workspace must stop the reset.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertNotNull($foreignLine->fresh());
+    }
+
+    public function test_invoice_totals_refuse_a_line_owned_by_another_workspace(): void
+    {
+        $invoice = $this->invoice();
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other totals', 'slug' => 'other-totals']);
+        $foreignLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => InvoiceLineType::Adjustment->value,
+            'description' => 'Foreign total',
+            'quantity' => '1',
+            'unit_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'sort_order' => 1,
+        ]);
+
+        try {
+            $invoice->recalculateTotals();
+            $this->fail('A foreign line must not contribute to local invoice totals.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertNotNull($foreignLine->fresh());
+    }
+
+    public function test_regeneration_refuses_a_milestone_claim_owned_by_another_workspace(): void
+    {
+        $invoice = $this->invoice();
+        $line = $this->line($invoice, InvoiceLineType::Milestone->value, 100, 100);
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other milestone', 'slug' => 'other-milestone']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Other Milestone Client',
+            'slug' => 'other-milestone-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Other Milestone Project',
+        ]);
+        $foreignTask = ClientTask::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_project_id' => $otherProject->id,
+            'client_invoice_line_id' => $line->id,
+            'title' => 'Foreign claimed milestone',
+            'status' => 'completed',
+            'completed_at' => '2026-03-20',
+            'milestone_price_amount' => 100,
+        ]);
+
+        try {
+            app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
+            $this->fail('A milestone claim from another workspace must stop the reset.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('milestone allocation owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertSame($line->id, $foreignTask->fresh()?->client_invoice_line_id);
+        $this->assertNotNull($line->fresh());
+    }
+
     public function test_a_manual_adjustment_survives_regeneration(): void
     {
         $invoice = $this->invoice();
