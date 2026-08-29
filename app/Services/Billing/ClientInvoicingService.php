@@ -112,6 +112,7 @@ final class ClientInvoicingService
         private readonly DeferredBillingAllocator $deferredBillingAllocator = new DeferredBillingAllocator,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         private readonly TimeEntrySplitter $timeEntrySplitter = new TimeEntrySplitter,
+        private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
         ?RetainerCalculator $retainerCalculator = null,
         ?InvoiceLedgerBuilder $invoiceLedgerBuilder = null,
         ?InterimOverageGenerator $interimOverageGenerator = null,
@@ -153,6 +154,8 @@ final class ClientInvoicingService
      */
     public function generateAllInvoices(ClientCompany $company): array
     {
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
         $results = $this->emptyGenerationResults();
         $agreements = $this->agreementSelector->agreementsForInvoiceGeneration($company);
 
@@ -174,6 +177,8 @@ final class ClientInvoicingService
      */
     public function generateAllMonthlyInvoices(ClientCompany $company): array
     {
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
         $agreement = $this->agreementSelector->agreementForInvoiceGeneration($company);
 
         if ($agreement->effectiveBillingCadence() !== BillingCadence::Monthly) {
@@ -199,6 +204,8 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         ?ClientAgreement $agreement = null,
     ): ClientInvoice {
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
         $agreement ??= $company->activeAgreement();
         if (! $agreement instanceof ClientAgreement) {
             throw new RuntimeException('No active agreement found for this client company.');
@@ -239,6 +246,8 @@ final class ClientInvoicingService
         ?ClientAgreement $agreement = null,
         ?array $immediateLedger = null,
     ): ?ClientInvoice {
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
         return $this->interimOverageGenerator->generateInterimOverageInvoice($company, $monthStart, $agreement, $immediateLedger);
     }
 

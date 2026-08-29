@@ -20,6 +20,16 @@ final class TimeEntryProjectChainGuard
 {
     public const FAILURE_MESSAGE = 'Billing stopped because a time entry points to a project outside this client company. Correct the entry before retrying.';
 
+    public function assertCompanyProjectChainsAgree(ClientCompany $company): void
+    {
+        $this->assertProjectChainsAgree(
+            $company,
+            ClientTimeEntry::query()
+                ->where('workspace_id', $company->workspace_id)
+                ->where('client_company_id', $company->id),
+        );
+    }
+
     /**
      * @param  Builder<ClientTimeEntry>  $entries
      */
