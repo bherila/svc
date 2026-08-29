@@ -391,7 +391,13 @@ class TimeSheetTest extends TestCase
             'role' => ProjectRole::Contributor->value,
         ]);
 
-        $mine = $this->entry(['worked_on' => '2026-07-04', 'description' => 'Theirs to see']);
+        // Theirs in both senses: on their project, and logged by them. A
+        // contributor reads their own time, not the whole project's.
+        $mine = $this->entry([
+            'worked_on' => '2026-07-04',
+            'description' => 'Theirs to see',
+            'user_id' => $member->id,
+        ]);
         ClientTimeEntry::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
@@ -630,7 +636,12 @@ class TimeSheetTest extends TestCase
             'retainer_minutes' => 600,
             'starts_on' => '2026-07-01',
         ]);
-        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
+        $this->entry([
+            'worked_on' => '2026-07-04',
+            'minutes' => 60,
+            'status' => 'approved',
+            'user_id' => $member->id,
+        ]);
 
         $this->travelTo('2026-07-20');
 
@@ -1114,6 +1125,207 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * Membership of a project is not the right to read its time.
+     *
+     * `AgentTimeEntryQuery::visibleTo()` already decides this - an owner or
+     * manager reads every entry on the project, a contributor only their own,
+     * a viewer none - and the sheet asks it rather than restating it. Before
+     * this, any project role read every colleague's internal descriptions,
+     * worker names and invoice links.
+     */
+    public function test_a_projects_time_is_read_by_role_not_by_membership(): void
+    {
+        $mine = $this->entry(['worked_on' => '2026-07-04', 'description' => 'Logged by the manager']);
+
+        $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $projectManager = $this->memberWithProjectRole(ProjectRole::Manager);
+
+        $theirs = $this->entry([
+            'worked_on' => '2026-07-05',
+            'description' => 'Logged by the contributor',
+            'user_id' => $contributor->id,
+        ]);
+
+        $this->travelTo('2026-07-20');
+        $url = "/workspaces/{$this->workspace->public_id}/time";
+
+        // A viewer reads the project and none of its time.
+        $this->actingAs($viewer)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('companies.0.projects', 1)
+                ->has('months', 0));
+
+        // A contributor reads their own row and not their colleague's.
+        $this->actingAs($contributor)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.entries', 1)
+                ->where('months.0.entries.0.id', $theirs->public_id));
+
+        // A project manager reads both.
+        $this->actingAs($projectManager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.entries', 2));
+
+        $this->assertNotSame($mine->public_id, $theirs->public_id);
+    }
+
+    /**
+     * Capacity is a total of approved time, so it goes only to a reader who
+     * could see the time it is drawn from. A viewer reading "62 of 80 hours
+     * used" learns the same thing the rows would have told them.
+     */
+    public function test_capacity_is_withheld_from_a_reader_who_cannot_see_the_time(): void
+    {
+        $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Retainer Behind The Curtain',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 120, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($viewer)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                $payload = (string) json_encode($page->toArray());
+
+                $this->assertStringNotContainsString('Retainer Behind The Curtain', $payload);
+            });
+    }
+
+    /**
+     * Deferred work is excluded from the ledger until it is allocated, so
+     * approving it draws nothing on the retainer. Counting it as pending
+     * overstated the claim on capacity, and went on overstating it after
+     * approval - it is already reported on its own line.
+     */
+    public function test_deferred_drafts_are_not_counted_as_pending_capacity(): void
+    {
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry(['worked_on' => '2026-07-05', 'minutes' => 90, 'is_deferred' => true]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.pending_minutes', 60)
+                ->where('months.0.deferred_minutes', 90)
+                ->where('months.0.total_minutes', 150));
+    }
+
+    /**
+     * The route binding does not scope the entry, so the lock added to
+     * serialize writes against invoice allocation was being taken on another
+     * tenant's row and released by the refusal a moment later.
+     */
+    public function test_a_write_never_locks_another_workspaces_row(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignEntry = ClientTimeEntry::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_company_id' => $foreign['project']->client_company_id,
+            'client_project_id' => $foreign['project']->id,
+            'user_id' => $this->manager->id,
+            'worked_on' => '2026-07-04',
+            'minutes' => 60,
+            'description' => 'Another tenant',
+            'status' => 'draft',
+        ]);
+
+        /** @var list<string> $statements */
+        $statements = [];
+        DB::listen(function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$foreignEntry->public_id}", [
+                'expected_version' => AgentApiVersion::for($foreignEntry),
+                'minutes' => 75,
+            ])
+            ->assertNotFound();
+
+        // Snapshot before anything else reads the table: the listener stays
+        // attached, and the assertions below would otherwise sample their own
+        // queries.
+        $captured = $statements;
+
+        $this->assertSame(60, (int) $foreignEntry->fresh()?->minutes);
+
+        // The refusal alone proves nothing: `assertDraftEditable()` returns
+        // 404 either way. What the workspace predicate changes is which row
+        // the lock is taken on, and on one connection that is visible only in
+        // the query. Any read of this table by primary key has to name the
+        // workspace it is reading for.
+        $byPrimaryKey = array_filter(
+            $captured,
+            fn (string $sql): bool => str_contains($sql, 'from "client_time_entries"')
+                && str_contains($sql, '"id" = ?'),
+        );
+
+        $this->assertNotEmpty($byPrimaryKey, 'The write never read the row, so this asserted nothing.');
+
+        foreach ($byPrimaryKey as $sql) {
+            $this->assertStringContainsString('"workspace_id"', $sql, "Unscoped read of another tenant's row: {$sql}");
+        }
+    }
+
+    /**
+     * The pivot carries its own `workspace_id`, and the schema does not
+     * require it to agree with the line's. A foreign association must not
+     * freeze this tenant's entry, and the freeze must agree with the badge -
+     * refusing every write while showing no invoice explains nothing.
+     */
+    public function test_a_foreign_pivot_row_cannot_freeze_this_entry(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'LOCAL-1',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => 'time',
+            'description' => 'Synthetic line',
+            'quantity' => '1',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'sort_order' => 1,
+        ]);
+
+        $entry = $this->entry(['minutes' => 60]);
+        // The line is this workspace's; only the association is not.
+        $entry->invoiceLines()->attach($line->id, ['workspace_id' => $foreign['workspace']->id]);
+
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => AgentApiVersion::for($entry),
+                'minutes' => 75,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(75, (int) $entry->fresh()?->minutes);
+    }
+
+    /**
      * The class of bug, not one instance of it.
      *
      * Each finding so far has been one field escaping one filter, and the fix
@@ -1163,7 +1375,11 @@ class TimeSheetTest extends TestCase
             ->forceFill(['invoice_number' => 'HIDDEN-INVOICE-9001'])
             ->save();
 
-        $this->entry(['worked_on' => '2026-07-04', 'description' => 'Visible Work Description']);
+        $this->entry([
+            'worked_on' => '2026-07-04',
+            'description' => 'Visible Work Description',
+            'user_id' => $member->id,
+        ]);
 
         $this->travelTo('2026-07-20');
 
@@ -1330,6 +1546,20 @@ class TimeSheetTest extends TestCase
         ]);
 
         return ['workspace' => $workspace, 'project' => $project];
+    }
+
+    private function memberWithProjectRole(ProjectRole $role): User
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $member->id,
+            'role' => $role->value,
+        ]);
+
+        return $member;
     }
 
     /** A workspace member who belongs to one of the company's two projects. */

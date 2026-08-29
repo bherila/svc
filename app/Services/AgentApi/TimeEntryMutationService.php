@@ -49,7 +49,7 @@ final class TimeEntryMutationService
     /** @param array<string, mixed> $data */
     public function update(Workspace $workspace, ClientTimeEntry $entry, User $actor, array $data): ClientTimeEntry
     {
-        return $this->serialized($entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $data): ClientTimeEntry {
+        return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $data): ClientTimeEntry {
             $this->assertDraftEditable($workspace, $entry, $actor);
             $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
             $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;
@@ -68,7 +68,7 @@ final class TimeEntryMutationService
 
     public function delete(Workspace $workspace, ClientTimeEntry $entry, User $actor, string $expectedVersion): void
     {
-        $this->serialized($entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $expectedVersion): null {
+        $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $expectedVersion): null {
             $this->assertDraftEditable($workspace, $entry, $actor);
             abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => now()]);
@@ -98,10 +98,19 @@ final class TimeEntryMutationService
      * @param  callable(ClientTimeEntry): TReturn  $write
      * @return TReturn
      */
-    private function serialized(ClientTimeEntry $entry, callable $write): mixed
+    private function serialized(Workspace $workspace, ClientTimeEntry $entry, callable $write): mixed
     {
-        return DB::transaction(function () use ($entry, $write) {
-            $locked = ClientTimeEntry::query()->whereKey($entry->id)->lockForUpdate()->first();
+        return DB::transaction(function () use ($workspace, $entry, $write) {
+            // Named here and not only in `assertDraftEditable()`: the route
+            // binding does not scope the entry, so without this the lock is
+            // taken on another tenant's row and released by the refusal a
+            // moment later. Nothing leaks, but an actor holding a foreign id
+            // can make this workspace queue behind writes it cannot see.
+            $locked = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->first();
             abort_unless($locked instanceof ClientTimeEntry, 404);
 
             return $write($locked);
@@ -191,14 +200,20 @@ final class TimeEntryMutationService
     /**
      * Is a line of this entry's own workspace billing it?
      *
-     * The pivot carries no composite tenant key, so an unscoped existence
-     * check lets another workspace's row freeze this one's entry - a refusal
-     * the rightful owner cannot see the cause of or clear.
+     * Line, pivot and invoice each carry their own `workspace_id` and the
+     * schema does not require the three to agree, so every one of them is
+     * named. An unscoped check lets another workspace's row freeze this one's
+     * entry - a refusal the rightful owner cannot see the cause of or clear -
+     * and a partly scoped one disagrees with the sheet, which decides the
+     * badge from all three: the entry would refuse every write while showing
+     * no invoice to explain why.
      */
     private function isAllocated(ClientTimeEntry $entry): bool
     {
         return $entry->invoiceLines()
             ->where('client_invoice_lines.workspace_id', $entry->workspace_id)
+            ->wherePivot('workspace_id', $entry->workspace_id)
+            ->whereHas('invoice', fn ($invoice) => $invoice->where('workspace_id', $entry->workspace_id))
             ->exists();
     }
 

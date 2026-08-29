@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\AgentApi\AgentApiVersion;
@@ -40,6 +41,7 @@ class TimeSheetController extends Controller
         Workspace $workspace,
         ProjectAccess $access,
         InvoiceLedgerBuilder $ledgers,
+        AgentTimeEntryQuery $visible,
     ): Response {
         Gate::authorize('view', $workspace);
         $user = $request->user();
@@ -90,11 +92,16 @@ class TimeSheetController extends Controller
                 $permissions[$project->id] = [
                     'log' => $role->canLogTime(),
                     'approve' => $role->canApproveTime(),
+                    // `AgentTimeEntryQuery` gives an owner or manager every
+                    // entry on the project; a contributor only their own, and
+                    // a viewer none. Reading the project is not reading its
+                    // time.
+                    'all_time' => $role->canApproveTime(),
                 ];
             }
 
-            $whollyVisible[$company->id] = $company->projects->every(
-                fn (ClientProject $project): bool => isset($permissions[$project->id]),
+            $whollyVisible[$company->id] = $isManager || $company->projects->every(
+                fn (ClientProject $project): bool => $permissions[$project->id]['all_time'] ?? false,
             );
         }
 
@@ -111,7 +118,7 @@ class TimeSheetController extends Controller
             ->values();
 
         $selectedCompany = $this->selectedCompany($request, $companies);
-        $entries = $this->entries($workspace, $selectedCompany, $visibleProjectIds);
+        $entries = $this->entries($visible, $user, $workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
 
         // A retainer is sold to the company, not to a project, and the ledger
@@ -177,15 +184,24 @@ class TimeSheetController extends Controller
      * @param  list<int>  $visibleProjectIds
      * @return EloquentCollection<int, ClientTimeEntry>
      */
-    private function entries(Workspace $workspace, ?ClientCompany $company, array $visibleProjectIds): EloquentCollection
-    {
+    private function entries(
+        AgentTimeEntryQuery $visible,
+        User $user,
+        Workspace $workspace,
+        ?ClientCompany $company,
+        array $visibleProjectIds,
+    ): EloquentCollection {
         if ($company === null || $visibleProjectIds === []) {
             /** @var EloquentCollection<int, ClientTimeEntry> */
             return new EloquentCollection;
         }
 
-        return ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
+        // Membership of a project is not the right to read its time, and the
+        // rule for which entries a person may read already exists - a project
+        // owner or manager reads all of them, a contributor only their own, a
+        // viewer none. Restating it here is how the two drift; the sheet asks
+        // the same question the agent API asks.
+        return $visible->visibleTo($user, $workspace)
             ->where('client_company_id', $company->id)
             ->whereIn('client_project_id', $visibleProjectIds)
             ->where('worked_on', '>=', self::windowStart($workspace->timezone)->toDateString())
@@ -408,6 +424,12 @@ class TimeSheetController extends Controller
                 'pending_minutes' => (int) $monthEntries
                     ->where('status', 'draft')
                     ->where('is_billable', true)
+                    // Deferred work is excluded from the ledger until it is
+                    // allocated, so approving it draws nothing. Counting it
+                    // here as work poised to consume the retainer overstates
+                    // the claim on capacity, and goes on overstating it after
+                    // approval; it is already reported on its own line.
+                    ->where('is_deferred', false)
                     ->sum('minutes'),
                 'capacity' => $capacityByMonth[$yearMonth] ?? [],
                 'entries' => $rows,
