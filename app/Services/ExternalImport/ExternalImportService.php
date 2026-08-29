@@ -141,6 +141,9 @@ final class ExternalImportService
      */
     private const POSITIVE_HOURS = '(?:[1-9]\d*(?::[0-5]\d|\.\d+)|0:(?:0[1-9]|[1-5]\d)|0\.\d*[1-9]\d*)';
 
+    /** A range of months as PeriodLabel writes one. */
+    private const PERIOD_RANGE = '\d{4}-(?:0[1-9]|1[0-2])\.\.\d{4}-(?:0[1-9]|1[0-2])';
+
     /** A month as PeriodLabel writes one. */
     private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
 
@@ -159,7 +162,7 @@ final class ExternalImportService
     private const MONEY = '(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2} [A-Z]{3}';
 
     /**
-     * @var array<string, array{whole: bool, types: list<string>}>
+     * @var array<string, array{whole: bool, types: list<string>, months?: int}>
      */
     private const GENERATED_DESCRIPTION_TEMPLATES = [
         '/^Work items applied to retainer \('.self::HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
@@ -168,18 +171,21 @@ final class ExternalImportService
         // One entry per cadence, because PeriodLabel writes a different shape
         // for each: a month for monthly, a quarter for quarterly, a year for
         // annual, and a month range for the six-month span. Accepting any
-        // label after any cadence let "quarterly ... 2026 cycle" through.
-        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
-            'whole' => false, 'types' => ['prior_month_retainer'],
+        // One entry per cadence, and each takes either the label PeriodLabel
+        // writes for an aligned cycle or a month range for one anchored to an
+        // agreement's active date. The range is checked against the cadence
+        // afterwards, because a grammar cannot say how long six months is.
+        '/^Work items applied to monthly retainer \('.self::HOURS.' applied to (?:'.self::PERIOD_MONTH.'|'.self::PERIOD_RANGE.') cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
         ],
-        '/^Work items applied to quarterly retainer \('.self::HOURS.' applied to \d{4}-Q[1-4] cycle\)$/' => [
-            'whole' => false, 'types' => ['prior_month_retainer'],
+        '/^Work items applied to quarterly retainer \('.self::HOURS.' applied to (?:\d{4}-Q[1-4]|'.self::PERIOD_RANGE.') cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 3,
         ],
-        '/^Work items applied to annual retainer \('.self::HOURS.' applied to \d{4} cycle\)$/' => [
-            'whole' => false, 'types' => ['prior_month_retainer'],
+        '/^Work items applied to semiannual retainer \('.self::HOURS.' applied to '.self::PERIOD_RANGE.' cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 6,
         ],
-        '/^Work items applied to semiannual retainer \('.self::HOURS.' applied to '.self::PERIOD_MONTH.'\.\.'.self::PERIOD_MONTH.' cycle\)$/' => [
-            'whole' => false, 'types' => ['prior_month_retainer'],
+        '/^Work items applied to annual retainer \('.self::HOURS.' applied to (?:\d{4}|'.self::PERIOD_RANGE.') cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 12,
         ],
         '/^Deferred work items applied to retainer \('.self::HOURS.'\)$/' => [
             'whole' => false, 'types' => ['prior_month_retainer'],
@@ -190,8 +196,17 @@ final class ExternalImportService
         '/^Interim overage hours for '.self::POOL_MONTH.'$/' => [
             'whole' => false, 'types' => ['additional_hours'],
         ],
-        '/^(?:Monthly|Quarterly|Semiannual|Annual) Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
-            'whole' => false, 'types' => ['retainer'],
+        '/^Monthly Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 1,
+        ],
+        '/^Quarterly Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 3,
+        ],
+        '/^Semiannual Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 6,
+        ],
+        '/^Annual Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 12,
         ],
     ];
 
@@ -827,21 +842,45 @@ final class ExternalImportService
     }
 
     /**
-     * Whether every "A through B" here runs forwards.
+     * Whether the spans in this text are the ones its cadence produces.
      *
-     * The fee composer is handed a cycle's start and end in that order, so a
-     * span that ends before it begins is somebody's own text - and both dates
-     * can be real while the pair is not.
+     * A grammar can say two dates and a range; it cannot say how long a
+     * quarter is. A cycle runs from its start to the day before the same day
+     * $months later, and PeriodLabel writes a range only when that span
+     * straddles months - so an aligned six-month cycle labels five months of
+     * difference and an unaligned one labels six. Both are real; a year is
+     * neither.
+     *
+     * Called for every template. The ones without a cadence still get their
+     * dates checked for order, which is all that can be said about them.
      */
-    private static function datesAreOrdered(string $text): bool
+    private static function spansItsCadence(string $text, ?int $months): bool
     {
-        preg_match_all('/('.self::SHORT_DATE.') through ('.self::SHORT_DATE.')/', $text, $matches, PREG_SET_ORDER);
+        preg_match_all('/('.self::SHORT_DATE.') through ('.self::SHORT_DATE.')/', $text, $spans, PREG_SET_ORDER);
 
-        foreach ($matches as $span) {
+        foreach ($spans as $span) {
             $from = Carbon::createFromFormat('M j, Y', $span[1]);
             $to = Carbon::createFromFormat('M j, Y', $span[2]);
 
             if ($from === null || $to === null || $from->greaterThan($to)) {
+                return false;
+            }
+
+            if ($months !== null && ! $to->isSameDay($from->copy()->addMonthsNoOverflow($months)->subDay())) {
+                return false;
+            }
+        }
+
+        if ($months === null) {
+            return true;
+        }
+
+        preg_match_all('/(\d{4})-(\d{2})\.\.(\d{4})-(\d{2})/', $text, $ranges, PREG_SET_ORDER);
+
+        foreach ($ranges as $range) {
+            $difference = ((int) $range[3] - (int) $range[1]) * 12 + ((int) $range[4] - (int) $range[2]);
+
+            if ($difference !== $months && $difference !== $months - 1) {
                 return false;
             }
         }
@@ -926,12 +965,10 @@ final class ExternalImportService
      */
     private static function descriptionShape(mixed $description, string $lineType): string
     {
-        // Trimmed only to recognise a template. Whatever no template claims is
-        // returned exactly as the source holds it: the importer preserves a
-        // description's whitespace, so two custom lines differing only there
-        // are two descriptions and not one.
-        $raw = (string) ($description ?? '');
-        $text = trim($raw);
+        // Not trimmed at all. The composer writes no padding, so a description
+        // carrying some is not one of its - and trimming to recognise it made
+        // two custom lines differing only in whitespace into one.
+        $text = (string) ($description ?? '');
 
         foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $rule) {
             // Bound to the type it belongs to. A service writes each of these
@@ -944,9 +981,11 @@ final class ExternalImportService
             }
 
             $wholeGroup = $rule['whole'];
+            $months = $rule['months'] ?? null;
+
             if (preg_match($template, $text) !== 1
                 || ! self::datesAreReal($text)
-                || ! self::datesAreOrdered($text)
+                || ! self::spansItsCadence($text, $months)
                 || ! self::periodRangesAreReal($text)) {
                 continue;
             }
@@ -961,7 +1000,7 @@ final class ExternalImportService
             );
         }
 
-        return $raw;
+        return $text;
     }
 
     /**

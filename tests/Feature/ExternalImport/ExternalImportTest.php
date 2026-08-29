@@ -1551,6 +1551,21 @@ class ExternalImportTest extends TestCase
                 ' Support package ',
                 'Support package',
             ],
+            'generated wording carrying padding' => [
+                'prior_month_retainer',
+                ' Deferred work items applied to retainer (9:55)',
+                'Deferred work items applied to retainer (10:00) ',
+            ],
+            'a monthly fee line spanning a year' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+            ],
+            'a semiannual label spanning a year' => [
+                'prior_month_retainer',
+                'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
+                'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
+            ],
             'grouping number_format cannot write' => [
                 'additional_hours',
                 'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
@@ -1627,6 +1642,46 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame(1, $summary['link_counts']['recovered']);
         $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * An agreement that starts off a calendar boundary has its cycles anchored
+     * to its active date, so PeriodLabel writes a range even for a cadence
+     * that usually has a name - and refusing those refuses real lines.
+     */
+    public function test_a_cadence_anchored_off_the_calendar_is_still_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * And a fee line whose dates span exactly its cadence is one the composer
+     * could have written.
+     */
+    public function test_a_fee_line_spanning_exactly_its_cadence_is_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
     }
 
     public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
