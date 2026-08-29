@@ -51,26 +51,21 @@ return new class extends Migration
             );
         }
 
-        // The unique index first, the old one after. A duplicate acquired
-        // between the diagnostic above and the DDL makes this fail, as it
-        // should - but on MySQL each statement commits as it runs, so dropping
-        // first would leave the table with neither index and the deployment
-        // stopped.
+        // A duplicate acquired between the diagnostic above and this statement
+        // makes it fail, as it should.
         Schema::table('client_tasks', function (Blueprint $table): void {
             $table->unique('client_invoice_line_id', 'task_invoice_line_once');
         });
 
-        Schema::table('client_tasks', function (Blueprint $table): void {
-            $table->dropIndex('task_invoice_line_idx');
-        });
+        // task_invoice_line_idx now duplicates this one for lookups by line,
+        // and it is tempting to drop it. It stays: it leads on workspace_id,
+        // and on MySQL it is the only index that does, so it is what supports
+        // the workspace foreign key. Dropping it fails with errno 1553 on
+        // MariaDB - not caught by the SQLite suite, which has no such rule.
     }
 
     public function down(): void
     {
-        Schema::table('client_tasks', function (Blueprint $table): void {
-            $table->index(['workspace_id', 'client_invoice_line_id'], 'task_invoice_line_idx');
-        });
-
         Schema::table('client_tasks', function (Blueprint $table): void {
             $table->dropUnique('task_invoice_line_once');
         });
