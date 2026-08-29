@@ -12,6 +12,7 @@ use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -49,27 +50,80 @@ final class TimeEntryMutationService
     /** @param array<string, mixed> $data */
     public function update(Workspace $workspace, ClientTimeEntry $entry, User $actor, array $data): ClientTimeEntry
     {
-        $this->assertDraftEditable($workspace, $entry, $actor);
-        $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
-        $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;
-        $this->assertClientDescription($visible, $clientDescription);
-        $attributes = Arr::only($data, [
-            'worked_on', 'minutes', 'description', 'is_billable', 'is_deferred',
-            'is_visible_to_client', 'client_visible_description',
-        ]);
-        abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
-        $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
-        abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
+        return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $data): ClientTimeEntry {
+            $this->assertDraftEditable($workspace, $entry, $actor);
+            $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
+            $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;
+            $this->assertClientDescription($visible, $clientDescription);
+            $attributes = Arr::only($data, [
+                'worked_on', 'minutes', 'description', 'is_billable', 'is_deferred',
+                'is_visible_to_client', 'client_visible_description',
+            ]);
 
-        return $entry->fresh() ?? throw new \RuntimeException('The time entry no longer exists.');
+            // Task attribution is optional, so an entry saved against the
+            // wrong one has to be correctable while it is still a draft -
+            // including back to none, which is why an explicit null differs
+            // from an absent key here.
+            if (array_key_exists('task_id', $data)) {
+                $attributes['client_task_id'] = $this->taskFor($workspace, $entry, $data['task_id']);
+            }
+            abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
+            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
+            abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
+
+            return $entry->fresh() ?? throw new \RuntimeException('The time entry no longer exists.');
+        });
     }
 
     public function delete(Workspace $workspace, ClientTimeEntry $entry, User $actor, string $expectedVersion): void
     {
-        $this->assertDraftEditable($workspace, $entry, $actor);
-        abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
-        $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => now()]);
-        abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
+        $this->serialized($workspace, $entry, function (ClientTimeEntry $entry) use ($workspace, $actor, $expectedVersion): null {
+            $this->assertDraftEditable($workspace, $entry, $actor);
+            abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
+            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => now()]);
+            abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
+
+            return null;
+        });
+    }
+
+    /**
+     * Run a write against the same row lock invoice allocation takes.
+     *
+     * The optimistic version cannot see an allocation: `InvoiceFromTimeService`
+     * locks the entry, attaches the pivot and leaves `lock_version` untouched,
+     * because attaching does not change the entry. So a check of the freeze
+     * outside a lock is a read that can be true when it is written and false
+     * when it is acted on - the allocation commits in between, the version
+     * still matches, and the write lands under a draft invoice that goes on
+     * charging the old quantity, or against an entry that has just been
+     * deleted from beneath its own line.
+     *
+     * Locking the row here puts both sides in the same queue, and re-reading
+     * inside the lock is what makes the freeze check mean anything.
+     *
+     * @template TReturn
+     *
+     * @param  callable(ClientTimeEntry): TReturn  $write
+     * @return TReturn
+     */
+    private function serialized(Workspace $workspace, ClientTimeEntry $entry, callable $write): mixed
+    {
+        return DB::transaction(function () use ($workspace, $entry, $write) {
+            // Named here and not only in `assertDraftEditable()`: the route
+            // binding does not scope the entry, so without this the lock is
+            // taken on another tenant's row and released by the refusal a
+            // moment later. Nothing leaks, but an actor holding a foreign id
+            // can make this workspace queue behind writes it cannot see.
+            $locked = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->first();
+            abort_unless($locked instanceof ClientTimeEntry, 404);
+
+            return $write($locked);
+        });
     }
 
     /** @param list<array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}> $entries */
@@ -78,10 +132,20 @@ final class TimeEntryMutationService
         DB::transaction(function () use ($workspace, $actor, $entries): void {
             foreach ($entries as $item) {
                 $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->lockForUpdate()->firstOrFail();
-                abort_unless($this->access->canApproveTime($actor, $entry->project), 403);
+                abort_unless($this->access->canApproveTime($actor, $this->projectOf($workspace, $entry)), 403);
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
+                // The same freeze update and delete carry, for the same
+                // reason and then some: approval is where the rate is stamped,
+                // so approving attached time changes what the line bills
+                // without touching the line. Status alone does not catch it -
+                // an entry stays `draft` until approved, invoice or no.
+                abort_if(
+                    $this->isAllocated($entry),
+                    409,
+                    'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
+                );
                 abort_unless(AgentApiVersion::matches($entry, $item['expected_version']), 409, 'The time entry has changed; read it and retry.');
-                $rate = $this->approvalRate($entry, $item);
+                $rate = $this->approvalRate($workspace, $entry, $item);
                 $entry->forceFill([
                     'status' => 'approved',
                     'approved_by_user_id' => $actor->id,
@@ -99,7 +163,7 @@ final class TimeEntryMutationService
      * @param  array{id: string, expected_version: string, billing_rate_amount?: int, currency?: string}  $item
      * @return array{amount:int|null,currency:string|null,source:string|null}
      */
-    private function approvalRate(ClientTimeEntry $entry, array $item): array
+    private function approvalRate(Workspace $workspace, ClientTimeEntry $entry, array $item): array
     {
         if (! $entry->is_billable) {
             return ['amount' => null, 'currency' => $entry->currency, 'source' => null];
@@ -118,6 +182,23 @@ final class TimeEntryMutationService
             throw new DomainException('A billing-rate override requires both amount and currency.');
         }
 
+        // A rate already stated on the entry is not a default to be replaced.
+        // `TimeEntryWorkflow` records one when the operator types it at the
+        // point of logging and marks it `explicit`; resolving the agreement
+        // rate over the top means the invoice charges a number nobody entered,
+        // silently, on an approval that asked for no change of rate.
+        if ($entry->billing_rate_source === 'explicit' && $entry->billing_rate_amount !== null) {
+            return [
+                'amount' => $entry->billing_rate_amount,
+                // The amount is the operator's statement; a missing currency
+                // is not, and rows predating the workflow's default still
+                // carry one. Resolving the agreement rate would discard the
+                // amount, which is the thing this branch exists to keep.
+                'currency' => $entry->currency ?? $workspace->default_currency,
+                'source' => 'explicit',
+            ];
+        }
+
         return $this->rates->resolve($entry) + ['source' => 'agreement'];
     }
 
@@ -125,9 +206,92 @@ final class TimeEntryMutationService
     {
         abort_unless($entry->workspace_id === $workspace->id, 404);
         abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be changed.');
+        // Status alone is not enough. An entry can still read `draft` while a
+        // line already bills it - issuing rewrites attached time, but nothing
+        // guarantees the two are in step, and the gap is exactly where an edit
+        // would change what a sent invoice charged. Nor is it enough to check
+        // the invoice is a draft: a draft is regenerated from its entries, but
+        // this path changes only the entry, so the line would keep billing the
+        // old quantity until something else recomposed it.
+        abort_if(
+            $this->isAllocated($entry),
+            409,
+            'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
+        );
+        $project = $this->projectOf($workspace, $entry);
         abort_unless($entry->user_id === $actor->id || $this->access->isWorkspaceManager($actor, $workspace), 403);
-        abort_unless($this->access->canView($actor, $entry->project), 404);
-        abort_unless($this->access->canLogTime($actor, $entry->project), 403);
+        abort_unless($this->access->canView($actor, $project), 404);
+        abort_unless($this->access->canLogTime($actor, $project), 403);
+    }
+
+    private function taskFor(Workspace $workspace, ClientTimeEntry $entry, mixed $taskId): ?int
+    {
+        if (! is_string($taskId) || $taskId === '') {
+            return null;
+        }
+
+        $task = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('public_id', $taskId)
+            ->firstOrFail();
+
+        abort_unless(
+            $task->client_project_id === $entry->client_project_id,
+            422,
+            'The task must belong to the selected project.',
+        );
+
+        return $task->id;
+    }
+
+    /**
+     * The entry's project, once it is established to be this workspace's.
+     *
+     * Every permission on this screen is asked of the project, and
+     * `ProjectAccess` resolves a role against the project's *own* workspace.
+     * So an entry of workspace A pointing at a project of workspace B - which
+     * the schema permits, the keys being independent - had its approval
+     * authorised against B: an actor who manages B and merely views A could
+     * approve A's time and stamp its rate. The project has to be shown to
+     * belong here before it is allowed to answer for anything.
+     */
+    private function projectOf(Workspace $workspace, ClientTimeEntry $entry): ClientProject
+    {
+        $project = ClientProject::query()
+            ->whereKey($entry->client_project_id)
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $entry->client_company_id)
+            // The company closes the chain. Matching the project to the entry
+            // proves only that the two agree with each other; both can name a
+            // company of another workspace, and the walk leaves this tenant
+            // at the last link rather than the first.
+            ->whereHas('clientCompany', fn (Builder $company): Builder => $company
+                ->where('workspace_id', $workspace->id))
+            ->first();
+
+        abort_unless($project instanceof ClientProject, 404);
+
+        return $project;
+    }
+
+    /**
+     * Is a line of this entry's own workspace billing it?
+     *
+     * Line, pivot and invoice each carry their own `workspace_id` and the
+     * schema does not require the three to agree, so every one of them is
+     * named. An unscoped check lets another workspace's row freeze this one's
+     * entry - a refusal the rightful owner cannot see the cause of or clear -
+     * and a partly scoped one disagrees with the sheet, which decides the
+     * badge from all three: the entry would refuse every write while showing
+     * no invoice to explain why.
+     */
+    private function isAllocated(ClientTimeEntry $entry): bool
+    {
+        return $entry->invoiceLines()
+            ->where('client_invoice_lines.workspace_id', $entry->workspace_id)
+            ->wherePivot('workspace_id', $entry->workspace_id)
+            ->whereHas('invoice', fn ($invoice) => $invoice->where('workspace_id', $entry->workspace_id))
+            ->exists();
     }
 
     private function assertClientDescription(bool $visible, mixed $description): void
