@@ -329,6 +329,46 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             ->exists());
     }
 
+    public function test_an_interim_draft_without_cycle_dates_fails_closed(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 600]);
+        $invoice = app(ClientInvoicingService::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2026-07-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $invoice);
+        $billedEntry = ClientTimeEntry::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->whereHas('invoiceLines', fn ($lines) => $lines->where('client_invoice_id', $invoice->id))
+            ->firstOrFail();
+        $originalMinutes = $billedEntry->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill(['cycle_start' => null, 'cycle_end' => null])->save();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $billedEntry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($billedEntry),
+                    'minutes' => max(1, $originalMinutes - 60),
+                ],
+            );
+            $this->fail('An interim draft without a cycle must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('complete service period and cycle', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $billedEntry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+        $this->assertTrue($billedEntry->fresh()?->invoiceLines()
+            ->where('client_invoice_id', $invoice->id)
+            ->exists());
+    }
+
     public function test_a_migrated_null_kind_non_monthly_draft_regenerates_in_place(): void
     {
         $agreement = $this->quarterlyAgreement();
@@ -555,6 +595,45 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'client_invoice_line_id' => $line->id,
             'client_time_entry_id' => $foreignEntry->id,
         ]);
+    }
+
+    public function test_ad_hoc_regeneration_refuses_to_include_a_foreign_workspaces_line(): void
+    {
+        $entry = $this->approvedEntry();
+        $invoice = app(InvoiceFromTimeService::class)->create(
+            $this->workspace,
+            $this->company,
+            ['invoice_number' => 'LOCAL-WITH-FOREIGN-LINE', 'currency' => 'USD'],
+            [$entry->public_id],
+        );
+        $otherWorkspace = Workspace::query()->create(['name' => 'Foreign ad hoc line', 'slug' => 'foreign-ad-hoc-line']);
+        $foreignLine = $invoice->lines()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'type' => 'adjustment',
+            'description' => 'Foreign adjustment',
+            'quantity' => '1.0000',
+            'unit_amount' => 50000,
+            'tax_amount' => 0,
+            'total_amount' => 50000,
+            'sort_order' => 99,
+        ]);
+        $originalTotal = (int) $invoice->total_amount;
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                ['expected_version' => AgentApiVersion::for($entry), 'minutes' => 90],
+            );
+            $this->fail('A foreign line on an ad-hoc invoice must stop regeneration.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertSame(60, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+        $this->assertNotNull($foreignLine->fresh());
     }
 
     public function test_generated_regeneration_refuses_to_delete_a_foreign_workspaces_pivot(): void

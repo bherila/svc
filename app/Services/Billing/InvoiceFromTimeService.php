@@ -86,6 +86,7 @@ final class InvoiceFromTimeService
             if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
                 throw new DomainException('Only an ad-hoc draft invoice can be refreshed from selected time.');
             }
+            $locked->assertLineOwnership();
 
             $company = ClientCompany::query()
                 ->whereKey($locked->client_company_id)

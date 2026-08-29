@@ -129,7 +129,33 @@ final class InvoiceLineComposerTest extends TestCase
             app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
             $this->fail('A generated line from another workspace must stop the reset.');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('generated line owned by another workspace', $exception->getMessage());
+            $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertNotNull($foreignLine->fresh());
+    }
+
+    public function test_invoice_totals_refuse_a_line_owned_by_another_workspace(): void
+    {
+        $invoice = $this->invoice();
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other totals', 'slug' => 'other-totals']);
+        $foreignLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => InvoiceLineType::Adjustment->value,
+            'description' => 'Foreign total',
+            'quantity' => '1',
+            'unit_amount' => 100,
+            'tax_amount' => 0,
+            'total_amount' => 100,
+            'sort_order' => 1,
+        ]);
+
+        try {
+            $invoice->recalculateTotals();
+            $this->fail('A foreign line must not contribute to local invoice totals.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
         }
 
         $this->assertNotNull($foreignLine->fresh());

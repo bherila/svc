@@ -290,8 +290,9 @@ final class ClientInvoicingService
         $kind = InvoiceKind::tryFrom((string) $invoice->invoice_kind) ?? InvoiceKind::CadencePeriod;
 
         if ($kind === InvoiceKind::InterimOverage) {
-            if ($invoice->service_period_start === null || $invoice->service_period_end === null) {
-                throw new RuntimeException('The interim draft invoice has no service period to regenerate.');
+            if ($invoice->service_period_start === null || $invoice->service_period_end === null
+                || $invoice->cycle_start === null || $invoice->cycle_end === null) {
+                throw new RuntimeException('The interim draft invoice has no complete service period and cycle to regenerate.');
             }
             if (! (bool) $agreement->bill_overage_interim) {
                 throw new RuntimeException('Interim overage billing is disabled for this agreement.');

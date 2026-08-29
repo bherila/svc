@@ -26,14 +26,12 @@ class InvoiceLineComposer
      */
     public function resetSystemGeneratedLines(ClientInvoice $invoice): void
     {
+        $invoice->assertLineOwnership();
         $systemLines = ClientInvoiceLine::query()
+            ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
             ->whereIn('type', InvoiceLineType::systemGeneratedValues())
             ->get();
-
-        if ($systemLines->contains(fn (ClientInvoiceLine $line): bool => (int) $line->workspace_id !== (int) $invoice->workspace_id)) {
-            throw new RuntimeException('The draft contains a generated line owned by another workspace.');
-        }
 
         $lineIds = $systemLines->modelKeys();
         $hasForeignPivots = DB::table('client_invoice_line_time_entries')

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use RuntimeException;
 
 /**
  * @property int $id
@@ -151,9 +152,13 @@ class ClientInvoice extends Model implements WorkspaceOwned
      */
     public function recalculateTotals(): void
     {
+        $this->assertLineOwnership();
+        $lines = ClientInvoiceLine::query()
+            ->where('workspace_id', $this->workspace_id)
+            ->where('client_invoice_id', $this->id);
         $totals = self::totalsFromLines(
-            (int) $this->lines()->sum('total_amount'),
-            (int) $this->lines()->sum('tax_amount'),
+            (int) (clone $lines)->sum('total_amount'),
+            (int) (clone $lines)->sum('tax_amount'),
         );
         $subtotal = $totals['subtotal_amount'];
         $tax = $totals['tax_amount'];
@@ -165,6 +170,21 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'total_amount' => $total,
             'balance_amount' => self::balanceOwed($total, (int) $this->paid_amount),
         ])->save();
+    }
+
+    /** Fail before invoice math or regeneration can cross a tenant boundary. */
+    public function assertLineOwnership(): void
+    {
+        $hasForeignLines = ClientInvoiceLine::query()
+            ->where('client_invoice_id', $this->id)
+            ->where(fn ($query) => $query
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $this->workspace_id))
+            ->exists();
+
+        if ($hasForeignLines) {
+            throw new RuntimeException('The invoice contains a line owned by another workspace.');
+        }
     }
 
     /**

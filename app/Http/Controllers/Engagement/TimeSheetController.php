@@ -22,6 +22,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -314,6 +315,11 @@ class TimeSheetController extends Controller
         $links = ClientInvoiceLine::query()
             ->join('client_invoice_line_time_entries as pivot', 'pivot.client_invoice_line_id', '=', 'client_invoice_lines.id')
             ->join('client_invoices', 'client_invoices.id', '=', 'client_invoice_lines.client_invoice_id')
+            ->leftJoin('client_agreements', function (JoinClause $join) use ($workspace): void {
+                $join->on('client_agreements.id', '=', 'client_invoices.client_agreement_id')
+                    ->on('client_agreements.client_company_id', '=', 'client_invoices.client_company_id')
+                    ->where('client_agreements.workspace_id', '=', $workspace->id);
+            })
             // Every tenant-owned table in the join, not just the one the
             // query starts from: the schema's foreign keys are independent, so
             // a line owned here can name an invoice owned elsewhere, and the
@@ -329,6 +335,8 @@ class TimeSheetController extends Controller
                 'client_invoices.status as invoice_status',
                 'client_invoices.invoice_kind as invoice_kind',
                 'client_invoices.client_agreement_id as agreement_id',
+                'client_agreements.id as resolved_agreement_id',
+                'client_agreements.bill_overage_interim as agreement_bill_overage_interim',
                 'client_invoices.service_period_start as service_period_start',
                 'client_invoices.service_period_end as service_period_end',
                 'client_invoices.cycle_start as cycle_start',
@@ -343,7 +351,8 @@ class TimeSheetController extends Controller
             $kind = $rawKind === null
                 ? InvoiceKind::CadencePeriod
                 : InvoiceKind::tryFrom((string) $rawKind);
-            $hasAgreement = $link->getAttribute('agreement_id') !== null;
+            $hasAgreement = $link->getAttribute('agreement_id') !== null
+                && $link->getAttribute('resolved_agreement_id') !== null;
             $hasServicePeriod = $link->getAttribute('service_period_start') !== null
                 && $link->getAttribute('service_period_end') !== null;
             $hasCycle = $link->getAttribute('cycle_start') !== null
@@ -351,7 +360,10 @@ class TimeSheetController extends Controller
             $regenerable = match ($kind) {
                 InvoiceKind::AdHoc => true,
                 InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
-                InvoiceKind::InterimOverage => $hasAgreement && $hasServicePeriod,
+                InvoiceKind::InterimOverage => $hasAgreement
+                    && $hasServicePeriod
+                    && $hasCycle
+                    && (bool) $link->getAttribute('agreement_bill_overage_interim'),
                 InvoiceKind::Terminal => false,
                 null => false,
             };
