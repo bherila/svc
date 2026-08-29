@@ -355,6 +355,10 @@ class TimeSheetTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.capacity', 1)
                 ->where('months.0.capacity.0.agreement', 'Dated Agreement')
+                // A monthly cadence has one cycle per month, so it carries no
+                // separate identity; see the boundary-month test for the case
+                // this field exists to disambiguate.
+                ->where('months.0.capacity.0.cycle_start', '')
                 ->where('months.0.capacity.0.worked_hours', 2)
                 ->where('months.0.capacity.0.available_hours', 10)
                 ->where('months.0.capacity.0.unused_hours', 8)
@@ -905,6 +909,207 @@ class TimeSheetTest extends TestCase
 
                 $this->assertStringNotContainsString('Foreign Task Title', $payload);
                 $this->assertStringContainsString('Local Task Title', $payload);
+            });
+    }
+
+    /**
+     * A task reaches a row on the strength of the id the entry holds, and
+     * passes no check of its own - the same defect as the log form's task
+     * list, one relation over.
+     */
+    public function test_a_task_from_another_workspace_or_project_is_not_shown_on_a_row(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignTask = ClientTask::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Foreign Row Task',
+            'status' => 'open',
+        ]);
+
+        $sibling = $this->otherProject();
+        $siblingTask = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $sibling->id,
+            'title' => 'Sibling Row Task',
+            'status' => 'open',
+        ]);
+
+        $this->entry(['worked_on' => '2026-07-04', 'client_task_id' => $foreignTask->id]);
+        $this->entry(['worked_on' => '2026-07-05', 'client_task_id' => $siblingTask->id]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.entries', 2)
+                // Not absent from the page - the sibling project's task list
+                // is offered to a manager who can log against it. Absent from
+                // the row, which claims the task describes that entry's work.
+                ->where('months.0.entries.0.task', null)
+                ->where('months.0.entries.1.task', null));
+    }
+
+    /**
+     * The invoice badge is a link into another tenant's billing if only the
+     * line is scoped: the number and status serialized onto the row come from
+     * the invoice the line names, and the schema does not require the two to
+     * share an owner.
+     */
+    public function test_an_invoice_owned_by_another_workspace_is_not_linked(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'FOREIGN-INVOICE-4242',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $foreignInvoice->id,
+            'type' => 'time',
+            'description' => 'Synthetic line',
+            'quantity' => '1',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'sort_order' => 1,
+        ]);
+
+        $entry = $this->entry(['worked_on' => '2026-07-04']);
+        $entry->invoiceLines()->attach($line->id, ['workspace_id' => $this->workspace->id]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                $payload = (string) json_encode($page->toArray());
+
+                $this->assertStringNotContainsString('FOREIGN-INVOICE-4242', $payload);
+            });
+    }
+
+    /**
+     * The freeze refuses a write on the strength of a row the operator cannot
+     * see, so an unscoped check hands another tenant the power to lock this
+     * one's entry - a refusal whose cause is invisible and whose remedy is
+     * out of reach.
+     */
+    public function test_another_workspaces_invoice_line_cannot_freeze_this_entry(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $foreignInvoice = ClientInvoice::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'FOREIGN-FREEZE-1',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        $foreignLine = ClientInvoiceLine::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_invoice_id' => $foreignInvoice->id,
+            'type' => 'time',
+            'description' => 'Foreign line',
+            'quantity' => '1',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'sort_order' => 1,
+        ]);
+
+        $entry = $this->entry(['minutes' => 60]);
+        $entry->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]);
+
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => AgentApiVersion::for($entry),
+                'minutes' => 75,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(75, (int) $entry->fresh()?->minutes);
+    }
+
+    /**
+     * The window is read on the workspace's clock, not the server's. For the
+     * hours between a workspace's month end and UTC's, the two disagree by a
+     * whole month - and the browser dates new work locally, so the operator
+     * is logging into a month the sheet has already dropped.
+     */
+    public function test_the_window_follows_the_workspace_timezone(): void
+    {
+        $this->workspace->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+
+        // 2026-09-01 03:00 UTC is still 2026-08-31 in Los Angeles, so the
+        // window runs from September of the previous year, not October.
+        $this->travelTo('2026-09-01 03:00:00');
+
+        $this->entry(['worked_on' => '2025-09-15', 'description' => 'Edge of the window']);
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months', 1)
+                ->where('months.0.key', '2025-09'));
+    }
+
+    /**
+     * A cadence anchored mid-month puts two cycles in one calendar month, and
+     * the ledger emits a summary for each - clipping the month between them so
+     * neither claims the other's hours. Keyed by `yearMonth` alone they became
+     * two strips under one agreement name with unrelated balances, and React
+     * saw one key twice.
+     */
+    public function test_a_month_holding_two_cycles_reports_them_separately(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Quarterly Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'quarterly',
+            'status' => 'active',
+            'period_retainer_minutes' => 3000,
+            'starts_on' => '2026-02-15',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string, capacity: list<array{agreement: string, cycle_start: string}>}>} $props */
+                $props = $page->toArray()['props'];
+
+                $boundary = null;
+
+                foreach ($props['months'] as $month) {
+                    if ($month['key'] === '2026-05') {
+                        $boundary = $month;
+                    }
+                }
+
+                $this->assertNotNull($boundary, 'The boundary month is missing.');
+                $this->assertCount(2, $boundary['capacity']);
+
+                $cycles = array_column($boundary['capacity'], 'cycle_start');
+
+                $this->assertCount(2, array_unique($cycles), 'The two cycles are indistinguishable.');
+                $this->assertNotContains('', $cycles);
             });
     }
 

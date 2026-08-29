@@ -43,6 +43,8 @@ export type TimeEntry = {
 
 export type Capacity = {
     agreement: string;
+    /** Identifies the cycle: a mid-month cadence puts two in one month. */
+    cycle_start: string;
     available_hours: number;
     worked_hours: number;
     unused_hours: number;

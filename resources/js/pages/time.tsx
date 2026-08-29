@@ -88,8 +88,16 @@ function CapacityStrip({
                 </p>
             )}
             <div className="flex flex-wrap gap-3">
-                {capacity.map((row) => {
+                {capacity.map((row, index) => {
                     const over = row.over_hours > 0;
+                    // A cadence anchored mid-month puts two cycles in one
+                    // month, so the agreement name does not identify a row -
+                    // neither as a key nor to the reader looking at two
+                    // strips under the same heading.
+                    const shareTheName =
+                        capacity.filter(
+                            (other) => other.agreement === row.agreement,
+                        ).length > 1;
                     const used = row.worked_hours;
                     const available = row.available_hours;
                     const fraction =
@@ -101,11 +109,17 @@ function CapacityStrip({
 
                     return (
                         <div
-                            key={row.agreement}
+                            key={`${row.agreement}-${row.cycle_start}-${index}`}
                             className="min-w-56 flex-1 rounded-lg border border-border bg-muted/40 p-3"
                         >
                             <p className="truncate text-xs font-medium text-muted-foreground">
                                 {row.agreement}
+                                {shareTheName && row.cycle_start !== '' && (
+                                    <span className="ml-1 font-normal">
+                                        · cycle from{' '}
+                                        {formatDate(row.cycle_start)}
+                                    </span>
+                                )}
                             </p>
                             <p className="mt-1 font-medium tabular-nums">
                                 <span

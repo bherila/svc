@@ -122,7 +122,7 @@ class TimeSheetController extends Controller
         // titles and the volume of the work behind them just as plainly as the
         // rows would.
         $capacityByMonth = $selectedCompany !== null && ($whollyVisible[$selectedCompany->id] ?? false)
-            ? $this->capacityByMonth($ledgers, $selectedCompany)
+            ? $this->capacityByMonth($ledgers, $selectedCompany, $workspace->timezone)
             : [];
 
         return Inertia::render('time', [
@@ -188,17 +188,32 @@ class TimeSheetController extends Controller
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->whereIn('client_project_id', $visibleProjectIds)
-            ->where('worked_on', '>=', self::windowStart()->toDateString())
-            ->with(['project', 'task', 'user'])
+            ->where('worked_on', '>=', self::windowStart($workspace->timezone)->toDateString())
+            // A task reaches the row on the strength of the id the entry
+            // holds; it passes no check of its own, exactly as the tasks
+            // offered in the log form did.
+            ->with([
+                'project',
+                'task' => fn ($query) => $query->where('workspace_id', $workspace->id),
+                'user',
+            ])
             ->orderByDesc('worked_on')
             ->orderByDesc('id')
             ->get();
     }
 
-    /** First month the sheet displays; entries and capacity share it. */
-    private static function windowStart(): CarbonImmutable
+    /**
+     * First month the sheet displays; entries and capacity share it.
+     *
+     * Read on the workspace's own clock. The server's month rolls over before
+     * a workspace west of UTC has finished the old one, and for those hours
+     * the window advertised as the last twelve months is a different twelve
+     * months from the one the operator is logging into - the browser dates new
+     * work locally.
+     */
+    private static function windowStart(string $timezone): CarbonImmutable
     {
-        return CarbonImmutable::now()->startOfMonth()->subMonths(self::MONTH_WINDOW - 1);
+        return CarbonImmutable::now($timezone)->startOfMonth()->subMonths(self::MONTH_WINDOW - 1);
     }
 
     /**
@@ -221,7 +236,13 @@ class TimeSheetController extends Controller
         $links = ClientInvoiceLine::query()
             ->join('client_invoice_line_time_entries as pivot', 'pivot.client_invoice_line_id', '=', 'client_invoice_lines.id')
             ->join('client_invoices', 'client_invoices.id', '=', 'client_invoice_lines.client_invoice_id')
+            // Every tenant-owned table in the join, not just the one the
+            // query starts from: the schema's foreign keys are independent, so
+            // a line owned here can name an invoice owned elsewhere, and the
+            // number and status of that invoice are what get serialized.
             ->where('client_invoice_lines.workspace_id', $workspace->id)
+            ->where('client_invoices.workspace_id', $workspace->id)
+            ->where('pivot.workspace_id', $workspace->id)
             ->whereIn('pivot.client_time_entry_id', $entries->modelKeys())
             ->select([
                 'pivot.client_time_entry_id as entry_id',
@@ -253,9 +274,9 @@ class TimeSheetController extends Controller
      * a running balance, so asking it for a single month in isolation would
      * drop the rollover that month inherited.
      *
-     * @return array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>
+     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>
      */
-    private function capacityByMonth(InvoiceLedgerBuilder $ledgers, ?ClientCompany $company): array
+    private function capacityByMonth(InvoiceLedgerBuilder $ledgers, ?ClientCompany $company, string $timezone): array
     {
         if ($company === null) {
             return [];
@@ -287,8 +308,8 @@ class TimeSheetController extends Controller
             ->filter(fn (ClientAgreement $agreement): bool => $agreement->billsOnARecurringCadence()
                 && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null));
 
-        $through = CarbonImmutable::now()->endOfMonth();
-        $from = self::windowStart()->format('Y-m');
+        $through = CarbonImmutable::now($timezone)->endOfMonth();
+        $from = self::windowStart($timezone)->format('Y-m');
         $capacity = [];
 
         foreach ($agreements as $agreement) {
@@ -317,6 +338,12 @@ class TimeSheetController extends Controller
 
                 $capacity[$month->yearMonth][] = [
                     'agreement' => (string) $agreement->title,
+                    // A cadence anchored mid-month puts the tail of one cycle
+                    // and the head of the next in the same calendar month, so
+                    // `yearMonth` does not identify a row. Two strips under
+                    // one agreement name with unrelated balances and no way to
+                    // tell them apart is worse than either number alone.
+                    'cycle_start' => (string) $month->cycleStart,
                     'available_hours' => round($month->opening->totalAvailable, 2),
                     'worked_hours' => round($month->hoursWorked, 2),
                     'unused_hours' => round($month->closing->unusedHours, 2),
@@ -335,7 +362,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */
@@ -405,6 +432,14 @@ class TimeSheetController extends Controller
         $invoice = $invoicesByEntry[$entry->id] ?? null;
         $project = $entry->project;
 
+        // Scoping the relation catches another workspace's task; this catches
+        // a task of this workspace belonging to a different project, which the
+        // reader may not be able to open at all.
+        $task = $entry->task;
+        $task = $task !== null && $task->client_project_id === $entry->client_project_id
+            ? $task
+            : null;
+
         // Any invoice line freezes the entry, and the screen says the same
         // thing the mutation service does. The predecessor unlinked an entry
         // from a draft invoice and regenerated it; reproducing that needs the
@@ -430,9 +465,9 @@ class TimeSheetController extends Controller
                 'id' => $project->public_id,
                 'name' => $project->name,
             ],
-            'task' => $entry->task === null ? null : [
-                'id' => $entry->task->public_id,
-                'title' => $entry->task->title,
+            'task' => $task === null ? null : [
+                'id' => $task->public_id,
+                'title' => $task->title,
             ],
             'worker' => $entry->user?->name,
             'invoice' => $invoice,
