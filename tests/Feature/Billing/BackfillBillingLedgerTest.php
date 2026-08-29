@@ -463,7 +463,7 @@ final class BackfillBillingLedgerTest extends TestCase
 
         // SQLite compiles the clause to nothing, so the other half of this only
         // bites on the MariaDB job - which is the engine the claim is about.
-        if (DB::connection()->getDriverName() === 'mysql') {
+        if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->assertNotSame([], $locking, 'A run that can write holds what the gate answered for');
         } else {
             $this->assertSame([], $locking);
