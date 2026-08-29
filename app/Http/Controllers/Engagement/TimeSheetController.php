@@ -146,7 +146,7 @@ class TimeSheetController extends Controller
         // rows would.
         $capacityByMonth = $selectedCompany !== null
             && ($whollyVisible[$selectedCompany->id] ?? false)
-            && $this->ledgerInputsAgree($projectChainGuard, $workspace, $selectedCompany)
+            && $this->ledgerInputsAgree($projectChainGuard, $selectedCompany)
                 ? $this->capacityByMonth($ledgers, $selector, $selectedCompany, $entries, $workspace->timezone)
                 : [];
 
@@ -288,12 +288,9 @@ class TimeSheetController extends Controller
      */
     private function ledgerInputsAgree(
         TimeEntryProjectChainGuard $projectChainGuard,
-        Workspace $workspace,
         ClientCompany $company,
     ): bool {
-        return $projectChainGuard->projectChainsAgree($company, ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $company->id));
+        return $projectChainGuard->companyProjectChainsAgree($company);
     }
 
     /**

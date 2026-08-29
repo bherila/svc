@@ -127,6 +127,33 @@ final class AllocationServiceTest extends TestCase
         $this->assertSame(2, $this->entryCount());
     }
 
+    public function test_recombination_refuses_when_a_lineage_root_claims_another_workspace(): void
+    {
+        $root = $this->entry(180);
+        $firstSplit = app(TimeEntrySplitter::class)->splitEntry($root, 60);
+        app(TimeEntrySplitter::class)->splitEntry($firstSplit['overflow'], 60);
+        $otherWorkspace = Workspace::query()->create([
+            'name' => 'Root Elsewhere',
+            'slug' => 'root-elsewhere',
+        ]);
+
+        $root->forceFill(['workspace_id' => $otherWorkspace->id])->save();
+
+        try {
+            $this->recombine();
+            $this->fail('A cross-workspace root must stop fragment recombination.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertSame(3, ClientTimeEntry::query()->count());
+        $this->assertSame(2, ClientTimeEntry::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->where('split_from_time_entry_id', $root->id)
+            ->count());
+        $this->assertSame($otherWorkspace->id, $root->fresh()?->workspace_id);
+    }
+
     public function test_recombination_refuses_fragments_whose_project_belongs_to_another_company(): void
     {
         $entry = $this->entry(180);

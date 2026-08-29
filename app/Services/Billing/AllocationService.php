@@ -42,6 +42,12 @@ final class AllocationService
     public function recombineUnlinkedFragments(Workspace $workspace, ClientCompany $company): int
     {
         return DB::transaction(function () use ($workspace, $company): int {
+            // Discovering lineage roots through the current workspace would
+            // hide a root moved elsewhere while leaving its siblings here.
+            // Refuse the complete company chain before a destructive merge
+            // can sever those visible fragments from the omitted root.
+            $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+
             $rootIds = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $company->id)

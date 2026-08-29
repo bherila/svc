@@ -20,9 +20,9 @@ final class TimeEntryProjectChainGuard
 {
     public const FAILURE_MESSAGE = 'Billing stopped because a time entry points to a project outside this client company. Correct the entry before retrying.';
 
-    public function assertCompanyProjectChainsAgree(ClientCompany $company): void
+    public function companyProjectChainsAgree(ClientCompany $company): bool
     {
-        $this->assertProjectChainsAgree(
+        $insideWorkspace = $this->projectChainsAgree(
             $company,
             ClientTimeEntry::query()
                 ->where('workspace_id', $company->workspace_id)
@@ -34,12 +34,21 @@ final class TimeEntryProjectChainGuard
         // normal workspace scope alone would hide the row and silently
         // underbill it, while an unqualified company-id query would violate
         // the tenant-query invariant this guard exists to enforce.
-        $this->assertProjectChainsAgree(
+        $outsideWorkspace = $this->projectChainsAgree(
             $company,
             ClientTimeEntry::query()
                 ->where('workspace_id', '!=', $company->workspace_id)
                 ->where('client_company_id', $company->id),
         );
+
+        return $insideWorkspace && $outsideWorkspace;
+    }
+
+    public function assertCompanyProjectChainsAgree(ClientCompany $company): void
+    {
+        if (! $this->companyProjectChainsAgree($company)) {
+            throw new DomainException(self::FAILURE_MESSAGE);
+        }
     }
 
     /**

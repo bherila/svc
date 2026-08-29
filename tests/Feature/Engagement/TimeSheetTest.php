@@ -1377,6 +1377,42 @@ class TimeSheetTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
     }
 
+    public function test_capacity_is_withheld_when_company_time_claims_another_workspace(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Retainer With Cross-Workspace Inputs',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+        $url = "/workspaces/{$this->workspace->public_id}/time";
+
+        $this->actingAs($this->manager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
+
+        $foreign = $this->foreignWorkspace();
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $foreign['project']->id,
+            'user_id' => $this->manager->id,
+            'worked_on' => '2026-07-06',
+            'minutes' => 300,
+            'description' => 'Company work stored under another tenant',
+            'status' => 'approved',
+        ]);
+
+        $this->actingAs($this->manager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
+    }
+
     /**
      * Deferred work joins the ledger once an invoice carries it, and the
      * invoice has to be this workspace's. An unscoped check let another
