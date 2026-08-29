@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { todayLocal } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
 /** Sentinel for the clearing option; task ids are uuids, so it collides with none. */
@@ -40,7 +39,11 @@ type Draft = {
     client_visible_description: string;
 };
 
-function draftFor(company: CompanyOption, entry: TimeEntry | null): Draft {
+function draftFor(
+    company: CompanyOption,
+    entry: TimeEntry | null,
+    today: string,
+): Draft {
     if (entry !== null) {
         return {
             project_id: entry.project.id,
@@ -60,7 +63,10 @@ function draftFor(company: CompanyOption, entry: TimeEntry | null): Draft {
     return {
         project_id: loggable?.id ?? '',
         task_id: '',
-        worked_on: todayLocal(),
+        // The workspace's calendar, not the browser's: the write validators
+        // bound the date by the workspace's window, so a browser ahead of it
+        // defaulted to a date its own save would refuse.
+        worked_on: today,
         minutes: 30,
         description: '',
         is_billable: true,
@@ -79,18 +85,22 @@ function draftFor(company: CompanyOption, entry: TimeEntry | null): Draft {
  */
 export function TimeEntryDialog({
     workspaceId,
+    today,
     company,
     entry,
     open,
     onOpenChange,
 }: {
     workspaceId: string;
+    today: string;
     company: CompanyOption;
     entry: TimeEntry | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
-    const [draft, setDraft] = useState<Draft>(() => draftFor(company, entry));
+    const [draft, setDraft] = useState<Draft>(() =>
+        draftFor(company, entry, today),
+    );
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 

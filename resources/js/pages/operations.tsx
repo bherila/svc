@@ -76,6 +76,8 @@ type Workspace = {
     id: string;
     name: string;
     clients: Client[];
+    /** Today on the workspace's calendar, not the browser's or UTC's. */
+    today: string;
 };
 
 const inputClass =
@@ -159,12 +161,18 @@ function AttachmentPanel({
 function TimeEntryForm({
     workspaceId,
     project,
+    today,
 }: {
     workspaceId: string;
     project: Project;
+    today: string;
 }) {
     const form = useForm({
-        worked_on: new Date().toISOString().slice(0, 10),
+        // Not `new Date().toISOString()`: that is UTC's day, and the write
+        // validators bound the date by the workspace's own window - so for
+        // the hours the two calendars disagree, the untouched default was
+        // refused.
+        worked_on: today,
         minutes: '30',
         description: '',
         is_billable: true,
@@ -635,6 +643,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                             <TimeEntryForm
                                                 workspaceId={workspace.id}
                                                 project={project}
+                                                today={workspace.today}
                                             />
                                             <ul className="mt-3 space-y-1 text-sm text-slate-600">
                                                 {project.time_entries.map(

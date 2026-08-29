@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Engagement;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoiceLine;
@@ -153,7 +154,11 @@ class TimeSheetController extends Controller
                 'id' => $workspace->public_id,
                 'name' => $workspace->name,
                 'default_currency' => $workspace->default_currency,
+                'today' => TimeSheetWindow::today($workspace->timezone),
             ],
+            // Named by the request that enforces it, so the page cannot offer
+            // a selection the write will refuse.
+            'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
             'filters' => [
                 'company_id' => $selectedCompany?->public_id,
             ],
@@ -409,6 +414,19 @@ class TimeSheetController extends Controller
             // both claim the months after the handover, and the figure stops
             // being the one the invoice uses.
             $end = $through;
+
+            // The ledger clips its last row at the termination date, so
+            // pending work after it belongs to no segment at all - reporting
+            // it against the expired retainer promises capacity that has
+            // ended, and an approval that may find no agreement to price it.
+            if ($agreement->ends_on !== null) {
+                $terminated = CarbonImmutable::parse($agreement->ends_on)->endOfDay();
+
+                if ($terminated->lt($end)) {
+                    $end = $terminated;
+                }
+            }
+
             // Only an agreement of the same scope replaces this one. Two
             // retainers covering different projects run side by side, and
             // asked across the whole company the later-starting one ends the

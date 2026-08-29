@@ -182,6 +182,19 @@ final class TimeEntryMutationService
             throw new DomainException('A billing-rate override requires both amount and currency.');
         }
 
+        // A rate already stated on the entry is not a default to be replaced.
+        // `TimeEntryWorkflow` records one when the operator types it at the
+        // point of logging and marks it `explicit`; resolving the agreement
+        // rate over the top means the invoice charges a number nobody entered,
+        // silently, on an approval that asked for no change of rate.
+        if ($entry->billing_rate_source === 'explicit' && $entry->billing_rate_amount !== null) {
+            return [
+                'amount' => $entry->billing_rate_amount,
+                'currency' => $entry->currency,
+                'source' => 'explicit',
+            ];
+        }
+
         return $this->rates->resolve($entry) + ['source' => 'agreement'];
     }
 

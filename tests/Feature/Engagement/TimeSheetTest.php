@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Engagement;
 
+use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -2011,6 +2012,119 @@ class TimeSheetTest extends TestCase
                     'A cycle claimed pending work belonging to the next one.',
                 );
             });
+    }
+
+    /**
+     * A rate stated on the entry is not a default to be replaced.
+     * `TimeEntryWorkflow` records one when the operator types it at the point
+     * of logging and marks it `explicit`; resolving the agreement rate over
+     * the top makes the invoice charge a number nobody entered, on an
+     * approval that asked for no change of rate.
+     */
+    public function test_approval_keeps_a_rate_the_operator_already_stated(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $entry = $this->entry([
+            'billing_rate_amount' => 22500,
+            'billing_rate_source' => 'explicit',
+        ]);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+        // Not 15000, which is what the agreement would have resolved to.
+        $this->assertSame(22500, (int) $entry->fresh()?->billing_rate_amount);
+        $this->assertSame('explicit', $entry->fresh()?->billing_rate_source);
+    }
+
+    /**
+     * The ledger clips its last row at the termination date, so pending work
+     * after it belongs to no segment - reporting it against the expired
+     * retainer promises capacity that has ended.
+     */
+    public function test_pending_work_after_termination_is_not_claimed_by_the_retainer(): void
+    {
+        $agreement = $this->monthlyRetainer('Terminating Retainer');
+        $agreement->forceFill(['ends_on' => '2026-07-15'])->save();
+
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+        $this->entry(['worked_on' => '2026-07-20', 'minutes' => 300]);
+
+        $this->travelTo('2026-07-25');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.capacity', 1)
+                // Only the hour worked while the agreement was in force.
+                ->where('months.0.capacity.0.pending_minutes', 60));
+    }
+
+    /**
+     * Both screens default their date field from the workspace's calendar,
+     * because the write validators bound it by the workspace's window. A
+     * browser or server ahead of that calendar defaulted to a date its own
+     * save would refuse.
+     */
+    public function test_both_screens_default_dates_from_the_workspace_calendar(): void
+    {
+        $this->workspace->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+
+        // Still 2026-08-31 in Los Angeles; UTC has reached September.
+        $this->travelTo('2026-09-01 03:00:00');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('workspace.today', '2026-08-31'));
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/operations")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('workspace.today', '2026-08-31'));
+
+        // And that default is a date the write accepts.
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => '2026-08-31',
+                'minutes' => 60,
+                'description' => 'Logged on the last day of the local month',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(1, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * The page must not offer a selection the write refuses: an over-limit
+     * approval is rejected whole, and the operator is given no way to make it
+     * smaller. The limit is named by the request that enforces it.
+     */
+    public function test_the_page_is_told_the_approval_limit_the_request_enforces(): void
+    {
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approval_limit', ApproveTimeEntriesRequest::MAX_ENTRIES));
+
+        // And the request really does refuse one more than it advertises.
+        $entries = [];
+
+        for ($i = 0; $i <= ApproveTimeEntriesRequest::MAX_ENTRIES; $i++) {
+            $entries[] = ['id' => 'synthetic-'.$i, 'expected_version' => 'v'];
+        }
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", ['entries' => $entries])
+            ->assertSessionHasErrors('entries');
     }
 
     /**

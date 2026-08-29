@@ -11,11 +11,20 @@ class ApproveTimeEntriesRequest extends FormRequest
         return true;
     }
 
+    /**
+     * How many entries one approval may carry.
+     *
+     * Named rather than inlined because the screen has to know it: a
+     * selection the page allows and the request refuses is rejected whole,
+     * and the operator is given no way to make it smaller.
+     */
+    public const MAX_ENTRIES = 200;
+
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
         return [
-            'entries' => ['required', 'array', 'min:1', 'max:200'],
+            'entries' => ['required', 'array', 'min:1', 'max:'.self::MAX_ENTRIES],
             'entries.*.id' => ['required', 'string'],
             'entries.*.expected_version' => ['required', 'string'],
             // Shape only. Whether a rate override is *complete* - both an

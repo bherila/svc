@@ -27,6 +27,12 @@ final class TimeSheetWindow
         return CarbonImmutable::now($timezone)->startOfMonth()->subMonths(self::MONTHS - 1);
     }
 
+    /** Today on the workspace's calendar, for defaulting a date field. */
+    public static function today(string $timezone): string
+    {
+        return CarbonImmutable::now($timezone)->toDateString();
+    }
+
     public static function end(string $timezone): CarbonImmutable
     {
         return CarbonImmutable::now($timezone)->endOfMonth();

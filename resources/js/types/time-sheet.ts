@@ -66,7 +66,15 @@ export type Month = {
 };
 
 export type TimeSheetProps = {
-    workspace: { id: string; name: string; default_currency: string };
+    workspace: {
+        id: string;
+        name: string;
+        default_currency: string;
+        /** Today on the workspace's calendar, for defaulting date fields. */
+        today: string;
+    };
+    /** How many entries one approval request may carry. */
+    approval_limit: number;
     filters: { company_id: string | null };
     companies: CompanyOption[];
     months: Month[];

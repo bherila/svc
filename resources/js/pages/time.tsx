@@ -182,6 +182,7 @@ export default function TimeSheet({
     filters,
     companies,
     months,
+    approval_limit: approvalLimit,
 }: TimeSheetProps) {
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -378,11 +379,16 @@ export default function TimeSheet({
                                 </Button>
                                 <Button
                                     size="sm"
-                                    disabled={approving}
+                                    disabled={
+                                        approving ||
+                                        selectedEntries.length > approvalLimit
+                                    }
                                     onClick={() => approve(selectedEntries)}
                                 >
                                     <CheckIcon />
-                                    Approve
+                                    {selectedEntries.length > approvalLimit
+                                        ? `Approve up to ${approvalLimit}`
+                                        : 'Approve'}
                                 </Button>
                             </div>
                         </div>
@@ -432,6 +438,7 @@ export default function TimeSheet({
                 <TimeEntryDialog
                     key={dialogEntry?.id ?? 'new'}
                     workspaceId={workspace.id}
+                    today={workspace.today}
                     company={company}
                     entry={dialogEntry}
                     open={dialogOpen}
