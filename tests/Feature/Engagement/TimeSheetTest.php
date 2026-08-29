@@ -1267,16 +1267,20 @@ class TimeSheetTest extends TestCase
         // the lock is taken on, and on one connection that is visible only in
         // the query. Any read of this table by primary key has to name the
         // workspace it is reading for.
+        // Unquoted, because the grammars disagree: SQLite writes `"id"` and
+        // MariaDB writes `` `id` ``, and matching one of them makes the test
+        // vacuous on the other engine - which is how this assertion first
+        // reached CI green locally and red on MariaDB.
         $byPrimaryKey = array_filter(
-            $captured,
-            fn (string $sql): bool => str_contains($sql, 'from "client_time_entries"')
-                && str_contains($sql, '"id" = ?'),
+            array_map(self::unquote(...), $captured),
+            fn (string $sql): bool => str_contains($sql, 'from client_time_entries')
+                && preg_match('/\bid = \?/', $sql) === 1,
         );
 
         $this->assertNotEmpty($byPrimaryKey, 'The write never read the row, so this asserted nothing.');
 
         foreach ($byPrimaryKey as $sql) {
-            $this->assertStringContainsString('"workspace_id"', $sql, "Unscoped read of another tenant's row: {$sql}");
+            $this->assertStringContainsString('workspace_id', $sql, "Unscoped read of another tenant's row: {$sql}");
         }
     }
 
@@ -1490,17 +1494,22 @@ class TimeSheetTest extends TestCase
 
         $this->assertNotEmpty($statements, 'No queries were captured, so this asserted nothing.');
 
+        $checked = 0;
+
         foreach ($statements as $statement) {
             $allowed = $known;
-            preg_match_all('/\bas\s+"([^"]+)"/i', $statement, $aliases);
+            // Either grammar's quoting. Reading only SQLite's would make this
+            // assert nothing on the engine that catches the bug outright.
+            preg_match_all('/\bas\s+[`"]([^`"]+)[`"]/i', $statement, $aliases);
 
             foreach ($aliases[1] as $alias) {
                 $allowed[strtolower($alias)] = true;
             }
 
-            preg_match_all('/"([^"]+)"/', $statement, $identifiers);
+            preg_match_all('/[`"]([^`"]+)[`"]/', $statement, $identifiers);
 
             foreach ($identifiers[1] as $identifier) {
+                $checked++;
                 $this->assertArrayHasKey(
                     strtolower($identifier),
                     $allowed,
@@ -1508,6 +1517,14 @@ class TimeSheetTest extends TestCase
                 );
             }
         }
+
+        $this->assertGreaterThan(0, $checked, 'No identifiers were read, so this asserted nothing.');
+    }
+
+    /** Identifier quoting differs by engine; the assertions here must not. */
+    private static function unquote(string $sql): string
+    {
+        return str_replace(['`', '"'], '', $sql);
     }
 
     private function queriesRenderingTheSheet(): int
