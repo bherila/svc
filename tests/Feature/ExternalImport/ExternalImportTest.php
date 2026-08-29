@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ExternalImportTest extends TestCase
@@ -489,6 +490,1540 @@ class ExternalImportTest extends TestCase
         $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
     }
 
+    /**
+     * The source regenerates an invoice by soft-deleting its lines and
+     * inserting fresh ones, without repointing the entries that named the old
+     * ones. Line 122 below is one of those superseded copies.
+     */
+    private function supersededClaimSource(
+        PDO $pdo,
+        string $replacementType = 'prior_month_retainer',
+        string $supersededType = 'prior_month_retainer',
+        bool $withSecondLiveLine = false,
+        int $unclaimedEarlierGenerations = 0,
+        bool $withEntryAlreadyOnTheReplacement = false,
+        string $cadence = 'monthly',
+        ?string $terminatedOn = null,
+    ): void {
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        // The agreement these lines fall under. Its cadence is what the
+        // composer takes the cadence word in a generated description from, so
+        // a fixture without one cannot exercise those templates at all.
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, billing_cadence TEXT, termination_date TEXT, deleted_at TEXT)');
+        $termination = $terminatedOn === null ? 'NULL' : "'{$terminatedOn}'";
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '{$cadence}', {$termination}, NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, 41, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, 41, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
+
+        if ($withSecondLiveLine) {
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES (124, 121, 41, NULL, 'Deferred work items applied to retainer (11:00)', '1', '100.00', '100.00', '{$replacementType}', 3, NULL)");
+        }
+
+        // Earlier regenerations of the same aggregate line. Nothing names them
+        // any more - only the last superseded copy is claimed - so they must not
+        // make the replacement look ambiguous.
+        for ($i = 0; $i < $unclaimedEarlierGenerations; $i++) {
+            $key = 200 + $i;
+            $pdo->exec("INSERT INTO client_invoice_lines VALUES ({$key}, 121, 41, NULL, 'Deferred work items applied to retainer (8:00)', '1', '100.00', '100.00', '{$supersededType}', 0, '2026-01-11 08:00:00')");
+        }
+
+        $pdo->exec("INSERT INTO client_time_entries VALUES (125, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 122)");
+
+        if ($withEntryAlreadyOnTheReplacement) {
+            // One line bills many entries, so the replacement having claimants
+            // already is the ordinary case, not evidence of ambiguity.
+            $pdo->exec("INSERT INTO client_time_entries VALUES (126, 13, 11, NULL, 7, 'Work already on the live line', 30, '2026-01-21', 1, 0, 'approved', 123)");
+        }
+    }
+
+    public function test_a_time_entry_naming_a_superseded_line_is_billed_by_its_replacement(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $liveLineId = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
+        $pivot = DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->first();
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['link_counts']['inserted']);
+        $this->assertSame(0, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        // The superseded copy is deleted at the source and must stay uneported;
+        // only its live replacement is here to be linked to.
+        $this->assertSame(1, ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->count());
+        $this->assertNotNull($pivot);
+        $this->assertSame((int) $liveLineId, (int) $pivot->client_invoice_line_id);
+        // The whole point: the generator must not read this as outstanding work
+        // and charge the client for hours the invoice already billed.
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * The production shape. One invoice was regenerated twenty-one times, so it
+     * carries twenty-one superseded copies of the same aggregate line and one
+     * live one. Only the last copy is claimed, and counting the copies rather
+     * than the claims would refuse the very case this exists for.
+     */
+    public function test_earlier_generations_nothing_claims_do_not_make_the_replacement_ambiguous(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), unclaimedEarlierGenerations: 20);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['link_counts']['inserted']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A time entry's claim is a pivot row precisely because one line bills many
+     * entries, so a replacement that already has claimants is the ordinary
+     * case. In the migrated data the line the twenty are recovered onto is
+     * already held by nineteen live entries; treating that as ambiguity would
+     * refuse the case this exists for.
+     */
+    public function test_a_replacement_other_entries_already_share_is_still_available(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), withEntryAlreadyOnTheReplacement: true);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        // Both entries end up on the one line that survived, which is what a
+        // many-to-many pivot is for.
+        $this->assertSame(2, DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->count());
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A subcontractor charge is one line per (user, project, rate, currency)
+     * group, so one superseded line and one live one are as likely to be two
+     * different groups as the same line twice. A time entry's claim cannot tell
+     * them apart - many entries share a line by design - and the type does not
+     * either, so the mapping is refused rather than guessed.
+     */
+    public function test_a_per_item_line_type_is_never_recovered_from_a_time_entry_claim(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(
+            new PDO('sqlite:'.$this->sourcePath),
+            replacementType: 'subcontractor',
+            supersededType: 'subcontractor',
+        );
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_two_live_lines_could_be_the_replacement(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), withSecondLiveLine: true);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // Attaching the work to whichever line happened to sort first would
+        // suppress a charge that may be owed, so an ambiguous claim is reported
+        // rather than guessed.
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, $summary['link_counts']['inserted']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_no_live_line_shares_its_type(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        // The invoice kept a line, but not one of the superseded line's type -
+        // the shape of a line an operator removed rather than regenerated.
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath), replacementType: 'adjustment');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    public function test_a_superseded_claim_never_resolves_across_a_workspace(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $owner = Workspace::create(['name' => 'Owning Workspace', 'slug' => 'owning-workspace']);
+        $other = Workspace::create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        app(ExternalImportService::class)->run('external', $owner->slug, true);
+        $pivotsAfterOwner = DB::table('client_invoice_line_time_entries')->count();
+
+        // The ledger is keyed on source identity, so a run for another tenant
+        // resolves the replacement to the owning tenant's invoice line. The
+        // foreign key is not workspace-composite and would accept it.
+        $summary = app(ExternalImportService::class)->run('external', $other->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame($pivotsAfterOwner, DB::table('client_invoice_line_time_entries')->count());
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->where('workspace_id', $other->getKey())->count());
+    }
+
+    /**
+     * The pivot is unique on the entry. An operator billing it in the gap
+     * between the two reads leaves a link this import has no business
+     * repointing - and inserting beside it would violate the constraint and
+     * throw the run after earlier tables had committed.
+     */
+    public function test_a_recovered_claim_leaves_a_destination_link_the_operator_made(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The operator moves the entry onto a different line after the import.
+        $entryId = ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->value('id');
+        $other = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id'),
+            'type' => 'adjustment', 'description' => 'Billed by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+        ]);
+        DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)
+            ->update(['client_invoice_line_id' => $other->id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)->count());
+        $this->assertSame(
+            (int) $other->id,
+            (int) DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $entryId)->value('client_invoice_line_id'),
+        );
+    }
+
+    /**
+     * Losing the race to a writer that claimed the entry for a different line
+     * means what the read before the insert would have meant.
+     */
+    public function test_losing_the_pivot_constraint_to_another_line_is_reported_rather_than_thrown(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        // Between the read that finds no pivot and the insert that follows it,
+        // somebody else claims the entry.
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                return;
+            }
+            $done = true;
+            $entryId = ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->value('id');
+            $invoiceId = ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id');
+            if ($entryId === null || $invoiceId === null) {
+                return;
+            }
+            $elsewhere = ClientInvoiceLine::query()->create([
+                'workspace_id' => $workspace->getKey(), 'client_invoice_id' => $invoiceId,
+                'type' => 'adjustment', 'description' => 'Billed by somebody else', 'quantity' => '1.0000',
+                'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+            ]);
+            DB::table('client_invoice_line_time_entries')->insert([
+                'workspace_id' => $workspace->getKey(),
+                'client_invoice_line_id' => $elsewhere->id,
+                'client_time_entry_id' => $entryId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The run completes rather than throwing, and says what happened.
+        $this->assertSame(1, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Losing the race to a writer that wrote the very row this was about to
+     * does not mean the same thing. Reporting a skip there would end an
+     * otherwise reconciled run with skips over work that was in fact done.
+     */
+    public function test_losing_the_pivot_constraint_to_the_same_line_is_idempotent(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                return;
+            }
+            $done = true;
+            $entryId = ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->value('id');
+            $lineId = ClientInvoiceLine::query()->where('workspace_id', $workspace->getKey())->value('id');
+            if ($entryId === null || $lineId === null) {
+                return;
+            }
+            DB::table('client_invoice_line_time_entries')->insert([
+                'workspace_id' => $workspace->getKey(),
+                'client_invoice_line_id' => $lineId,
+                'client_time_entry_id' => $entryId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame('completed', $summary['status']);
+        $this->assertSame(0, $summary['counts']['failure_reasons']['time_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(1, $summary['link_counts']['idempotent']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * Same type is not the same line. Two retainer draws on one invoice are
+     * two pools, and only the words say which - so a replacement whose
+     * description says something else is not this line regenerated.
+     */
+    public function test_a_replacement_whose_description_says_something_else_is_refused(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10:00 applied to August 2026 pool)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The figures in a description move between generations of one line while
+     * the words stay put, so they cannot be part of what identifies it.
+     */
+    public function test_a_replacement_whose_only_difference_is_its_figures_is_still_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A retainer description carries the cycle it is for. Deleting every number
+     * would make February 2024 and February 2025 the same charge, and attach a
+     * stale claim to the wrong year's line.
+     */
+    public function test_a_replacement_for_a_different_cycle_is_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12:00 hours) - Feb 1, 2025 through Feb 28, 2025' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The same cycle with different hours is the same line regenerated, and
+     * must still be recognised as one.
+     */
+    public function test_a_replacement_for_the_same_cycle_is_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (12:30 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * PeriodLabel writes cycles as 2026-01, 2026-Q1 and 2026-01..2026-03.
+     * Keeping only the year would merge every month of a year into one charge.
+     */
+    public function test_two_cycles_in_one_year_are_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (9:55) 2026-01' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer (10:00) 2026-02' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Two empty descriptions are not a match; they are the absence of the
+     * evidence a match needs, and the type alone was never enough.
+     */
+    public function test_a_replacement_with_no_description_is_never_recovered(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '' WHERE client_invoice_line_id IN (122, 123)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A figure outside the composer's parenthetical is treated as naming the
+     * charge, because nothing here can tell a rate from a date without
+     * classifying numbers - and every attempt at that lost to some format the
+     * source writes. Refusing leaves the work reported and unbilled; a wrong
+     * match would mark it billed silently.
+     */
+    public function test_a_figure_outside_the_parenthetical_is_treated_as_identifying(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer at 2000.00' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to retainer at 2001.00' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
+    /**
+     * The source writes cycles in prose as well as in labels, and a day is as
+     * much a part of one as a month is.
+     */
+    public function test_a_textual_cycle_that_moved_its_day_is_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (9:55) Aug 1, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Retainer (10:00) Aug 15, 2026 through Aug 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * An operator can bill the deliverable on a different line between the two
+     * reads. The import leaves that alone, but it has not reconciled the claim
+     * and must not report as if it had.
+     */
+    public function test_a_milestone_billed_elsewhere_here_is_reported_not_counted_idempotent(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (231, 11, NULL, 'SYN-231', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (233, 231, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 233, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The operator moves it onto a line of their own after the import.
+        $elsewhere = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->getKey(),
+            'client_invoice_id' => ClientInvoice::query()->where('workspace_id', $workspace->getKey())->value('id'),
+            'type' => 'adjustment', 'description' => 'Billed by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 9,
+        ]);
+        ClientTask::query()->where('workspace_id', $workspace->getKey())
+            ->update(['client_invoice_line_id' => $elsewhere->id]);
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_destination_claims_another_line'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(
+            (int) $elsewhere->id,
+            (int) ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'),
+            'The operator decision stands',
+        );
+    }
+
+    /**
+     * An operator's parenthetical can open with a number that names the thing
+     * rather than prices it, and two of those are two allocations. Only what a
+     * billing service wrote is normalised.
+     */
+    public function test_an_operator_parenthetical_is_not_read_as_an_amount(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Support package (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Support package (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A time entry deleted before the run was never observed, so only the
+     * source unfiltered knows its line was claimed - and a survivor beside a
+     * claimed line is not the unambiguous replacement it looks like.
+     */
+    public function test_a_deleted_time_entry_claim_still_makes_the_replacement_ambiguous(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, unclaimedEarlierGenerations: 1);
+        $pdo->exec('ALTER TABLE client_time_entries ADD COLUMN deleted_at TEXT');
+        // Claims the earlier generation, and is deleted, so this run never sees it.
+        $pdo->exec("INSERT INTO client_time_entries VALUES (127, 13, 11, NULL, 7, 'Deleted but it claimed one', 30, '2026-01-22', 1, 0, 'approved', 200, '2026-01-25 09:00:00')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
+    /**
+     * A cadence-qualified retainer draw is still a generated line. Missing its
+     * template refuses a valid replacement, and the entry then stays eligible
+     * to be charged again.
+     */
+    public function test_a_cadence_qualified_retainer_draw_is_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, cadence: 'quarterly');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * A milestone whose line was superseded is reported, not guessed at.
+     *
+     * Nothing available says which task an unheld line belongs to: an invoice
+     * line carries no task reference, and its description is the task's title,
+     * which nothing makes unique. So the claim is left unlinked and counted,
+     * where an aggregate claim is recovered.
+     */
+    public function test_a_milestone_naming_a_superseded_line_is_reported_rather_than_resolved(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (131, 11, NULL, 'SYN-131', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (132, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (133, 131, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 2, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 132, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id = 14');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertNull(ClientTask::query()->where('workspace_id', $workspace->getKey())->value('client_invoice_line_id'));
+    }
+
+    /**
+     * "Gold Retainer (2025 tier)" is somebody's own wording that happens to end
+     * the way a fee line starts. The matcher wants the whole generated shape,
+     * not a phrase that resembles it.
+     */
+    public function test_wording_that_merely_resembles_a_fee_line_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * One invoice can carry lines from more than one agreement, and the words
+     * describe the work rather than the contract it fell under. The agreement
+     * is the one piece of identity the source records as a reference.
+     */
+    public function test_a_replacement_under_another_agreement_is_not_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec('UPDATE client_invoice_lines SET client_agreement_id = 31 WHERE client_invoice_line_id = 122');
+        $pdo->exec('UPDATE client_invoice_lines SET client_agreement_id = 32 WHERE client_invoice_line_id = 123');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The same agreement on both, including both carrying none, is still the
+     * same line regenerated.
+     */
+    public function test_a_replacement_under_the_same_agreement_is_still_the_same_line(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec('UPDATE client_invoice_lines SET client_agreement_id = 31 WHERE client_invoice_line_id IN (122, 123)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * BillingCadenceLabel emits four cadences and no others, so a qualifier
+     * somebody named is not one - and reading it as generated would strip the
+     * figure that tells two of them apart.
+     */
+    public function test_a_qualifier_that_is_not_a_cadence_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to gold retainer (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to gold retainer (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The fee line's qualifier is a cadence too. "Gold Retainer (10 hours) -
+     * ..." follows the shape without being generated, and merging two of those
+     * would suppress a charge.
+     */
+    public function test_a_fee_line_qualifier_that_is_not_a_cadence_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (10 hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Gold Retainer (12 hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A draft regenerated between the ownership check and the insert takes its
+     * lines with it, which arrives as a foreign key failure rather than a
+     * duplicate. That means the parent is missing - what this run would have
+     * reported had it looked a moment later - not that the import should die.
+     */
+    public function test_a_replacement_deleted_before_the_insert_is_reported_not_thrown(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $this->supersededClaimSource(new PDO('sqlite:'.$this->sourcePath));
+
+        DB::listen(function ($query) use ($workspace): void {
+            static $done = false;
+            if ($done || ! str_contains($query->sql, 'select') || ! str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                return;
+            }
+            $done = true;
+            DB::table('client_invoice_lines')->where('workspace_id', $workspace->getKey())->delete();
+        });
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The termination prefix on somebody's own wording is not that line. Its
+     * whole group is replaced when it matches, so a prefix-only matcher would
+     * merge two allocations that the parenthetical distinguishes.
+     */
+    public function test_termination_wording_that_is_not_the_generated_syntax_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Two live tasks naming one line is two deliverables with one line between
+     * them. Left to the write, the lower id takes it and the constraint rejects
+     * the other - and nothing says the lower id is the one the line billed.
+     */
+    public function test_a_live_milestone_line_two_tasks_claim_is_given_to_neither(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (24, 13, 'The other deliverable', 'Names the same line', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL)");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (261, 11, NULL, 'SYN-261', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (262, 261, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 262, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 24)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(2, $summary['counts']['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+            'Neither task may take a line that might have billed the other',
+        );
+    }
+
+    /**
+     * A generated prefix on somebody's own wording is not a generated line. The
+     * matchers want the whole syntax, so a figure that names the allocation is
+     * left where it is.
+     */
+    public function test_a_generated_prefix_on_custom_wording_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2025 tier)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2026 tier)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * A task deleted before the run is not a rival for being billed again, but
+     * it may be the deliverable the line paid for - and handing that line to
+     * the survivor would mark the survivor billed for work of its own that
+     * nothing has charged.
+     */
+    public function test_a_deleted_task_claiming_the_live_line_refuses_the_survivor(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN client_invoice_line_id INTEGER');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN milestone_price TEXT');
+        $pdo->exec('ALTER TABLE client_tasks ADD COLUMN deleted_at TEXT');
+        $pdo->exec("INSERT INTO client_tasks VALUES (25, 13, 'The deleted deliverable', 'Named the same line', '2026-01-09', '2026-01-05', '2026-01-06', NULL, NULL, '2026-01-20 09:00:00')");
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (271, 11, NULL, 'SYN-271', 'issued', '2026-01-10', '2026-02-10', '2500.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (272, 271, NULL, NULL, 'Milestone: onboarding', '1', '2500.00', '2500.00', 'milestone', 1, NULL)");
+        $pdo->exec('UPDATE client_tasks SET client_invoice_line_id = 272, milestone_price = 2500.00, completed_at = \'2026-01-09\' WHERE id IN (14, 25)');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['counts']['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0);
+        $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(
+            0,
+            ClientTask::query()->where('workspace_id', $workspace->getKey())->whereNotNull('client_invoice_line_id')->count(),
+        );
+    }
+
+    /**
+     * The source writes hours as H:MM, so the migrated retainer draws read
+     * "(9:55)" and "(10:00)". A figure pattern that admits only decimals
+     * matches none of them, and every claim it exists for is refused.
+     */
+    public function test_hours_written_as_h_mm_are_still_a_generated_figure(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (9:55)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (10:00)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * The termination rate is formatMoney()'s output. Prose in its place is
+     * somebody's own wording, and this template erases the whole group - so
+     * matching it loosely loses the text that told two allocations apart.
+     */
+    public function test_a_termination_rate_that_is_not_money_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours', terminatedOn: '2026-01-31');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2025 tier/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 2026 tier/hr)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The generated form still is one, hours and rate both moving.
+     */
+    public function test_a_termination_line_in_the_generated_form_is_still_recovered(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        // The type the composer writes this description for.
+        $this->supersededClaimSource($pdo, replacementType: 'additional_hours', supersededType: 'additional_hours', terminatedOn: '2026-01-31');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (9:55 @ 150.00 USD/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (10:00 @ 175.00 USD/hr)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * createRetainerFeeLine() puts a figure in that slot and nothing else, so
+     * prose before "hours" is somebody's own wording and the figure in it may
+     * be what tells two allocations apart.
+     */
+    public function test_fee_line_prose_in_the_hours_slot_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (2025 tier hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (2026 tier hours) - Jan 1, 2026 through Jan 31, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * HoursQuantity::format writes H:MM and nothing else, so a bare number in
+     * that slot is somebody's own qualifier - and two of them are two
+     * allocations rather than two generations of one line.
+     */
+    public function test_a_bare_number_where_hours_belong_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2025)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items applied to retainer (2026)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * Every generated slot is a formatter's output, so a value that formatter
+     * cannot produce is somebody's own text - and the figure in it may be what
+     * tells two allocations apart.
+     */
+    /**
+     * Two lines that name no agreement at all are not two lines agreeing about
+     * one. Casting both nulls to '' made them compare equal, and the templates
+     * that name no cadence would have taken that as identity established.
+     */
+    public function test_a_claim_on_lines_naming_no_agreement_is_not_recovered(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+        $pdo->exec('UPDATE client_invoice_lines SET client_agreement_id = NULL');
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * An agreement this run never observed cannot say what the generator could
+     * have written under it. The cadence is read fresh from the source, so
+     * without holding that read to the ledger's fingerprint it would answer
+     * from a row the run never took in - a soft-deleted agreement here, which
+     * SourceRows keeps out of the import entirely, and equally an agreement
+     * whose cadence was edited between the two reads.
+     */
+    public function test_an_agreement_this_run_never_observed_shapes_nothing(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (9:55 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+        $pdo->exec("UPDATE client_agreements SET deleted_at = '2026-01-05 09:00:00' WHERE id = 41");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+    }
+
+    #[DataProvider('malformedGeneratedShapes')]
+    public function test_a_value_no_formatter_could_write_is_compared_exactly(string $type, string $superseded, string $live, string $cadence, ?string $terminatedOn): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence, terminatedOn: $terminatedOn);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * The other side of the refusals above: a cadence label that is genuinely
+     * PeriodLabel's output still recovers its claim. Tightening the ranges to
+     * exclude the calendar-aligned spellings must not take the unaligned ones
+     * with it - those are the only way a six- or twelve-month cycle can be
+     * named at all.
+     */
+    #[DataProvider('generatedShapesThatStillRecover')]
+    public function test_a_cadence_label_the_generator_writes_still_recovers(string $type, string $superseded, string $live, string $cadence): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: $type, supersededType: $type, cadence: $cadence);
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$superseded}' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = '{$live}' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string}> */
+    public static function generatedShapesThatStillRecover(): array
+    {
+        return [
+            // Twelve whole months that are not the calendar year, so the range
+            // is what PeriodLabel writes.
+            'an annual cycle anchored after January' => [
+                'prior_month_retainer',
+                'Work items applied to annual retainer (9:55 applied to 2026-02..2027-01 cycle)',
+                'Work items applied to annual retainer (10:00 applied to 2026-02..2027-01 cycle)',
+                'annual',
+            ],
+            // Six whole months has no aligned form at all - PeriodLabel names
+            // months, quarters and years, and a half year is none of them.
+            'a semiannual cycle on a calendar boundary' => [
+                'prior_month_retainer',
+                'Work items applied to semiannual retainer (9:55 applied to 2026-01..2026-06 cycle)',
+                'Work items applied to semiannual retainer (10:00 applied to 2026-01..2026-06 cycle)',
+                'semi_annual',
+            ],
+            // Three whole months not aligned to a quarter.
+            'a quarterly cycle anchored off the quarter' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-04 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-04 cycle)',
+                'quarterly',
+            ],
+            // Mid-month anchored: the span straddles one month more than the
+            // cadence, and no aligned form can describe it.
+            'a quarterly cycle anchored mid-month' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-04 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-04 cycle)',
+                'quarterly',
+            ],
+            // The same wording under the agreement that would produce it.
+            'annual wording under an annual agreement' => [
+                'retainer',
+                'Annual Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Annual Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'annual',
+            ],
+            // Zero is a quantity the formatter does write - unsigned.
+            'an unsigned zero' => [
+                'retainer',
+                'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
+            ],
+        ];
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string, 4: string|null}> */
+    public static function malformedGeneratedShapes(): array
+    {
+        return [
+            'sixty-nine minutes' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (9:99)',
+                'Deferred work items applied to retainer (10:99)',
+                'monthly',
+                null,
+            ],
+            'a ninety-ninth month' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-99 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-99 cycle)',
+                'monthly',
+                null,
+            ],
+            'a month that is not one' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Foo 1, 2026 through Foo 2, 2026',
+                'Monthly Retainer (10:00 hours) - Foo 1, 2026 through Foo 2, 2026',
+                'monthly',
+                null,
+            ],
+            'a pool that is not a month' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (9:55 applied to Gold 2026 pool)',
+                'Work items applied to retainer (10:00 applied to Gold 2026 pool)',
+                'monthly',
+                null,
+            ],
+            'a day January does not have' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 99, 2026 through Jan 99, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 99, 2026 through Jan 99, 2026',
+                'monthly',
+                null,
+            ],
+            'a day February does not have' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Feb 31, 2026 through Feb 31, 2026',
+                'Monthly Retainer (10:00 hours) - Feb 31, 2026 through Feb 31, 2026',
+                'monthly',
+                null,
+            ],
+            'a range inside one month' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-01 cycle)',
+                'monthly',
+                null,
+            ],
+            'a range that runs backwards' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-03..2026-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-03..2026-01 cycle)',
+                'monthly',
+                null,
+            ],
+            'a range starting from a bare year' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026..2027-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026..2027-01 cycle)',
+                'monthly',
+                null,
+            ],
+            'a range starting from a quarter' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-Q1..2027-01 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-Q1..2027-01 cycle)',
+                'monthly',
+                null,
+            ],
+            'hours padded with a leading zero' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (09:55)',
+                'Deferred work items applied to retainer (010:00)',
+                'monthly',
+                null,
+            ],
+            'money padded with leading zeros' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 00.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 000,100.00 USD/hr)',
+                'monthly',
+                '2026-01-31',
+            ],
+            'a termination line of no decimal hours' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (0.0000 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (0.0000 @ 200.00 USD/hr)',
+                'monthly',
+                '2026-01-31',
+            ],
+            'a termination line of no hours' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (0:00 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (0:00 @ 200.00 USD/hr)',
+                'monthly',
+                '2026-01-31',
+            ],
+            'a fee span that ends before it starts' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 31, 2026 through Jan 1, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 31, 2026 through Jan 1, 2026',
+                'monthly',
+                null,
+            ],
+            'a cadence with a period it cannot produce' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026 cycle)',
+                'quarterly',
+                null,
+            ],
+            'custom wording differing only in whitespace' => [
+                'prior_month_retainer',
+                ' Support package ',
+                'Support package',
+                'monthly',
+                null,
+            ],
+            'generated wording carrying padding' => [
+                'prior_month_retainer',
+                ' Deferred work items applied to retainer (9:55)',
+                'Deferred work items applied to retainer (10:00) ',
+                'monthly',
+                null,
+            ],
+            'a monthly fee line spanning a year' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Monthly Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'monthly',
+                null,
+            ],
+            'a semiannual label spanning a year' => [
+                'prior_month_retainer',
+                'Work items applied to semiannual retainer (9:55 applied to 2026-01..2027-01 cycle)',
+                'Work items applied to semiannual retainer (10:00 applied to 2026-01..2027-01 cycle)',
+                'semi_annual',
+                null,
+            ],
+            // addDeferredTerminationLine() runs only on the post-termination
+            // path, so this wording under an agreement that never ended is
+            // somebody quoting it - and this template erases the whole group.
+            'termination wording under a live agreement' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 100.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 200.00 USD/hr)',
+                'monthly',
+                null,
+            ],
+            // The pool wording is written by the monthly path alone; every
+            // other cadence names itself and says "cycle".
+            'pool wording under an annual agreement' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (9:55 applied to January 2026 pool)',
+                'Work items applied to retainer (10:00 applied to January 2026 pool)',
+                'annual',
+                null,
+            ],
+            // A cadence that was chosen and does not repeat. The generator
+            // stops at billsOnARecurringCadence() before writing a cycle line
+            // at all, so no cadence wording under it is generated wording.
+            'monthly wording under a one-time agreement' => [
+                'retainer',
+                'Monthly Retainer (9:55 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (10:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'one_time',
+                null,
+            ],
+            // The composer takes the cadence word from the agreement the line
+            // falls under, so annual wording under a monthly agreement is not
+            // something it could have written.
+            'annual wording under a monthly agreement' => [
+                'retainer',
+                'Annual Retainer (9:55 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'Annual Retainer (10:00 hours) - Jan 1, 2026 through Dec 31, 2026',
+                'monthly',
+                null,
+            ],
+            'a cadence draw under the wrong agreement' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-Q1 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-Q1 cycle)',
+                'monthly',
+                null,
+            ],
+            // Every path that writes a draw is guarded on there being hours to
+            // apply, so a draw of none, or of less than none, is not one.
+            'a draw of no hours' => [
+                'prior_month_retainer',
+                'Work items applied to retainer (0:00 applied to January 2026 pool)',
+                'Work items applied to retainer (1:00 applied to January 2026 pool)',
+                'monthly',
+                null,
+            ],
+            'a draw of negative hours' => [
+                'prior_month_retainer',
+                'Deferred work items applied to retainer (-1:00)',
+                'Deferred work items applied to retainer (1:00)',
+                'monthly',
+                null,
+            ],
+            // HoursQuantity::format takes the sign after rounding, so zero is
+            // never signed. Two lines that differ only by a sign it cannot
+            // write are not two generations of one line.
+            'a signed zero' => [
+                'retainer',
+                'Monthly Retainer (-0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (0:00 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
+                null,
+            ],
+            'a signed decimal zero' => [
+                'retainer',
+                'Monthly Retainer (-0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'Monthly Retainer (0.0000 hours) - Feb 1, 2024 through Feb 29, 2024',
+                'monthly',
+                null,
+            ],
+            // The only annual cycle running January to December is the calendar
+            // year, and PeriodLabel calls that "2026". The range form of it is
+            // nobody's output.
+            'an annual cycle labelled as a calendar year range' => [
+                'prior_month_retainer',
+                'Work items applied to annual retainer (9:55 applied to 2026-01..2026-12 cycle)',
+                'Work items applied to annual retainer (10:00 applied to 2026-01..2026-12 cycle)',
+                'annual',
+                null,
+            ],
+            // Same reasoning one cadence down: January through March is
+            // "2026-Q1", so the range spelling of it is not generated either.
+            'a quarterly cycle labelled as a calendar quarter range' => [
+                'prior_month_retainer',
+                'Work items applied to quarterly retainer (9:55 applied to 2026-01..2026-03 cycle)',
+                'Work items applied to quarterly retainer (10:00 applied to 2026-01..2026-03 cycle)',
+                'quarterly',
+                null,
+            ],
+            'a monthly cycle labelled as a range' => [
+                'prior_month_retainer',
+                'Work items applied to monthly retainer (9:55 applied to 2026-01..2026-02 cycle)',
+                'Work items applied to monthly retainer (10:00 applied to 2026-01..2026-02 cycle)',
+                'monthly',
+                null,
+            ],
+            'grouping number_format cannot write' => [
+                'additional_hours',
+                'Deferred work items billed on agreement termination (1:00 @ 1,2.00 USD/hr)',
+                'Deferred work items billed on agreement termination (2:00 @ 1,2.00 USD/hr)',
+                'monthly',
+                '2026-01-31',
+            ],
+        ];
+    }
+
+    /**
+     * A service writes each of these descriptions for one kind of line, so the
+     * same words on another kind are somebody quoting them - and the
+     * termination template erases its whole group, which is a costly thing to
+     * do to a line it does not describe.
+     */
+    public function test_a_generated_description_on_the_wrong_line_type_is_compared_exactly(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        // The termination wording, on retainer-draw lines.
+        $this->supersededClaimSource($pdo);
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (1:00 @ 150.00 USD/hr)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Deferred work items billed on agreement termination (2:00 @ 175.00 USD/hr)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
+    /**
+     * One invoice can carry lines from more than one agreement, so a source
+     * that does not record which is a source this cannot identify a line in.
+     */
+    public function test_a_source_without_an_agreement_column_recovers_nothing(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, client_invoice_line_id INTEGER)');
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        // No client_agreement_id on the lines.
+        $pdo->exec('CREATE TABLE client_invoice_lines (client_invoice_line_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, client_agreement_recurring_item_id INTEGER, description TEXT, quantity TEXT, unit_price TEXT, line_total TEXT, line_type TEXT, sort_order INTEGER, deleted_at TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (281, 11, NULL, 'SYN-281', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (282, 281, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', 'prior_month_retainer', 1, '2026-01-11 09:00:00')");
+        $pdo->exec("INSERT INTO client_invoice_lines VALUES (283, 281, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', 'prior_month_retainer', 2, NULL)");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (284, 13, 11, NULL, 7, 'Synthetic billed work', 60, '2026-01-20', 1, 0, 'approved', 282)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+    }
+
+    /**
+     * The predecessor writes the same quantity as a decimal on its fee lines -
+     * 197 of them in the migrated data against 5 in H:MM - and these
+     * descriptions are its, not the composer's. A pattern taken from the
+     * composer alone refuses every claim on such a line.
+     */
+    public function test_a_decimal_quantity_is_a_quantity_too(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (9.9168 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (10.0000 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * An agreement that starts off a calendar boundary has its cycles anchored
+     * to its active date, so PeriodLabel writes a range even for a cadence
+     * that usually has a name - and refusing those refuses real lines.
+     */
+    public function test_a_cadence_anchored_off_the_calendar_is_still_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, cadence: 'quarterly');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (9:55 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Work items applied to quarterly retainer (10:00 applied to 2026-02..2026-05 cycle)' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    /**
+     * And a fee line whose dates span exactly its cadence is one the composer
+     * could have written.
+     */
+    public function test_a_fee_line_spanning_exactly_its_cadence_is_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer', cadence: 'quarterly');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Feb 15, 2026 through May 14, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+    }
+
+    /**
+     * BillingCycleResolver adds months with overflow, so a quarterly cycle
+     * starting on January 31 ends on April 30. A validator that used the
+     * no-overflow form would refuse the very lines it exists to recognise.
+     */
+    public function test_a_cycle_whose_month_overflowed_is_still_recognised(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer', cadence: 'quarterly');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (9:55 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Quarterly Retainer (10:00 hours) - Jan 31, 2026 through Apr 30, 2026' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+    }
+
+    /**
+     * HoursQuantity::format signs a negative quantity, and the pattern accepts
+     * one - so the replacement has to consume it too, or two generations of a
+     * signed line keep different shapes and the claim goes unrecovered.
+     */
+    public function test_a_signed_quantity_is_normalised_like_any_other(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo, replacementType: 'retainer', supersededType: 'retainer');
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (-9.9168 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 122");
+        $pdo->exec("UPDATE client_invoice_lines SET description = 'Monthly Retainer (-10.0000 hours) - Feb 1, 2024 through Feb 29, 2024' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $summary['link_counts']['recovered']);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->getKey())->unbilled()->count());
+    }
+
+    public function test_a_superseded_claim_is_refused_when_the_replacement_changed_since_this_run_read_it(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $this->supersededClaimSource($pdo);
+
+        $first = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        // The replacement now differs from the snapshot this run observed, so
+        // it describes a line nobody here has read. A billing link must not be
+        // written from one, however plausible the replacement looks.
+        $pdo->exec("UPDATE client_invoice_lines SET line_total = '250.00' WHERE client_invoice_line_id = 123");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame(1, $first['link_counts']['recovered']);
+        $this->assertSame(0, $summary['link_counts']['recovered']);
+        $this->assertSame(1, $summary['counts']['failure_reasons']['missing_invoice_time_link_parent'] ?? 0);
+        // Refusing to resolve the claim again must not undo the link the run
+        // that did read the replacement already established.
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->getKey())->count());
+    }
+
     public function test_a_milestone_link_refuses_a_task_owned_by_another_workspace(): void
     {
         $user = User::factory()->create();
@@ -689,8 +2224,14 @@ class ExternalImportTest extends TestCase
 
         $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
 
-        $this->assertSame(1, $summary['milestone_link_counts']['idempotent']);
+        // The correction stands, which is what this test is for. It is counted
+        // as a refusal rather than as nothing to do, because the source and the
+        // destination disagree about what billed this deliverable and a run
+        // that reports clean over that has not reconciled the claim.
         $this->assertSame(0, $summary['milestone_link_counts']['linked']);
+        $this->assertSame(0, $summary['milestone_link_counts']['idempotent']);
+        $this->assertSame(1, $summary['milestone_link_counts']['rejected']);
+        $this->assertNotSame('completed', $summary['status']);
         $this->assertSame((int) $correctedLineId, (int) DB::table('client_tasks')->where('id', $taskId)->value('client_invoice_line_id'));
     }
 

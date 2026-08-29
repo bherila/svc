@@ -202,6 +202,187 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame('10.0000', (string) $invoice->retainer_hours_included);
     }
 
+    /**
+     * A milestone line bills one deliverable and the schema now says so, so two
+     * source tasks naming one line cannot both be applied. Deciding between
+     * them is not a repair's business - but neither is failing over it, which
+     * would roll back every other row.
+     */
+    public function test_two_source_tasks_claiming_one_line_are_reported_not_fatal(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $other = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'The other deliverable',
+        ]);
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 702, 'milestone_price' => '250.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 702)->update(['client_invoice_line_id' => 901]);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 701)->update(['client_invoice_line_id' => 901]);
+        $this->ledger('client_tasks', '702', 'task', $other->public_id);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        // Reported as unresolved rather than thrown, and neither task took it.
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertNull($other->refresh()->client_invoice_line_id);
+    }
+
+    /**
+     * A line already held here is not free just because the source says
+     * nothing about it. An operator can have reconciled it by hand.
+     */
+    public function test_a_line_another_task_already_holds_here_is_reported_not_taken(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $holder = ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_project_id' => $task->client_project_id,
+            'title' => 'Reconciled by hand',
+            'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame((int) $line->id, (int) $holder->refresh()->client_invoice_line_id);
+    }
+
+    /**
+     * Two tasks from another tenant's onboarding arguing over a line this
+     * ledger never mapped is not this repair's business, and counting them
+     * unresolved rolls back a workspace that is fine. What makes an argument
+     * ours is the line being ours, not the claimants being mapped.
+     */
+    public function test_contested_claims_outside_this_workspace_do_not_stop_the_repair(): void
+    {
+        $this->buildDestination();
+
+        // Two source tasks the ledger never mapped, arguing over a line it
+        // never mapped either. Both belong to somebody else's onboarding.
+        foreach ([801, 802] as $key) {
+            DB::connection('synthetic')->table('client_tasks')->insert(['id' => $key, 'milestone_price' => '100.00']);
+            DB::connection('synthetic')->table('client_tasks')->where('id', $key)->update(['client_invoice_line_id' => 999]);
+        }
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        $this->assertSame(1, ClientAgreement::query()->sole()->rollover_months);
+    }
+
+    /**
+     * task_invoice_line_once is global, so a holder in another workspace
+     * collides just the same - and the repair must still stop. It is the index
+     * that says so here, not the conflict check: that check reads only this
+     * workspace's tasks, and the write it guards fails on the constraint,
+     * which applyRow() records as the same unresolved.
+     */
+    public function test_a_holder_in_another_workspace_is_seen_by_the_conflict_check(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+        $theirCompany = ClientCompany::query()->create([
+            'workspace_id' => $elsewhere->id, 'name' => 'Their Business', 'slug' => 'their-business',
+        ]);
+        $theirProject = ClientProject::query()->create([
+            'workspace_id' => $elsewhere->id, 'client_company_id' => $theirCompany->id, 'name' => 'Their Project',
+        ]);
+        $theirs = ClientTask::query()->create([
+            'workspace_id' => $elsewhere->id, 'client_project_id' => $theirProject->id,
+            'title' => 'Malformed holder', 'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+        $this->assertSame((int) $line->id, (int) $theirs->refresh()->client_invoice_line_id);
+        $this->assertSame($invoice->workspace_id, $task->workspace_id);
+    }
+
+    /**
+     * A task that already has a link has no hole to fill, so there is no
+     * conflicting write to head off - and refusing would cost the milestone
+     * price the repair could still restore.
+     */
+    public function test_a_task_already_linked_here_is_repaired_despite_a_contested_source_line(): void
+    {
+        [$invoice, $line, , $task] = $this->buildDestination();
+
+        $other = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 7,
+        ]);
+        $task->forceFill(['client_invoice_line_id' => $other->id])->save();
+
+        // Somebody else holds the line the source names.
+        ClientTask::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_project_id' => $task->client_project_id,
+            'title' => 'Holds the source line', 'client_invoice_line_id' => $line->id,
+        ]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        // The correction stands and the price was still restored.
+        $this->assertSame((int) $other->id, (int) $task->refresh()->client_invoice_line_id);
+        $this->assertSame(18750, $task->milestone_price_amount);
+    }
+
+    /**
+     * A task deleted before the original import has no ledger mapping and
+     * still argues over the line. Scoping the prepass by which claimants were
+     * mapped missed exactly that, and the repair walked into the constraint.
+     */
+    public function test_an_unmapped_task_claiming_our_line_still_contests_it(): void
+    {
+        [, , , $task] = $this->buildDestination();
+
+        // Never imported - deleted before the original run - but it still
+        // names the line the ledger did map.
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 803, 'milestone_price' => '100.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 803)->update(['client_invoice_line_id' => 901]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+
+        $this->assertNull($task->refresh()->client_invoice_line_id);
+    }
+
+    /**
+     * A task already carrying an operator's correction is not competing for
+     * anything, so a contested source line must not cost it the milestone
+     * price the repair could still restore.
+     */
+    public function test_a_corrected_task_is_repaired_despite_a_contested_source_line(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        $corrected = ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment', 'description' => 'Corrected by hand', 'quantity' => '1.0000',
+            'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 8,
+        ]);
+        $task->forceFill(['client_invoice_line_id' => $corrected->id])->save();
+
+        // Two source tasks argue over the line the source names for this one.
+        DB::connection('synthetic')->table('client_tasks')->insert(['id' => 804, 'milestone_price' => '100.00']);
+        DB::connection('synthetic')->table('client_tasks')->where('id', 804)->update(['client_invoice_line_id' => 901]);
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertSuccessful();
+
+        $this->assertSame((int) $corrected->id, (int) $task->refresh()->client_invoice_line_id);
+        $this->assertSame(18750, $task->milestone_price_amount);
+    }
+
     public function test_it_writes_nothing_without_apply(): void
     {
         [$invoice] = $this->buildDestination();

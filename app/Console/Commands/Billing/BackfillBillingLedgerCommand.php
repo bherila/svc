@@ -8,8 +8,10 @@ use App\Services\ExternalImport\SourceConfigurationException;
 use App\Services\ExternalImport\SourceGuard;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -53,6 +55,9 @@ final class BackfillBillingLedgerCommand extends Command
 
     private string $destination;
 
+    /** The runtime name the guard gave the source, for schema questions. */
+    private string $sourceConnection;
+
     private int $workspaceId;
 
     /**
@@ -71,6 +76,7 @@ final class BackfillBillingLedgerCommand extends Command
             $source = $guard->resolve((string) $this->option('source'));
             $guard->assertDistinctFromDestination($source);
             $legacy = $guard->connection($source);
+            $this->sourceConnection = $guard->runtimeName($source);
         } catch (SourceConfigurationException $e) {
             $this->components->error("Source unusable: {$e->getMessage()}");
 
@@ -370,7 +376,33 @@ final class BackfillBillingLedgerCommand extends Command
             $query->whereNull($column);
         }
 
-        if ($query->update($changes) === 0) {
+        // A unique column among these can be taken between the read that
+        // cleared it and this write - task_invoice_line_once is the one that
+        // can, and it is global, so no predicate here can hold it. Losing that
+        // race means the same thing the reader would have found a moment
+        // later: the line is spoken for and this row is not the repair's to
+        // make.
+        // Inside a savepoint, because on some engines a failed statement
+        // poisons the surrounding transaction: catching the violation would
+        // leave every later repair in this run writing into an aborted one.
+        // Nesting a transaction here is what Laravel turns into a savepoint.
+        //
+        // Only for the one column that can collide. Every other repair here
+        // writes something no constraint contests, and a savepoint per row
+        // across a whole ledger is a cost with nothing behind it.
+        if (! array_key_exists('client_invoice_line_id', $changes)) {
+            $written = $query->update($changes);
+        } else {
+            try {
+                $written = $this->db()->transaction(static fn (): int => $query->update($changes));
+            } catch (UniqueConstraintViolationException) {
+                $counters['unresolved']++;
+
+                return;
+            }
+        }
+
+        if ($written === 0) {
             // Someone filled one of them between the read and this write. Leave
             // it alone and record it as deferred rather than changed - a
             // fingerprint mismatch means the source moved and must block, and
@@ -381,6 +413,19 @@ final class BackfillBillingLedgerCommand extends Command
         }
 
         $counters['written']++;
+    }
+
+    /**
+     * Whether the source records which line billed a milestone at all.
+     *
+     * Asked of the schema rather than by running a query and reading its
+     * failure: any database trouble at all looked like a missing column that
+     * way, and answering "no claims here" to a dropped connection would skip
+     * the contested-claim prepass and let an ambiguous line be committed.
+     */
+    private function sourceRecordsTaskLinks(string $sourceConnection): bool
+    {
+        return Schema::connection($sourceConnection)->hasColumn('client_tasks', 'client_invoice_line_id');
     }
 
     /**
@@ -603,7 +648,42 @@ final class BackfillBillingLedgerCommand extends Command
         $map = $this->idMap('client_tasks', 'client_tasks', $identityHash);
         $lines = $this->idMap('client_invoice_lines', 'client_invoice_lines', $identityHash);
 
-        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, &$counters): void {
+        // Which lines more than one source task claims. A milestone line bills
+        // one deliverable, and the schema now says so, so applying these row by
+        // row would give the line to whichever task came first and then take
+        // the constraint violation on the next - failing a repair that has
+        // nothing wrong with it except the rows it cannot decide between.
+        // Which of this ledger's lines more than one source task claims.
+        //
+        // Pivoted on the line rather than on the claimant. Scoping by which
+        // tasks the ledger mapped looked right and was not: a task deleted
+        // before the original import has no mapping and still argues over the
+        // line, and it is the line being ours that makes the argument ours.
+        // Another tenant's tasks fighting over another tenant's line never
+        // reach this, because that line is not in the map.
+        //
+        // Read only when the source records claims at all: a table without the
+        // column is a schema the row loop below tolerates, and a prepass that
+        // queried it regardless would fail the whole command instead.
+        $contested = [];
+        if ($lines !== [] && $this->sourceRecordsTaskLinks($this->sourceConnection)) {
+            // Chunked, because this binds one placeholder per mapped line and
+            // a workspace with a long invoice history has more of them than a
+            // driver will accept in one statement - the task pass below is
+            // chunked for the same reason.
+            foreach (array_chunk(array_keys($lines), 500) as $chunk) {
+                foreach ($legacy->table('client_tasks')
+                    ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
+                    ->whereIn('client_invoice_line_id', $chunk)
+                    ->groupBy('client_invoice_line_id')
+                    ->havingRaw('count(*) > 1')
+                    ->get() as $row) {
+                    $contested[(string) $row->line_key] = (int) $row->claims;
+                }
+            }
+        }
+
+        $legacy->table('client_tasks')->orderBy('id')->chunk(200, function ($rows) use ($map, $lines, $dryRun, $contested, &$counters): void {
             foreach ($rows as $row) {
                 $sourceLink = $row->client_invoice_line_id ?? null;
 
@@ -616,6 +696,70 @@ final class BackfillBillingLedgerCommand extends Command
                 }
 
                 $resolvedLink = $sourceLink === null ? null : ($lines[(string) $sourceLink]['id'] ?? null);
+
+                // Nothing here says which of the claimants the line billed, so
+                // neither gets it and both are reported - but only where this
+                // task has a hole to fill. A task already carrying an
+                // operator's correction is not competing for anything, and
+                // refusing costs the milestone price applyRow() could still
+                // restore without touching that link.
+                // Only asked when the source names a line. Nothing that
+                // consumes this runs otherwise, and applyRow() asks the same
+                // question again in the write - so for the many tasks with no
+                // claim at all this was a query per row for nothing.
+                //
+                // Workspace-scoped, not left implicit in the mapping that
+                // produced the id: this is a tenant-owned read, and every one
+                // of them says so on its own.
+                $fillsItsLink = $sourceLink !== null && $this->db()->table('client_tasks')
+                    ->where('workspace_id', $this->workspaceId)
+                    ->where('id', $id)
+                    ->whereNull('client_invoice_line_id')
+                    ->exists();
+
+                if ($sourceLink !== null && $fillsItsLink && isset($contested[(string) $sourceLink])) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
+
+                // Or already held. An operator can have reconciled that line
+                // by hand, and the source knowing nothing about it does not
+                // make the line free.
+                //
+                // Asked with the constraint's own scope rather than this
+                // workspace's: task_invoice_line_once is global, so a holder in
+                // another workspace would collide just the same, and a check
+                // narrower than the rule it predicts is not a prediction. It
+                // reads whether a line is spoken for and nothing else.
+                //
+                // Only where this task has no link of its own. If it already
+                // has one, applyRow() fills holes and would leave it alone, so
+                // there is no conflicting write to head off - and refusing
+                // would cost the milestone price it could still repair.
+                //
+                // A reader, so it can still be overtaken - an operator or a
+                // generation run can take the line between this and the write.
+                // applyRow() reports that collision rather than letting it
+                // escape, so the two together cover both orderings.
+                //
+                // This workspace's tasks only, though the index it stands in
+                // for is global. A holder in another workspace is malformed and
+                // must still stop the write, but task_invoice_line_once stops
+                // it on its own and applyRow() records the violation as the
+                // same unresolved - so the answer does not change, and reading
+                // another tenant's row to reach it would be a cost with no
+                // difference behind it.
+                if ($resolvedLink !== null && $fillsItsLink
+                    && $this->db()->table('client_tasks')
+                        ->where('workspace_id', $this->workspaceId)
+                        ->where('client_invoice_line_id', $resolvedLink)
+                        ->where('id', '!=', $id)
+                        ->exists()) {
+                    $counters['unresolved']++;
+
+                    continue;
+                }
 
                 // The source says this milestone was billed and this repair
                 // cannot say by what. Writing null would leave it reading as

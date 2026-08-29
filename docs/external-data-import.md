@@ -36,6 +36,57 @@ that source-side integer IDs can be reused.
    is left alone, because repointing a billed row is not a decision an import
    pass gets to make.
 
+   A claim can name a line the source has since superseded. The source
+   regenerates an invoice by soft-deleting its lines and inserting fresh ones
+   without repointing the rows that named the old ones, so the work was billed
+   while the line that billed it is gone. Such a claim is followed to the
+   invoice the superseded line belonged to and resolved to the live line that
+   replaced it, but only when the replacement is unambiguous in both directions:
+   exactly one live line on that invoice shares the superseded line's type, and
+   exactly one superseded line of that type is still claimed. The second half
+   matters because not every type is one line per invoice - a milestone is one
+   line per task and a subcontractor charge one per rate - so collapsing two
+   claims onto the one line that survived would mark work billed that the
+   regenerated invoice dropped. Counting claims rather than copies is also what
+   keeps the ordinary case working: an invoice regenerated twenty-one times
+   carries twenty-one superseded copies of one aggregate line, and only the last
+   is named by anything. Where the claim is exclusive there is a third
+   direction, and it is why only aggregate claims are recovered at all. A
+   milestone's claim was recovered here too until it became clear that nothing
+   available says which task an unheld line belongs to: an invoice line carries
+   no task reference, and its description is the task's title, which nothing
+   makes unique. A milestone whose line was superseded is reported unlinked
+   instead. What identifies an aggregate line is the description:
+   the type alone never identifies a line, because a generator writes a retainer
+   draw per pool and can add a deferred one beside it. The words say which, so
+   they have to agree, and only the figure the composer writes at the front of
+   its parenthetical is set aside - "(9.9168)" against "(10.0000)" is the same
+   line regenerated, while "(10.0000 applied to August 2026 pool)" is a
+   different one. Nothing else is normalised, and that is deliberate: four
+   earlier rules tried to decide which numbers were mutable and each lost to
+   some format the source writes - a year, a 2026-01 label, a day inside a
+   prose date, the leading digits of a rate. A figure written anywhere but
+   there is treated as naming the charge, so a line that moves one is refused
+   rather than recovered. Types whose description cannot settle it even so are
+   refused too: a subcontractor charge is one line per rate group and the rate
+   is a figure, and a milestone, a recurring item and an adjustment are each one
+   item among several.
+
+   One limit is known and not closed. The superseded line is deleted at the
+   source, so it was never ledgered and no fingerprint can tell whether it
+   changed between the read that observed the claim and the read that follows
+   it. What bounds the exposure is everything around it: the claimant and the
+   replacement are both fingerprint-checked, and the replacement must be in this
+   workspace, of the same type, and say the same thing. Closing it needs a
+   consistent snapshot across both reads, which a source connection does not
+   offer.
+   Anything less than certain is refused and reported:
+   attaching work to a line that did not bill it suppresses a charge that is
+   owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -
+   the only such read - because the one thing asked of it is which invoice it
+   was on, and the replacement is held to the same fingerprint check as the row
+   carrying the claim.
+
 A reconciliation pass reads the source a second time, later than the read the
 importer observed, so it re-checks each row against the fingerprint the ledger
 recorded. That covers both a row this run refused as `source_changed` and one

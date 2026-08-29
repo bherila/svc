@@ -7,7 +7,12 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use App\Support\Billing\BillingCadence;
+use App\Support\Billing\PeriodLabel;
+use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -33,7 +38,10 @@ use Throwable;
  *     related_exists: array<array-key, bool>,
  *     target_exists: array<array-key, bool>,
  *     table_exists: array<array-key, bool>,
- *     table_columns: array<array-key, list<string>>
+ *     table_columns: array<array-key, list<string>>,
+ *     source_columns: array<array-key, list<string>>,
+ *     sole_superseded_claim: array<array-key, bool>,
+ *     agreement_context: array<array-key, array{months: int, terminated: bool}|null>
  * }
  */
 final class ExternalImportService
@@ -45,9 +53,201 @@ final class ExternalImportService
      * two reads simply vanishes from the second. Without this the pass has
      * nothing to notice its absence against.
      *
-     * @var array<string, array<string, true>>
+     * The value is the line each claim named, not just that it had one, so a
+     * later question about which claims competed can be answered from what
+     * this run observed rather than from a second read that may have moved.
+     *
+     * @var array<string, array<string, string>>
      */
     private array $linkedSourceKeys = [];
+
+    /**
+     * linkedSourceKeys inverted, built once per run.
+     *
+     * @var array<string, array<string, int>>|null
+     */
+    private ?array $observedClaimsByLine = null;
+
+    /**
+     * Claims the source holds on each line, per claimant table, built once.
+     *
+     * @var array<string, array<string, int>>
+     */
+    private array $sourceClaimsByLine = [];
+
+    /**
+     * Line types a description can tell apart, once its numbers are set aside.
+     *
+     * These are not one-per-invoice - that was the first thing tried here and
+     * it is not true. ClientInvoicingService writes a prior_month_retainer line
+     * per retainer pool, and addDeferredRetainerLine can add another. What is
+     * true is that their descriptions name what they are for in words: which
+     * pool a draw came from, what the hours were charged against. Numbers move
+     * between generations of the same line - the hours in "applied to retainer
+     * (9.9168)" become "(10.0000)" - so they are normalised away, and what is
+     * left identifies the line rather than the run that wrote it.
+     *
+     * The types kept out are the ones where that still would not settle it. A
+     * subcontractor charge is one line per (user, project, rate, currency), and
+     * the rate is a number, so two groups can normalise to the same words. A
+     * milestone, a recurring_item and an adjustment are each one item among
+     * several of their kind.
+     *
+     * None of this is needed where the claim is exclusive: a milestone task
+     * holds one line, so counting claims settles the identity by itself.
+     *
+     * @var list<string>
+     */
+    /**
+     * Descriptions a billing service writes, anchored to their openings.
+     *
+     * Deliberately literal. A shape like "something in parentheses" would match
+     * an operator's text as readily as a generated line, and the whole point of
+     * the list is to tell those apart.
+     *
+     * @var list<string>
+     */
+    /**
+     * Descriptions a billing service writes, and how much of one it fills in.
+     *
+     * Deliberately literal, down to the cadences BillingCadenceLabel emits: a
+     * shape like "something in parentheses" would match an operator's text as
+     * readily as a generated line, and telling those apart is the whole point.
+     *
+     * The value says where the figures are. Most templates put one at the
+     * front of a group and words after it - "(N applied to 2026-01 cycle)" -
+     * so only the figure goes. The termination line fills the entire group,
+     * "(N @ $X/hr)", and both move when the rate changes.
+     *
+     * @var array<string, bool>
+     */
+    /**
+     * A quantity either system writes into a description.
+     *
+     * HoursQuantity::format builds H:MM with %d, so there is no leading zero to
+     * allow - "09:55" and "010:00" are not two generations of one line. The
+     * source writes the same quantity as a decimal on its retainer fee lines,
+     * 197 of them against 5 in H:MM, so both forms are quantities here. These
+     * descriptions come from the predecessor, and only some of its wording
+     * survived into the composer; deriving the figures from the composer alone
+     * refused every claim on a fee line.
+     *
+     * Signed only above zero. HoursQuantity::format takes the sign after
+     * rounding - `$totalMinutes < 0` is false for zero - so "-0:00" is a string
+     * it cannot produce, and admitting it would let somebody's own "-0:00" wear
+     * the same shape as a real "0:00" and take its claim.
+     */
+    private const HOURS = '(?:-?'.self::POSITIVE_HOURS.'|0(?::00|\.0+))';
+
+    /**
+     * Hours above zero, for the one template whose line cannot exist below it.
+     *
+     * addDeferredTerminationLine() returns without writing anything when the
+     * minutes are not positive, so "(0:00 @ ...)" is not a line it produced -
+     * and that template replaces its whole group, so a false match there costs
+     * the text that identified the charge.
+     */
+    private const POSITIVE_HOURS = '(?:[1-9]\d*(?::[0-5]\d|\.\d+)|0:(?:0[1-9]|[1-5]\d)|0\.\d*[1-9]\d*)';
+
+    /** A range of months as PeriodLabel writes one. */
+    private const PERIOD_RANGE = '\d{4}-(?:0[1-9]|1[0-2])\.\.\d{4}-(?:0[1-9]|1[0-2])';
+
+    /** A month as PeriodLabel writes one. */
+    private const PERIOD_MONTH = '\d{4}-(?:0[1-9]|1[0-2])';
+
+    /** What Carbon's "M j, Y" writes. */
+    private const SHORT_DATE = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}';
+
+    /** What Carbon's "F Y" writes. */
+    private const POOL_MONTH = '(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}';
+
+    /**
+     * What formatMoney writes: number_format's grouping beside a currency code.
+     *
+     * number_format does not pad the leading group, so "00.00" and
+     * "000,100.00" are not amounts it could have produced.
+     */
+    private const MONEY = '(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2} [A-Z]{3}';
+
+    /**
+     * The wording each generator writes, and what the words commit it to.
+     *
+     * `months` is the cadence the wording names. It is checked twice and for
+     * two different reasons: against the span the text quotes, because a
+     * grammar cannot say how long a quarter is, and against the agreement the
+     * line was written under, because the composer takes the cadence word from
+     * that agreement and can write no other.
+     *
+     * The draw templates take positive hours only. Every path that writes one
+     * is guarded on there being something to apply - fragments present, or
+     * DeferredAllocationResult::hasBilled(), which is hoursBilled > 0 - so a
+     * draw of nothing is not a line either generator can produce.
+     *
+     * @var array<string, array{whole: bool, types: list<string>, months?: int, terminated?: bool}>
+     */
+    private const GENERATED_DESCRIPTION_TEMPLATES = [
+        // Monthly only, though the wording does not say so.
+        // generateMonthlyInvoiceForWorkPeriod writes this form; every other
+        // cadence goes through generateNonMonthlyInvoiceForPeriod, which names
+        // its cadence and says "cycle" rather than "pool".
+        '/^Work items applied to retainer \('.self::POSITIVE_HOURS.' applied to '.self::POOL_MONTH.' pool\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
+        ],
+        // One entry per cadence, because PeriodLabel writes a different shape
+        // for each: a month for monthly, a quarter for quarterly, a year for
+        // annual, and a month range for the six-month span. Accepting any
+        // One entry per cadence, and each takes either the label PeriodLabel
+        // writes for an aligned cycle or a month range for one anchored to an
+        // agreement's active date. The range is checked against the cadence
+        // afterwards, because a grammar cannot say how long six months is.
+        // No range for monthly: the resolver builds those cycles between
+        // startOfMonth and endOfMonth, so both ends always share a month and
+        // PeriodLabel never reaches its range form.
+        '/^Work items applied to monthly retainer \('.self::POSITIVE_HOURS.' applied to '.self::PERIOD_MONTH.' cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 1,
+        ],
+        '/^Work items applied to quarterly retainer \('.self::POSITIVE_HOURS.' applied to (?:\d{4}-Q[1-4]|'.self::PERIOD_RANGE.') cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 3,
+        ],
+        '/^Work items applied to semiannual retainer \('.self::POSITIVE_HOURS.' applied to '.self::PERIOD_RANGE.' cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 6,
+        ],
+        '/^Work items applied to annual retainer \('.self::POSITIVE_HOURS.' applied to (?:\d{4}|'.self::PERIOD_RANGE.') cycle\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'], 'months' => 12,
+        ],
+        '/^Deferred work items applied to retainer \('.self::POSITIVE_HOURS.'\)$/' => [
+            'whole' => false, 'types' => ['prior_month_retainer'],
+        ],
+        // addDeferredTerminationLine() is reachable only through the
+        // post-termination branch, so an agreement that was never terminated
+        // has no line of this shape - and this template erases its whole
+        // group, which is a costly thing to do to somebody's own charge.
+        '/^Deferred work items billed on agreement termination \('.self::POSITIVE_HOURS.' @ '.self::MONEY.'\/hr\)$/' => [
+            'whole' => true, 'types' => ['additional_hours'], 'terminated' => true,
+        ],
+        '/^Interim overage hours for '.self::POOL_MONTH.'$/' => [
+            'whole' => false, 'types' => ['additional_hours'],
+        ],
+        '/^Monthly Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 1,
+        ],
+        '/^Quarterly Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 3,
+        ],
+        '/^Semiannual Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 6,
+        ],
+        '/^Annual Retainer \('.self::HOURS.' hours\) - '.self::SHORT_DATE.' through '.self::SHORT_DATE.'$/' => [
+            'whole' => false, 'types' => ['retainer'], 'months' => 12,
+        ],
+    ];
+
+    private const IDENTIFIABLE_BY_DESCRIPTION = [
+        'retainer',
+        'prior_month_retainer',
+        'prior_month_billable',
+        'additional_hours',
+    ];
 
     /** @var QueryCache */
     private array $activeQueryCache;
@@ -79,9 +279,11 @@ final class ExternalImportService
         $run = $this->newRun($source, $workspace, $inventory, $destinationName);
         /** @var ImportCounts $counts */
         $counts = $this->emptyCounts($inventory);
-        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
+        $linkCounts = ['source_rows' => 0, 'inserted' => 0, 'idempotent' => 0, 'recovered' => 0, 'rejected' => 0, 'failed' => 0];
         $milestoneCounts = ['source_rows' => 0, 'linked' => 0, 'idempotent' => 0, 'rejected' => 0, 'failed' => 0];
         $this->linkedSourceKeys = [];
+        $this->observedClaimsByLine = null;
+        $this->sourceClaimsByLine = [];
         $queryCache = $this->newQueryCache();
         $this->activeQueryCache = &$queryCache;
         /** @var array<string, ExternalImportItem> $ledgerItems */
@@ -222,7 +424,7 @@ final class ExternalImportService
             $sourceKey = (string) ($row[$keyColumn] ?? '');
             $seenKeys[$sourceKey] = true;
             if (($row['client_invoice_line_id'] ?? null) !== null && $sourceKey !== '') {
-                $this->linkedSourceKeys[$table][$sourceKey] = true;
+                $this->linkedSourceKeys[$table][$sourceKey] = (string) $row['client_invoice_line_id'];
             }
             if ($sourceKey === '') {
                 $counts['failed']++;
@@ -603,6 +805,9 @@ final class ExternalImportService
             'target_exists' => [],
             'table_exists' => [],
             'table_columns' => [],
+            'source_columns' => [],
+            'sole_superseded_claim' => [],
+            'agreement_context' => [],
         ];
     }
 
@@ -649,6 +854,646 @@ final class ExternalImportService
         $columns = $queryCache['table_columns'][$table];
 
         return $columns;
+    }
+
+    /**
+     * @param  QueryCache  $queryCache
+     * @return list<string>
+     */
+    private function sourceColumns(string $sourceRuntimeName, string $table, array &$queryCache): array
+    {
+        if (! array_key_exists($table, $queryCache['source_columns'])) {
+            $queryCache['source_columns'][$table] = Schema::connection($sourceRuntimeName)->hasTable($table)
+                ? Schema::connection($sourceRuntimeName)->getColumnListing($table)
+                : [];
+        }
+
+        /** @var list<string> $columns */
+        $columns = $queryCache['source_columns'][$table];
+
+        return $columns;
+    }
+
+    /**
+     * Whether the spans in this text are the ones its cadence produces.
+     *
+     * A grammar can say two dates and a range; it cannot say how long a
+     * quarter is. A cycle runs from its start to the day before the same day
+     * $months later, and PeriodLabel writes a range only when that span
+     * straddles months - so an aligned six-month cycle labels five months of
+     * difference and an unaligned one labels six. Both are real; a year is
+     * neither.
+     *
+     * Called for every template. The ones without a cadence still get their
+     * dates checked for order, which is all that can be said about them.
+     */
+    private static function spansItsCadence(string $text, ?int $months): bool
+    {
+        preg_match_all('/('.self::SHORT_DATE.') through ('.self::SHORT_DATE.')/', $text, $spans, PREG_SET_ORDER);
+
+        foreach ($spans as $span) {
+            $from = Carbon::createFromFormat('M j, Y', $span[1]);
+            $to = Carbon::createFromFormat('M j, Y', $span[2]);
+
+            if ($from === null || $to === null || $from->greaterThan($to)) {
+                return false;
+            }
+
+            // addMonths, not the no-overflow form: BillingCycleResolver uses
+            // addMonths()->subDay(), so a cycle starting on January 31 ends on
+            // April 30 rather than April 29, and a validator that disagreed
+            // would refuse the very lines it was written to recognise.
+            if ($months !== null && ! $to->isSameDay($from->copy()->addMonths($months)->subDay())) {
+                return false;
+            }
+        }
+
+        if ($months === null) {
+            return true;
+        }
+
+        preg_match_all('/(\d{4})-(\d{2})\.\.(\d{4})-(\d{2})/', $text, $ranges, PREG_SET_ORDER);
+
+        foreach ($ranges as $range) {
+            $difference = ((int) $range[3] - (int) $range[1]) * 12 + ((int) $range[4] - (int) $range[2]);
+
+            if ($difference !== $months && $difference !== $months - 1) {
+                return false;
+            }
+
+            if ($difference !== $months - 1) {
+                continue;
+            }
+
+            // One short of the cadence means the cycle runs whole calendar
+            // months, which fixes both its ends: it starts on the first and
+            // ends on the last of the month it names. PeriodLabel does not
+            // range every such span - a calendar quarter is "2026-Q1" and a
+            // calendar year is "2026" - so ask it, and refuse a range it would
+            // have written another way. "2026-01..2026-12" is the one that
+            // matters: the only annual cycle with those ends is the calendar
+            // year, and the year form is what it is called.
+            $start = Carbon::createFromFormat('Y-m-d', $range[1].'-'.$range[2].'-01');
+
+            if ($start === null) {
+                return false;
+            }
+
+            $start = $start->startOfDay();
+
+            if (PeriodLabel::for($start, $start->copy()->addMonths($months)->subDay()) !== $range[0]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether every period range here is one PeriodLabel would write.
+     *
+     * It writes a range only when the two ends are not the same month - a span
+     * inside one month collapses to that month, and a backwards span is not a
+     * span - so "2026-01..2026-01" is somebody's own text however well it
+     * matches the grammar.
+     */
+    private static function periodRangesAreReal(string $text): bool
+    {
+        preg_match_all('/(\d{4}-\d{2})\.\.(\d{4}-\d{2})/', $text, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $range) {
+            if ($range[1] >= $range[2]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether every date-shaped run in this text is a date Carbon could write.
+     *
+     * A pattern can say "Jan" and two digits; it cannot say that January has no
+     * ninety-ninth. Only the formatter settles that, so the candidates are
+     * handed back to it and required to come out unchanged. A description with
+     * an impossible day is somebody's own text, and its figures stay put.
+     */
+    private static function datesAreReal(string $text): bool
+    {
+        preg_match_all('/'.self::SHORT_DATE.'/', $text, $matches);
+
+        foreach ($matches[0] as $candidate) {
+            $parsed = Carbon::createFromFormat('M j, Y', $candidate);
+
+            if ($parsed === null || $parsed->format('M j, Y') !== $candidate) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A line description with the composer's own figures set aside.
+     *
+     * Regenerating a line rewrites the hours and money it quotes while the
+     * words stay put, so two generations of one line differ only there. What
+     * this must not do is decide which numbers are the mutable ones, and four
+     * attempts to went wrong in four different ways: deleting every number
+     * merged February 2024 with February 2025; keeping years merged 2026-01
+     * with 2026-02; keeping the cycle labels PeriodLabel emits still merged
+     * "Aug 1, 2026" with "Aug 15, 2026"; and keeping four-digit tokens read the
+     * front of a 2000.00 rate as a year. Every round the source found another
+     * way to write a date.
+     *
+     * So it does not classify numbers at all. The composer puts its figure at
+     * the front of a parenthetical - "(9.9168)" becomes "(10.0000)", and
+     * "(10.0000 applied to August 2026 pool)" names its pool after it - so only
+     * that leading figure is set aside. Everything else, inside the group or
+     * out, names the charge and has to match exactly.
+     *
+     * And only where a billing service wrote the description. Anchoring to its
+     * templates is what stops "Support package (2025 tier)" being read as a
+     * generated line with a figure in front: an operator's parenthetical can
+     * start with a number that names the thing rather than prices it, and two
+     * of those are two allocations. Anything that does not match a template is
+     * compared exactly.
+     *
+     * A figure written anywhere else is therefore treated as identifying, and a
+     * line that moves one is refused rather than recovered. That is the safe
+     * direction: a refusal leaves work looking unbilled and reported, where a
+     * wrong match marks it billed silently.
+     */
+    /**
+     * What the source agreement a line falls under says about its own billing.
+     *
+     * The generators take the cadence word and the termination wording from
+     * the agreement, so this is what says whether they could have written a
+     * given description. Read from the source rather than from what was
+     * imported: the recovery is reasoning about two source rows, and the
+     * destination agreement may not exist yet when the line carrying the claim
+     * is read.
+     *
+     * Held to the same fingerprint as any other row used as evidence. An
+     * agreement edited since this run observed it - its cadence changed, say -
+     * describes a contract the run never saw, and shaping a description
+     * against it would recognise wording the imported snapshot could not have
+     * produced.
+     *
+     * An absent cadence reads as monthly, which is what the importer and
+     * ClientAgreement::effectiveBillingCadence() both do with one, and a good
+     * deal of data relies on it. A cadence that was chosen and is not a
+     * recurring one - `one_time` above all - is not monthly and is not
+     * anything else either: billsOnARecurringCadence() stops the generator
+     * before it writes a cycle line at all, so no cadence wording under such
+     * an agreement is generated wording.
+     *
+     * Not filtered by deleted_at: a terminated agreement still says what its
+     * lines were written under, and that is the whole point of asking.
+     *
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     * @return array{months: int, terminated: bool}|null
+     */
+    private function sourceAgreementContext(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        string $agreementKey,
+        array $ledgerItems,
+        array &$queryCache,
+    ): ?array {
+        if ($agreementKey === '') {
+            return null;
+        }
+
+        if (array_key_exists($agreementKey, $queryCache['agreement_context'])) {
+            return $queryCache['agreement_context'][$agreementKey];
+        }
+
+        $columns = $this->sourceColumns($sourceRuntimeName, 'client_agreements', $queryCache);
+        $context = null;
+
+        if (in_array('id', $columns, true)) {
+            $found = $source->table('client_agreements')->where('id', $agreementKey)->first();
+            $row = $found === null ? null : (array) $found;
+
+            if ($row !== null && $this->observedThisRun('client_agreements', $agreementKey, $row, $ledgerItems)) {
+                $cadence = in_array('billing_cadence', $columns, true)
+                    ? (string) ($row['billing_cadence'] ?? '')
+                    : '';
+                $months = $cadence === ''
+                    ? BillingCadence::Monthly->monthsInCycle()
+                    : BillingCadence::tryFrom($cadence)?->monthsInCycle();
+
+                if ($months !== null) {
+                    $context = [
+                        'months' => $months,
+                        'terminated' => in_array('termination_date', $columns, true)
+                            && self::sourceDate($row['termination_date'] ?? null) !== null,
+                    ];
+                }
+            }
+        }
+
+        $queryCache['agreement_context'][$agreementKey] = $context;
+
+        return $context;
+    }
+
+    /** @param  array{months: int, terminated: bool}|null  $agreement */
+    private static function descriptionShape(mixed $description, string $lineType, ?array $agreement): string
+    {
+        // Not trimmed at all. The composer writes no padding, so a description
+        // carrying some is not one of its - and trimming to recognise it made
+        // two custom lines differing only in whitespace into one.
+        $text = (string) ($description ?? '');
+
+        foreach (self::GENERATED_DESCRIPTION_TEMPLATES as $template => $rule) {
+            // Bound to the type it belongs to. A service writes each of these
+            // for one kind of line, so the same words on another kind are
+            // somebody quoting them - and the termination template erases its
+            // whole group, which is a costly thing to do to a line it does not
+            // describe.
+            if (! in_array($lineType, $rule['types'], true)) {
+                continue;
+            }
+
+            // And bound to the cadence it names. createRetainerFeeLine and the
+            // cycle draw both take that word from the agreement's own cadence,
+            // so an annual wording under a monthly agreement is not something
+            // either could have written - two such lines are somebody's prose
+            // that happens to share a shape. An unknown cadence refuses the
+            // same way: a billing claim is not worth guessing at.
+            if (($rule['months'] ?? null) !== null && $rule['months'] !== ($agreement['months'] ?? null)) {
+                continue;
+            }
+
+            // And bound to the circumstance it describes. Wording that says a
+            // line was billed on termination is written on one path only, and
+            // that path needs an agreement that ended.
+            if (($rule['terminated'] ?? false) && ($agreement['terminated'] ?? false) !== true) {
+                continue;
+            }
+
+            $wholeGroup = $rule['whole'];
+            $months = $rule['months'] ?? null;
+
+            if (preg_match($template, $text) !== 1
+                || ! self::datesAreReal($text)
+                || ! self::spansItsCadence($text, $months)
+                || ! self::periodRangesAreReal($text)) {
+                continue;
+            }
+
+            // The first group only. A later one is prose the service did not
+            // write and has no claim to being an amount.
+            return (string) preg_replace(
+                $wholeGroup ? '/\([^()]*\)/' : '/\((\s*)-?\d[\d.,:]*/',
+                $wholeGroup ? '(#)' : '($1#',
+                $text,
+                1,
+            );
+        }
+
+        return $text;
+    }
+
+    /**
+     * Take a milestone line for one task, if it is still there to take.
+     *
+     * Two guards saying the same thing, because either can be the one that
+     * catches it. The predicate settles it inside a single statement where a
+     * reader a statement earlier could be overtaken; the unique index settles
+     * it when two statements are in flight at once. The caller reads a refusal
+     * from either the same way.
+     */
+    private function reserveMilestoneLine(string $destinationName, int $workspaceId, int $taskId, int $lineId): int
+    {
+        return DB::connection($destinationName)->table('client_tasks')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $taskId)
+            ->whereNull('client_invoice_line_id')
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->fromSub(
+                DB::connection($destinationName)->table('client_tasks')
+                    ->select('id')
+                    ->where('workspace_id', $workspaceId)
+                    ->where('client_invoice_line_id', $lineId)
+                    ->where('id', '!=', $taskId),
+                'holders',
+            ))
+            ->update(['client_invoice_line_id' => $lineId]);
+    }
+
+    /**
+     * How many claims the source holds on each line, deleted rows included.
+     *
+     * Read once per table rather than per row. Asking it per row meant a
+     * workspace with a thousand billed milestones making a thousand round
+     * trips to the source, each one scanning the same claims again, in the
+     * middle of a pass that is otherwise streamed.
+     *
+     * @return array<string, int>
+     */
+    private function sourceClaimsByLine(ConnectionInterface $source, string $table): array
+    {
+        if (isset($this->sourceClaimsByLine[$table])) {
+            return $this->sourceClaimsByLine[$table];
+        }
+
+        // Grouped in the source rather than counted here. Plucking every claim
+        // materialised a whole billed-time history to answer a question about
+        // a handful of lines.
+        $counts = [];
+        foreach ($source->table($table)
+            ->selectRaw('client_invoice_line_id as line_key, count(*) as claims')
+            ->whereNotNull('client_invoice_line_id')
+            ->groupBy('client_invoice_line_id')
+            ->get() as $row) {
+            $counts[(string) $row->line_key] = (int) $row->claims;
+        }
+
+        return $this->sourceClaimsByLine[$table] = $counts;
+    }
+
+    /**
+     * How many claims this run observed on each line, by the line's source key.
+     *
+     * Counted rather than flagged. A milestone task's claim is exclusive, so
+     * two tasks naming one superseded line is not one claim seen twice - it is
+     * two deliverables and no way to tell which the line billed. Collapsing
+     * them to a single entry made that look unambiguous, and reconciliation
+     * would then hand the survivor to whichever task came first by id.
+     *
+     * Kept per claimant table as well as in total, because the two questions
+     * asked of it are different: whether any claim competes for a line, and
+     * whether more than one exclusive claimant named it.
+     *
+     * @return array<string, array<string, int>>
+     */
+    private function observedClaimsByLine(): array
+    {
+        if ($this->observedClaimsByLine !== null) {
+            return $this->observedClaimsByLine;
+        }
+
+        $byLine = ['*' => []];
+        foreach (['client_time_entries', 'client_tasks'] as $table) {
+            $byLine[$table] = [];
+            foreach ($this->linkedSourceKeys[$table] ?? [] as $lineKey) {
+                $byLine['*'][$lineKey] = ($byLine['*'][$lineKey] ?? 0) + 1;
+                $byLine[$table][$lineKey] = ($byLine[$table][$lineKey] ?? 0) + 1;
+            }
+        }
+
+        return $this->observedClaimsByLine = $byLine;
+    }
+
+    /**
+     * Whether exactly one superseded line of this type is still claimed here.
+     *
+     * A line type is not always one line per invoice. A milestone is one line
+     * per task and a subcontractor charge one per rate, so an invoice can carry
+     * several superseded lines of a type that each stood for a different thing.
+     * If two of them are still claimed and one live line survived, the
+     * regenerated invoice dropped something - and resolving both claims to the
+     * survivor would mark the dropped work billed, so nothing would ever charge
+     * for it.
+     *
+     * Counting the claims rather than the lines is what keeps the ordinary case
+     * working. An invoice regenerated twenty-one times carries twenty-one
+     * superseded copies of the same aggregate line, but only the last of them
+     * is named by anything, so the mapping is still one to one.
+     *
+     * @param  QueryCache  $queryCache
+     */
+    private function soleSupersededClaim(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        mixed $invoiceKey,
+        string $lineType,
+        array &$queryCache,
+    ): bool {
+        $memo = 'client_invoice_lines'."\0".((string) $invoiceKey)."\0".$lineType;
+        if (array_key_exists($memo, $queryCache['sole_superseded_claim'])) {
+            return $queryCache['sole_superseded_claim'][$memo];
+        }
+
+        $superseded = $source->table('client_invoice_lines')
+            ->where('client_invoice_id', $invoiceKey)
+            ->where('line_type', $lineType)
+            ->whereNotNull('deleted_at')
+            ->pluck('client_invoice_line_id')
+            ->all();
+
+        $claimed = [];
+
+        if (count($superseded) > 1) {
+            // Both what this run observed and what the source holds now, for
+            // the reason the exclusive check needs both: a claimant deleted
+            // between the two reads is gone from the source, and one deleted
+            // before the run began was never observed. Either way its line had
+            // a claim on it, and a survivor beside it is not the unambiguous
+            // replacement it looks like.
+            // The observed side is indexed once per run rather than walked per
+            // question. Walking it per (invoice, type) meant every regenerated
+            // invoice scanning every billed row in the source, which is
+            // quadratic in exactly the history this exists to repair.
+            $claimants = $this->observedClaimsByLine()['*'];
+
+            foreach ($superseded as $key) {
+                if (isset($claimants[(string) $key])) {
+                    $claimed[(string) $key] = true;
+                }
+            }
+
+            foreach (['client_time_entries', 'client_tasks'] as $table) {
+                if (! in_array('client_invoice_line_id', $this->sourceColumns($sourceRuntimeName, $table, $queryCache), true)) {
+                    continue;
+                }
+
+                $counts = $this->sourceClaimsByLine($source, $table);
+                foreach ($superseded as $key) {
+                    if (($counts[(string) $key] ?? 0) > 0) {
+                        $claimed[(string) $key] = true;
+                    }
+                }
+            }
+        }
+
+        return $queryCache['sole_superseded_claim'][$memo] = count($claimed) <= 1;
+    }
+
+    /**
+     * The live invoice line that replaced a superseded one, when exactly one did.
+     *
+     * The source regenerates an invoice by soft-deleting its lines and inserting
+     * fresh ones, and it does not repoint the rows that named the old line. So a
+     * time entry or a milestone can name a line that no longer exists while the
+     * work it records was billed - on that same invoice, by the line that
+     * replaced it. One issued invoice in the migrated data carries two live
+     * lines and forty-two superseded ones, and twenty live time entries still
+     * name copies from earlier generations. Left unresolved they arrive here
+     * unbilled, which is indistinguishable from work nobody has charged for, and
+     * the next generation run charges for it again.
+     *
+     * The superseded line is read unfiltered, deliberately and as the only such
+     * read: it is deleted at the source, it will never be imported, and the one
+     * thing asked of it is which invoice it belonged to.
+     *
+     * The replacement has to be unambiguous in both directions, because
+     * attaching work to a line that did not bill it suppresses a charge that is
+     * owed - the same size of mistake as billing it twice. One direction is
+     * that exactly one live line on that invoice shares the superseded line's
+     * type. The other is that exactly one superseded line of that type is still
+     * claimed: not every type is one line per invoice, and a type that is one
+     * line per item - a subcontractor charge is one per rate - can have several
+     * superseded lines standing for several different things. Collapsing those
+     * onto the single line that survived would mark work billed that the
+     * regenerated invoice dropped, and nothing would ever charge for it.
+     *
+     * This is for aggregate claims only. A milestone's claim was recovered here
+     * too until it became clear that nothing available establishes which task
+     * an unheld line belongs to: an invoice line carries no task reference, and
+     * a description is the task's title, which nothing makes unique. Six rounds
+     * of narrowing - the claimant, the holder at the source, the holder here,
+     * the rival count, the title - each closed a case and left another, and the
+     * last one has no evidence left to appeal to. A milestone whose line was
+     * superseded is now reported unlinked rather than guessed at. It has never
+     * arisen in the migrated data; the two milestones there link from live
+     * lines in the ordinary way.
+     *
+     * Anything less than certain is refused and reported rather than guessed.
+     *
+     * @param  array<string, ExternalImportItem>  $ledgerItems
+     * @param  QueryCache  $queryCache
+     */
+    private function supersededLineId(
+        ConnectionInterface $source,
+        string $sourceRuntimeName,
+        string $supersededKey,
+        string $destinationName,
+        int $workspaceId,
+        array $ledgerItems,
+        array &$queryCache,
+    ): ?int {
+        if ($supersededKey === '') {
+            return null;
+        }
+
+        $columns = $this->sourceColumns($sourceRuntimeName, 'client_invoice_lines', $queryCache);
+        // The description is required where it is the evidence - an aggregate
+        // claim has nothing but the type without it, and the type was never
+        // enough. A milestone establishes identity another way, through an
+        // exclusive claimant and an unheld line, so demanding a column it never
+        // reads would only disable a recovery that is sound without it.
+        foreach (['client_invoice_line_id', 'client_invoice_id', 'line_type', 'deleted_at', 'description', 'client_agreement_id'] as $required) {
+            if (! in_array($required, $columns, true)) {
+                return null;
+            }
+        }
+
+        $superseded = $source->table('client_invoice_lines')
+            ->where('client_invoice_line_id', $supersededKey)
+            ->whereNotNull('deleted_at')
+            ->first();
+
+        if ($superseded === null) {
+            return null;
+        }
+
+        $supersededRow = (array) $superseded;
+        $invoiceKey = $supersededRow['client_invoice_id'] ?? null;
+        $lineType = $supersededRow['line_type'] ?? null;
+
+        if ($invoiceKey === null || $lineType === null) {
+            return null;
+        }
+
+        // Where the claimant cannot establish identity, the type has to. One
+        // superseded subcontractor line and one live one are two different
+        // groups of work as often as they are the same line twice.
+        if (! in_array((string) $lineType, self::IDENTIFIABLE_BY_DESCRIPTION, true)) {
+            return null;
+        }
+
+        // Two is enough to know it is ambiguous, and stops an invoice with a
+        // long line history being read in full to answer a yes-or-no question.
+        $replacements = SourceRows::for($source, $sourceRuntimeName, 'client_invoice_lines', $columns)
+            ->where('client_invoice_id', $invoiceKey)
+            ->where('line_type', $lineType)
+            ->limit(2)
+            ->get();
+
+        if ($replacements->count() !== 1) {
+            return null;
+        }
+
+        if (! $this->soleSupersededClaim($source, $sourceRuntimeName, $invoiceKey, (string) $lineType, $queryCache)) {
+            return null;
+        }
+
+        $replacement = (array) $replacements->first();
+        $replacementKey = (string) ($replacement['client_invoice_line_id'] ?? '');
+
+        // Same type is not the same line. Two retainer draws on one invoice are
+        // two pools, and only the words say which - so the words have to agree,
+        // with the figures the composer fills in set aside because those move
+        // between generations of one line. Not every number, though: a retainer
+        // description carries the cycle it is for, and February 2024 is not
+        // February 2025.
+        $agreement = $this->sourceAgreementContext(
+            $source,
+            $sourceRuntimeName,
+            (string) ($supersededRow['client_agreement_id'] ?? ''),
+            $ledgerItems,
+            $queryCache,
+        );
+        $supersededShape = self::descriptionShape($supersededRow['description'] ?? null, (string) $lineType, $agreement);
+
+        if ($supersededShape === ''
+            || $supersededShape !== self::descriptionShape($replacement['description'] ?? null, (string) $lineType, $agreement)) {
+            return null;
+        }
+
+        // And the same agreement. One invoice can carry lines from more than
+        // one, and two agreements can have a line of the same type reading the
+        // same way - the words describe the work, not which contract it fell
+        // under. This is the one piece of identity the source records as a
+        // reference rather than as prose, so it is used where it exists.
+        // Both must name one, and the same one. Two nulls cast to '' compare
+        // equal, which is not two lines agreeing about their agreement - it is
+        // two lines saying nothing, and the templates without a cadence would
+        // have taken that as identity established.
+        $supersededAgreement = (string) ($supersededRow['client_agreement_id'] ?? '');
+
+        if ($supersededAgreement === ''
+            || $supersededAgreement !== (string) ($replacement['client_agreement_id'] ?? '')) {
+            return null;
+        }
+
+        // Held to the same fingerprint check as the row carrying the link. A
+        // replacement edited since this run observed it describes a snapshot
+        // this run never saw, and a billing link must not be written from one.
+        if (! $this->observedThisRun('client_invoice_lines', $replacementKey, $replacement, $ledgerItems)) {
+            return null;
+        }
+
+        $publicId = $this->resolveParentId('client_invoice_lines', $replacementKey, $ledgerItems, $queryCache);
+
+        if ($publicId === null) {
+            return null;
+        }
+
+        // Resolved inside the workspace rather than resolved and then checked:
+        // a ledger mapping that names another tenant's line has no answer here,
+        // and asking for one and rejecting it afterwards leaves a row this run
+        // had no business reading in a variable.
+        $lineId = DB::connection($destinationName)->table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->where('public_id', $publicId)
+            ->value('id');
+
+        return $lineId === null ? null : (int) $lineId;
     }
 
     /**
@@ -789,7 +1634,7 @@ final class ExternalImportService
      *
      * @param  array<string, ExternalImportItem>  $ledgerItems
      * @param  QueryCache  $queryCache
-     * @param  array{source_rows:int,inserted:int,idempotent:int,rejected:int,failed:int}  $linkCounts
+     * @param  array{source_rows:int,inserted:int,idempotent:int,recovered:int,rejected:int,failed:int}  $linkCounts
      * @param  array<string, mixed>  $counts
      */
     private function reconcileTimeEntryInvoiceLinks(
@@ -834,6 +1679,15 @@ final class ExternalImportService
             $linePublicId = $this->resolveParentId('client_invoice_lines', (string) ($row['client_invoice_line_id'] ?? ''), $ledgerItems, $queryCache);
             $timeId = $this->internalId($destinationName, 'client_time_entries', $timePublicId);
             $lineId = $this->internalId($destinationName, 'client_invoice_lines', $linePublicId);
+            $recovering = false;
+
+            // An entry naming a line the source has superseded is billed work,
+            // not unbilled work, so follow the claim to the line that replaced
+            // it rather than dropping it and letting it be charged again.
+            if ($timeId !== null && $lineId === null) {
+                $lineId = $this->supersededLineId($source, $sourceRuntimeName, (string) ($row['client_invoice_line_id'] ?? ''), $destinationName, (int) $run->workspace_id, $ledgerItems, $queryCache);
+                $recovering = $lineId !== null;
+            }
 
             if ($timeId === null || $lineId === null) {
                 $linkCounts['failed']++;
@@ -852,25 +1706,112 @@ final class ExternalImportService
                 continue;
             }
 
-            $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
-            $exists = $query->where('workspace_id', $run->workspace_id)
-                ->where('client_invoice_line_id', $lineId)
+            // Fill a hole only, the same rule the milestone pass follows, and
+            // for the same reason: repointing a billed row is not a decision an
+            // import pass gets to make. Asking only whether this exact pair
+            // exists is not enough - the pivot is unique on the entry, so an
+            // entry an operator billed onto some other line in the gap between
+            // the two reads would take the insert into a constraint violation
+            // and throw the whole run after earlier tables had committed.
+            $held = DB::connection($destinationName)->table('client_invoice_line_time_entries')
+                ->where('workspace_id', $run->workspace_id)
                 ->where('client_time_entry_id', $timeId)
-                ->exists();
-            if ($exists) {
-                $linkCounts['idempotent']++;
+                ->value('client_invoice_line_id');
+
+            if ($held !== null) {
+                if ((int) $held === $lineId) {
+                    $linkCounts['idempotent']++;
+
+                    continue;
+                }
+
+                // The destination says this work was billed somewhere else.
+                // Leaving it alone is right, but the run has not reconciled the
+                // link and must not report as though it had.
+                $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_destination_claims_another_line'] = ($counts['failure_reasons']['time_link_destination_claims_another_line'] ?? 0) + 1;
 
                 continue;
             }
 
-            $query->insert([
-                'workspace_id' => $run->workspace_id,
-                'client_invoice_line_id' => $lineId,
-                'client_time_entry_id' => $timeId,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            $query = DB::connection($destinationName)->table('client_invoice_line_time_entries');
+
+            // The read above narrows the window; it cannot close it. The pivot
+            // is unique on the entry, so an operator billing it in the gap
+            // still collides - and an uncaught collision throws the whole run
+            // after earlier tables have committed. The constraint is the
+            // arbiter, and losing to it means the same thing the read meant.
+            try {
+                $query->insert([
+                    'workspace_id' => $run->workspace_id,
+                    'client_invoice_line_id' => $lineId,
+                    'client_time_entry_id' => $timeId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } catch (QueryException $exception) {
+                // The line can also go between the checks above and this
+                // insert - a draft regenerated in the gap takes its lines with
+                // it - and that arrives as a foreign key failure rather than a
+                // duplicate. It means the parent is missing, which is what this
+                // run would have reported had it looked a moment later.
+                if (! $exception instanceof UniqueConstraintViolationException) {
+                    // Only the line is asked about, because only the line is
+                    // constrained: the pivot deliberately carries no foreign
+                    // key to client_time_entries, which the engagement slice
+                    // migrates independently. An entry deleted in the gap does
+                    // not raise this.
+                    //
+                    // Scoped, like every other tenant-owned read here: a row
+                    // this workspace does not own is not this run's parent,
+                    // whatever the ownership check a moment earlier concluded.
+                    $lineStillThere = DB::connection($destinationName)->table('client_invoice_lines')
+                        ->where('workspace_id', $run->workspace_id)
+                        ->where('id', $lineId)
+                        ->exists();
+
+                    if ($lineStillThere) {
+                        throw $exception;
+                    }
+
+                    $linkCounts['failed']++;
+                    $counts['failed']++;
+                    $counts['failure_reasons']['missing_invoice_time_link_parent'] = ($counts['failure_reasons']['missing_invoice_time_link_parent'] ?? 0) + 1;
+
+                    continue;
+                }
+
+                // Losing the race does not say what won it. The other writer
+                // may have written the very row this was about to, and
+                // reporting a skip then would end an otherwise reconciled run
+                // with skips over work that was in fact done.
+                $winner = DB::connection($destinationName)->table('client_invoice_line_time_entries')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('client_time_entry_id', $timeId)
+                    ->value('client_invoice_line_id');
+
+                if ($winner !== null && (int) $winner === $lineId) {
+                    $linkCounts['idempotent']++;
+
+                    continue;
+                }
+
+                $linkCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['time_link_destination_claims_another_line'] = ($counts['failure_reasons']['time_link_destination_claims_another_line'] ?? 0) + 1;
+
+                continue;
+            }
+
             $linkCounts['inserted']++;
+
+            // Counted here rather than where the candidate was found: a claim
+            // that was identified and then lost the pivot, or whose line went
+            // before the insert, was not recovered.
+            if ($recovering) {
+                $linkCounts['recovered']++;
+            }
         }
 
         $linkCounts['rejected'] += $this->vanishedLinkCount('client_time_entries', $seen, $counts, 'time_link_vanished');
@@ -959,14 +1900,92 @@ final class ExternalImportService
             // two would otherwise have their link replaced by this one. Leaving
             // updated_at alone keeps the source date attributes() imported -
             // reconstructing a link is not the source editing the row.
-            $updated = DB::connection($destinationName)->table('client_tasks')
-                ->where('workspace_id', $run->workspace_id)
-                ->where('id', $taskId)
-                ->whereNull('client_invoice_line_id')
-                ->update(['client_invoice_line_id' => $lineId]);
+            // A milestone line stands for one deliverable, and the schema
+            // indexes the column without constraining it, so nothing below the
+            // application stops two tasks holding one line. The availability
+            // question is therefore asked by the write rather than before it:
+            // a reader that answered it a statement earlier can be overtaken.
+            // The predicate and the constraint answer the same question, and
+            // either can be the one that answers it: losing to the index throws
+            // where losing to the predicate returns zero. Both mean the line
+            // was taken, so both are read the same way rather than one of them
+            // failing the whole run after earlier tables have committed.
+            // Two tasks naming one line is two deliverables with one line
+            // between them. Left to the write, the lower id would take it and
+            // the constraint would reject the other - and nothing here says the
+            // lower id is the one the line billed.
+            //
+            // Counted in the source unfiltered as well as among what this run
+            // observed. A task deleted before the run is not a rival for being
+            // billed again, but it may be the deliverable the line paid for,
+            // and handing that line to the survivor would mark the survivor
+            // billed for work of its own that nothing has charged.
+            $claimedLine = (string) ($row['client_invoice_line_id'] ?? '');
+            if (max(
+                $this->observedClaimsByLine()['client_tasks'][$claimedLine] ?? 0,
+                $this->sourceClaimsByLine($source, 'client_tasks')[$claimedLine] ?? 0,
+            ) > 1) {
+                $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] = ($counts['failure_reasons']['milestone_link_claimed_by_two_tasks'] ?? 0) + 1;
+
+                continue;
+            }
+
+            try {
+                $updated = $this->reserveMilestoneLine($destinationName, (int) $run->workspace_id, $taskId, $lineId);
+            } catch (UniqueConstraintViolationException) {
+                $updated = 0;
+            } catch (QueryException $exception) {
+                // The line can go between the checks above and this write, the
+                // way it can on the time-entry side, and that arrives as a
+                // foreign key failure. It means the parent is missing.
+                if (DB::connection($destinationName)->table('client_invoice_lines')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('id', $lineId)
+                    ->exists()) {
+                    throw $exception;
+                }
+
+                $milestoneCounts['failed']++;
+                $counts['failed']++;
+                $counts['failure_reasons']['missing_milestone_invoice_link_parent'] = ($counts['failure_reasons']['missing_milestone_invoice_link_parent'] ?? 0) + 1;
+
+                continue;
+            }
 
             if ($updated === 0) {
-                $milestoneCounts['idempotent']++;
+                // Nothing written, for one of two reasons: this task already
+                // had a link, or somebody else took the line. They are not the
+                // same outcome and must not report as one.
+                $current = DB::connection($destinationName)->table('client_tasks')
+                    ->where('workspace_id', $run->workspace_id)
+                    ->where('id', $taskId)
+                    ->value('client_invoice_line_id');
+
+                if ($current !== null) {
+                    if ((int) $current === $lineId) {
+                        $milestoneCounts['idempotent']++;
+
+                        continue;
+                    }
+
+                    // The destination says this deliverable was billed on some
+                    // other line. Leaving it alone is right - repointing a
+                    // billed row is not an import's decision - but the run has
+                    // not reconciled the claim and must not report as if it
+                    // had, which is how the time-entry pass reads the same
+                    // disagreement.
+                    $milestoneCounts['rejected']++;
+                    $counts['skipped']++;
+                    $counts['failure_reasons']['milestone_link_destination_claims_another_line'] = ($counts['failure_reasons']['milestone_link_destination_claims_another_line'] ?? 0) + 1;
+
+                    continue;
+                }
+
+                $milestoneCounts['rejected']++;
+                $counts['skipped']++;
+                $counts['failure_reasons']['milestone_link_taken_by_another_task'] = ($counts['failure_reasons']['milestone_link_taken_by_another_task'] ?? 0) + 1;
 
                 continue;
             }
