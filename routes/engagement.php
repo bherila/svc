@@ -3,11 +3,20 @@
 use App\Http\Controllers\Engagement\AgreementController;
 use App\Http\Controllers\Engagement\ProposalController;
 use App\Http\Controllers\Engagement\TimeEntryController;
+use App\Http\Controllers\Engagement\TimeSheetController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth'])->group(function (): void {
+    Route::get('/workspaces/{workspace}/time', TimeSheetController::class)
+        ->name('svc.engagement.time-entries.index');
     Route::post('/workspaces/{workspace}/projects/{clientProject}/time-entries', [TimeEntryController::class, 'store'])
         ->name('svc.engagement.time-entries.store');
+    Route::patch('/workspaces/{workspace}/time-entries/{timeEntry}', [TimeEntryController::class, 'update'])
+        ->name('svc.engagement.time-entries.update');
+    Route::delete('/workspaces/{workspace}/time-entries/{timeEntry}', [TimeEntryController::class, 'destroy'])
+        ->name('svc.engagement.time-entries.destroy');
+    Route::post('/workspaces/{workspace}/time-entries/approve', [TimeEntryController::class, 'approve'])
+        ->name('svc.engagement.time-entries.approve');
 
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/proposals', [ProposalController::class, 'store'])
         ->name('svc.engagement.proposals.store');

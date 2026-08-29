@@ -36,6 +36,17 @@ class TimeEntryWorkflow
             throw new EngagementException('The worker is not a member of this workspace.');
         }
 
+        // A client-visible entry with no client-facing description would show
+        // the internal note, which is not written for a client to read. The
+        // agent API refuses the same shape; both doors have to agree or the
+        // operator screen becomes the way around the rule.
+        $visibleToClient = (bool) ($attributes['is_visible_to_client'] ?? false);
+        $clientDescription = $attributes['client_visible_description'] ?? null;
+
+        if ($visibleToClient && (! is_string($clientDescription) || trim($clientDescription) === '')) {
+            throw new EngagementException('Client-visible time requires an explicit client-facing description.');
+        }
+
         return ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
@@ -45,6 +56,8 @@ class TimeEntryWorkflow
             'worked_on' => $attributes['worked_on'],
             'minutes' => $attributes['minutes'],
             'description' => $attributes['description'],
+            'client_visible_description' => $clientDescription,
+            'is_visible_to_client' => $visibleToClient,
             'is_billable' => $attributes['is_billable'] ?? true,
             'is_deferred' => $attributes['is_deferred'] ?? false,
             'billing_rate_amount' => $attributes['billing_rate_amount'] ?? null,

@@ -29,6 +29,7 @@ type Workspace = {
     name: string;
     role: string;
     operations_url: string;
+    time_url: string;
     clients: Client[];
 };
 
@@ -260,10 +261,16 @@ export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
                                 </h2>
                                 <div className="flex items-center gap-3">
                                     <Link
+                                        href={workspace.time_url}
+                                        className="text-sm font-semibold text-cyan-700"
+                                    >
+                                        Time
+                                    </Link>
+                                    <Link
                                         href={workspace.operations_url}
                                         className="text-sm font-semibold text-cyan-700"
                                     >
-                                        Time, proposals &amp; billing
+                                        Proposals &amp; billing
                                     </Link>
                                     <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800">
                                         {workspace.role}

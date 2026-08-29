@@ -597,9 +597,17 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                 {workspace.name}
                             </h1>
                         </div>
-                        <span className="text-sm font-semibold tracking-[0.2em]">
-                            SVC
-                        </span>
+                        <div className="flex items-center gap-4">
+                            <Link
+                                href={`/workspaces/${workspace.id}/time`}
+                                className="text-sm font-semibold text-cyan-700"
+                            >
+                                Time sheet
+                            </Link>
+                            <span className="text-sm font-semibold tracking-[0.2em]">
+                                SVC
+                            </span>
+                        </div>
                     </div>
                 </header>
 
