@@ -107,4 +107,36 @@ final class InvoiceFromTimeServiceTest extends TestCase
         $this->assertDatabaseCount('client_invoice_lines', 0);
         $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
     }
+
+    public function test_it_cannot_select_time_from_another_workspace(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Invoice tenant', 'slug' => 'invoice-tenant']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Client', 'slug' => 'tenant-client']);
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other invoice tenant', 'slug' => 'other-invoice-tenant']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $otherWorkspace->id, 'name' => 'Other Client', 'slug' => 'other-tenant-client']);
+        $otherProject = ClientProject::query()->create(['workspace_id' => $otherWorkspace->id, 'client_company_id' => $otherCompany->id, 'name' => 'Other Project']);
+        $foreignEntry = ClientTimeEntry::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $otherCompany->id,
+            'client_project_id' => $otherProject->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 60,
+            'description' => 'Foreign work',
+            'is_billable' => true,
+            'status' => 'approved',
+            'billing_rate_amount' => 12000,
+            'currency' => 'USD',
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('not found');
+
+        app(InvoiceFromTimeService::class)->create(
+            $workspace,
+            $company,
+            ['invoice_number' => 'SVC-TENANT', 'currency' => 'USD'],
+            [$foreignEntry->public_id],
+        );
+    }
 }

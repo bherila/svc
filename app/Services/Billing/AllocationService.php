@@ -91,7 +91,9 @@ final class AllocationService
         // between the integrity check and the destructive merge.
         $this->projectChainGuard->assertProjectChainsAgree(
             $company,
-            ClientTimeEntry::query()->whereKey($group->modelKeys()),
+            ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($group->modelKeys()),
         );
 
         return $group;

@@ -81,7 +81,9 @@ final class InvoiceFromTimeService
         // no longer change between this check and the invoice-line write.
         $this->projectChainGuard->assertProjectChainsAgree(
             $company,
-            ClientTimeEntry::query()->whereKey($entriesById->modelKeys()),
+            ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($entriesById->modelKeys()),
         );
         $lines = $this->normalizeManualLines($workspace, $company, $manualLines);
         /** @var array<int, int> $subtotalOverrides */

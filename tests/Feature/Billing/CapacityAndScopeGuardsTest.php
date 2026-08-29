@@ -21,6 +21,7 @@ use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
 use Tests\TestCase;
@@ -317,6 +318,47 @@ final class CapacityAndScopeGuardsTest extends TestCase
             Carbon::parse('2024-02-01'),
             $foreign,
         );
+    }
+
+    public function test_interim_generation_rechecks_project_chains_when_given_a_cached_ledger(): void
+    {
+        $project = $this->project('Cached Ledger Project');
+        $agreement = $this->quarterlyAgreement();
+        $entry = $this->entry($project, '2024-01-15', 1800);
+        $ledger = app(InvoiceLedgerBuilder::class)->buildAgreementLedgerThrough(
+            $this->company,
+            $agreement,
+            Carbon::parse('2024-01-31'),
+            true,
+        );
+
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Cached Ledger Other Client',
+            'slug' => 'cached-ledger-other-client',
+        ]);
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'name' => 'Cached Ledger Other Project',
+        ]);
+        $entry->forceFill(['client_project_id' => $otherProject->id])->save();
+
+        try {
+            app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+                $this->company,
+                Carbon::parse('2024-01-01'),
+                $agreement,
+                $ledger,
+            );
+            $this->fail('A cached ledger must not bypass the project-chain guard.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('client_invoice_lines', 0);
+        $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
     }
 
     /**

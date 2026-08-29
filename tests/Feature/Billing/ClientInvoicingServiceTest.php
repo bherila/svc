@@ -388,6 +388,46 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
     }
 
+    public function test_generation_refuses_company_time_stored_under_another_workspace(): void
+    {
+        $this->monthlyAgreement(endsOn: '2024-01-31');
+        $otherWorkspace = Workspace::query()->create([
+            'name' => 'Generation Other Workspace',
+            'slug' => 'generation-other-workspace',
+        ]);
+        $foreignProject = ClientProject::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Malformed Foreign Project',
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $foreignProject->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2024-04-15',
+            'minutes' => 120,
+            'description' => 'Work hidden by an ordinary workspace scope',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+
+        $this->travelTo(Carbon::parse('2024-06-15'));
+
+        try {
+            app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+            $this->fail('Generation must detect a company row claiming another workspace.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('project outside this client company', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('client_invoice_lines', 0);
+        $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
+    }
+
     /**
      * A partial range inside a non-monthly cycle has no defined retainer, so it
      * is refused rather than guessed at.

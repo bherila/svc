@@ -28,6 +28,18 @@ final class TimeEntryProjectChainGuard
                 ->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id),
         );
+
+        // A malformed row can carry this company's globally unique id while
+        // claiming another workspace. Keep that integrity scan explicit: a
+        // normal workspace scope alone would hide the row and silently
+        // underbill it, while an unqualified company-id query would violate
+        // the tenant-query invariant this guard exists to enforce.
+        $this->assertProjectChainsAgree(
+            $company,
+            ClientTimeEntry::query()
+                ->where('workspace_id', '!=', $company->workspace_id)
+                ->where('client_company_id', $company->id),
+        );
     }
 
     /**
