@@ -120,6 +120,28 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.entries.0.can_edit', false));
     }
 
+    public function test_a_draft_with_an_unknown_invoice_kind_is_not_advertised_as_legacy_cadence(): void
+    {
+        $entry = $this->entry(['worked_on' => '2026-07-04']);
+        $agreement = $this->agreementWithAnHourlyRate();
+        $invoice = $this->attachToInvoice($entry, 'draft');
+        $invoice->forceFill([
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => 'future_generated_kind',
+            'service_period_start' => '2026-07-01',
+            'service_period_end' => '2026-07-31',
+        ])->save();
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.entries.0.invoice.status', 'draft')
+                ->where('months.0.entries.0.can_edit', false));
+    }
+
     /**
      * The screen hiding a control is not a rule. An operator holding a version
      * read before the invoice existed can still send the request, so the guard

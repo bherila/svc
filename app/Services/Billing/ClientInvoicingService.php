@@ -293,6 +293,9 @@ final class ClientInvoicingService
             if ($invoice->service_period_start === null || $invoice->service_period_end === null) {
                 throw new RuntimeException('The interim draft invoice has no service period to regenerate.');
             }
+            if (! (bool) $agreement->bill_overage_interim) {
+                throw new RuntimeException('Interim overage billing is disabled for this agreement.');
+            }
             $this->assertUniqueRegenerationTarget($company, $agreement, $invoice, $kind);
 
             return $this->generateInterimOverageInvoice(
@@ -999,7 +1002,9 @@ final class ClientInvoicingService
 
             $invoice = $this->scopedInvoices($company)
                 ->where('client_agreement_id', $agreement->id)
-                ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+                ->where(fn (Builder $kind): Builder => $kind
+                    ->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
                 ->where('status', '!=', 'void')

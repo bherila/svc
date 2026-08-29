@@ -339,7 +339,10 @@ class TimeSheetController extends Controller
         $byEntry = [];
 
         foreach ($links as $link) {
-            $kind = InvoiceKind::tryFrom((string) $link->getAttribute('invoice_kind')) ?? InvoiceKind::CadencePeriod;
+            $rawKind = $link->getAttribute('invoice_kind');
+            $kind = $rawKind === null
+                ? InvoiceKind::CadencePeriod
+                : InvoiceKind::tryFrom((string) $rawKind);
             $hasAgreement = $link->getAttribute('agreement_id') !== null;
             $hasServicePeriod = $link->getAttribute('service_period_start') !== null
                 && $link->getAttribute('service_period_end') !== null;
@@ -350,6 +353,7 @@ class TimeSheetController extends Controller
                 InvoiceKind::CadencePeriod => $hasAgreement && ($hasCycle || $hasServicePeriod),
                 InvoiceKind::InterimOverage => $hasAgreement && $hasServicePeriod,
                 InvoiceKind::Terminal => false,
+                null => false,
             };
             $byEntry[(int) $link->getAttribute('entry_id')] = [
                 'id' => (string) $link->getAttribute('invoice_id'),
