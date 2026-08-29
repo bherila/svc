@@ -81,14 +81,7 @@ class TimeSheetTest extends TestCase
                 ->where('months.1.billable_minutes', 0));
     }
 
-    /**
-     * A line that bills an entry freezes it, draft invoice or not. The
-     * predecessor unlinked an entry from a draft and regenerated the invoice;
-     * this system has no path that recomposes a draft from an edited entry, so
-     * allowing the edit would leave the draft charging the old quantity right
-     * up until it was issued.
-     */
-    public function test_an_entry_on_any_invoice_is_frozen(): void
+    public function test_time_on_a_draft_invoice_is_editable_but_issued_time_is_frozen(): void
     {
         $onDraft = $this->entry(['worked_on' => '2026-07-04']);
         $onIssued = $this->entry(['worked_on' => '2026-07-05']);
@@ -107,7 +100,7 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.entries.0.can_edit', false)
                 ->where('months.0.entries.0.can_approve', false)
                 ->where('months.0.entries.1.invoice.status', 'draft')
-                ->where('months.0.entries.1.can_edit', false)
+                ->where('months.0.entries.1.can_edit', true)
                 ->where('months.0.entries.1.can_approve', false));
     }
 
@@ -131,7 +124,7 @@ class TimeSheetTest extends TestCase
                 'expected_version' => $version,
                 'minutes' => 75,
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertRedirect();
 
         $this->actingAs($this->manager)
             ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$onIssued->public_id}", [
@@ -139,7 +132,11 @@ class TimeSheetTest extends TestCase
             ])
             ->assertSessionHasErrors('engagement');
 
-        $this->assertSame(60, (int) $onDraft->fresh()?->minutes);
+        $this->assertSame(75, (int) $onDraft->fresh()?->minutes);
+        // A legacy draft-status row is not invoiceable until approval. The
+        // regeneration therefore releases its stale synthetic line instead of
+        // continuing to quote the old sixty-minute amount.
+        $this->assertFalse($onDraft->fresh()?->invoiceLines()->exists());
         $this->assertNotSoftDeleted($onIssued);
     }
 
@@ -2563,6 +2560,7 @@ class TimeSheetTest extends TestCase
             'client_company_id' => $this->company->id,
             'invoice_number' => 'SYN-'.$status.'-'.$entry->id,
             'status' => $status,
+            'invoice_kind' => 'ad_hoc',
             'currency' => 'USD',
             'subtotal_amount' => 0,
             'tax_amount' => 0,

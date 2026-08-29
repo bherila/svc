@@ -616,13 +616,17 @@ class TimeSheetController extends Controller
             ? $task
             : null;
 
-        // Any invoice line freezes the entry, and the screen says the same
-        // thing the mutation service does. The predecessor unlinked an entry
-        // from a draft invoice and regenerated it; reproducing that needs the
-        // generator, so until it exists this refuses rather than letting an
-        // edit leave a draft charging the old quantity.
-        $editable = $entry->status === 'draft'
-            && $invoice === null
+        // Approved time is normally immutable, but a draft invoice has not
+        // charged anyone yet. Its mutation path now regenerates the invoice in
+        // the same transaction, so both a legacy draft-status allocation and
+        // the approved time produced by the real generator remain editable.
+        // Anything that has left draft still freezes the entry.
+        $isDraftInvoice = $invoice !== null && $invoice['status'] === 'draft';
+        $editableStatus = $entry->status === 'draft'
+            || ($entry->status === 'approved' && $isDraftInvoice);
+        $editableInvoice = $invoice === null || $isDraftInvoice;
+        $editable = $editableStatus
+            && $editableInvoice
             && ($entry->user_id === $userId || $isManager)
             && ($permissions[$entry->client_project_id]['log'] ?? false);
 

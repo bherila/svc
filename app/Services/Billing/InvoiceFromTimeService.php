@@ -4,10 +4,12 @@ namespace App\Services\Billing;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceKind;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -55,6 +57,128 @@ final class InvoiceFromTimeService
             $this->attachTime($updated, $workspace, $lines);
 
             return $updated->fresh(['lines', 'clientCompany']);
+        });
+    }
+
+    /**
+     * Recompose the selected-time portion of an ad-hoc draft after one of its
+     * entries changes.
+     *
+     * Lines without a time pivot are operator-authored and remain byte-for-byte
+     * in place. Linked lines are derived data, so they are rebuilt from the
+     * surviving approved entries using the same integer-minute calculation as
+     * invoice creation. The mutated entry may legitimately disappear from the
+     * selection (delete, non-billable or deferred); any other selected entry
+     * becoming invalid is treated as corruption and fails the whole mutation.
+     */
+    public function regenerateDraftSelection(
+        ClientInvoice $invoice,
+        Workspace $workspace,
+        int $mutatedEntryId,
+    ): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $mutatedEntryId): ClientInvoice {
+            $locked = ClientInvoice::query()
+                ->whereKey($invoice->id)
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
+                throw new DomainException('Only an ad-hoc draft invoice can be refreshed from selected time.');
+            }
+
+            $company = ClientCompany::query()
+                ->whereKey($locked->client_company_id)
+                ->where('workspace_id', $workspace->id)
+                ->first();
+            if (! $company instanceof ClientCompany) {
+                throw new DomainException('The ad-hoc draft does not belong to an available client company.');
+            }
+
+            $links = DB::table('client_invoice_line_time_entries as pivot')
+                ->join('client_invoice_lines as lines', 'lines.id', '=', 'pivot.client_invoice_line_id')
+                ->where('pivot.workspace_id', $workspace->id)
+                ->where('lines.workspace_id', $workspace->id)
+                ->where('lines.client_invoice_id', $locked->id)
+                ->orderBy('lines.sort_order')
+                ->orderBy('lines.id')
+                ->select([
+                    'lines.id as line_id',
+                    'lines.sort_order as line_sort_order',
+                    'pivot.client_time_entry_id as entry_id',
+                ])
+                ->get();
+
+            $entryIds = $links->pluck('entry_id')->map(fn ($id): int => (int) $id)->unique()->values();
+            $entries = ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('id', $entryIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $activeEntries = $entries->values();
+            if ($activeEntries->isNotEmpty()) {
+                $this->projectChainGuard->assertProjectChainsAgree(
+                    $company,
+                    ClientTimeEntry::query()
+                        ->where('workspace_id', $workspace->id)
+                        ->whereKey($activeEntries->modelKeys()),
+                );
+            }
+
+            $eligible = [];
+            foreach ($entryIds as $entryId) {
+                $entry = $entries->get($entryId);
+                $valid = $entry instanceof ClientTimeEntry
+                    && $entry->client_company_id === $locked->client_company_id
+                    && $entry->status === 'approved'
+                    && $entry->is_billable
+                    && ! $entry->is_deferred
+                    && $entry->billing_rate_amount !== null
+                    && $entry->currency === $locked->currency;
+
+                if (! $valid) {
+                    if ($entryId !== $mutatedEntryId) {
+                        throw new DomainException('Another selected time entry is no longer invoiceable; refresh the draft explicitly.');
+                    }
+
+                    continue;
+                }
+
+                $eligible[] = $entry;
+            }
+
+            $linkedLineIds = $links->pluck('line_id')->map(fn ($id): int => (int) $id)->unique()->values();
+            foreach (ClientInvoiceLine::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', $locked->id)
+                ->whereIn('id', $linkedLineIds)
+                ->get() as $line) {
+                $line->timeEntries()->detach();
+                $line->delete();
+            }
+
+            foreach ($eligible as $entry) {
+                $originalLink = $links->first(fn ($link): bool => (int) $link->entry_id === $entry->id);
+                $line = $locked->lines()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_project_id' => $entry->client_project_id,
+                    'type' => 'time',
+                    'description' => $entry->description,
+                    'quantity' => MoneyService::hoursForMinutes($entry->minutes),
+                    'unit_amount' => $entry->billing_rate_amount,
+                    'tax_amount' => 0,
+                    'total_amount' => MoneyService::hourlyAmount($entry->minutes, $entry->billing_rate_amount),
+                    'sort_order' => (int) $originalLink->line_sort_order,
+                ]);
+                $line->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+            }
+
+            $locked->refresh()->recalculateTotals();
+
+            return $locked->fresh(['lines', 'clientCompany']);
         });
     }
 
