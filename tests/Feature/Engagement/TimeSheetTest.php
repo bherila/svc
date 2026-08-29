@@ -14,7 +14,11 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -597,6 +601,423 @@ class TimeSheetTest extends TestCase
             ->assertNotFound();
 
         $this->assertSame(60, (int) $foreign->fresh()?->minutes);
+    }
+
+    /**
+     * A retainer is sold to the company, so the ledger behind the capacity
+     * strip aggregates every approved hour the company booked - including
+     * hours on projects the reader cannot open. Filtering the rows and
+     * leaving the strip company-wide published the agreement's title and the
+     * shape of the hidden work in a tidier form than the rows would have.
+     */
+    public function test_capacity_is_withheld_from_a_member_who_cannot_see_the_whole_company(): void
+    {
+        $member = $this->memberOfTheOneProject();
+        $this->otherProject();
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Confidential Retainer Title',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        // The manager, who can see all of it, still gets the strip.
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('months.0.entries', 1)
+                ->has('months.0.capacity', 0));
+    }
+
+    /**
+     * Approval is where the rate is stamped, so approving attached time
+     * changes what a line bills without touching the line. `can_approve` is
+     * false on such a row, but the control being hidden is not the rule.
+     */
+    public function test_an_entry_on_an_invoice_cannot_be_approved(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $entry = $this->entry(['minutes' => 60]);
+        $version = AgentApiVersion::for($entry);
+        $this->attachToInvoice($entry, 'issued');
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => $version]],
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertNull($entry->fresh()?->billing_rate_amount);
+    }
+
+    /**
+     * Every write refuses an invoiced entry, and the list is here so that a
+     * fourth verb added later has somewhere obvious to be missing from. The
+     * update path was hardened first and approval was not - one guard per
+     * verb is exactly how that happens.
+     */
+    public function test_every_write_path_refuses_an_entry_that_is_already_invoiced(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $base = "/workspaces/{$this->workspace->public_id}";
+
+        /** @var array<string, callable(ClientTimeEntry, string): TestResponse> $writes */
+        $writes = [
+            'update' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
+                ->patch("{$base}/time-entries/{$entry->public_id}", [
+                    'expected_version' => $version,
+                    'minutes' => 75,
+                ]),
+            'delete' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
+                ->delete("{$base}/time-entries/{$entry->public_id}", [
+                    'expected_version' => $version,
+                ]),
+            'approve' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
+                ->post("{$base}/time-entries/approve", [
+                    'entries' => [['id' => $entry->public_id, 'expected_version' => $version]],
+                ]),
+        ];
+
+        foreach ($writes as $verb => $write) {
+            $entry = $this->entry(['minutes' => 60]);
+            $version = AgentApiVersion::for($entry);
+            $this->attachToInvoice($entry, 'issued');
+
+            $write($entry, $version)->assertStatus(409, "{$verb} was allowed on an invoiced entry");
+
+            $this->assertSame(60, (int) $entry->fresh()?->minutes, "{$verb} altered an invoiced entry");
+            $this->assertSame('draft', $entry->fresh()?->status, "{$verb} altered an invoiced entry");
+            $this->assertNotSoftDeleted($entry);
+        }
+    }
+
+    /**
+     * `AgreementSelector` and `AgreementBillingRateResolver` both exclude
+     * drafts, so a draft grants no hours anywhere the money is decided. A
+     * proposed retainer offering its hours above a table an operator logs
+     * against is the same claim, made where it is acted on.
+     */
+    public function test_a_draft_agreement_grants_no_capacity(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Proposed Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'draft',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
+
+        // And the exclusion is the status, not something else about the row:
+        // activating the same agreement produces the strip.
+        $agreement->forceFill(['status' => 'active'])->save();
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
+    }
+
+    /**
+     * The ledger runs from the agreement's start so the displayed months
+     * inherit their rollover, but only the window is displayed. An agreement
+     * running since 2019 otherwise returned six years of empty month cards
+     * through a screen that offers twelve.
+     */
+    public function test_capacity_older_than_the_window_is_not_offered(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Long Running Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2023-01-01',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                /** @var array{months: list<array{key: string}>} $props */
+                $props = $page->toArray()['props'];
+
+                $this->assertLessThanOrEqual(12, count($props['months']));
+                $this->assertNotEmpty($props['months']);
+
+                foreach ($props['months'] as $month) {
+                    $this->assertGreaterThanOrEqual('2025-08', $month['key']);
+                }
+            });
+    }
+
+    /**
+     * A stale or unreadable `company` fell through as a null selection, and
+     * the page independently falls back to the first company - so it printed
+     * that company's name above "no time logged in the last twelve months",
+     * a claim about a company whose entries were never fetched.
+     */
+    public function test_an_unknown_company_filter_falls_back_to_a_visible_company(): void
+    {
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time?company=not-a-real-company")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.company_id', $this->company->public_id)
+                ->has('months.0.entries', 1));
+    }
+
+    /**
+     * The class of bug, not one instance of it.
+     *
+     * Each finding so far has been one field escaping one filter, and the fix
+     * has been one more filter. This asserts the property those fixes were
+     * reaching for: nothing belonging to a project the reader cannot open
+     * appears anywhere in what is sent, whatever field it arrives in. A field
+     * added later to the payload is covered without anyone remembering to
+     * cover it.
+     */
+    public function test_nothing_from_an_invisible_project_reaches_the_payload(): void
+    {
+        $member = $this->memberOfTheOneProject();
+        $hidden = $this->otherProject();
+
+        $worker = User::factory()->create(['name' => 'Hidden Worker Name']);
+        $task = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $hidden->id,
+            'title' => 'Hidden Task Title',
+            'status' => 'open',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Hidden Agreement Title',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+
+        $hiddenEntry = ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $hidden->id,
+            'client_task_id' => $task->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-07-05',
+            'minutes' => 60,
+            'description' => 'Hidden Work Description',
+            'client_visible_description' => 'Hidden Client Description',
+            'is_visible_to_client' => true,
+            'status' => 'draft',
+        ]);
+        $this->attachToInvoice($hiddenEntry, 'issued')
+            ->forceFill(['invoice_number' => 'HIDDEN-INVOICE-9001'])
+            ->save();
+
+        $this->entry(['worked_on' => '2026-07-04', 'description' => 'Visible Work Description']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(function (Assert $page): void {
+                $payload = (string) json_encode($page->toArray());
+
+                foreach ([
+                    'Project They Cannot See',
+                    'Hidden Worker Name',
+                    'Hidden Task Title',
+                    'Hidden Work Description',
+                    'Hidden Client Description',
+                    'HIDDEN-INVOICE-9001',
+                    'Hidden Agreement Title',
+                ] as $secret) {
+                    $this->assertStringNotContainsString($secret, $payload);
+                }
+
+                // And the sheet is not empty for the wrong reason.
+                $this->assertStringContainsString('Visible Work Description', $payload);
+            });
+    }
+
+    /**
+     * Authorization asked per row is a query per row.
+     *
+     * `ProjectAccess` holds no cache, so a permission read while mapping costs
+     * membership queries every time it is asked - invisible at three entries
+     * and not at three hundred. Comparing two renders of different sizes fixes
+     * the shape rather than a number, so it neither needs updating when a
+     * query is legitimately added nor passes when one starts repeating.
+     */
+    public function test_the_sheet_does_not_query_once_per_entry(): void
+    {
+        $this->travelTo('2026-07-20');
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->entry(['worked_on' => '2026-07-04']);
+        }
+
+        $few = $this->queriesRenderingTheSheet();
+
+        for ($i = 0; $i < 27; $i++) {
+            $this->entry(['worked_on' => '2026-07-05']);
+        }
+
+        $this->assertSame(
+            $few,
+            $this->queriesRenderingTheSheet(),
+            'The sheet issued more queries for more entries, which is an N+1.',
+        );
+    }
+
+    /**
+     * The `active_date` defect, generalised.
+     *
+     * `active_date` is an accessor over `starts_on`, and naming one in a
+     * predicate is invalid SQL. MariaDB says so; SQLite does not, because an
+     * unresolvable double-quoted identifier degrades to a string literal - so
+     * `where "active_date" is not null` reads as a non-empty string and admits
+     * every row. The local suite cannot see the class of bug at all, and this
+     * is the cheapest thing that can: every identifier the page's own queries
+     * quote has to be a real table, a real column, or an alias that query
+     * declared.
+     */
+    public function test_the_sheet_names_only_columns_that_exist(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Synthetic Retainer',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->attachToInvoice($this->entry(['worked_on' => '2026-07-04']), 'issued');
+        $this->entry(['worked_on' => '2026-07-06', 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $known = [];
+
+        foreach (Schema::getTableListing() as $table) {
+            // The listing qualifies names with their schema (`main.workspaces`
+            // on SQLite); the grammar quotes the bare name.
+            $bare = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
+            $known[strtolower($bare)] = true;
+
+            foreach (Schema::getColumnListing($bare) as $column) {
+                $known[strtolower($column)] = true;
+            }
+        }
+
+        /** @var list<string> $statements */
+        $statements = [];
+        DB::listen(function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk();
+
+        $this->assertNotEmpty($statements, 'No queries were captured, so this asserted nothing.');
+
+        foreach ($statements as $statement) {
+            $allowed = $known;
+            preg_match_all('/\bas\s+"([^"]+)"/i', $statement, $aliases);
+
+            foreach ($aliases[1] as $alias) {
+                $allowed[strtolower($alias)] = true;
+            }
+
+            preg_match_all('/"([^"]+)"/', $statement, $identifiers);
+
+            foreach ($identifiers[1] as $identifier) {
+                $this->assertArrayHasKey(
+                    strtolower($identifier),
+                    $allowed,
+                    "`{$identifier}` is not a column, table or alias, so this predicate is silently a string on SQLite: {$statement}",
+                );
+            }
+        }
+    }
+
+    private function queriesRenderingTheSheet(): int
+    {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk();
+
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    }
+
+    /** A workspace member who belongs to one of the company's two projects. */
+    private function memberOfTheOneProject(): User
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+
+        return $member;
+    }
+
+    private function otherProject(): ClientProject
+    {
+        return ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Project They Cannot See',
+            'status' => 'active',
+        ]);
     }
 
     private function agreementWithAnHourlyRate(): ClientAgreement

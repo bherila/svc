@@ -80,6 +80,16 @@ final class TimeEntryMutationService
                 $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->lockForUpdate()->firstOrFail();
                 abort_unless($this->access->canApproveTime($actor, $entry->project), 403);
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
+                // The same freeze update and delete carry, for the same
+                // reason and then some: approval is where the rate is stamped,
+                // so approving attached time changes what the line bills
+                // without touching the line. Status alone does not catch it -
+                // an entry stays `draft` until approved, invoice or no.
+                abort_if(
+                    $entry->invoiceLines()->exists(),
+                    409,
+                    'This time entry is already on an invoice. Regenerate or void that invoice to change it.',
+                );
                 abort_unless(AgentApiVersion::matches($entry, $item['expected_version']), 409, 'The time entry has changed; read it and retry.');
                 $rate = $this->approvalRate($entry, $item);
                 $entry->forceFill([

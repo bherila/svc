@@ -184,6 +184,7 @@ export default function TimeSheet({
     // billable entry with no agreement rate to stamp. Without this the row
     // simply stays a draft and the click looks like it did nothing.
     const [notice, setNotice] = useState<string | null>(null);
+    const [approving, setApproving] = useState(false);
 
     const reportFailure = (errors: Record<string, string>) => {
         setNotice(
@@ -216,7 +217,16 @@ export default function TimeSheet({
         setDialogOpen(true);
     };
 
+    // Approval carries the version each row was rendered with, so a second
+    // click sends versions the first click has already spent: the first
+    // request approves, the second comes back 409 and the operator is told
+    // their successful approval failed.
     const approve = (entries: TimeEntry[]) => {
+        if (approving) {
+            return;
+        }
+
+        setApproving(true);
         router.post(
             `/workspaces/${workspace.id}/time-entries/approve`,
             {
@@ -232,6 +242,7 @@ export default function TimeSheet({
                     setNotice(null);
                 },
                 onError: reportFailure,
+                onFinish: () => setApproving(false),
             },
         );
     };
@@ -346,6 +357,7 @@ export default function TimeSheet({
                                 </Button>
                                 <Button
                                     size="sm"
+                                    disabled={approving}
                                     onClick={() => approve(selectedEntries)}
                                 >
                                     <CheckIcon />
@@ -388,6 +400,7 @@ export default function TimeSheet({
                                 onEdit={openDialog}
                                 onDelete={setPendingDelete}
                                 onApprove={(entry) => approve([entry])}
+                                approving={approving}
                             />
                         ))}
                     </div>
@@ -456,6 +469,7 @@ function MonthCard({
     onEdit,
     onDelete,
     onApprove,
+    approving,
 }: {
     month: Month;
     workspaceId: string;
@@ -464,6 +478,7 @@ function MonthCard({
     onEdit: (entry: TimeEntry) => void;
     onDelete: (entry: TimeEntry) => void;
     onApprove: (entry: TimeEntry) => void;
+    approving: boolean;
 }) {
     return (
         <Card>
@@ -594,6 +609,7 @@ function MonthCard({
                                                         variant="ghost"
                                                         size="icon-xs"
                                                         aria-label="Approve"
+                                                        disabled={approving}
                                                         onClick={() =>
                                                             onApprove(entry)
                                                         }

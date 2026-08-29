@@ -54,17 +54,42 @@ class TimeSheetController extends Controller
             ->orderBy('name')
             ->get();
 
+        $isManager = $access->isWorkspaceManager($user, $workspace);
+
         // Membership of the workspace is not access to every project in it.
         // Without this, a member scoped to one project reads every other
         // project's descriptions, workers, invoice links and capacity.
+        //
+        // One role lookup per project, resolved here rather than per row:
+        // `ProjectAccess` holds no cache, so asking it while mapping cost two
+        // membership queries for every line on a sheet that is twelve months
+        // long by design.
         $visibleProjectIds = [];
+
+        /** @var array<int, array{log: bool, approve: bool}> $permissions */
+        $permissions = [];
+
+        /** @var array<int, bool> $whollyVisible */
+        $whollyVisible = [];
 
         foreach ($companies as $company) {
             foreach ($company->projects as $project) {
-                if ($access->canView($user, $project)) {
-                    $visibleProjectIds[] = $project->id;
+                $role = $access->projectRole($user, $project);
+
+                if ($role === null) {
+                    continue;
                 }
+
+                $visibleProjectIds[] = $project->id;
+                $permissions[$project->id] = [
+                    'log' => $role->canLogTime(),
+                    'approve' => $role->canApproveTime(),
+                ];
             }
+
+            $whollyVisible[$company->id] = $company->projects->every(
+                fn (ClientProject $project): bool => isset($permissions[$project->id]),
+            );
         }
 
         $companies = $companies
@@ -82,7 +107,17 @@ class TimeSheetController extends Controller
         $selectedCompany = $this->selectedCompany($request, $companies);
         $entries = $this->entries($workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
-        $capacityByMonth = $this->capacityByMonth($ledgers, $selectedCompany);
+
+        // A retainer is sold to the company, not to a project, and the ledger
+        // aggregates every approved hour the company booked - so there is no
+        // honest project-scoped version of these figures. A member who reaches
+        // only part of the company gets no strip at all, rather than totals
+        // computed from work they cannot see: those disclose the agreement
+        // titles and the volume of the work behind them just as plainly as the
+        // rows would.
+        $capacityByMonth = $selectedCompany !== null && ($whollyVisible[$selectedCompany->id] ?? false)
+            ? $this->capacityByMonth($ledgers, $selectedCompany)
+            : [];
 
         return Inertia::render('time', [
             'workspace' => [
@@ -102,14 +137,14 @@ class TimeSheetController extends Controller
                     // Both halves, because the write requires both. Project
                     // access alone would advertise a form whose POST is
                     // refused by the workspace gate on `store()`.
-                    'can_log_time' => $canManage && $access->canLogTime($user, $project),
+                    'can_log_time' => $canManage && ($permissions[$project->id]['log'] ?? false),
                     'tasks' => $project->tasks->map(fn (ClientTask $task): array => [
                         'id' => $task->public_id,
                         'title' => $task->title,
                     ])->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
-            'months' => $this->months($entries, $invoicesByEntry, $capacityByMonth, $access, $user),
+            'months' => $this->months($entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
         ]);
     }
 
@@ -119,7 +154,12 @@ class TimeSheetController extends Controller
         $requested = $request->query('company');
 
         if (is_string($requested) && $requested !== '') {
-            return $companies->firstWhere('public_id', $requested);
+            // A stale, malformed or no-longer-visible id falls back rather
+            // than selecting nothing. The page independently falls back to the
+            // first company, so a null selection here rendered that company's
+            // name above "no time logged in the last twelve months" - a claim
+            // about a company whose entries were never fetched.
+            return $companies->firstWhere('public_id', $requested) ?? $companies->first();
         }
 
         return $companies->first();
@@ -138,17 +178,21 @@ class TimeSheetController extends Controller
             return new EloquentCollection;
         }
 
-        $from = CarbonImmutable::now()->startOfMonth()->subMonths(self::MONTH_WINDOW - 1);
-
         return ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->whereIn('client_project_id', $visibleProjectIds)
-            ->where('worked_on', '>=', $from->toDateString())
+            ->where('worked_on', '>=', self::windowStart()->toDateString())
             ->with(['project', 'task', 'user'])
             ->orderByDesc('worked_on')
             ->orderByDesc('id')
             ->get();
+    }
+
+    /** First month the sheet displays; entries and capacity share it. */
+    private static function windowStart(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->startOfMonth()->subMonths(self::MONTH_WINDOW - 1);
     }
 
     /**
@@ -219,6 +263,13 @@ class TimeSheetController extends Controller
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
+            // What the billing engine ignores cannot be capacity here.
+            // `AgreementSelector` and `AgreementBillingRateResolver` both
+            // exclude drafts; a proposed retainer carrying a start date would
+            // otherwise offer hours the client has not agreed to, above a
+            // table an operator logs against. Terminated agreements stay -
+            // historical months still need theirs.
+            ->where('status', '!=', 'draft')
             ->whereNotNull('starts_on')
             ->orderBy('starts_on')
             ->get()
@@ -231,9 +282,15 @@ class TimeSheetController extends Controller
                 && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null));
 
         $through = CarbonImmutable::now()->endOfMonth();
+        $from = self::windowStart()->format('Y-m');
         $capacity = [];
 
         foreach ($agreements as $agreement) {
+            // Built from the agreement's start every time, because the ledger
+            // is a running balance and the displayed months inherit rollover
+            // from the ones before them. Only what is displayed is trimmed:
+            // an agreement running since 2019 would otherwise return six years
+            // of empty month cards through a screen that offers twelve.
             $ledger = $ledgers->buildAgreementLedgerThrough(
                 $company,
                 $agreement,
@@ -241,6 +298,10 @@ class TimeSheetController extends Controller
             );
 
             foreach ($ledger as $month) {
+                if ($month->yearMonth < $from) {
+                    continue;
+                }
+
                 // `closing->excessHours` is populated only when the ledger is
                 // built to bill excess immediately, which this one is not - it
                 // carries the overage forward as a negative balance instead.
@@ -269,14 +330,16 @@ class TimeSheetController extends Controller
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
      * @param  array<string, list<array{agreement: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float}>>  $capacityByMonth
+     * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */
     private function months(
         EloquentCollection $entries,
         array $invoicesByEntry,
         array $capacityByMonth,
-        ProjectAccess $access,
-        User $user,
+        array $permissions,
+        int $userId,
+        bool $isManager,
     ): array {
         $grouped = $entries->groupBy(
             fn (ClientTimeEntry $entry): string => $entry->worked_on->format('Y-m'),
@@ -295,7 +358,7 @@ class TimeSheetController extends Controller
             /** @var EloquentCollection<int, ClientTimeEntry> $monthEntries */
             $monthEntries = $grouped->get($yearMonth) ?? new EloquentCollection;
             $rows = $monthEntries
-                ->map(fn (ClientTimeEntry $entry): array => $this->row($entry, $invoicesByEntry, $access, $user))
+                ->map(fn (ClientTimeEntry $entry): array => $this->row($entry, $invoicesByEntry, $permissions, $userId, $isManager))
                 ->values()
                 ->all();
 
@@ -323,13 +386,15 @@ class TimeSheetController extends Controller
 
     /**
      * @param  array<int, array{id: string, number: string|null, status: string}>  $invoicesByEntry
+     * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return array<string, mixed>
      */
     private function row(
         ClientTimeEntry $entry,
         array $invoicesByEntry,
-        ProjectAccess $access,
-        User $user,
+        array $permissions,
+        int $userId,
+        bool $isManager,
     ): array {
         $invoice = $invoicesByEntry[$entry->id] ?? null;
         $project = $entry->project;
@@ -341,8 +406,8 @@ class TimeSheetController extends Controller
         // edit leave a draft charging the old quantity.
         $editable = $entry->status === 'draft'
             && $invoice === null
-            && ($entry->user_id === $user->id || $access->isWorkspaceManager($user, $entry->workspace))
-            && $access->canLogTime($user, $project);
+            && ($entry->user_id === $userId || $isManager)
+            && ($permissions[$entry->client_project_id]['log'] ?? false);
 
         return [
             'id' => $entry->public_id,
@@ -368,7 +433,7 @@ class TimeSheetController extends Controller
             'can_edit' => $editable,
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null
-                && $access->canApproveTime($user, $project),
+                && ($permissions[$entry->client_project_id]['approve'] ?? false),
         ];
     }
 }
