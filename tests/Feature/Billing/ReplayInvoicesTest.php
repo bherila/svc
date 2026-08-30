@@ -115,6 +115,117 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertFalse($entry->isAgreementRateBillable(), 'Non-billable work is not agreement-rate billable.');
     }
 
+    public function test_snapshot_source_eligibility_requires_company_project_and_service_period_scope(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Scoped snapshot agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'hourly_rate_amount' => 20000,
+            'billing_cadence' => 'monthly',
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SCOPED-SNAPSHOT',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2026-02-01',
+            'cycle_end' => '2026-02-28',
+            'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31',
+            'subtotal_amount' => 20000,
+            'tax_amount' => 0,
+            'total_amount' => 20000,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'type' => 'additional_hours',
+            'description' => 'Synthetic scoped work',
+            'quantity' => '1.0000',
+            'hours' => '1.0000',
+            'line_date' => '2026-01-15',
+            'unit_amount' => 20000,
+            'tax_amount' => 0,
+            'total_amount' => 20000,
+            'sort_order' => 1,
+        ]);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-01-15',
+            'minutes' => 60,
+            'description' => 'Synthetic scoped source',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+        $line->timeEntries()->attach($entry->id, ['workspace_id' => $this->workspace->id]);
+
+        $snapshot = new ReflectionMethod(ReplayInvoicesCommand::class, 'snapshot');
+        $snapshotLine = function () use ($snapshot): array {
+            /** @var array<string, array<string, mixed>> $rows */
+            $rows = $snapshot->invoke(
+                app(ReplayInvoicesCommand::class),
+                $this->workspace,
+                collect([$this->company]),
+            );
+
+            /** @var array<string, mixed> $capturedLine */
+            $capturedLine = array_values($rows)[0]['lines'][0];
+
+            return $capturedLine;
+        };
+
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+        $validSnapshotLine = $snapshotLine();
+        $this->assertSame(60, $validSnapshotLine['source_minutes']);
+        $this->assertSame(60, $validSnapshotLine['source_agreement_rate_minutes']);
+        $this->assertCount(6, $queries, implode("\n", $queries));
+
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other source company',
+            'slug' => 'other-source-company',
+        ]);
+        $entry->update(['client_company_id' => $otherCompany->id]);
+        $this->assertSame(0, $snapshotLine()['source_agreement_rate_minutes']);
+
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Outside agreement scope',
+        ]);
+        $entry->update([
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $otherProject->id,
+        ]);
+        $this->assertSame(0, $snapshotLine()['source_agreement_rate_minutes']);
+
+        $entry->update([
+            'client_project_id' => $this->project->id,
+            'worked_on' => '2026-02-01',
+        ]);
+        $this->assertSame(0, $snapshotLine()['source_agreement_rate_minutes']);
+        $this->assertSame(60, $snapshotLine()['source_minutes'], 'Malformed scope is retained in the total source aggregate so the proof fails closed.');
+    }
+
     /**
      * Invoices the current engine produced are, by definition, reproducible by
      * the current engine. This is the control: if it fails, the harness is
@@ -317,6 +428,58 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->assertSame([], $seeded);
         $this->assertSame('2026-01-01', $foreignAgreement->fresh()->starts_on?->toDateString());
+    }
+
+    public function test_history_seed_rejects_an_invoice_owned_by_another_selected_company(): void
+    {
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other selected client',
+            'slug' => 'other-selected-client',
+        ]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Company-owned history',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            // Both companies are selected, so company filtering alone cannot
+            // prove this invoice belongs to the agreement it names.
+            'client_company_id' => $otherCompany->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'CROSS-COMPANY-SEED',
+            'currency' => 'USD',
+            'status' => 'issued',
+            'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2025-12-01',
+            'cycle_end' => '2025-12-31',
+            'service_period_start' => '2025-12-01',
+            'service_period_end' => '2025-12-31',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        $basis = app(ReplayHistoryBasis::class);
+        $basis->reset();
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+
+        $this->assertSame([], $method->invoke(
+            app(ReplayInvoicesCommand::class),
+            $this->workspace,
+            collect([$this->company, $otherCompany]),
+        ));
+        $this->assertSame(
+            '2026-01-01',
+            $basis->startFor($agreement, Carbon::parse('2026-01-01'))->toDateString(),
+        );
     }
 
     public function test_history_seed_rejects_a_chain_that_does_not_open_with_the_legacy_cycle_convention(): void
@@ -1233,6 +1396,21 @@ final class ReplayInvoicesTest extends TestCase
             $eligibleOverage,
             $anchors,
         ));
+
+        foreach ([
+            'project_id' => '99',
+            'recurring_item_id' => '99',
+            'claimed_by' => 'synthetic-claim',
+        ] as $field => $value) {
+            $misownedOverage = $eligibleOverage;
+            $misownedOverage[$finalKey]['lines'][1][$field] = $value;
+            $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+                $this->workspace,
+                $expected,
+                $misownedOverage,
+                $anchors,
+            ), "Cadence work with {$field} attached cannot be waived.");
+        }
 
         $ineligibleOverage = $eligibleOverage;
         $ineligibleOverage[$finalKey]['lines'][1]['source_agreement_rate_minutes'] = 0;

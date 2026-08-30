@@ -814,6 +814,7 @@ final class ReplayContractCorrectionClassifier
                     || $line->sourceMinutes !== $minutes
                     || $line->agreementRateSourceMinutes !== $minutes
                     || $line->agreementId !== (string) $agreement->id
+                    || ! $line->hasNoAuxiliaryOwnership()
                     || $line->unitAmount !== (int) ($agreement->hourly_rate_amount ?? 0)
                     || $line->taxAmount !== 0
                     || $line->totalAmount !== MoneyService::hourlyAmount($minutes, $line->unitAmount)
@@ -825,17 +826,7 @@ final class ReplayContractCorrectionClassifier
             }
 
             if ($line->type === InvoiceLineType::PriorMonthRetainer->value) {
-                $minutes = $line->hoursMinutes();
-                if ($minutes === null
-                    || $minutes <= 0
-                    || $line->sourceMinutes !== $minutes
-                    || $line->agreementRateSourceMinutes !== $minutes
-                    || self::decimalString($line->quantity) !== '0'
-                    || $line->agreementId !== (string) $agreement->id
-                    || $line->unitAmount !== 0
-                    || $line->taxAmount !== 0
-                    || $line->totalAmount !== 0
-                    || ! self::lineFallsWithin($line, $periodStart, $periodEnd)) {
+                if (! $line->isCanonicalCapacityDraw((int) $agreement->id, $periodEnd->toDateString())) {
                     return false;
                 }
 

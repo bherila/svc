@@ -115,6 +115,14 @@ final readonly class ReplayInvoiceLineSnapshot
         ]);
     }
 
+    /** Generated time-allocation lines are not owned by another domain object. */
+    public function hasNoAuxiliaryOwnership(): bool
+    {
+        return $this->recurringItemId === ''
+            && $this->projectId === ''
+            && $this->claimedBy === '';
+    }
+
     /**
      * Is this the exact source-backed zero-value line the generator emits when
      * work consumes previously sold retainer capacity?
@@ -134,9 +142,7 @@ final readonly class ReplayInvoiceLineSnapshot
             && $this->totalAmount === 0
             && self::decimalString($this->quantity) === '0'
             && $this->lineDate === $servicePeriodEnd
-            && $this->recurringItemId === ''
-            && $this->projectId === ''
-            && $this->claimedBy === '';
+            && $this->hasNoAuxiliaryOwnership();
     }
 
     private static function wholeMinutes(float $hours): ?int

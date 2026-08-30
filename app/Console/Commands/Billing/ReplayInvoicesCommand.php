@@ -5,6 +5,7 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
@@ -19,6 +20,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\ReplayHistoricalCycle;
 use App\Support\Billing\ReplayHistorySeed;
 use App\Support\Billing\ReplayInvoiceSnapshot;
+use App\Support\Billing\ReplayInvoiceSourceScope;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
 use App\Support\Billing\ReplayRecurringItemIncidence;
@@ -385,8 +387,20 @@ final class ReplayInvoicesCommand extends Command
 
         $seeded = [];
         foreach ($agreements as $agreement) {
+            $agreementHistory = $historyByAgreement->get($agreement->id, collect());
+            if ($agreementHistory->contains(
+                static fn (ClientInvoice $invoice): bool => (int) $invoice->client_company_id !== (int) $agreement->client_company_id,
+            )) {
+                // Independent invoice/agreement foreign keys can form a
+                // cross-company chain inside one workspace. Do not let one
+                // client's history become another agreement's replay ledger
+                // basis; leaving it unseeded makes the malformed history fail
+                // the ordinary comparison instead.
+                continue;
+            }
+
             $attempts = [];
-            foreach ($historyByAgreement->get($agreement->id, collect()) as $invoice) {
+            foreach ($agreementHistory as $invoice) {
                 $identity = implode('|', [
                     $invoice->invoiceKindValue(),
                     $invoice->service_period_start?->toDateString() ?? '?',
@@ -502,12 +516,18 @@ final class ReplayInvoicesCommand extends Command
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companies->pluck('id'))
             ->with([
+                'agreement' => fn ($agreements) => $agreements
+                    ->where('workspace_id', $workspace->id),
                 'lines' => fn ($lines) => $lines
                     ->where('workspace_id', $workspace->id)
                     ->with([
                         'timeEntries' => fn ($entries) => $entries
                             ->where('client_time_entries.workspace_id', $workspace->id)
-                            ->where('client_invoice_line_time_entries.workspace_id', $workspace->id),
+                            ->where('client_invoice_line_time_entries.workspace_id', $workspace->id)
+                            ->with([
+                                'project' => fn ($projects) => $projects
+                                    ->where('client_projects.workspace_id', $workspace->id),
+                            ]),
                     ]),
             ])
             ->orderBy('id')
@@ -523,6 +543,7 @@ final class ReplayInvoicesCommand extends Command
             ->pluck('public_id', 'client_invoice_line_id');
 
         foreach ($invoices as $invoice) {
+            $sourceScope = $this->sourceScopeForInvoice($workspace, $invoice);
             /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
@@ -579,12 +600,31 @@ final class ReplayInvoicesCommand extends Command
                     // descriptions, people, project identifiers, or raw entry
                     // data into the replay report.
                     'source_minutes' => (int) $line->timeEntries->sum('minutes'),
-                    // Eligibility is retained only as another aggregate. This
-                    // proves agreement-rate/capacity lines are backed entirely
-                    // by ordinary or retainer-mode work without exposing a
-                    // worker, mode, rate, description, or source identifier.
+                    // Eligibility is retained only as another aggregate. Its
+                    // immutable scope proves every source is ordinary or
+                    // retainer-mode work belonging to this tenant, company,
+                    // agreement project, and service period without exposing
+                    // a worker, mode, rate, description, or source identifier.
                     'source_agreement_rate_minutes' => (int) $line->timeEntries
-                        ->filter(static fn (ClientTimeEntry $entry): bool => $entry->isAgreementRateBillable())
+                        ->filter(static function (ClientTimeEntry $entry) use ($sourceScope): bool {
+                            if (! $sourceScope instanceof ReplayInvoiceSourceScope
+                                || ! $entry->isAgreementRateBillable()
+                                || ! $entry->relationLoaded('project')) {
+                                return false;
+                            }
+
+                            $project = $entry->getRelation('project');
+
+                            return $project instanceof ClientProject
+                                && $sourceScope->contains(
+                                    entryWorkspaceId: (int) $entry->workspace_id,
+                                    entryCompanyId: (int) $entry->client_company_id,
+                                    entryProjectId: (int) $entry->client_project_id,
+                                    projectWorkspaceId: (int) $project->workspace_id,
+                                    projectCompanyId: (int) $project->client_company_id,
+                                    workedOn: $entry->worked_on,
+                                );
+                        })
                         ->sum('minutes'),
                 ];
             }
@@ -644,6 +684,33 @@ final class ReplayInvoicesCommand extends Command
         }
 
         return $rows;
+    }
+
+    /** Build the database-free source boundary from bounded eager-loaded facts. */
+    private function sourceScopeForInvoice(Workspace $workspace, ClientInvoice $invoice): ?ReplayInvoiceSourceScope
+    {
+        if (! $invoice->relationLoaded('agreement')) {
+            return null;
+        }
+
+        $agreement = $invoice->getRelation('agreement');
+        if (! $agreement instanceof ClientAgreement
+            || (int) $agreement->workspace_id !== (int) $workspace->id
+            || (int) $agreement->client_company_id !== (int) $invoice->client_company_id
+            || $invoice->service_period_start === null
+            || $invoice->service_period_end === null) {
+            return null;
+        }
+
+        return new ReplayInvoiceSourceScope(
+            workspaceId: (int) $workspace->id,
+            companyId: (int) $invoice->client_company_id,
+            agreementProjectId: $agreement->client_project_id === null
+                ? null
+                : (int) $agreement->client_project_id,
+            servicePeriodStart: CarbonImmutable::instance($invoice->service_period_start)->startOfDay(),
+            servicePeriodEnd: CarbonImmutable::instance($invoice->service_period_end)->startOfDay(),
+        );
     }
 
     /**
