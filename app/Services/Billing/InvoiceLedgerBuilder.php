@@ -13,12 +13,17 @@ use Carbon\Carbon;
 
 class InvoiceLedgerBuilder
 {
+    private readonly ReplayHistoryBasis $replayHistoryBasis;
+
     public function __construct(
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RetainerCalculator $retainerCalculator = new RetainerCalculator,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
-    ) {}
+        ?ReplayHistoryBasis $replayHistoryBasis = null,
+    ) {
+        $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
+    }
 
     /**
      * Build the monthly ledger for one agreement through a given date.
@@ -31,7 +36,8 @@ class InvoiceLedgerBuilder
         Carbon $through,
         bool $billExcessImmediately = false,
     ): array {
-        $activeDate = Carbon::parse($agreement->active_date)->startOfDay();
+        $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
+        $activeDate = Carbon::parse($ledgerAgreement->active_date)->startOfDay();
         $terminationDate = $agreement->termination_date
             ? Carbon::parse($agreement->termination_date)->startOfDay()
             : null;
@@ -71,8 +77,12 @@ class InvoiceLedgerBuilder
                 $hoursByDate[$dateKey] = ($hoursByDate[$dateKey] ?? 0.0) + ((float) $entry->minutes_worked / 60);
             }
 
+            // BillingCycleResolver correctly uses the stored agreement start
+            // everywhere else. Replay is the one exception: its ledger must
+            // contain a historical opening cycle without changing which
+            // cycles ordinary generation may sell or mutating the model row.
             return $this->buildPeriodRetainerLedgerThrough(
-                $agreement,
+                $ledgerAgreement,
                 $ledgerEnd,
                 $hoursByDate,
                 $billExcessImmediately,
@@ -101,7 +111,7 @@ class InvoiceLedgerBuilder
             $monthEntries = $entriesByMonth->get($monthKey, collect());
             $months[] = [
                 'year_month' => $monthKey,
-                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($agreement, $monthStart, $monthEnd),
+                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
                 'reset_rollover' => false,
             ];

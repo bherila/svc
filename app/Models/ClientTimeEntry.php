@@ -139,6 +139,25 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Can this persisted entry be billed at an agreement's rate?
+     *
+     * Replay snapshots use the in-memory form of the same contract as
+     * {@see scopeRetainerBillable()} so a proof can distinguish ordinary or
+     * retainer-mode work from flat-hourly, direct, and malformed source rows
+     * without issuing another query.
+     */
+    public function isAgreementRateBillable(): bool
+    {
+        $rawMode = $this->getRawOriginal('subcontractor_billing_mode');
+        $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
+
+        return in_array($this->status, ['approved', 'invoiced'], true)
+            && $this->is_billable
+            && ($mode === SubcontractorBillingMode::Retainer
+                || ($rawMode === null && $this->subcontractor_cost_amount === null));
+    }
+
+    /**
      * Would approving this draft draw on a retainer?
      *
      * The same conditions {@see scopeRetainerBillable} and

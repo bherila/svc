@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Policies\ClientCompanyPolicy;
 use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
+use App\Services\Billing\ReplayHistoryBasis;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ResourceAccessTokenRepository;
 use App\Support\AgentApi\ResourceAuthCodeRepository;
@@ -39,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         Passport::$deviceCodeGrantEnabled = false;
+        $this->app->singleton(ReplayHistoryBasis::class);
         $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
             router: $app->make(Router::class),
             exceptions: $app->make(ExceptionHandler::class),

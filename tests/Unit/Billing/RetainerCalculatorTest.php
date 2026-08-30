@@ -106,6 +106,28 @@ class RetainerCalculatorTest extends TestCase
      * Only construction is translated here; every assertion in this file is the
      * one the predecessor implementation shipped.
      */
+    public function test_an_agreement_with_no_start_date_grants_no_retainer(): void
+    {
+        $agreement = $this->agreement(['active_date' => null]);
+        $calculator = new RetainerCalculator;
+
+        // ClientInvoicingService::agreementStart() deliberately surfaces an
+        // empty ledger rather than an exception for a half-configured
+        // agreement, so retainer arithmetic has to agree with it. Reading the
+        // null as "now" - the behaviour this replaced - invented a start date
+        // and granted a full month's pool from it.
+        $this->assertSame(0.0, $calculator->monthRetainerMultiplier(
+            $agreement,
+            Carbon::parse('2026-02-01'),
+            Carbon::parse('2026-02-28'),
+        ));
+        $this->assertSame(0.0, $calculator->retainerHoursForMonth(
+            $agreement,
+            Carbon::parse('2026-02-01'),
+            Carbon::parse('2026-02-28'),
+        ));
+    }
+
     private function agreement(array $attributes = []): ClientAgreement
     {
         $terms = array_merge([

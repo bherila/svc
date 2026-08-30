@@ -2319,8 +2319,25 @@ final class ExternalImportService
         throw new \InvalidArgumentException('Unparseable external invoice-line quantity.');
     }
 
-    private static function minutesFromDecimal(mixed $value): int
+    /** NULL/'' means the optional hours term was not configured. */
+    private static function minutesFromDecimal(mixed $value): ?int
     {
-        return (int) round(((float) ($value ?: 0)) * 60);
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_int($value) && ! is_float($value) && ! is_string($value)) {
+            throw new \InvalidArgumentException('External hours must be numeric.');
+        }
+
+        $text = trim(is_string($value) ? $value : (string) $value);
+        if ($text === '') {
+            return null;
+        }
+        if (! is_numeric($text)) {
+            throw new \InvalidArgumentException('External hours must be numeric.');
+        }
+
+        return (int) round(((float) $text) * 60);
     }
 }
