@@ -18,7 +18,9 @@ use App\Services\Billing\MoneyService;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use ReflectionMethod;
@@ -157,6 +159,12 @@ final class ReplayInvoicesTest extends TestCase
         ClientInvoice::query()
             ->where('workspace_id', $this->workspace->id)
             ->where('client_agreement_id', $agreement->id)
+            ->orderBy('service_period_start')
+            // The imported chains changed conventions in place: a predecessor
+            // prefix uses period-equals-cycle and the remaining invoices already
+            // use the current next-cycle label. Replay must prove and bridge that
+            // one-way boundary rather than require history to be uniform forever.
+            ->limit(2)
             ->get()
             ->each(static fn (ClientInvoice $invoice) => $invoice->update([
                 'cycle_start' => $invoice->service_period_start,
@@ -259,7 +267,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame('2026-01-01', $foreignAgreement->fresh()->starts_on?->toDateString());
     }
 
-    public function test_history_seed_requires_every_machine_invoice_to_use_the_period_equals_cycle_convention(): void
+    public function test_history_seed_rejects_a_chain_that_does_not_open_with_the_legacy_cycle_convention(): void
     {
         $agreement = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -299,6 +307,102 @@ final class ReplayInvoicesTest extends TestCase
             '2026-01-01',
             $basis->startFor($agreement, Carbon::parse('2026-01-01'))->toDateString(),
         );
+    }
+
+    public function test_history_seed_rejects_a_chain_that_switches_back_to_the_legacy_convention(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Regressing historical convention',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        foreach ([
+            ['LEGACY-OPEN', '2025-12-01', '2025-12-01'],
+            ['CURRENT-MIDDLE', '2026-02-01', '2026-01-01'],
+            ['LEGACY-AGAIN', '2026-02-01', '2026-02-01'],
+        ] as [$number, $cycleStart, $serviceStart]) {
+            $cycle = Carbon::parse($cycleStart);
+            $service = Carbon::parse($serviceStart);
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => $number,
+                'currency' => 'USD',
+                'status' => 'draft',
+                'invoice_kind' => 'cadence_period',
+                'cycle_start' => $cycle,
+                'cycle_end' => $cycle->copy()->endOfMonth(),
+                'service_period_start' => $service,
+                'service_period_end' => $service->copy()->endOfMonth(),
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+        }
+
+        $basis = app(ReplayHistoryBasis::class);
+        $basis->reset();
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+
+        $this->assertSame(
+            [],
+            $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company])),
+        );
+        $this->assertSame(
+            '2026-01-01',
+            $basis->startFor($agreement, Carbon::parse('2026-01-01'))->toDateString(),
+        );
+    }
+
+    public function test_history_seed_loads_all_candidate_chains_in_two_queries(): void
+    {
+        foreach (range(1, 3) as $ordinal) {
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'title' => 'Bounded seed '.$ordinal,
+                'status' => 'active',
+                'currency' => 'USD',
+                'starts_on' => '2026-01-01',
+                'retainer_minutes' => 600,
+                'retainer_amount' => 150000,
+                'billing_cadence' => 'monthly',
+            ]);
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => 'BOUNDED-'.$ordinal,
+                'currency' => 'USD',
+                'status' => 'draft',
+                'invoice_kind' => 'cadence_period',
+                'cycle_start' => '2025-12-01',
+                'cycle_end' => '2025-12-31',
+                'service_period_start' => '2025-12-01',
+                'service_period_end' => '2025-12-31',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+        }
+
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+        $seeded = $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company]));
+
+        $this->assertCount(3, $seeded);
+        $this->assertCount(2, $queries, implode("\n", $queries));
     }
 
     public function test_an_omitted_opening_recurring_item_incidence_is_proved_from_the_item_contract(): void
@@ -442,6 +546,20 @@ final class ReplayInvoicesTest extends TestCase
     public function test_a_complete_configured_cadence_missing_from_ad_hoc_only_history_is_explained(): void
     {
         $agreement = $this->cadenceGapAgreement();
+        $agreement->update(['ends_on' => '2026-10-15']);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-08-15',
+            'minutes' => 1200,
+            'description' => 'Synthetic final-cycle work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
 
         foreach ([
             ['ADHOC-GAP-1', '2026-07-01', '2024-01-01', '2024-01-31'],
@@ -453,10 +571,10 @@ final class ReplayInvoicesTest extends TestCase
         $report = tempnam(sys_get_temp_dir(), 'replay-cadence-gap-');
         $this->assertNotFalse($report);
         try {
-            $this->artisan('svc:billing:replay', [
+            $exit = Artisan::call('svc:billing:replay', [
                 '--workspace' => $this->workspace->public_id,
                 '--report' => $report,
-            ])->assertSuccessful();
+            ]);
 
             /** @var array{comparisons:list<array<string,mixed>>} $detail */
             $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
@@ -470,6 +588,16 @@ final class ReplayInvoicesTest extends TestCase
                     ),
             ));
 
+            $this->assertSame(0, $exit, (string) json_encode(array_map(
+                static fn (array $comparison): array => [
+                    'verdict' => $comparison['verdict'] ?? null,
+                    'money_delta' => $comparison['money_delta'] ?? null,
+                    'contract_gap' => $comparison['contract_cadence_history_gap'] ?? null,
+                    'explained' => array_column((array) ($comparison['explained_by'] ?? []), 'key'),
+                    'notes' => $comparison['notes'] ?? [],
+                ],
+                $detail['comparisons'],
+            )));
             $this->assertCount(3, $explained);
             $this->assertSame(
                 0,

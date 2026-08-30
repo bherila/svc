@@ -7,6 +7,10 @@ use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\ReplayInvoiceLineSnapshot;
+use App\Support\Billing\ReplayInvoiceSnapshot;
+use App\Support\Billing\ReplayOpeningCapacityContext;
+use App\Support\Billing\ReplayOpeningCapacityProof;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
@@ -311,6 +315,102 @@ final class ReplayContractCorrectionClassifier
     }
 
     /**
+     * Did predecessor history charge for the replay-only opening retainer but
+     * omit its capacity from later allocation?
+     *
+     * This proof is deliberately database-free. The command supplies a context
+     * built from the already captured opening invoice, and these immutable
+     * snapshots must show a minute-for-minute move from priced overage to a
+     * zero-value prior-retainer draw. Every other line stays byte-equivalent.
+     */
+    public function historyOmittedOpeningCapacity(
+        ReplayOpeningCapacityContext $context,
+        ReplayInvoiceSnapshot $before,
+        ReplayInvoiceSnapshot $after,
+    ): ?ReplayOpeningCapacityProof {
+        if ($context->capacityMinutes <= 0
+            || $before->currency !== $context->currency
+            || $after->currency !== $context->currency
+            || $before->taxAmount !== $after->taxAmount
+            || $before->lineMultisetExcluding(['additional_hours', 'prior_month_retainer', 'retainer'])
+                !== $after->lineMultisetExcluding(['additional_hours', 'prior_month_retainer', 'retainer'])) {
+            return null;
+        }
+
+        $historicalHourly = $before->linesOfType('additional_hours');
+        $generatedHourly = $after->linesOfType('additional_hours');
+        $historicalPrior = $before->linesOfType('prior_month_retainer');
+        $generatedPrior = $after->linesOfType('prior_month_retainer');
+        $historicalRetainer = $before->linesOfType('retainer');
+        $generatedRetainer = $after->linesOfType('retainer');
+        if (count($historicalHourly) !== 1
+            || count($generatedHourly) !== 1
+            || $historicalPrior === []
+            || count($historicalPrior) !== count($generatedPrior)
+            || count($historicalRetainer) !== 1
+            || count($generatedRetainer) !== 1) {
+            return null;
+        }
+
+        $beforeHourly = $historicalHourly[0];
+        $afterHourly = $generatedHourly[0];
+        if ($beforeHourly->allocationIdentity() !== $afterHourly->allocationIdentity()
+            || $beforeHourly->agreementId !== (string) $context->agreementId
+            || $beforeHourly->unitAmount <= 0
+            || $beforeHourly->unitAmount !== $afterHourly->unitAmount
+            || $beforeHourly->taxAmount !== 0
+            || $afterHourly->taxAmount !== 0
+            || self::allocationMultiset($historicalPrior) !== self::allocationMultiset($generatedPrior)
+            || ! self::allZeroValueBalanceLines($historicalPrior, $context->agreementId)
+            || ! self::allZeroValueBalanceLines($generatedPrior, $context->agreementId)
+            || $historicalRetainer[0]->contractSignature() !== $generatedRetainer[0]->contractSignature()
+            || $historicalRetainer[0]->agreementId !== (string) $context->agreementId
+            || $historicalRetainer[0]->totalAmount !== $context->retainerAmount) {
+            return null;
+        }
+
+        $beforeHourlyMinutes = self::pricedMinutes($beforeHourly);
+        $afterHourlyMinutes = self::pricedMinutes($afterHourly);
+        $beforePriorMinutes = self::totalHoursMinutes($historicalPrior);
+        $afterPriorMinutes = self::totalHoursMinutes($generatedPrior);
+        if ($beforeHourlyMinutes === null
+            || $afterHourlyMinutes === null
+            || $beforePriorMinutes === null
+            || $afterPriorMinutes === null) {
+            return null;
+        }
+
+        $movedMinutes = $beforeHourlyMinutes - $afterHourlyMinutes;
+        if ($movedMinutes <= 0
+            || $movedMinutes > $context->capacityMinutes
+            || $afterPriorMinutes - $beforePriorMinutes !== $movedMinutes) {
+            return null;
+        }
+
+        $historicalHourlyTotal = MoneyService::hourlyAmount($beforeHourlyMinutes, $beforeHourly->unitAmount);
+        $generatedHourlyTotal = MoneyService::hourlyAmount($afterHourlyMinutes, $afterHourly->unitAmount);
+        $historicalRoundingDelta = $beforeHourly->totalAmount - $historicalHourlyTotal;
+        if (abs($historicalRoundingDelta) > 1
+            || $afterHourly->totalAmount !== $generatedHourlyTotal) {
+            return null;
+        }
+
+        $moneyDelta = $afterHourly->totalAmount - $beforeHourly->totalAmount;
+
+        if ($moneyDelta >= 0
+            || $after->subtotalAmount - $before->subtotalAmount !== $moneyDelta
+            || $after->totalAmount - $before->totalAmount !== $moneyDelta) {
+            return null;
+        }
+
+        return new ReplayOpeningCapacityProof(
+            movedMinutes: $movedMinutes,
+            moneyDelta: $moneyDelta,
+            alsoCorrectsHistoricalMinuteRounding: $historicalRoundingDelta !== 0,
+        );
+    }
+
+    /**
      * Identify a complete generated cadence chain predecessor history omitted.
      *
      * A lone extra invoice is never waived. The company must have predecessor
@@ -373,11 +473,7 @@ final class ReplayContractCorrectionClassifier
             if (! $agreement instanceof ClientAgreement || $agreement->starts_on === null
                 || ! $agreement->billsOnARecurringCadence()
                 || $agreement->periodRetainerHours() <= 0
-                || $agreement->periodRetainerFee() <= 0
-                // Terminated/successor segments have additional generation
-                // boundaries. Refuse the exception until it can prove those
-                // rather than treating a plausible prefix as a complete chain.
-                || $agreement->ends_on !== null) {
+                || $agreement->periodRetainerFee() <= 0) {
                 continue;
             }
 
@@ -452,6 +548,9 @@ final class ReplayContractCorrectionClassifier
             // pinned replay should have generated. The generator bills one
             // cycle in advance, so the last accepted cycle must be exactly the
             // successor of the cycle containing the per-company replay anchor.
+            // This exact boundary is also what makes a terminated agreement
+            // safe to prove: termination changes where generation stops, but it
+            // cannot turn a plausible prefix into the complete anchored chain.
             // Command anchors are end-of-day timestamps. Billing cycles are
             // inclusive date ranges ending at start-of-day, so passing 23:59:59
             // makes the resolver see the next cycle. Normalize the proof to the
@@ -490,5 +589,59 @@ final class ReplayContractCorrectionClassifier
         $text = rtrim(rtrim($text, '0'), '.');
 
         return $text === '' || $text === '-' ? '0' : $text;
+    }
+
+    private static function pricedMinutes(ReplayInvoiceLineSnapshot $line): ?int
+    {
+        $hours = $line->hoursMinutes();
+        $quantity = $line->quantityMinutes();
+
+        return $hours !== null && $hours === $quantity ? $hours : null;
+    }
+
+    /** @param list<ReplayInvoiceLineSnapshot> $lines */
+    private static function totalHoursMinutes(array $lines): ?int
+    {
+        $total = 0;
+        foreach ($lines as $line) {
+            $minutes = $line->hoursMinutes();
+            if ($minutes === null) {
+                return null;
+            }
+            $total += $minutes;
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param  list<ReplayInvoiceLineSnapshot>  $lines
+     * @return array<string, int>
+     */
+    private static function allocationMultiset(array $lines): array
+    {
+        $multiset = [];
+        foreach ($lines as $line) {
+            $identity = $line->allocationIdentity();
+            $multiset[$identity] = ($multiset[$identity] ?? 0) + 1;
+        }
+        ksort($multiset);
+
+        return $multiset;
+    }
+
+    /** @param list<ReplayInvoiceLineSnapshot> $lines */
+    private static function allZeroValueBalanceLines(array $lines, int $agreementId): bool
+    {
+        foreach ($lines as $line) {
+            if ($line->agreementId !== (string) $agreementId
+                || $line->unitAmount !== 0
+                || $line->taxAmount !== 0
+                || $line->totalAmount !== 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
