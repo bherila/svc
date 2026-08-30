@@ -87,6 +87,37 @@ that source-side integer IDs can be reused.
    was on, and the replacement is held to the same fingerprint check as the row
    carrying the claim.
 
+   Two further limits are deliberate rather than open, and both are in the
+   templates that decide whether a description is a generated one. The first is
+   that a template binds a line to the cadence of the agreement it falls under
+   and to the span its own text quotes, but not to a cycle that agreement's
+   start date could actually anchor. `BillingCycleResolver` runs cycles from the
+   active date, so an agreement starting on the fifteenth of a month cannot
+   produce a calendar-quarter label, and a check derived from the anchor would
+   say so. It is not applied, because the descriptions being matched were
+   written by the predecessor and the migrated source does not follow that
+   anchoring: 21 of the 76 invoices that name an agreement quote a period
+   beginning before that agreement's own recorded active date, the same
+   divergence #73 tracked. Such a check would refuse those descriptions as
+   unreachable while they carry real claims, and the shape it would guard
+   against does not occur in the migrated data - the one agreement anchored off
+   the first of a month carries no fee-span line. It becomes worth applying only
+   if the ledger is re-seeded from cycles this resolver generates, at which
+   point the anchor is evidence rather than an assumption about somebody else's
+   system.
+
+   The second is that the termination template asks that the source agreement
+   recorded a termination date, not that the invoice carrying the line is the
+   post-termination billing period. The narrower check would encode this
+   system's cycle semantics onto the predecessor's data, and there is nothing to
+   validate it against: the migrated source contains no line of this shape at
+   all.
+
+   Both fail in the direction that makes them tolerable. A description no
+   template shapes is compared exactly, so a line either of these would have
+   caught is refused rather than recovered, and the work it covers stays visible
+   as unbilled and is reported.
+
 A reconciliation pass reads the source a second time, later than the read the
 importer observed, so it re-checks each row against the fingerprint the ledger
 recorded. That covers both a row this run refused as `source_changed` and one
