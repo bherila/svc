@@ -7,12 +7,16 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
 
 class ProposalWorkflow
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly ClientActivityRecorder $activities,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $attributes
@@ -140,6 +144,20 @@ class ProposalWorkflow
                         'is_active' => true,
                     ]);
                 }
+
+                $workspace = $locked->workspace;
+                $company = $locked->clientCompany;
+                $this->activities->record($workspace, $company, 'agreement.created', $agreement, [
+                    'status' => 'active',
+                    'billing_cadence' => $agreement->billing_cadence,
+                ], $acceptingUser);
+                $this->activities->record($workspace, $company, 'agreement.activated', $agreement, [
+                    'status' => 'active',
+                    'source' => 'proposal_acceptance',
+                ], $acceptingUser);
+                $this->activities->record($workspace, $company, 'agreement.signed', $agreement, [
+                    'status' => 'active',
+                ], $acceptingUser);
             }
 
             return $locked->load(['items', 'agreements.recurringItems']);

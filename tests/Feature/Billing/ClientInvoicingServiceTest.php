@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -87,6 +88,13 @@ final class ClientInvoicingServiceTest extends TestCase
         // The counter is monotonic, so re-deriving the number on refresh would
         // burn one on every regeneration.
         $this->assertSame($firstNumber, $second->invoice_number);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.generated')->count());
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.updated')->count());
+        $this->assertTrue(ClientCompanyActivity::query()->get()->every(
+            fn (ClientCompanyActivity $activity): bool => $activity->workspace_id === $this->workspace->id
+                && $activity->client_company_id === $this->company->id
+                && $activity->subject_public_id === $first->public_id,
+        ));
     }
 
     public function test_a_settled_invoice_refuses_to_be_rewritten(): void

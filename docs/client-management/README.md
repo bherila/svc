@@ -38,7 +38,7 @@ places where SVC deliberately diverges.
 | Client expenses | [overview.md](overview.md#client-expenses) | **Not implemented** — no table, and the source had no rows. The generator hook sits beside the milestone one if it returns |
 | Subcontractor billing modes | [overview.md](overview.md#subcontractors) | Implemented at the time-entry snapshot boundary — `flat_hourly` bills separately, `retainer` draws on the agreement pool, and `direct` is tracked but never invoiced. Existing cost-bearing rows are migrated to `flat_hourly`; the source importer carries all three modes and refuses incomplete or unknown terms |
 | Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
-| Activity timeline | [overview.md](overview.md) | Manager UI reads preserved history; new live events are not written yet |
+| Activity timeline | [overview.md](overview.md) | Implemented — imported history and native agreement, invoice, payment, Stripe, and saved-payment-method events share one tenant-scoped timeline |
 
 ### What the replay treats as a money difference
 
@@ -258,7 +258,7 @@ be outstanding when this bills a real client.
 | Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
 | Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
 | Subcontractor billing modes | **Closed by the implementation tracked in #76.** Every time entry can carry the immutable billing snapshot. Flat-hourly work is excluded from retainer draw and billed at its own snapshotted rate; retainer-mode work draws on the agreement at its rate; direct work remains visible but is excluded from every invoicing path. Unknown or incomplete imported terms fail closed. | #76 |
-| Activity timeline | The manager operations screen reads the latest 100 preserved events per company, with high-signal changes visible by default and lower-signal system events available on demand. The extracted app does not yet write new live activity events. | #77 |
+| Activity timeline | The #77 manager reader shows the latest 100 events per company. The #107 writer appends native agreement, invoice, payment, Stripe, and saved-payment-method events inside the owning state transaction, with public subject UUIDs and retry deduplication. | #77, #107 |
 | Correction range can resell a sold cycle | A disjoint monthly correction derives the same `cycle_start` as the invoice that already sold that retainer, and the service-period overlap guard does not see it. Bills the retainer and its recurring items twice. | #79 |
 | Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
 | Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |

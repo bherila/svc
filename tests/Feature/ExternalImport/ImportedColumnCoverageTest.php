@@ -57,6 +57,10 @@ final class ImportedColumnCoverageTest extends TestCase
      * @var array<string, array<string, string>>
      */
     private const TABLE_EXEMPT = [
+        'client_company_activity' => [
+            'subject_public_id' => 'Native events point at SVC public UUIDs. Imported subjects have only the predecessor numeric reference in external_subject_id.',
+            'deduplication_key' => 'Native writers hash an operation occurrence to suppress retries. Preserved historical events are already deduplicated by the import ledger.',
+        ],
         'client_company_memberships' => [
             'access_scope' => 'Project-level client scoping is an SVC concept the source had no column for, and it is opt-in: inferring a scope on import would narrow every portal at once.',
         ],
@@ -93,8 +97,14 @@ final class ImportedColumnCoverageTest extends TestCase
             'client_project_id' => 'Source lines belong to an invoice and an agreement, never directly to a project.',
         ],
         'client_invoice_payments' => [
+            'provider_event_created_at' => 'Native Stripe delivery watermark. The imported payment is historical and the predecessor event timestamp is not available.',
+            'provider_event_id' => 'Native Stripe delivery watermark. Imported provider events cannot be safely associated with one payment after the fact.',
             'external_finance_transaction_uuid' => 'Written as a literal null: the reconciliation link to an external finance system is established here and has no counterpart in the source.',
             'idempotency_key' => 'Guards concurrent payment writes here; a historical payment has already happened.',
+        ],
+        'client_stripe_customers' => [
+            'default_payment_method_event_created_at' => 'Native Stripe delivery watermark. The source customer row has no event-ordering timestamp.',
+            'default_payment_method_event_id' => 'Native Stripe delivery watermark. The source customer row has no last-default-update event ID.',
         ],
         'client_stripe_events' => [
             'error_summary' => 'Written when this application fails to process an event. An imported event was processed by the predecessor.',

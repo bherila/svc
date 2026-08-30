@@ -8,12 +8,17 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AgreementWorkflow
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly ClientActivityRecorder $activities,
+    ) {}
 
     /** @param array<string, mixed> $attributes */
     public function create(
@@ -35,23 +40,31 @@ class AgreementWorkflow
             throw new EngagementException('The source proposal does not belong to this client company and workspace.');
         }
 
-        return ClientAgreement::query()->create([
-            'workspace_id' => $workspace->id,
-            'client_company_id' => $company->id,
-            'client_project_id' => $project?->id,
-            'source_proposal_id' => $sourceProposal?->id,
-            'title' => $attributes['title'],
-            'status' => 'draft',
-            'starts_on' => $attributes['starts_on'] ?? null,
-            'ends_on' => $attributes['ends_on'] ?? null,
-            'agreement_text' => $attributes['agreement_text'] ?? null,
-            'is_visible_to_client' => $attributes['is_visible_to_client'] ?? false,
-            'billing_cadence' => $attributes['billing_cadence'] ?? 'one_time',
-            'currency' => strtoupper($attributes['currency']),
-            'hourly_rate_amount' => $attributes['hourly_rate_amount'] ?? null,
-            'retainer_amount' => $attributes['retainer_amount'] ?? null,
-            'retainer_minutes' => $attributes['retainer_minutes'] ?? null,
-        ]);
+        return DB::transaction(function () use ($workspace, $company, $project, $sourceProposal, $attributes): ClientAgreement {
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project?->id,
+                'source_proposal_id' => $sourceProposal?->id,
+                'title' => $attributes['title'],
+                'status' => 'draft',
+                'starts_on' => $attributes['starts_on'] ?? null,
+                'ends_on' => $attributes['ends_on'] ?? null,
+                'agreement_text' => $attributes['agreement_text'] ?? null,
+                'is_visible_to_client' => $attributes['is_visible_to_client'] ?? false,
+                'billing_cadence' => $attributes['billing_cadence'] ?? 'one_time',
+                'currency' => strtoupper($attributes['currency']),
+                'hourly_rate_amount' => $attributes['hourly_rate_amount'] ?? null,
+                'retainer_amount' => $attributes['retainer_amount'] ?? null,
+                'retainer_minutes' => $attributes['retainer_minutes'] ?? null,
+            ]);
+            $this->activities->record($workspace, $company, 'agreement.created', $agreement, [
+                'status' => 'draft',
+                'billing_cadence' => $agreement->billing_cadence,
+            ]);
+
+            return $agreement;
+        });
     }
 
     public function activate(ClientAgreement $agreement): ClientAgreement
@@ -67,10 +80,19 @@ class AgreementWorkflow
                 throw new EngagementException('Only draft or paused agreements can be activated.');
             }
 
+            $previousStatus = $locked->status;
             $locked->forceFill([
                 'status' => 'active',
                 'activated_at' => $locked->activated_at ?? now(),
             ])->save();
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'agreement.activated',
+                $locked,
+                ['changes' => ['status' => ['old' => $previousStatus, 'new' => 'active']]],
+                occurrence: (string) Str::uuid(),
+            );
 
             return $locked;
         });
@@ -95,6 +117,14 @@ class AgreementWorkflow
                 'signer_name' => $signerName,
                 'signer_title' => $signerTitle,
             ])->save();
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'agreement.signed',
+                $locked,
+                ['status' => $locked->status],
+                $signingUser,
+            );
 
             return $locked;
         });

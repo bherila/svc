@@ -336,7 +336,7 @@ Location: `resources/js/client-management/components/`
 - Company details remain editable from the overview surface, including slug and portal link
 - Agreement tab embeds cadence-aware agreement cards and recurring item management
 - Invoice tab embeds the admin invoice list with status/kind/date/agreement filters and invoice actions
-- Activity Log tab renders `client_company_activity` entries such as agreement transitions and invoice generation
+- Activity Log tab renders both imported and SVC-native `client_company_activity` entries. Native agreement, invoice, payment, Stripe, and saved-payment-method events are recorded inside the owning state transaction; notable events are visible by default and system-level generation/update events remain available on demand.
 - Uses shadcn/ui Tabs, Card, Input, Textarea, Checkbox, Badge components
 
 **ClientAgreementShowPage.tsx**
@@ -741,9 +741,12 @@ Stores audit/activity log entries for a company.
 - `id`: Primary key
 - `client_company_id`: Foreign key to `client_companies`
 - `actor_user_id`: Nullable foreign key to `users`
-- `action`: Action key such as `agreement.transitioned`, `invoice.generated`, `invoice.issued`, `invoice.marked_paid`, `invoice.voided`, `invoice.payment_received`, `invoice.payment_failed`, `invoice.payment_disputed`, `invoice.payment_refunded`, `payment_method.added`, `payment_method.removed`, or `payment_method.default_changed`
-- `subject_type`, `subject_id`: Nullable morph reference to the affected model
-- `payload`: JSON metadata for the event
+- `action`: Action key such as `agreement.transitioned`, `invoice.generated`, `invoice.issued`, `invoice.marked_paid`, `invoice.voided`, `invoice.payment_received`, `invoice.payment_failed`, `invoice.payment_canceled`, `invoice.payment_disputed`, `invoice.payment_refunded`, `payment_method.added`, `payment_method.removed`, or `payment_method.default_changed`
+- `subject_type`: Stable native subject kind, or the imported predecessor class name for preserved rows
+- `subject_public_id`: Public UUID of a native agreement, invoice, payment, or saved payment method
+- `external_subject_id`: Nullable predecessor numeric reference retained only for imported history
+- `deduplication_key`: Hashed native occurrence identity, unique inside a workspace so exact retries cannot append duplicates
+- `payload`: Whitelisted JSON display metadata. Native writers reject raw provider payloads, credentials, secrets, tokens, and document contents.
 - `created_at`, `updated_at`: Timestamps
 
 #### `client_invoice_payments` table

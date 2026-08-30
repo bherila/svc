@@ -10,6 +10,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\DeferredBillingAllocator;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLifecycleService;
@@ -177,7 +178,10 @@ final class BillingTenantIsolationTest extends TestCase
         $this->assertSame(-10000, (int) $first->refresh()->lines()->where('type', 'credit')->value('total_amount'));
         $this->assertSame(-10000, (int) $second->refresh()->lines()->where('type', 'credit')->value('total_amount'));
 
-        $lifecycle = new InvoiceLifecycleService(app(WorkspaceAuthorization::class));
+        $lifecycle = new InvoiceLifecycleService(
+            app(WorkspaceAuthorization::class),
+            app(ClientActivityRecorder::class),
+        );
 
         $lifecycle->issue($first->refresh());
         $this->assertSame(40000, (int) $first->refresh()->total_amount, 'The first issue spends the credit');

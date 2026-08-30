@@ -21,7 +21,7 @@ class StorePaymentRequest extends FormRequest
             'method' => ['required', 'string', 'max:40'],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:10000'],
-            'status' => ['nullable', 'in:pending,succeeded,failed,refunded,disputed'],
+            'status' => ['nullable', 'in:pending,succeeded,failed,refunded,disputed,canceled'],
             'external_finance_transaction_uuid' => ['nullable', 'uuid'],
             'idempotency_key' => ['nullable', 'string', 'max:255'],
         ];

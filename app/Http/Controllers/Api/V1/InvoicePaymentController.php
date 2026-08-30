@@ -16,7 +16,7 @@ class InvoicePaymentController extends Controller
     {
         Gate::authorize('view', $workspace);
         $validated = $request->validate([
-            'status' => ['sometimes', 'in:pending,succeeded,failed,refunded,disputed'],
+            'status' => ['sometimes', 'in:pending,succeeded,failed,refunded,disputed,canceled'],
             'invoice' => ['sometimes', 'uuid'],
             'received_from' => ['sometimes', 'date_format:Y-m-d'],
             'received_to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:received_from'],

@@ -17,13 +17,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $client_company_id
  * @property int|null $actor_user_id
  * @property string $action
+ * @property string|null $subject_type
+ * @property string|null $subject_public_id
+ * @property string|null $deduplication_key
  * @property array<string, mixed>|null $payload
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'actor_user_id', 'action',
-    'subject_type', 'external_subject_id', 'payload',
+    'subject_type', 'external_subject_id', 'subject_public_id', 'deduplication_key', 'payload',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'actor_user_id', 'external_subject_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'actor_user_id', 'external_subject_id', 'deduplication_key'])]
 class ClientCompanyActivity extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;

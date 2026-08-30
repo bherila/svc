@@ -8,6 +8,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\Balances\ClosingBalance;
 use App\Services\Billing\Balances\MonthSummary;
@@ -101,6 +102,8 @@ final class ClientInvoicingService
 
     private readonly InterimOverageGenerator $interimOverageGenerator;
 
+    private readonly ClientActivityRecorder $activities;
+
     public function __construct(
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
@@ -116,6 +119,7 @@ final class ClientInvoicingService
         ?RetainerCalculator $retainerCalculator = null,
         ?InvoiceLedgerBuilder $invoiceLedgerBuilder = null,
         ?InterimOverageGenerator $interimOverageGenerator = null,
+        ?ClientActivityRecorder $activities = null,
     ) {
         // These three share the collaborators above, so they are wired here
         // rather than defaulted in the signature - a second RolloverCalculator
@@ -126,6 +130,7 @@ final class ClientInvoicingService
             $this->billingCycleResolver,
             $this->retainerCalculator,
         );
+        $this->activities = $activities ?? app(ClientActivityRecorder::class);
         $this->interimOverageGenerator = $interimOverageGenerator ?? new InterimOverageGenerator(
             $this->agreementSelector,
             $this->billingCycleResolver,
@@ -133,6 +138,7 @@ final class ClientInvoicingService
             $this->invoiceLineComposer,
             $this->invoiceNumberAllocator,
             $this->allocationService,
+            activities: $this->activities,
         );
     }
 
@@ -755,6 +761,7 @@ final class ClientInvoicingService
                 'cycle_end' => $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
             ];
 
+            $wasCreated = ! $invoice instanceof ClientInvoice;
             if ($invoice instanceof ClientInvoice) {
                 $invoice->update($invoiceData);
                 $this->invoiceLineComposer->resetSystemGeneratedLines($invoice);
@@ -953,6 +960,7 @@ final class ClientInvoicingService
 
             $invoice->recalculateTotals();
             $this->updateInvoicePeriodFromLines($invoice);
+            $this->recordInvoiceActivity($company, $invoice, $wasCreated);
 
             return $invoice->fresh(['lines']);
         });
@@ -1034,6 +1042,7 @@ final class ClientInvoicingService
 
             $agreement->loadMissing('recurringItems');
 
+            $wasCreated = ! $invoice instanceof ClientInvoice;
             if ($invoice instanceof ClientInvoice) {
                 $invoice->update([
                     'service_period_start' => $periodStart,
@@ -1184,6 +1193,7 @@ final class ClientInvoicingService
 
             $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
             $invoice->recalculateTotals();
+            $this->recordInvoiceActivity($company, $invoice, $wasCreated);
 
             return $invoice->fresh(['lines']);
         });
@@ -2013,6 +2023,23 @@ final class ClientInvoicingService
                 )),
             ],
         ];
+    }
+
+    private function recordInvoiceActivity(ClientCompany $company, ClientInvoice $invoice, bool $wasCreated): void
+    {
+        $this->activities->record(
+            $company->workspace,
+            $company,
+            $wasCreated ? 'invoice.generated' : 'invoice.updated',
+            $invoice,
+            [
+                'invoice_kind' => $invoice->invoiceKindValue(),
+                'status' => $invoice->status,
+                'total_amount' => $invoice->total_amount,
+                'currency' => $invoice->currency,
+            ],
+            occurrence: $wasCreated ? null : 'generation-'.$invoice->lock_version,
+        );
     }
 
     private function generationPeriodLabel(

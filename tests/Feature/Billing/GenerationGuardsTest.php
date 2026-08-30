@@ -10,6 +10,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\WorkspaceAuthorization;
@@ -156,7 +157,10 @@ final class GenerationGuardsTest extends TestCase
         $invoice = $this->generate('2024-02-01', '2024-02-29');
         $this->assertNotNull($task->refresh()->client_invoice_line_id);
 
-        $lifecycle = new InvoiceLifecycleService(app(WorkspaceAuthorization::class));
+        $lifecycle = new InvoiceLifecycleService(
+            app(WorkspaceAuthorization::class),
+            app(ClientActivityRecorder::class),
+        );
         $lifecycle->issue($invoice->refresh());
         $lifecycle->void($invoice->refresh(), null, 'Reissued');
 
