@@ -14,7 +14,6 @@ final readonly class ReplayOpeningCapacityContext
         public int $retainerAmount,
         public int $hourlyRateAmount,
         public int $catchUpThresholdMinutes,
-        public string $retainerLotIdentity,
         public CarbonImmutable $startsAt,
         public CarbonImmutable $expiresAt,
     ) {}
@@ -47,7 +46,6 @@ final readonly class ReplayOpeningCapacityContext
         if (count($matchingFees) !== 1) {
             return null;
         }
-        $matchingFee = array_values($matchingFees)[0];
 
         return new self(
             agreementId: $seed->agreementId,
@@ -56,7 +54,6 @@ final readonly class ReplayOpeningCapacityContext
             retainerAmount: $seed->retainerAmount,
             hourlyRateAmount: $seed->hourlyRateAmount,
             catchUpThresholdMinutes: $seed->catchUpThresholdMinutes,
-            retainerLotIdentity: $matchingFee->lineDate,
             startsAt: $seed->seedStart,
             expiresAt: $seed->capacityExpiresAt,
         );
@@ -71,7 +68,6 @@ final readonly class ReplayOpeningCapacityContext
             retainerAmount: $this->retainerAmount,
             hourlyRateAmount: $this->hourlyRateAmount,
             catchUpThresholdMinutes: $this->catchUpThresholdMinutes,
-            retainerLotIdentity: $this->retainerLotIdentity,
             startsAt: $this->startsAt,
             expiresAt: $this->expiresAt,
         );

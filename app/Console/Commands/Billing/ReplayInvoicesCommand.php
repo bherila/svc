@@ -1202,7 +1202,11 @@ final class ReplayInvoicesCommand extends Command
 
             $remainingMinutes = $context->capacityMinutes;
             $carriedOrdinaryMinutes = 0;
-            $accountedRetainerLots = [$context->retainerLotIdentity => true];
+            // The replay-only seed and the ordinary retainer sale that proves
+            // it are distinct capacity: seeding moves the ledger basis back
+            // one period without erasing the contract's first sold lot. Track
+            // only ordinary sales here, deduplicated across before/after.
+            $accountedRetainerLots = [];
             foreach ($rows as $row) {
                 if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
                     continue;

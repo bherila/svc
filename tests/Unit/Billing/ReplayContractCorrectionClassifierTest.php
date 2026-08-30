@@ -469,6 +469,25 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             [$laterKey => $afterDistinctCycles],
         ), 'One sold cycle is one capacity lot even when both snapshots carry its retainer line.');
 
+        $openingSale = $beforeTwoLots;
+        $openingSale['lines'] = [array_replace(
+            $openingSale['lines'][0],
+            ['line_date' => '2026-01-01'],
+        )];
+        $openingSale['subtotal_amount'] = 150000;
+        $openingSale['total_amount'] = 150000;
+        $this->assertSame([$laterKey], array_keys($prove->invoke(
+            $command,
+            [
+                $earlierKey => $row($openingSale, '2025-12'),
+                $laterKey => $beforeDistinctCycles,
+            ],
+            [
+                $earlierKey => $row($openingSale, '2025-12'),
+                $laterKey => $afterDistinctCycles,
+            ],
+        )), 'The synthetic pre-start seed is distinct from the first ordinary retainer sale that proves it.');
+
         $afterDistinctCycles['cycle_start'] = '2026-02-01';
         $afterDistinctCycles['cycle_end'] = '2026-02-28';
         $this->assertSame([], $prove->invoke(
