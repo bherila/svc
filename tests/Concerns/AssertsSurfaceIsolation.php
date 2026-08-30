@@ -158,6 +158,16 @@ trait AssertsSurfaceIsolation
      * cheapest check that can. It reads either engine's quoting so it
      * asserts the same thing on both.
      *
+     * A table's columns are admitted per statement, and only when the
+     * statement itself names that table — a column borrowed from an
+     * unrelated table fails even though it exists somewhere in the schema.
+     * One scope is still not checked: a derived table that narrows its
+     * inner projection can drop a column the outer query names, and telling
+     * those levels apart needs a real SQL parser rather than this grammar
+     * scan. The MariaDB CI lane is the runtime backstop there — these same
+     * queries execute on it, and an unresolved identifier is a hard error
+     * rather than a string.
+     *
      * @param  callable(): void  $act  renders the surface, asserting success
      */
     protected function assertQueriesNameOnlyRealIdentifiers(callable $act): void

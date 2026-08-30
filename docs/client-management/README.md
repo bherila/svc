@@ -363,6 +363,7 @@ ad-hoc, 0 interim). The tests are the only exercise this path has ever had.
 - **[Deferred billing](deferred-billing.md)** — per-entry flag that lets admins complete work now and bill for it only when retainer capacity exists.
 - **[Overpayment credits](overpayment-credits.md)** — any overpaid amount carries forward as a credit on the next invoice(s) and never expires.
 - **[Subcontractors](overview.md#subcontractors)** — project-scoped subcontractors with scoped portal access, self-logged + admin-approved hours, and flat-hourly / retainer / direct billing modes.
+- **[Tenant foreign keys](tenant-foreign-keys.md)** — the composite `(workspace_id, parent_id)` keys that make a cross-tenant reference unstorable, what every new tenant-owned table has to do, and which columns are exempt and why.
 
 
 ## Where this lives in SVC

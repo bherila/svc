@@ -18,11 +18,13 @@ use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class InvoiceLedgerBuilderTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_build_agreement_ledger_through_summarizes_monthly_entries(): void
     {
@@ -159,11 +161,14 @@ class InvoiceLedgerBuilderTest extends TestCase
             'monthly_retainer_hours' => 10,
         ]);
 
-        $this->entry($company, $otherProject, [
+        // The composite tenant keys refuse this row now. It is written with
+        // enforcement suspended because the ledger's own refusal is what is under
+        // test, and a database migrated from before those keys can still hold one.
+        $this->writingLegacyCrossTenantRows(fn () => $this->entry($company, $otherProject, [
             'date_worked' => '2026-01-15',
             'minutes_worked' => 120,
             'is_billable' => true,
-        ]);
+        ]));
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('project outside this client company');

@@ -19,12 +19,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class WorkspaceOperationsTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_workspace_manager_can_use_the_integrated_operations_screen(): void
     {
@@ -302,12 +304,18 @@ class WorkspaceOperationsTest extends TestCase
             'name' => 'Synthetic Visible Client',
             'slug' => 'synthetic-visible-client',
         ]);
-        ClientProposal::query()->create([
+        $visibleProposal = ClientProposal::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
             'title' => 'Visible Synthetic Proposal',
             'currency' => 'USD',
             'status' => 'draft',
+        ]);
+        $visibleProject = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Synthetic Visible Project',
+            'status' => 'active',
         ]);
 
         $foreignWorker = User::factory()->create(['name' => 'Foreign Worker Name']);
@@ -366,6 +374,74 @@ class WorkspaceOperationsTest extends TestCase
             'status' => 'draft',
         ]);
 
+        // Cross-tenant child rows: a foreign workspace_id pointing at the
+        // VISIBLE company and project. The parent whereIn filters cannot
+        // exclude these, so only the workspace predicate on each query keeps
+        // them out — which is exactly what this test must pin independently.
+        // Since #113 these rows are unrepresentable, which is the stronger
+        // guarantee - but the scoped query is still the second line of
+        // defence for a database migrated from before those keys, and it
+        // can only be proved against a row that exists. So the fixture is
+        // written with enforcement suspended, and the helper asserts that
+        // enforcement is back before the assertion phase runs.
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $company, $foreignWorker, $visibleProject): void {
+            ClientProposal::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'title' => 'Mixed Tenant Proposal Title',
+                'currency' => 'USD',
+                'status' => 'draft',
+            ]);
+            ClientAgreement::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'title' => 'Mixed Tenant Agreement Title',
+                'currency' => 'USD',
+                'billing_cadence' => 'monthly',
+                'status' => 'active',
+            ]);
+            ClientInvoice::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'invoice_number' => 'MIXED-INV-8888',
+                'status' => 'issued',
+                'currency' => 'USD',
+                'subtotal_amount' => 10000,
+                'tax_amount' => 0,
+                'total_amount' => 10000,
+            ]);
+            ClientCompanyActivity::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'actor_user_id' => $foreignWorker->id,
+                'action' => 'invoice.generated',
+                'payload' => ['note' => 'Mixed Tenant Activity Payload'],
+            ]);
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $visibleProject->id,
+                'user_id' => $foreignWorker->id,
+                'worked_on' => '2026-08-20',
+                'minutes' => 60,
+                'description' => 'Mixed Tenant Time Description',
+                'status' => 'draft',
+            ]);
+        });
+        ClientAttachment::query()->create([
+            'workspace_id' => $foreign->id,
+            'record_type' => 'proposal',
+            'record_public_id' => $visibleProposal->public_id,
+            'object_key' => 'synthetic/mixed-tenant/proposal.txt',
+            'original_filename' => 'Mixed Tenant Attachment Name.txt',
+            'media_type' => 'text/plain',
+            'bytes' => 32,
+            'sha256' => hash('sha256', 'synthetic-mixed-tenant-proposal'),
+            'uploader_id' => $foreignWorker->id,
+            'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+            'available_at' => now(),
+        ]);
+
         $response = $this->actingAs($manager)
             ->get("/workspaces/{$workspace->public_id}/operations")
             ->assertOk();
@@ -380,6 +456,12 @@ class WorkspaceOperationsTest extends TestCase
             'Foreign Activity Payload',
             'Foreign Time Description',
             'Foreign Worker Name',
+            'Mixed Tenant Proposal Title',
+            'Mixed Tenant Agreement Title',
+            'MIXED-INV-8888',
+            'Mixed Tenant Activity Payload',
+            'Mixed Tenant Time Description',
+            'Mixed Tenant Attachment Name.txt',
         ], 'Visible Synthetic Proposal');
     }
 
@@ -478,20 +560,34 @@ class WorkspaceOperationsTest extends TestCase
         $manager = User::factory()->create();
         $workspace = Workspace::query()->create(['name' => 'Synthetic Row Scope', 'slug' => 'synthetic-row-scope']);
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
-        $company = ClientCompany::query()->create([
-            'workspace_id' => $workspace->id,
-            'name' => 'Synthetic Client',
-            'slug' => 'synthetic-client',
-        ]);
-        $project = ClientProject::query()->create([
-            'workspace_id' => $workspace->id,
-            'client_company_id' => $company->id,
-            'name' => 'Synthetic Project',
-            'status' => 'active',
-        ]);
 
-        $addEntries = function (int $count) use ($workspace, $company, $project, $manager): void {
-            for ($i = 0; $i < $count; $i++) {
+        // A full company bundle, so the second render grows the PARENT
+        // collections too — the controller iterates companies and projects,
+        // and a lazy query per parent repeats identically across two renders
+        // of the same parent count, which is how a child-only version of this
+        // test would stay green through a real multi-client N+1.
+        $sequence = 0;
+        $addCompanyBundle = function (int $entries, int $activities) use ($workspace, $manager, &$sequence): void {
+            $sequence++;
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => "Synthetic Client {$sequence}",
+                'slug' => "synthetic-client-{$sequence}",
+            ]);
+            $project = ClientProject::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'name' => "Synthetic Project {$sequence}",
+                'status' => 'active',
+            ]);
+            ClientProposal::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'title' => "Synthetic Proposal {$sequence}",
+                'currency' => 'USD',
+                'status' => 'draft',
+            ]);
+            for ($i = 0; $i < $entries; $i++) {
                 ClientTimeEntry::query()->create([
                     'workspace_id' => $workspace->id,
                     'client_company_id' => $company->id,
@@ -499,13 +595,11 @@ class WorkspaceOperationsTest extends TestCase
                     'user_id' => $manager->id,
                     'worked_on' => '2026-08-20',
                     'minutes' => 30,
-                    'description' => 'Synthetic row work',
+                    'description' => "Synthetic row work {$sequence}-{$i}",
                     'status' => 'draft',
                 ]);
             }
-        };
-        $addActivities = function (int $count) use ($workspace, $company, $manager): void {
-            for ($i = 0; $i < $count; $i++) {
+            for ($i = 0; $i < $activities; $i++) {
                 ClientCompanyActivity::query()->create([
                     'workspace_id' => $workspace->id,
                     'client_company_id' => $company->id,
@@ -516,16 +610,15 @@ class WorkspaceOperationsTest extends TestCase
             }
         };
 
-        $addEntries(3);
-        $addActivities(2);
+        $addCompanyBundle(3, 2);
 
         $this->assertQueryCountIndependentOfRows(
             fn () => $this->actingAs($manager)
                 ->get("/workspaces/{$workspace->public_id}/operations")
                 ->assertOk(),
-            function () use ($addEntries, $addActivities): void {
-                $addEntries(27);
-                $addActivities(40);
+            function () use ($addCompanyBundle): void {
+                $addCompanyBundle(27, 40);
+                $addCompanyBundle(5, 3);
             },
         );
     }

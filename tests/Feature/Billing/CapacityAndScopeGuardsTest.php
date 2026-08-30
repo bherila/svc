@@ -24,6 +24,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -38,6 +39,7 @@ use Tests\TestCase;
 final class CapacityAndScopeGuardsTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -304,7 +306,9 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $agreement = $this->agreement($project);
         $otherWorkspace = Workspace::query()->create(['name' => 'Foreign modes', 'slug' => 'foreign-modes']);
 
-        ClientTimeEntry::query()->create([
+        // Unstorable since #113; written with enforcement suspended so the
+        // composer's own scoping stays the subject of the test.
+        $this->writingLegacyCrossTenantRows(fn () => ClientTimeEntry::query()->create([
             'workspace_id' => $otherWorkspace->id,
             'client_company_id' => $this->company->id,
             'client_project_id' => $project->id,
@@ -317,7 +321,7 @@ final class CapacityAndScopeGuardsTest extends TestCase
             'status' => 'approved',
             'currency' => 'USD',
             'subcontractor_billing_mode' => 'flat_hourly',
-        ]);
+        ]));
         $local = $this->entry($project, '2024-02-10', 60);
         $local->forceFill([
             'subcontractor_billing_mode' => 'flat_hourly',
@@ -349,13 +353,15 @@ final class CapacityAndScopeGuardsTest extends TestCase
     public function test_automatic_agreement_selection_ignores_another_tenants_row(): void
     {
         $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
-        ClientAgreement::query()->create([
+        // Unstorable since #113; written with enforcement suspended so the
+        // selector's own scoping stays the subject of the test.
+        $this->writingLegacyCrossTenantRows(fn () => ClientAgreement::query()->create([
             'workspace_id' => $otherWorkspace->id,
             'client_company_id' => $this->company->id, // malformed: our company, their tenant
             'title' => 'Theirs', 'status' => 'active', 'currency' => 'EUR', 'starts_on' => '2024-01-01',
             'retainer_minutes' => 600, 'retainer_amount' => 999900, 'hourly_rate_amount' => 99900,
             'rollover_months' => 0,
-        ]);
+        ]));
 
         $selector = app(AgreementSelector::class);
 
@@ -366,12 +372,13 @@ final class CapacityAndScopeGuardsTest extends TestCase
     public function test_a_date_based_selector_ignores_another_tenants_row(): void
     {
         $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
-        ClientAgreement::query()->create([
+        // Unstorable since #113; see the sibling test above.
+        $this->writingLegacyCrossTenantRows(fn () => ClientAgreement::query()->create([
             'workspace_id' => $otherWorkspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Theirs', 'status' => 'active', 'currency' => 'EUR', 'starts_on' => '2024-01-01',
             'retainer_minutes' => 600, 'retainer_amount' => 999900, 'hourly_rate_amount' => 99900,
             'rollover_months' => 0,
-        ]);
+        ]));
 
         $this->assertNull(
             app(AgreementSelector::class)->agreementCoveringDate($this->company, CarbonImmutable::parse('2024-06-01')),
@@ -552,22 +559,28 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $agreement = $this->quarterlyAgreement();
 
         $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-interim']);
-        $foreign = ClientInvoice::query()->create([
-            'workspace_id' => $otherWorkspace->id,
-            'client_company_id' => $this->company->id,   // malformed: our company, their tenant
-            'client_agreement_id' => $agreement->id,     // and our agreement
-            'invoice_number' => 'X-'.uniqid(),
-            'status' => 'draft',
-            'currency' => 'USD',
-            'invoice_kind' => 'interim_overage',
-            'cycle_start' => '2024-01-01',
-            'cycle_end' => '2024-03-31',
-            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
-        ]);
-        $foreign->lines()->create([
-            'workspace_id' => $otherWorkspace->id, 'type' => 'additional_hours', 'description' => 'Theirs',
-            'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
-        ]);
+        // Unstorable since #113; written with enforcement suspended so the
+        // release query's own scoping stays the subject of the test.
+        $foreign = $this->writingLegacyCrossTenantRows(function () use ($otherWorkspace, $agreement): ClientInvoice {
+            $invoice = ClientInvoice::query()->create([
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,   // malformed: our company, their tenant
+                'client_agreement_id' => $agreement->id,     // and our agreement
+                'invoice_number' => 'X-'.uniqid(),
+                'status' => 'draft',
+                'currency' => 'USD',
+                'invoice_kind' => 'interim_overage',
+                'cycle_start' => '2024-01-01',
+                'cycle_end' => '2024-03-31',
+                'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            ]);
+            $invoice->lines()->create([
+                'workspace_id' => $otherWorkspace->id, 'type' => 'additional_hours', 'description' => 'Theirs',
+                'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
+            ]);
+
+            return $invoice;
+        });
 
         app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
             $this->company,
