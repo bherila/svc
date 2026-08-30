@@ -22,6 +22,10 @@ updates:
           - minor
           - patch
     ignore:
+      # Keep Node runtime and its type surface on the same supported major.
+      - dependency-name: '@types/node'
+        update-types:
+          - 'version-update:semver-major'
       # typescript-eslint does not yet support the TypeScript 7 compiler API.
       - dependency-name: typescript
         versions:
