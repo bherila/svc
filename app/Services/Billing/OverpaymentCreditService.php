@@ -48,7 +48,7 @@ class OverpaymentCreditService
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('currency', $currency)
-            ->whereNotIn('status', ['void'])
+            ->whereIn('status', InvoiceStatus::live())
             ->with(['payments' => function ($payments) use ($company): void {
                 $payments->where('workspace_id', $company->workspace_id);
             }])
