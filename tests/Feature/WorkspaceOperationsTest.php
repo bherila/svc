@@ -19,12 +19,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class WorkspaceOperationsTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_workspace_manager_can_use_the_integrated_operations_screen(): void
     {
@@ -376,51 +378,56 @@ class WorkspaceOperationsTest extends TestCase
         // VISIBLE company and project. The parent whereIn filters cannot
         // exclude these, so only the workspace predicate on each query keeps
         // them out — which is exactly what this test must pin independently.
-        // #113's composite (workspace_id, id) foreign keys will make these
-        // rows unrepresentable; when that lands, this block is the fixture
-        // fallout to remove in favour of the schema-level guarantee.
-        ClientProposal::query()->create([
-            'workspace_id' => $foreign->id,
-            'client_company_id' => $company->id,
-            'title' => 'Mixed Tenant Proposal Title',
-            'currency' => 'USD',
-            'status' => 'draft',
-        ]);
-        ClientAgreement::query()->create([
-            'workspace_id' => $foreign->id,
-            'client_company_id' => $company->id,
-            'title' => 'Mixed Tenant Agreement Title',
-            'currency' => 'USD',
-            'billing_cadence' => 'monthly',
-            'status' => 'active',
-        ]);
-        ClientInvoice::query()->create([
-            'workspace_id' => $foreign->id,
-            'client_company_id' => $company->id,
-            'invoice_number' => 'MIXED-INV-8888',
-            'status' => 'issued',
-            'currency' => 'USD',
-            'subtotal_amount' => 10000,
-            'tax_amount' => 0,
-            'total_amount' => 10000,
-        ]);
-        ClientCompanyActivity::query()->create([
-            'workspace_id' => $foreign->id,
-            'client_company_id' => $company->id,
-            'actor_user_id' => $foreignWorker->id,
-            'action' => 'invoice.generated',
-            'payload' => ['note' => 'Mixed Tenant Activity Payload'],
-        ]);
-        ClientTimeEntry::query()->create([
-            'workspace_id' => $foreign->id,
-            'client_company_id' => $company->id,
-            'client_project_id' => $visibleProject->id,
-            'user_id' => $foreignWorker->id,
-            'worked_on' => '2026-08-20',
-            'minutes' => 60,
-            'description' => 'Mixed Tenant Time Description',
-            'status' => 'draft',
-        ]);
+        // Since #113 these rows are unrepresentable, which is the stronger
+        // guarantee - but the scoped query is still the second line of
+        // defence for a database migrated from before those keys, and it
+        // can only be proved against a row that exists. So the fixture is
+        // written with enforcement suspended, and the helper asserts that
+        // enforcement is back before the assertion phase runs.
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $company, $foreignWorker, $visibleProject): void {
+            ClientProposal::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'title' => 'Mixed Tenant Proposal Title',
+                'currency' => 'USD',
+                'status' => 'draft',
+            ]);
+            ClientAgreement::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'title' => 'Mixed Tenant Agreement Title',
+                'currency' => 'USD',
+                'billing_cadence' => 'monthly',
+                'status' => 'active',
+            ]);
+            ClientInvoice::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'invoice_number' => 'MIXED-INV-8888',
+                'status' => 'issued',
+                'currency' => 'USD',
+                'subtotal_amount' => 10000,
+                'tax_amount' => 0,
+                'total_amount' => 10000,
+            ]);
+            ClientCompanyActivity::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'actor_user_id' => $foreignWorker->id,
+                'action' => 'invoice.generated',
+                'payload' => ['note' => 'Mixed Tenant Activity Payload'],
+            ]);
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $foreign->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $visibleProject->id,
+                'user_id' => $foreignWorker->id,
+                'worked_on' => '2026-08-20',
+                'minutes' => 60,
+                'description' => 'Mixed Tenant Time Description',
+                'status' => 'draft',
+            ]);
+        });
         ClientAttachment::query()->create([
             'workspace_id' => $foreign->id,
             'record_type' => 'proposal',
