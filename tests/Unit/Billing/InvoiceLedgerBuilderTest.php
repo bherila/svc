@@ -62,6 +62,54 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(8.0, $ledger[0]->closing->unusedHours);
     }
 
+    /**
+     * An agreement with no rollover term carries nothing forward.
+     *
+     * `rollover_months` is cast straight to an int where the ledger reads it,
+     * so a null is indistinguishable from a deliberate zero - and zero is the
+     * safe reading: an unstated policy must not silently grant the client last
+     * month's leftover hours on top of this month's retainer. The contrast
+     * against a one-month policy is what makes the null the reason.
+     */
+    public function test_an_agreement_with_no_rollover_term_carries_nothing_forward(): void
+    {
+        $company = $this->company();
+        $project = $this->project($company);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $company->workspace_id,
+            'client_company_id' => $company->id,
+            'title' => 'Unstated rollover',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly',
+            'retainer_minutes' => 600,
+            'rollover_months' => null,
+        ]);
+
+        $this->entry($company, $project, [
+            'date_worked' => '2026-01-15',
+            'minutes_worked' => 120,
+            'is_billable' => true,
+        ]);
+
+        $through = Carbon::parse('2026-02-28');
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough($company, $agreement, $through);
+
+        $this->assertSame('2026-02', $ledger[1]->yearMonth);
+        $this->assertSame(8.0, $ledger[0]->closing->unusedHours, 'January leaves eight hours unused');
+        $this->assertSame(0.0, $ledger[1]->opening->rolloverHours, 'None of them reach February');
+        $this->assertSame(10.0, $ledger[1]->opening->totalAvailable, 'February opens on its own retainer alone');
+
+        // The same ledger with a stated one-month policy, so the assertion above
+        // is pinned to the null rather than to the arithmetic.
+        $agreement->forceFill(['rollover_months' => 1])->save();
+        $rolled = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough($company, $agreement->fresh(), $through);
+
+        $this->assertSame(8.0, $rolled[1]->opening->rolloverHours);
+        $this->assertSame(18.0, $rolled[1]->opening->totalAvailable);
+    }
+
     public function test_the_ledger_refuses_time_whose_project_belongs_to_another_company(): void
     {
         $company = $this->company();

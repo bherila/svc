@@ -240,6 +240,46 @@ final class InvoiceFromTimeServiceTest extends TestCase
     }
 
     /** @return array{Workspace, ClientCompany, ClientProject, User} */
+    /**
+     * A manual line with no project is unattributed, not unresolvable.
+     *
+     * The refusal fires on "a project was named and could not be found", which
+     * has to be told apart from "no project was named at all". Collapsing the
+     * two either rejects every ordinary manual line - a flat fee belongs to the
+     * client, not to one of their projects - or lets a line naming another
+     * tenant's project through unattributed. Both readings are asserted here so
+     * the distinction cannot quietly disappear.
+     */
+    public function test_a_manual_line_without_a_project_is_accepted_unattributed(): void
+    {
+        [$workspace, $company] = $this->context('unattributed-line');
+
+        $invoice = app(InvoiceFromTimeService::class)->create(
+            $workspace,
+            $company,
+            ['invoice_number' => 'SVC-00001', 'currency' => 'USD'],
+            [],
+            [['type' => 'service', 'description' => 'Retainer top-up', 'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0]],
+        );
+
+        $this->assertNull($invoice->lines->sole()->client_project_id);
+        $this->assertSame(25000, $invoice->total_amount);
+
+        // A project that *was* named and cannot be resolved is still refused,
+        // so the assertion above is pinned to the absence rather than to the
+        // lookup always succeeding.
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The selected project is not available for this invoice.');
+
+        app(InvoiceFromTimeService::class)->create(
+            $workspace,
+            $company,
+            ['invoice_number' => 'SVC-00002', 'currency' => 'USD'],
+            [],
+            [['type' => 'service', 'description' => 'Elsewhere', 'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0, 'project_id' => 'not-a-real-project']],
+        );
+    }
+
     private function context(string $slug): array
     {
         $workspace = Workspace::query()->create(['name' => $slug, 'slug' => $slug]);

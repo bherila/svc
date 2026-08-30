@@ -97,6 +97,31 @@ final class DeriveTimeEntryRatesTest extends TestCase
         $this->assertNull($entry->refresh()->billing_rate_amount);
     }
 
+    /**
+     * An agreement in force but carrying no rate prices nothing.
+     *
+     * The resolver refuses rather than falling through to zero. Every other
+     * reader of `hourly_rate_amount` coerces a null to `0` - the overage line
+     * composer among them - so a rate that reaches an invoice through those
+     * paths bills the client's excess hours at no charge and reads as a
+     * deliberate discount. The one place that can still tell "unpriced" from
+     * "free" is this lookup, and it has to say so.
+     */
+    public function test_an_agreement_with_no_rate_prices_nothing(): void
+    {
+        $this->agreement(37500, '2026-01-01', null)
+            ->forceFill(['hourly_rate_amount' => null])
+            ->save();
+        $entry = $this->entry('2026-03-14');
+
+        $this->artisan('svc:billing:derive-time-rates', ['--workspace' => $this->workspace->public_id])
+            ->expectsOutputToContain('no agreement in force')
+            ->assertSuccessful();
+
+        $this->assertNull($entry->refresh()->billing_rate_amount);
+        $this->assertNull($entry->refresh()->billing_rate_source);
+    }
+
     public function test_dry_run_writes_nothing(): void
     {
         $this->agreement(37500, '2026-01-01', null);
