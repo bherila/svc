@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\Workspace;
 use App\Services\Billing\AgreementSelector;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -43,6 +44,33 @@ final class AgreementSelectorTest extends TestCase
         );
 
         $this->assertSame($actualSuccessor->id, $successor?->id);
+    }
+
+    public function test_month_end_selection_includes_only_agreements_starting_by_the_next_calendar_month(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Month end selection', 'slug' => 'month-end-selection']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Month End Client',
+            'slug' => 'month-end-client',
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Month End Project',
+        ]);
+        $current = $this->agreement($company, $project, '2026-01-01', 'Current');
+        $september = $this->agreement($company, $project, '2026-09-30', 'September boundary');
+        $october = $this->agreement($company, $project, '2026-10-01', 'October is too far');
+        $this->travelTo(Carbon::parse('2026-08-31 12:00:00'));
+
+        $selectedIds = (new AgreementSelector)
+            ->agreementsForInvoiceGeneration($company)
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame([$current->id, $september->id], $selectedIds);
+        $this->assertNotContains($october->id, $selectedIds);
     }
 
     private function agreement(

@@ -62,6 +62,7 @@ final class AgreementSelector
     public function agreementsForInvoiceGeneration(ClientCompany $company): Collection
     {
         $now = $this->clock->now($company->workspace);
+        $selectionCeiling = $now->addMonthNoOverflow()->endOfDay();
 
         $agreements = $company->agreements()
             ->where('workspace_id', $company->workspace_id)
@@ -70,7 +71,7 @@ final class AgreementSelector
             // included, so an agreement starting next month is selected now.
             // Excluding monthly here made exactly those first invoices late
             // while quarterly and annual ones arrived on time.
-            ->where('starts_on', '<=', $now->addMonth()->toDateString())
+            ->where('starts_on', '<=', $selectionCeiling)
             ->orderBy('starts_on')
             ->orderBy('id')
             ->get();

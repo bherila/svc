@@ -5,15 +5,33 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\ReplayCadenceAgreementRepository;
+use App\Services\Billing\ReplayContractCorrectionClassifier;
+use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Billing\ReplayRecurringItemIncidenceRepository;
+use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\ReplayHistoricalCycle;
+use App\Support\Billing\ReplayHistorySeed;
+use App\Support\Billing\ReplayInvoiceSnapshot;
+use App\Support\Billing\ReplayInvoiceSourceScope;
+use App\Support\Billing\ReplayOpeningCapacityContext;
+use App\Support\Billing\ReplayOpeningCapacityProof;
+use App\Support\Billing\ReplayRecurringItemIncidence;
+use App\Support\Billing\ReplaySnapshotValue;
+use App\Support\Billing\RetainerLineDescription;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -32,12 +50,15 @@ use Throwable;
  *
  * ## It cannot write anything
  *
- * Replaying means deleting every invoice and regenerating it, which is
- * obviously unacceptable against real data. So the whole run happens inside one
- * transaction that is rolled back unconditionally - on success exactly as on
- * failure. There is no code path that commits. The generator's own
+ * Replaying means aligning predecessor history from its first billed service
+ * period, deleting every generated invoice and regenerating it, which is
+ * obviously unacceptable against real data. So the whole run happens inside
+ * one transaction that is rolled back unconditionally - on success exactly as
+ * on failure. There is no code path that commits. The generator's own
  * `DB::transaction()` calls nest as savepoints inside it, so its commits are
- * subsumed by the outer rollback too.
+ * subsumed by the outer rollback too. The stored agreement start is never
+ * changed; only the comparison identity, pinned clock and replay-only retainer
+ * ledger basis bend to the earlier history.
  *
  * That is what makes this safe to point at production data. Do not add a
  * `--commit` option; if a divergence needs fixing, fix the engine and replay
@@ -45,8 +66,10 @@ use Throwable;
  *
  * ## What counts as a failure
  *
- * Money is exact. A difference of one minor unit in any line or total is a
- * divergence and the command exits non-zero.
+ * Money is exact. An unexplained difference of one minor unit in any line or
+ * total is a divergence and the command exits non-zero. A difference is
+ * accepted only when the report proves it is required by a named current
+ * billing contract, such as whole-minute arithmetic.
  *
  * Hours are reported but do not fail the run. The source stored fractional hours
  * directly; this schema derives them from whole minutes, and 197 of the 771
@@ -114,9 +137,40 @@ final class ReplayInvoicesCommand extends Command
      */
     private string $digestKey = '';
 
+    /**
+     * Agreements whose predecessor history begins before their recorded start.
+     *
+     * The predecessor labelled the invoice's cycle as the service period it
+     * reconciled; the current engine labels the cycle it sells next. For these
+     * agreements the service period, not that incompatible cycle label, is the
+     * stable identity shared by both histories.
+     *
+     * @var array<int, true>
+     */
+    private array $historyBasisAgreementIds = [];
+
+    /** @var array<int, ReplayHistorySeed> */
+    private array $historySeeds = [];
+
+    /** @var array<int, ReplayOpeningCapacityContext> */
+    private array $openingCapacityContexts = [];
+
+    /** @var array<string, ReplayOpeningCapacityProof> */
+    private array $openingCapacityProofs = [];
+
+    /** @var array<string, list<ReplayRecurringItemIncidence>> */
+    private array $recurringItemIncidences = [];
+
     public function handle(): int
     {
         $this->digestKey = bin2hex(random_bytes(32));
+        $this->historyBasisAgreementIds = [];
+        $this->historySeeds = [];
+        $this->openingCapacityContexts = [];
+        $this->openingCapacityProofs = [];
+        $this->recurringItemIncidences = [];
+        $historyBasis = app(ReplayHistoryBasis::class);
+        $historyBasis->reset();
 
         $workspacePublicId = $this->option('workspace');
         if (! is_string($workspacePublicId) || $workspacePublicId === '') {
@@ -134,7 +188,7 @@ final class ReplayInvoicesCommand extends Command
 
         $companies = $this->companies($workspace);
         if ($companies->isEmpty()) {
-            $this->components->error('No client companies to replay.');
+            $this->components->error('No client companies with invoice history to replay.');
 
             return self::FAILURE;
         }
@@ -151,8 +205,25 @@ final class ReplayInvoicesCommand extends Command
         DB::beginTransaction();
 
         try {
+            $historySeeds = $this->prepareReplayOnlyHistoryBasis($workspace, $companies);
             $expected = $this->snapshot($workspace, $companies);
+            $this->openingCapacityContexts = $this->openingCapacityContexts($expected);
             $this->components->twoColumnDetail('invoices captured', (string) count($expected));
+
+            if ($historySeeds !== []) {
+                sort($historySeeds);
+                $first = $historySeeds[0];
+                $last = $historySeeds[count($historySeeds) - 1];
+                $range = $first === $last ? $first : "{$first} to {$last}";
+                $this->components->twoColumnDetail(
+                    'replay-only historical agreement seed',
+                    sprintf(
+                        '%d agreement(s), %s; paired and anchored by service period; stored starts unchanged',
+                        count($historySeeds),
+                        $range,
+                    ),
+                );
+            }
 
             $supersededCount = array_sum($this->superseded);
             if ($supersededCount > 0) {
@@ -219,7 +290,12 @@ final class ReplayInvoicesCommand extends Command
                 Carbon::setTestNow();
             }
 
-            $outcome['comparisons'] = $this->compare($expected, $this->snapshot($workspace, $companies));
+            $outcome['comparisons'] = $this->compare(
+                $workspace,
+                $expected,
+                $this->snapshot($workspace, $companies),
+                $anchors,
+            );
 
             if ($this->skipReasons !== []) {
                 // Only the count here. The generator's messages quote invoice
@@ -233,6 +309,7 @@ final class ReplayInvoicesCommand extends Command
             }
         } finally {
             // Unconditional. This is the whole safety model.
+            $historyBasis->reset();
             DB::rollBack();
         }
 
@@ -244,13 +321,184 @@ final class ReplayInvoicesCommand extends Command
      */
     private function companies(Workspace $workspace): Collection
     {
-        $query = ClientCompany::query()->where('workspace_id', $workspace->id);
+        $query = ClientCompany::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereHas(
+                'invoices',
+                fn (Builder $invoices): Builder => $invoices->where('workspace_id', $workspace->id),
+            );
 
         if (is_string($companyPublicId = $this->option('company')) && $companyPublicId !== '') {
             $query->where('public_id', $companyPublicId);
         }
 
         return $query->orderBy('id')->get();
+    }
+
+    /**
+     * Let the replay begin where recorded billing history begins.
+     *
+     * Two source agreements are recorded as starting on 2026-01-01 while live
+     * invoice history labels its first billed service period as a 2025-12
+     * cycle. The current engine labels the next cycle being sold instead. A
+     * cycle-to-cycle comparison therefore aligns different months of work and
+     * leaves one false boundary invoice at each end of the chain.
+     *
+     * History is authoritative only for the replay identity, clock and ledger
+     * opening balance. The agreement row is never edited; ordinary generation
+     * still begins on its recorded start, while the replay pairs the two
+     * histories on the service period they genuinely share.
+     *
+     * @param  Collection<int, ClientCompany>  $companies
+     * @return list<string> seeded dates, for aggregate reporting only
+     */
+    private function prepareReplayOnlyHistoryBasis(Workspace $workspace, Collection $companies): array
+    {
+        $historyByAgreement = ClientInvoice::query()
+            ->select([
+                'id',
+                'client_company_id',
+                'client_agreement_id',
+                'status',
+                'invoice_kind',
+                'cycle_start',
+                'cycle_end',
+                'service_period_start',
+                'service_period_end',
+            ])
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_id', $companies->pluck('id'))
+            ->whereNotNull('client_agreement_id')
+            ->where(function (Builder $query): void {
+                $query->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
+            })
+            ->orderBy('client_agreement_id')
+            ->orderBy('service_period_start')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('client_agreement_id');
+
+        if ($historyByAgreement->isEmpty()) {
+            return [];
+        }
+
+        $agreements = ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_id', $companies->pluck('id'))
+            ->whereIn('id', $historyByAgreement->keys())
+            ->whereNotNull('starts_on')
+            ->get();
+
+        $seeded = [];
+        foreach ($agreements as $agreement) {
+            $agreementHistory = $historyByAgreement->get($agreement->id, collect());
+            if ($agreementHistory->contains(
+                static fn (ClientInvoice $invoice): bool => (int) $invoice->client_company_id !== (int) $agreement->client_company_id,
+            )) {
+                // Independent invoice/agreement foreign keys can form a
+                // cross-company chain inside one workspace. Do not let one
+                // client's history become another agreement's replay ledger
+                // basis; leaving it unseeded makes the malformed history fail
+                // the ordinary comparison instead.
+                continue;
+            }
+
+            $attempts = [];
+            foreach ($agreementHistory as $invoice) {
+                $identity = implode('|', [
+                    $invoice->invoiceKindValue(),
+                    $invoice->service_period_start?->toDateString() ?? '?',
+                    $invoice->service_period_end?->toDateString() ?? '?',
+                ]);
+                $incumbent = $attempts[$identity] ?? null;
+                if (! $incumbent instanceof ClientInvoice
+                    || $this->supersedes($invoice, ['id' => $incumbent->id, 'status' => $incumbent->status])) {
+                    $attempts[$identity] = $invoice;
+                }
+            }
+
+            $cycles = array_values(collect($attempts)
+                // A void attempt cancels the identity it superseded. Filtering
+                // before selecting the winner would resurrect the older live
+                // attempt and let a cycle that never happened seed replay.
+                ->filter(static fn (ClientInvoice $invoice): bool => in_array(
+                    (string) $invoice->status,
+                    InvoiceStatus::live(),
+                    true,
+                ))
+                ->sortBy('service_period_start')
+                ->map(static fn (ClientInvoice $invoice): ReplayHistoricalCycle => new ReplayHistoricalCycle(
+                    invoiceKind: $invoice->invoiceKindValue(),
+                    cycleStart: $invoice->cycle_start === null ? null : CarbonImmutable::instance($invoice->cycle_start)->startOfDay(),
+                    cycleEnd: $invoice->cycle_end === null ? null : CarbonImmutable::instance($invoice->cycle_end)->startOfDay(),
+                    servicePeriodStart: $invoice->service_period_start === null ? null : CarbonImmutable::instance($invoice->service_period_start)->startOfDay(),
+                    servicePeriodEnd: $invoice->service_period_end === null ? null : CarbonImmutable::instance($invoice->service_period_end)->startOfDay(),
+                ))
+                ->values()
+                ->all());
+
+            $seed = ReplayHistorySeed::fromHistory(
+                workspaceId: (int) $workspace->id,
+                companyId: (int) $agreement->client_company_id,
+                agreementId: (int) $agreement->id,
+                currency: (string) $agreement->currency,
+                retainerMinutes: (int) round($agreement->periodRetainerHours() * 60),
+                retainerAmount: (int) round($agreement->periodRetainerFee() * 100),
+                hourlyRateAmount: (int) ($agreement->hourly_rate_amount ?? 0),
+                catchUpThresholdMinutes: (int) round($agreement->catch_up_threshold_hours * 60),
+                rolloverMonths: (int) ($agreement->rollover_months ?? 0),
+                cadence: $agreement->effectiveBillingCadence(),
+                agreementStart: CarbonImmutable::instance($agreement->starts_on)->startOfDay(),
+                agreementEnd: $agreement->ends_on === null
+                    ? null
+                    : CarbonImmutable::instance($agreement->ends_on)->startOfDay(),
+                cycles: $cycles,
+            );
+            if (! $seed instanceof ReplayHistorySeed) {
+                continue;
+            }
+
+            $this->historyBasisAgreementIds[$agreement->id] = true;
+            $this->historySeeds[$agreement->id] = $seed;
+            app(ReplayHistoryBasis::class)->seed($agreement, $seed->seedStart);
+            $seeded[] = $seed->seedStart->toDateString();
+        }
+
+        return $seeded;
+    }
+
+    /**
+     * Prove the opening month sold a retainer before allowing its capacity to
+     * explain a later allocation difference. This reads the already captured
+     * snapshots; it performs no classifier-time queries.
+     *
+     * @param  array<string, array<string, mixed>>  $expected
+     * @return array<int, ReplayOpeningCapacityContext>
+     */
+    private function openingCapacityContexts(array $expected): array
+    {
+        $contexts = [];
+        foreach ($expected as $key => $snapshot) {
+            [, $agreementId, $kind] = array_pad(explode('|', $key, 4), 4, '');
+            $seed = $this->historySeeds[(int) $agreementId] ?? null;
+            if (! $seed instanceof ReplayHistorySeed
+                || $kind !== InvoiceKind::CadencePeriod->value
+                || ! InvoiceStatus::hasChargedValue($snapshot['status'] ?? null)
+                || (string) ($snapshot['service_period_start'] ?? '') !== $seed->seedStart->toDateString()) {
+                continue;
+            }
+
+            $context = ReplayOpeningCapacityContext::fromOpeningInvoice(
+                $seed,
+                ReplayInvoiceSnapshot::fromArray($snapshot),
+            );
+            if ($context instanceof ReplayOpeningCapacityContext) {
+                $contexts[$seed->agreementId] = $context;
+            }
+        }
+
+        return $contexts;
     }
 
     /**
@@ -274,9 +522,51 @@ final class ReplayInvoicesCommand extends Command
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companies->pluck('id'))
-            ->with('lines')
+            ->with([
+                'agreement' => fn ($agreements) => $agreements
+                    ->where('workspace_id', $workspace->id),
+                'lines' => fn ($lines) => $lines
+                    ->where('workspace_id', $workspace->id)
+                    ->with([
+                        'timeEntries' => fn ($entries) => $entries
+                            ->where('client_time_entries.workspace_id', $workspace->id)
+                            ->where('client_invoice_line_time_entries.workspace_id', $workspace->id)
+                            ->with([
+                                'project' => fn ($projects) => $projects
+                                    ->where('client_projects.workspace_id', $workspace->id),
+                            ]),
+                    ]),
+            ])
             ->orderBy('id')
             ->get();
+
+        $invoiceIds = $invoices->pluck('id');
+        if ($invoiceIds->isNotEmpty()
+            && DB::table('client_invoice_lines')
+                ->whereIn('client_invoice_id', $invoiceIds)
+                ->where('workspace_id', '!=', $workspace->id)
+                ->exists()) {
+            // Do not load or report the foreign row. Its mere attachment to a
+            // selected invoice is a tenant-chain violation, and filtering it
+            // out would let clear() delete data the snapshots never compared.
+            throw new RuntimeException('A selected invoice has a line owned by another workspace.');
+        }
+        if ($invoiceIds->isNotEmpty()
+            && DB::table('client_invoice_line_time_entries as allocations')
+                ->join('client_invoice_lines as lines', 'lines.id', '=', 'allocations.client_invoice_line_id')
+                ->leftJoin('client_time_entries as entries', 'entries.id', '=', 'allocations.client_time_entry_id')
+                ->whereIn('lines.client_invoice_id', $invoiceIds)
+                ->where(function ($query) use ($workspace): void {
+                    $query->where('allocations.workspace_id', '!=', $workspace->id)
+                        ->orWhere('entries.workspace_id', '!=', $workspace->id)
+                        ->orWhereNull('entries.id');
+                })
+                ->exists()) {
+            // clear() addresses allocations by line id. Detect a broken tenant
+            // chain before eager-load scoping can hide it and before rollback-
+            // only replay touches the referenced entry.
+            throw new RuntimeException('A selected invoice line has an invalid or foreign-workspace time allocation.');
+        }
 
         // Which deliverable each milestone line billed. A task's title and
         // price are both editable, so the wording and the amount can change
@@ -288,7 +578,9 @@ final class ReplayInvoicesCommand extends Command
             ->pluck('public_id', 'client_invoice_line_id');
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
+            $snapshotAgreement = $this->agreementForSnapshot($workspace, $invoice);
+            $sourceScope = $this->sourceScopeForInvoice($workspace, $invoice, $snapshotAgreement);
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, canonical_cadence_description: bool, canonical_cadence_overage_description: bool, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -330,6 +622,19 @@ final class ReplayInvoicesCommand extends Command
                     // lines that differ only in wording still compare as
                     // different without a guess being verifiable off the host.
                     'description_hash' => substr(hash_hmac('sha256', (string) $line->description, $this->digestKey), 0, 12),
+                    // Exact formatter parity is retained as a boolean, never as
+                    // client-facing prose. Cadence-gap proof can therefore
+                    // reject a wrong deterministic label without publishing
+                    // text or needing the per-run digest key.
+                    'canonical_cadence_description' => $this->hasCanonicalCadenceDescription(
+                        $invoice,
+                        $line,
+                        $snapshotAgreement,
+                    ),
+                    'canonical_cadence_overage_description' => $this->hasCanonicalCadenceOverageDescription(
+                        $line,
+                        $snapshotAgreement,
+                    ),
                     // The same description with every number taken out. The
                     // composer writes amounts into its wording - hours and rate
                     // for deferred termination work, applied time for a
@@ -339,6 +644,38 @@ final class ReplayInvoicesCommand extends Command
                     // removed and another added.
                     'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description, (string) $line->type), $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
+                    // Only the aggregate allocation is retained. It proves a
+                    // priced or capacity line is backed by work without moving
+                    // descriptions, people, project identifiers, or raw entry
+                    // data into the replay report.
+                    'source_minutes' => (int) $line->timeEntries->sum('minutes'),
+                    // Eligibility is retained only as another aggregate. Its
+                    // immutable scope proves every source is ordinary or
+                    // retainer-mode work belonging to this tenant, company,
+                    // agreement project, and service period without exposing
+                    // a worker, mode, rate, description, or source identifier.
+                    'source_agreement_rate_minutes' => (int) $line->timeEntries
+                        ->filter(static function (ClientTimeEntry $entry) use ($sourceScope): bool {
+                            if (! $sourceScope instanceof ReplayInvoiceSourceScope
+                                || ! $entry->isAgreementRateBillable()
+                                || ! $entry->relationLoaded('project')) {
+                                return false;
+                            }
+
+                            $project = $entry->getRelation('project');
+
+                            return $project instanceof ClientProject
+                                && $sourceScope->contains(
+                                    entryWorkspaceId: (int) $entry->workspace_id,
+                                    entryCompanyId: (int) $entry->client_company_id,
+                                    entryProjectId: (int) $entry->client_project_id,
+                                    projectWorkspaceId: (int) $project->workspace_id,
+                                    projectCompanyId: (int) $project->client_company_id,
+                                    workedOn: $entry->worked_on,
+                                    deferred: (bool) $entry->is_deferred,
+                                );
+                        })
+                        ->sum('minutes'),
                 ];
             }
 
@@ -376,6 +713,14 @@ final class ReplayInvoicesCommand extends Command
                 'id' => (int) $invoice->id,
                 'invoice_number' => (string) $invoice->invoice_number,
                 'invoice_kind' => $invoice->invoiceKindValue(),
+                // Keep the sold cycle even when replay pairing uses service
+                // period as its key. Correction proofs need the real cycle the
+                // biller evaluated; parsing the substituted key silently asks
+                // them about a different incidence window.
+                'cycle_start' => $invoice->cycle_start?->toDateString(),
+                'cycle_end' => $invoice->cycle_end?->toDateString(),
+                'service_period_start' => $invoice->service_period_start?->toDateString(),
+                'service_period_end' => $invoice->service_period_end?->toDateString(),
                 'status' => (string) $invoice->status,
                 'currency' => (string) $invoice->currency,
                 'subtotal_amount' => (int) $invoice->subtotal_amount,
@@ -389,6 +734,85 @@ final class ReplayInvoicesCommand extends Command
         }
 
         return $rows;
+    }
+
+    /** Resolve a tenant- and company-consistent agreement without another query. */
+    private function agreementForSnapshot(Workspace $workspace, ClientInvoice $invoice): ?ClientAgreement
+    {
+        if (! $invoice->relationLoaded('agreement')) {
+            return null;
+        }
+
+        $agreement = $invoice->getRelation('agreement');
+        if (! $agreement instanceof ClientAgreement
+            || (int) $agreement->workspace_id !== (int) $workspace->id
+            || (int) $agreement->client_company_id !== (int) $invoice->client_company_id) {
+            return null;
+        }
+
+        return $agreement;
+    }
+
+    /** Build the database-free source boundary from bounded eager-loaded facts. */
+    private function sourceScopeForInvoice(
+        Workspace $workspace,
+        ClientInvoice $invoice,
+        ?ClientAgreement $agreement,
+    ): ?ReplayInvoiceSourceScope {
+        if (! $agreement instanceof ClientAgreement
+            || $invoice->service_period_start === null
+            || $invoice->service_period_end === null) {
+            return null;
+        }
+
+        return new ReplayInvoiceSourceScope(
+            workspaceId: (int) $workspace->id,
+            companyId: (int) $invoice->client_company_id,
+            agreementProjectId: $agreement->client_project_id === null
+                ? null
+                : (int) $agreement->client_project_id,
+            servicePeriodStart: CarbonImmutable::instance($invoice->service_period_start)->startOfDay(),
+            servicePeriodEnd: CarbonImmutable::instance($invoice->service_period_end)->startOfDay(),
+        );
+    }
+
+    private function hasCanonicalCadenceDescription(
+        ClientInvoice $invoice,
+        ClientInvoiceLine $line,
+        ?ClientAgreement $agreement,
+    ): bool {
+        if (! $agreement instanceof ClientAgreement
+            || (string) $line->type !== 'retainer'
+            || $line->hours === null
+            || $invoice->cycle_start === null
+            || $invoice->cycle_end === null) {
+            return false;
+        }
+
+        return hash_equals(
+            RetainerLineDescription::for(
+                $agreement->effectiveBillingCadence(),
+                (float) $line->hours,
+                $invoice->cycle_start,
+                $invoice->cycle_end,
+            ),
+            (string) $line->description,
+        );
+    }
+
+    private function hasCanonicalCadenceOverageDescription(
+        ClientInvoiceLine $line,
+        ?ClientAgreement $agreement,
+    ): bool {
+        if (! $agreement instanceof ClientAgreement
+            || (string) $line->type !== InvoiceLineType::AdditionalHours->value) {
+            return false;
+        }
+
+        return hash_equals(
+            CadenceOverageLineDescription::for($agreement->effectiveBillingCadence()),
+            (string) $line->description,
+        );
     }
 
     /**
@@ -425,10 +849,11 @@ final class ReplayInvoicesCommand extends Command
         $period = ($invoice->service_period_start?->toDateString() ?? '?')
             .'..'.($invoice->service_period_end?->toDateString() ?? '?');
 
-        // Both, always. The cycle says which retainer was sold; the period says
-        // which work was reconciled, and under any cadence but monthly one
+        // Ordinarily both. The cycle says which retainer was sold; the period
+        // says which work was reconciled, and under any cadence but monthly one
         // cycle covers many periods - an annual agreement invoices each month
-        // against the same twelve-month cycle.
+        // against the same twelve-month cycle. The replay-only exception below
+        // handles predecessor history whose cycle label means service period.
         //
         // Keying on the cycle alone collapsed all of them onto one entry and
         // silently kept whichever came last. Of 78 invoices here, 47 shared a
@@ -436,7 +861,13 @@ final class ReplayInvoicesCommand extends Command
         // which is how an untouched invoice came to be measured against a
         // sibling the harness had just blanked and reported as 125 lines
         // becoming none.
-        $identity = ($cycle ?? '').'@'.$period;
+        $identity = $invoice->client_agreement_id !== null
+            && isset($this->historyBasisAgreementIds[$invoice->client_agreement_id])
+                // Both sides share the work period. Repeating it in the cycle
+                // slot keeps correction facts parseable while deliberately
+                // setting aside the predecessor's incompatible cycle label.
+                ? $period.'@'.$period
+                : ($cycle ?? '').'@'.$period;
 
         return implode('|', [
             (string) $invoice->client_company_id,
@@ -449,10 +880,10 @@ final class ReplayInvoicesCommand extends Command
     /**
      * The date to replay as.
      *
-     * Defaults to the day before the newest cycle history contains. That is the
-     * latest date from which generation still produces exactly that cycle and
-     * stops: anchoring on the cycle's *end* instead leaves room for the walk to
-     * roll forward one more, and the extra invoice reads as a divergence.
+     * Ordinarily defaults to the day before the newest cycle history contains.
+     * That is the latest date from which generation produces that cycle and
+     * stops. A replay-only history basis instead anchors on its latest service
+     * period so the current engine reconciles the same final month of work.
      */
     private function asOf(Workspace $workspace, ?ClientCompany $company = null): Carbon
     {
@@ -462,13 +893,40 @@ final class ReplayInvoicesCommand extends Command
 
         $scope = fn (): Builder => ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
+            ->whereIn('status', InvoiceStatus::live())
             ->when($company !== null, fn (Builder $q): Builder => $q->where('client_company_id', $company->id));
 
         // Two plain aggregates rather than GREATEST, which MySQL has and SQLite
         // does not; the harness has to run wherever the data is.
+        $anchor = null;
         $newestCycleStart = $scope()->max('cycle_start');
         if ($newestCycleStart !== null) {
-            return Carbon::parse((string) $newestCycleStart)->subDay()->endOfDay();
+            $anchor = Carbon::parse((string) $newestCycleStart)->subDay()->endOfDay();
+        }
+
+        // A history-basis agreement is paired by service period. Pinning it by
+        // the predecessor's shifted cycle label stops one period too early and
+        // leaves the final historical invoice as an empty draft. The latest
+        // service-period end is the clock from which the current engine sells
+        // the next cycle while reconciling that final period.
+        if ($company !== null && $this->historyBasisAgreementIds !== []) {
+            $newestHistoryPeriodEnd = $scope()
+                ->whereIn('client_agreement_id', array_keys($this->historyBasisAgreementIds))
+                ->where(function (Builder $q): void {
+                    $q->whereNull('invoice_kind')
+                        ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
+                })
+                ->max('service_period_end');
+            if ($newestHistoryPeriodEnd !== null) {
+                $historyAnchor = Carbon::parse((string) $newestHistoryPeriodEnd)->endOfDay();
+                if (! $anchor instanceof Carbon || $historyAnchor->gt($anchor)) {
+                    $anchor = $historyAnchor;
+                }
+            }
+        }
+
+        if ($anchor instanceof Carbon) {
+            return $anchor;
         }
 
         // Older invoices predate the cycle columns and carry only a work period.
@@ -605,11 +1063,19 @@ final class ReplayInvoicesCommand extends Command
     /**
      * @param  array<string, array<string, mixed>>  $expected
      * @param  array<string, array<string, mixed>>  $actual
+     * @param  array<int, Carbon>  $anchors
      * @return list<array<string, mixed>>
      */
-    private function compare(array $expected, array $actual): array
+    private function compare(Workspace $workspace, array $expected, array $actual, array $anchors): array
     {
         $comparisons = [];
+        $this->recurringItemIncidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($workspace, $actual, $this->digestKey);
+        $cadenceAgreements = app(ReplayCadenceAgreementRepository::class)
+            ->forWorkspaceCompanies($workspace, array_map('intval', array_keys($anchors)));
+        $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
+            ->contractCadenceHistoryGapKeys($cadenceAgreements, $expected, $actual, $anchors);
+        $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
 
         foreach ($expected as $key => $before) {
             if ($before['invoice_kind'] === InvoiceKind::AdHoc->value) {
@@ -631,7 +1097,7 @@ final class ReplayInvoicesCommand extends Command
                 continue;
             }
 
-            $examined = $this->examine($before, $after);
+            $examined = $this->examine($before, $after, $key);
             $notes = $examined['notes'];
             $changedTypes = $examined['changed_types'];
             $changedFields = $examined['changed_fields'];
@@ -662,7 +1128,13 @@ final class ReplayInvoicesCommand extends Command
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
                 'line_repriced' => $examined['line_repriced'],
+                'capacity_reallocated_at_same_rate' => $examined['capacity_reallocated_at_same_rate'],
+                'exact_minute_arithmetic' => $examined['exact_minute_arithmetic'],
+                'opening_recurring_item_incidence' => $examined['opening_recurring_item_incidence'],
+                'history_omitted_opening_capacity' => $examined['history_omitted_opening_capacity'],
+                'opening_capacity_also_corrects_minute_rounding' => $examined['opening_capacity_also_corrects_minute_rounding'],
                 'changed_types' => $changedTypes,
+                'attribution_changed_types' => $examined['attribution_changed_types'],
                 'changed_fields' => $changedFields,
             ];
         }
@@ -675,12 +1147,139 @@ final class ReplayInvoicesCommand extends Command
                     'verdict' => 'unexpected',
                     'money_delta' => $after['total_amount'],
                     'notes' => ['the engine produced an invoice with no historical counterpart'],
+                    'contract_cadence_history_gap' => isset($cadenceHistoryGapKeys[$key]),
                     'snapshot' => $after,
                 ];
             }
         }
 
         return $this->reconcileLegacyPeriods($comparisons);
+    }
+
+    /**
+     * Consume a replay-only opening lot once, in service-period order.
+     *
+     * The classifier proves one invoice without persistence. This coordinator
+     * supplies the remaining immutable context for each step, so the same lot
+     * cannot explain more minutes than it granted or survive its configured
+     * rollover window.
+     *
+     * @param  array<string, array<string, mixed>>  $expected
+     * @param  array<string, array<string, mixed>>  $actual
+     * @return array<string, ReplayOpeningCapacityProof>
+     */
+    private function proveOpeningCapacityChain(array $expected, array $actual): array
+    {
+        $rowsByAgreement = [];
+        foreach ($expected as $key => $before) {
+            $after = $actual[$key] ?? null;
+            if (! is_array($after)) {
+                continue;
+            }
+            [, $agreementId] = array_pad(explode('|', $key, 3), 3, '');
+            $context = $this->openingCapacityContexts[(int) $agreementId] ?? null;
+            if (! $context instanceof ReplayOpeningCapacityContext) {
+                continue;
+            }
+            $rowsByAgreement[$context->agreementId][] = [
+                'key' => $key,
+                'before' => ReplayInvoiceSnapshot::fromArray($before),
+                'after' => ReplayInvoiceSnapshot::fromArray($after),
+            ];
+        }
+
+        $proofs = [];
+        $classifier = new ReplayContractCorrectionClassifier;
+        foreach ($rowsByAgreement as $agreementId => $rows) {
+            $context = $this->openingCapacityContexts[$agreementId];
+            usort($rows, static fn (array $left, array $right): int => [
+                $left['before']->servicePeriodStart?->toDateString() ?? '',
+                $left['key'],
+            ] <=> [
+                $right['before']->servicePeriodStart?->toDateString() ?? '',
+                $right['key'],
+            ]);
+
+            $remainingMinutes = $context->capacityMinutes;
+            $carriedOrdinaryMinutes = 0;
+            // The replay-only seed and the ordinary retainer sale that proves
+            // it are distinct capacity: seeding moves the ledger basis back
+            // one period without erasing the contract's first sold lot. Track
+            // only ordinary sales here, deduplicated across before/after.
+            $accountedRetainerLots = [];
+            foreach ($rows as $row) {
+                if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
+                    continue;
+                }
+
+                // The seeded month is the oldest rollover lot. Consume it from
+                // every generated capacity draw in chronological order, even
+                // when that row is otherwise unchanged. Only subtracting the
+                // newly moved minutes lets a shared earlier draw spend the same
+                // lot once and a later correction spend it again.
+                $drawMinutes = $row['after']->sourceBackedCapacityDrawMinutes($context->agreementId);
+                if ($drawMinutes === null) {
+                    // An ambiguous generated balance line cannot preserve any
+                    // capacity for a later monetary waiver.
+                    break;
+                }
+                $historicalDrawMinutes = $row['before']->sourceBackedHistoricalCapacityDrawMinutes($context->agreementId);
+                if ($historicalDrawMinutes === null) {
+                    break;
+                }
+                $ordinaryCapacityMinutes = 0;
+                foreach ([$row['before'], $row['after']] as $snapshot) {
+                    $capacityLot = $snapshot->contractRetainerCapacityLot(
+                        $context->agreementId,
+                        $context->currency,
+                        $context->retainerAmount,
+                    );
+                    if ($capacityLot === null) {
+                        break 2;
+                    }
+                    if (isset($accountedRetainerLots[$capacityLot->identity])) {
+                        continue;
+                    }
+                    $accountedRetainerLots[$capacityLot->identity] = true;
+                    $ordinaryCapacityMinutes += $capacityLot->minutes;
+                }
+                $sourceFreeBufferMinutes = $row['after']->sourceFreeOverageCapacityMinutes(
+                    $context->agreementId,
+                    $context->currency,
+                    $context->hourlyRateAmount,
+                    $context->catchUpThresholdMinutes,
+                );
+                if ($sourceFreeBufferMinutes === null) {
+                    break;
+                }
+                // Reserve the unchanged draw before proving the increase. The
+                // ordinary retainer and earlier bounded catch-up buffers are
+                // independent capacity. The replay-only lot remains oldest and
+                // is still consumed FIFO below across later rows.
+                $remainingForCorrection = max(
+                    0,
+                    $remainingMinutes + $carriedOrdinaryMinutes + $ordinaryCapacityMinutes - $historicalDrawMinutes,
+                );
+                $proof = $classifier->historyOmittedOpeningCapacity(
+                    $context->forRemainingMinutes($remainingForCorrection),
+                    $row['before'],
+                    $row['after'],
+                );
+                if ($proof instanceof ReplayOpeningCapacityProof) {
+                    $proofs[$row['key']] = $proof;
+                }
+
+                $seedDrawMinutes = min($remainingMinutes, $drawMinutes);
+                $remainingMinutes -= $seedDrawMinutes;
+                $ordinaryDrawMinutes = max(0, $drawMinutes - $seedDrawMinutes);
+                $carriedOrdinaryMinutes = max(
+                    0,
+                    $carriedOrdinaryMinutes + $ordinaryCapacityMinutes - $ordinaryDrawMinutes,
+                ) + $sourceFreeBufferMinutes;
+            }
+        }
+
+        return $proofs;
     }
 
     /**
@@ -693,9 +1292,9 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  array<string, mixed>  $before
      * @param  array<string, mixed>  $after
-     * @return array{notes: list<string>, changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, hour_notes: list<string>}
+     * @return array{notes: list<string>, changed_types: list<string>, attribution_changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, capacity_reallocated_at_same_rate: bool, exact_minute_arithmetic: bool, opening_recurring_item_incidence: bool, history_omitted_opening_capacity: bool, opening_capacity_also_corrects_minute_rounding: bool, hour_notes: list<string>}
      */
-    private function examine(array $before, array $after): array
+    private function examine(array $before, array $after, ?string $key = null): array
     {
         $notes = [];
         // What actually changed, collected as it is found rather than read back
@@ -721,6 +1320,15 @@ final class ReplayInvoicesCommand extends Command
             $changedFields[] = 'tax';
         }
 
+        [, $agreementId] = array_pad(explode('|', (string) $key, 3), 3, '');
+        $beforeSnapshot = ReplayInvoiceSnapshot::fromArray($before);
+        $afterSnapshot = ReplayInvoiceSnapshot::fromArray($after);
+        if (isset($this->historyBasisAgreementIds[(int) $agreementId])
+            && ! $afterSnapshot->sellsMonthlySuccessorOfServicePeriod()) {
+            $notes[] = 'generated sold cycle is not the monthly successor of its service period';
+            $changedFields[] = 'cycle';
+        }
+
         /** @var list<array<string, mixed>> $beforeLines */
         $beforeLines = $before['lines'] ?? [];
         /** @var list<array<string, mixed>> $afterLines */
@@ -740,10 +1348,27 @@ final class ReplayInvoicesCommand extends Command
         // that money is exact; a charge the client did not have is not the same
         // money differently arranged.
         $lineComparison = $this->lineMultisetDifferences($beforeLines, $afterLines);
+        $changedTypes = array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']]));
+        $attributionChangedTypes = $changedTypes;
+        if ($beforeSnapshot->contractLineMultisetOfType('retainer')
+            === $afterSnapshot->contractLineMultisetOfType('retainer')) {
+            $attributionChangedTypes = array_values(array_filter(
+                $attributionChangedTypes,
+                static fn (string $type): bool => $type !== 'retainer',
+            ));
+        }
+        $openingCapacityProof = $key === null ? null : ($this->openingCapacityProofs[$key] ?? null);
+        $openingCapacityAlsoCorrectsRounding = $openingCapacityProof instanceof ReplayOpeningCapacityProof
+            ? $openingCapacityProof->alsoCorrectsHistoricalMinuteRounding
+            : false;
 
         return [
             'notes' => $notes,
-            'changed_types' => array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
+            'changed_types' => $changedTypes,
+            // Fixed retainer money still blocks a capacity attribution. A pure
+            // wording digest change does not: the immutable contract multiset
+            // proves fee, hours, dates, tax and ownership are unchanged.
+            'attribution_changed_types' => $attributionChangedTypes,
             'changed_fields' => array_values(array_unique($changedFields)),
             // Strictly about the lines. The summary counts on this to tell an
             // operator a charge moved, and an invoice that only changed
@@ -753,6 +1378,20 @@ final class ReplayInvoicesCommand extends Command
             // and the summary must not confuse with the above.
             'metadata_differs' => $changedFields !== [],
             'line_repriced' => $lineComparison['repriced'],
+            'capacity_reallocated_at_same_rate' => app(ReplayContractCorrectionClassifier::class)
+                ->capacityReallocatedAtSameRate($beforeSnapshot, $afterSnapshot),
+            'exact_minute_arithmetic' => app(ReplayContractCorrectionClassifier::class)
+                ->exactMinuteArithmetic($before, $after),
+            'opening_recurring_item_incidence' => $key !== null
+                && app(ReplayContractCorrectionClassifier::class)
+                    ->openingRecurringItemIncidence(
+                        $key,
+                        $before,
+                        $after,
+                        $this->recurringItemIncidences[$key] ?? [],
+                    ),
+            'history_omitted_opening_capacity' => $openingCapacityProof instanceof ReplayOpeningCapacityProof,
+            'opening_capacity_also_corrects_minute_rounding' => $openingCapacityAlsoCorrectsRounding,
             'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
         ];
     }
@@ -819,7 +1458,7 @@ final class ReplayInvoicesCommand extends Command
             $historicalSnapshot = $historical['snapshot'] ?? [];
             /** @var array<string, mixed> $generatedSnapshot */
             $generatedSnapshot = $generated['snapshot'] ?? [];
-            $examined = $this->examine($historicalSnapshot, $generatedSnapshot);
+            $examined = $this->examine($historicalSnapshot, $generatedSnapshot, (string) $generated['key']);
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
@@ -844,7 +1483,13 @@ final class ReplayInvoicesCommand extends Command
                 'money_delta' => $delta,
                 'line_money_differs' => $examined['line_money_differs'],
                 'line_repriced' => $examined['line_repriced'],
+                'capacity_reallocated_at_same_rate' => $examined['capacity_reallocated_at_same_rate'],
+                'exact_minute_arithmetic' => $examined['exact_minute_arithmetic'],
+                'opening_recurring_item_incidence' => $examined['opening_recurring_item_incidence'],
+                'history_omitted_opening_capacity' => $examined['history_omitted_opening_capacity'],
+                'opening_capacity_also_corrects_minute_rounding' => $examined['opening_capacity_also_corrects_minute_rounding'],
                 'changed_types' => $examined['changed_types'],
+                'attribution_changed_types' => $examined['attribution_changed_types'],
                 'changed_fields' => $examined['changed_fields'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
@@ -1016,10 +1661,12 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['recurring_item_id'],
             (string) $line['claimed_by'],
             (string) $line['description_hash'],
+            (int) $line['source_minutes'],
+            ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
         ]);
 
         $describe = static fn (array $line): string => sprintf(
-            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
+            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s source %d min agreement-rate %d min',
             (string) $line['type'],
             (int) $line['unit_amount'],
             (string) $line['quantity'],
@@ -1031,6 +1678,8 @@ final class ReplayInvoicesCommand extends Command
             ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
             ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
             (string) $line['description_hash'],
+            (int) $line['source_minutes'],
+            ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
         );
 
         /** @var array<string, string> $described */
@@ -1418,16 +2067,88 @@ final class ReplayInvoicesCommand extends Command
      */
     private function attribute(array $comparison): array
     {
+        if ($comparison['verdict'] === 'unexpected'
+            && ($comparison['contract_cadence_history_gap'] ?? false) === true) {
+            $comparison['explained_by'] = [[
+                'key' => 'configured_cadence_absent_from_history',
+                'summary' => 'Predecessor history contains only ad-hoc invoices; SVC generated the complete configured retainer cadence from the agreement start.',
+            ]];
+
+            return $comparison;
+        }
+
         if ($comparison['verdict'] !== 'money_differs') {
             return $comparison;
         }
 
+        /** @var list<string> $changedTypes */
+        $changedTypes = array_values(array_unique((array) (
+            $comparison['attribution_changed_types'] ?? $comparison['changed_types'] ?? []
+        )));
+        /** @var list<string> $changedFields */
+        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
+
+        if (($comparison['exact_minute_arithmetic'] ?? false) === true) {
+            $comparison['explained_by'] = self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['additional_hours'],
+                ['subtotal'],
+            ) ? [[
+                'key' => 'hourly_lines_use_exact_minutes',
+                'summary' => 'Hourly totals use whole minutes; the source\'s decimal-hour arithmetic rounded differently.',
+            ]] : null;
+
+            return $comparison;
+        }
+
+        if (($comparison['opening_recurring_item_incidence'] ?? false) === true) {
+            $comparison['explained_by'] = self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['recurring_item'],
+                ['subtotal'],
+            ) ? [[
+                'key' => 'recurring_item_bills_on_configured_start',
+                'summary' => 'An active recurring item bills its first incidence on its configured start date inside the sold cycle.',
+            ]] : null;
+
+            return $comparison;
+        }
+
+        if (($comparison['history_omitted_opening_capacity'] ?? false) === true) {
+            if (! self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['additional_hours', 'prior_month_retainer'],
+                ['subtotal'],
+            )) {
+                $comparison['explained_by'] = null;
+
+                return $comparison;
+            }
+
+            $comparison['explained_by'] = [[
+                'key' => 'historical_replay_start_omitted_capacity',
+                'summary' => 'History charged the replay-only opening retainer but omitted that capacity from its later allocation.',
+            ]];
+            if (($comparison['opening_capacity_also_corrects_minute_rounding'] ?? false) === true) {
+                $comparison['explained_by'][] = [
+                    'key' => 'hourly_lines_use_exact_minutes',
+                    'summary' => 'Hourly totals use whole minutes; the source\'s decimal-hour arithmetic rounded differently.',
+                ];
+            }
+
+            return $comparison;
+        }
+
         // A correction is a claim about which line types a period should carry,
-        // never about what a line of that type costs. Attribution works on type
-        // names, and the per-line notes are type-prefixed too - so without this
-        // a repriced additional_hours line would be waived by the very
-        // correction that explains why additional_hours moved at all.
-        if (($comparison['line_repriced'] ?? false) === true) {
+        // never about changing a rate. Attribution works on type names, so a
+        // repriced additional_hours line must normally gate. The one exception
+        // is a complete DTO proof that the same rate merely moved minutes from
+        // priced overage to zero-value capacity lines.
+        if (($comparison['line_repriced'] ?? false) === true
+            && ($comparison['capacity_reallocated_at_same_rate'] ?? false) !== true) {
             $comparison['explained_by'] = null;
 
             return $comparison;
@@ -1437,11 +2158,6 @@ final class ReplayInvoicesCommand extends Command
         // pairing in words - and every lowercase first word used to be read as
         // a changed line type. One stray token makes confinedTo() reject every
         // correction, so only real line types are taken.
-        /** @var list<string> $changedTypes */
-        $changedTypes = array_values(array_unique((array) ($comparison['changed_types'] ?? [])));
-        /** @var list<string> $changedFields */
-        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
-
         $comparison['explained_by'] = DeliberateCorrections::explaining(
             $changedTypes,
             $changedFields,
@@ -1449,6 +2165,24 @@ final class ReplayInvoicesCommand extends Command
         );
 
         return $comparison;
+    }
+
+    /**
+     * @param  list<string>  $changedTypes
+     * @param  list<string>  $changedFields
+     * @param  list<string>  $allowedTypes
+     * @param  list<string>  $allowedFields
+     */
+    private static function correctionScopeIsComplete(
+        array $changedTypes,
+        array $changedFields,
+        array $allowedTypes,
+        array $allowedFields,
+    ): bool {
+        return $changedTypes !== []
+            && $changedFields !== []
+            && array_diff($changedTypes, $allowedTypes) === []
+            && array_diff($changedFields, $allowedFields) === [];
     }
 
     /**
@@ -1618,10 +2352,13 @@ final class ReplayInvoicesCommand extends Command
         $composition = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'composition_differs');
         $legacyPeriod = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'match_legacy_period');
         $differs = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'money_differs');
-        $explained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) !== []);
+        $explainedMoney = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) !== []);
         $unexplained = array_filter($differs, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
         $missing = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'missing');
-        $extra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
+        $allExtra = array_filter($comparisons, static fn (array $c): bool => $c['verdict'] === 'unexpected');
+        $explainedExtra = array_filter($allExtra, static fn (array $c): bool => ($c['explained_by'] ?? []) !== []);
+        $extra = array_filter($allExtra, static fn (array $c): bool => ($c['explained_by'] ?? []) === []);
+        $explained = [...$explainedMoney, ...$explainedExtra];
         $hourOnly = array_filter($comparisons, static fn (array $c): bool => in_array($c['verdict'], ['match', 'match_legacy_period', 'composition_differs'], true) && ($c['hour_notes'] ?? []) !== []);
 
         $this->newLine();
@@ -1635,7 +2372,7 @@ final class ReplayInvoicesCommand extends Command
             (string) count($composition),
         );
         $this->components->twoColumnDetail(
-            '<fg=yellow>differs, explained by a deliberate correction</>',
+            '<fg=yellow>differs, explained by the current billing contract</>',
             (string) count($explained),
         );
         $this->components->twoColumnDetail('<fg=red>differs, unexplained</>', (string) count($unexplained));
@@ -1651,6 +2388,10 @@ final class ReplayInvoicesCommand extends Command
             $this->components->twoColumnDetail('  '.$key, (string) $count);
         }
         $this->components->twoColumnDetail('<fg=red>not generated</>', (string) count($missing));
+        $this->components->twoColumnDetail(
+            '<fg=yellow>generated with no counterpart, contractually due</>',
+            (string) count($explainedExtra),
+        );
         $this->components->twoColumnDetail('<fg=red>generated with no counterpart</>', (string) count($extra));
         $this->components->twoColumnDetail('<fg=yellow>hours differ only</>', (string) count($hourOnly));
 
@@ -1699,7 +2440,7 @@ final class ReplayInvoicesCommand extends Command
             return self::FAILURE;
         }
 
-        $this->components->info('Every historical invoice reproduced to the cent.');
+        $this->components->info('No unexplained historical billing divergence remains.');
 
         return self::SUCCESS;
     }

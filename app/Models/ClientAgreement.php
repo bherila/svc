@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Contracts\RetainerAgreementTerms;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -39,7 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read CarbonImmutable|null $active_date
  * @property-read CarbonImmutable|null $termination_date
  */
-class ClientAgreement extends Model implements WorkspaceOwned
+class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
 
@@ -120,6 +121,36 @@ class ClientAgreement extends Model implements WorkspaceOwned
     {
         return FirstCycleProration::tryFrom((string) $this->first_cycle_proration)
             ?? FirstCycleProration::ProrateHours;
+    }
+
+    public function retainerStartsOn(): ?CarbonImmutable
+    {
+        return $this->starts_on;
+    }
+
+    public function retainerEndsOn(): ?CarbonImmutable
+    {
+        return $this->ends_on;
+    }
+
+    public function retainerMonthlyHours(): float
+    {
+        return $this->monthly_retainer_hours;
+    }
+
+    public function retainerMonthlyFee(): float
+    {
+        return $this->monthly_retainer_fee;
+    }
+
+    public function periodRetainerHoursOverride(): ?float
+    {
+        return $this->retainer_hours;
+    }
+
+    public function periodRetainerFeeOverride(): ?float
+    {
+        return $this->retainer_fee;
     }
 
     /** Retainer hours granted per calendar month. */

@@ -92,11 +92,11 @@
         ],
         "test:mutation-diff": [
             "Composer\\Config::disableProcessTimeout",
-            "@php -d memory_limit=1G vendor/bin/infection --configuration=infection.diff.json5 --git-diff-lines --git-diff-base=origin/main --with-uncovered --only-covering-test-cases --min-msi=82 --threads=max"
+            "@php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection --configuration=infection.diff.json5 --git-diff-lines --git-diff-base=origin/main --with-uncovered --only-covering-test-cases --min-msi=82 --threads=max --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G'"
         ],
         "test:mutation": [
             "Composer\\Config::disableProcessTimeout",
-            "@php -d memory_limit=1G vendor/bin/infection --with-uncovered --only-covering-test-cases --min-msi=82 --threads=max"
+            "@php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection --with-uncovered --only-covering-test-cases --min-msi=82 --threads=max --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G'"
         ],
         "test": [
             "@php artisan config:clear --ansi",
