@@ -137,6 +137,8 @@ class WorkspaceOperationsTest extends TestCase
                 'client_company_id' => $company->id,
                 'actor_user_id' => $manager->id,
                 'action' => $eventNumber === 101 ? 'agreement.transitioned' : 'invoice.generated',
+                'subject_type' => $eventNumber === 101 ? 'client_agreement' : null,
+                'subject_public_id' => $eventNumber === 101 ? '11111111-1111-4111-8111-111111111111' : null,
                 'payload' => ['invoice_kind' => 'cadence_period'],
             ]);
             $activity->timestamps = false;
@@ -167,6 +169,8 @@ class WorkspaceOperationsTest extends TestCase
                 ->has('workspace.clients.0.activities', 100)
                 ->where('workspace.clients.0.activities.0.action', 'agreement.transitioned')
                 ->where('workspace.clients.0.activities.0.actor_name', 'Synthetic Manager')
+                ->where('workspace.clients.0.activities.0.subject_type', 'client_agreement')
+                ->where('workspace.clients.0.activities.0.subject_id', '11111111-1111-4111-8111-111111111111')
                 ->where('workspace.clients.0.activities.0.payload.invoice_kind', 'cadence_period')
                 ->where('workspace.clients.0.activities', fn (Collection $activities): bool => $activities
                     ->pluck('action')

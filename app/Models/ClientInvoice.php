@@ -26,6 +26,7 @@ use RuntimeException;
  * @property CarbonImmutable|null $cycle_start
  * @property CarbonImmutable|null $cycle_end
  * @property CarbonImmutable|null $paid_on
+ * @property int $lock_version
  * @property numeric-string|null $retainer_hours_included
  * @property numeric-string|null $hours_worked
  * @property numeric-string|null $rollover_hours_used

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -63,6 +64,9 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         // 1.5h and 0.5h at 375.00/hour.
         $this->assertSame(75000, (int) $invoice->total_amount);
         $this->assertTrue($first->refresh()->invoiceLines()->exists());
+        $activity = ClientCompanyActivity::query()->where('action', 'invoice.generated')->sole();
+        $this->assertSame($this->owner->id, $activity->actor_user_id);
+        $this->assertSame($invoice->public_id, $activity->subject_public_id);
     }
 
     public function test_time_and_manual_lines_can_be_combined(): void

@@ -8,6 +8,7 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -15,11 +16,13 @@ use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class InvoiceLifecycleService
 {
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly ClientActivityRecorder $activities,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
     ) {}
 
@@ -68,6 +71,12 @@ final class InvoiceLifecycleService
             ]);
 
             $this->createLines($invoice, $workspace, $lines, $subtotalOverrides);
+            $this->activities->record($workspace, $company, 'invoice.generated', $invoice, [
+                'invoice_kind' => $invoice->invoiceKindValue(),
+                'status' => 'draft',
+                'total_amount' => $invoice->total_amount,
+                'currency' => $invoice->currency,
+            ]);
 
             return $invoice->load('lines', 'clientCompany');
         });
@@ -101,6 +110,19 @@ final class InvoiceLifecycleService
             $locked->lines()->delete();
             $locked->forceFill($updates)->save();
             $this->createLines($locked, $workspace, $lines, $subtotalOverrides);
+            $this->activities->record(
+                $workspace,
+                $locked->clientCompany,
+                'invoice.updated',
+                $locked,
+                [
+                    'invoice_kind' => $locked->invoiceKindValue(),
+                    'total_amount' => $locked->total_amount,
+                    'currency' => $locked->currency,
+                    'line_count' => count($lines),
+                ],
+                occurrence: (string) Str::uuid(),
+            );
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
@@ -121,6 +143,10 @@ final class InvoiceLifecycleService
                 'void_reason' => $reason,
                 'balance_amount' => 0,
             ])->save();
+            $this->activities->record($workspace, $locked->clientCompany, 'invoice.voided', $locked, [
+                'invoice_kind' => $locked->invoiceKindValue(),
+                'previous_status' => 'draft',
+            ]);
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
@@ -170,6 +196,17 @@ final class InvoiceLifecycleService
                     'lock_version' => DB::raw('lock_version + 1'),
                 ]);
             }
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'invoice.issued',
+                $locked,
+                [
+                    'invoice_kind' => $locked->invoiceKindValue(),
+                    'total_amount' => $locked->total_amount,
+                    'currency' => $locked->currency,
+                ],
+            );
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
@@ -239,7 +276,15 @@ final class InvoiceLifecycleService
             }
 
             $this->releaseAllocations($locked);
+            $previousStatus = $locked->status;
             $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'void_reason' => $reason, 'balance_amount' => 0])->save();
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'invoice.voided',
+                $locked,
+                ['invoice_kind' => $locked->invoiceKindValue(), 'previous_status' => $previousStatus],
+            );
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
@@ -305,7 +350,12 @@ final class InvoiceLifecycleService
                 'idempotency_key' => $key,
             ]);
 
+            $previousInvoiceStatus = $locked->status;
             $this->refreshStatus($locked);
+            if ($payment->status === 'succeeded') {
+                $this->recordPaymentActivity($locked, $payment, 'invoice.payment_received');
+                $this->recordMarkedPaid($locked, $previousInvoiceStatus, $payment->public_id);
+            }
 
             return $payment->fresh();
         });
@@ -324,6 +374,9 @@ final class InvoiceLifecycleService
             }
             $lockedPayment = $query->firstOrFail();
             $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
+            if ($lockedPayment->status === $status) {
+                return $lockedPayment;
+            }
             if ($status === 'succeeded' && $invoice->status === 'void') {
                 throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
             }
@@ -340,6 +393,7 @@ final class InvoiceLifecycleService
             if ($status === 'refunded') {
                 $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
             }
+            $previousInvoiceStatus = $invoice->status;
             $lockedPayment->forceFill([
                 'status' => $status,
                 'refunded_amount' => $status === 'refunded'
@@ -347,6 +401,19 @@ final class InvoiceLifecycleService
                     : $lockedPayment->refunded_amount,
             ])->save();
             $this->refreshStatus($invoice);
+            $action = match ($status) {
+                'succeeded' => 'invoice.payment_received',
+                'failed' => 'invoice.payment_failed',
+                'disputed' => 'invoice.payment_disputed',
+                'refunded' => 'invoice.payment_refunded',
+                default => null,
+            };
+            if ($action !== null) {
+                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid());
+            }
+            if ($status === 'succeeded') {
+                $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
+            }
 
             return $lockedPayment->fresh();
         });
@@ -367,14 +434,25 @@ final class InvoiceLifecycleService
             if ($amount < 0 || $amount > $lockedPayment->amount) {
                 throw new DomainException('Refunded amount must be between zero and the payment amount.');
             }
+            if ($amount === $lockedPayment->refunded_amount) {
+                return $lockedPayment;
+            }
             $this->assertReconciliationCapacity($lockedPayment, $amount);
 
             $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
+            $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
                 'status' => $amount === $lockedPayment->amount ? 'refunded' : 'succeeded',
             ])->save();
             $this->refreshStatus($invoice);
+            $this->recordPaymentActivity(
+                $invoice,
+                $lockedPayment,
+                'invoice.payment_refunded',
+                (string) Str::uuid(),
+                ['previous_refunded_amount' => $previousAmount],
+            );
 
             return $lockedPayment->fresh();
         });
@@ -469,6 +547,47 @@ final class InvoiceLifecycleService
         }
 
         return $query->firstOrFail();
+    }
+
+    /** @param array<string, int|string|null> $extra */
+    private function recordPaymentActivity(
+        ClientInvoice $invoice,
+        ClientInvoicePayment $payment,
+        string $action,
+        ?string $occurrence = null,
+        array $extra = [],
+    ): void {
+        $this->activities->record(
+            $invoice->workspace,
+            $invoice->clientCompany,
+            $action,
+            $payment,
+            [
+                'amount' => $payment->amount,
+                'refunded_amount' => $payment->refunded_amount,
+                'currency' => $payment->currency,
+                'method' => $payment->method,
+                'status' => $payment->status,
+                ...$extra,
+            ],
+            occurrence: $occurrence,
+        );
+    }
+
+    private function recordMarkedPaid(ClientInvoice $invoice, string $previousStatus, string $occurrence): void
+    {
+        if ($previousStatus === 'paid' || $invoice->status !== 'paid') {
+            return;
+        }
+
+        $this->activities->record(
+            $invoice->workspace,
+            $invoice->clientCompany,
+            'invoice.marked_paid',
+            $invoice,
+            ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
+            occurrence: $occurrence,
+        );
     }
 
     private function assertCompanyTenant(Workspace $workspace, ClientCompany $company): void

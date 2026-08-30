@@ -4,6 +4,7 @@ namespace Tests\Feature\AgentApi;
 
 use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -29,21 +30,29 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE]);
 
         $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$firstTime->public_id], 'notes' => 'Clear me'], 'draft-first');
+        $updateBody = [
+            'expected_version' => $draft['version'],
+            'time_entry_ids' => [$replacementTime->public_id],
+            'manual_lines' => [],
+            'notes' => null,
+        ];
         $updated = $this->withHeader('Idempotency-Key', 'draft-update')->patchJson(
             "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
-            [
-                'expected_version' => $draft['version'],
-                'time_entry_ids' => [$replacementTime->public_id],
-                'manual_lines' => [],
-                'notes' => null,
-            ],
+            $updateBody,
         )->assertOk()->assertJsonPath('data.linked_time_state', 'reserved')->json('data');
+        $this->withHeader('Idempotency-Key', 'draft-update')->patchJson(
+            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
+            $updateBody,
+        )->assertOk();
 
         $this->assertNotSame($draft['version'], $updated['version']);
         $this->assertSame(0, $firstTime->invoiceLines()->count());
         $this->assertSame(1, $replacementTime->invoiceLines()->count());
         $this->assertDatabaseHas('client_invoices', ['public_id' => $draft['id'], 'notes' => null]);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'invoices.update_draft', 'outcome' => 'success']);
+        $activity = ClientCompanyActivity::query()->where('action', 'invoice.updated')->sole();
+        $this->assertSame($owner->id, $activity->actor_user_id);
+        $this->assertSame($draft['id'], $activity->subject_public_id);
 
         $second = $this->createDraft($workspace, $company, ['time_entry_ids' => [$firstTime->public_id]], 'draft-reuse-removed');
         $this->assertNotSame($draft['id'], $second['id']);

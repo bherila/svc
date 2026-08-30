@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
@@ -54,6 +55,10 @@ class BillingWorkflowTest extends TestCase
         $this->assertSame(0, $invoice->fresh()->paid_amount);
         $this->assertDatabaseCount('client_invoice_payments', 1);
         $this->assertSame($owner->id, $workspace->memberships()->first()->user_id);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_received')->count());
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
+        $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'invoice.marked_paid')->count());
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.issued')->count());
     }
 
     public function test_partial_refund_reopens_only_the_refunded_balance(): void
@@ -76,6 +81,8 @@ class BillingWorkflowTest extends TestCase
         $this->assertSame(7500, $invoice->fresh()->paid_amount);
         $this->assertSame(2500, $invoice->fresh()->balance_amount);
         $this->assertSame(2500, $payment->fresh()->refunded_amount);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.marked_paid')->count());
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
     }
 
     public function test_client_cannot_view_a_draft_even_when_visibility_flag_is_set(): void
@@ -126,6 +133,8 @@ class BillingWorkflowTest extends TestCase
         $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
         $service->issue($invoice, $workspace);
         $service->void($invoice, $workspace);
+
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.voided')->count());
 
         $this->expectException(\DomainException::class);
         $service->applyPayment($invoice, ['amount' => 100, 'currency' => 'USD', 'method' => 'cash'], $workspace);

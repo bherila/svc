@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Support\Billing\BillingCadence;
@@ -46,6 +47,8 @@ use RuntimeException;
  */
 final class InterimOverageGenerator
 {
+    private readonly ClientActivityRecorder $activities;
+
     public function __construct(
         private readonly AgreementSelector $agreementSelector = new AgreementSelector,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
@@ -55,7 +58,10 @@ final class InterimOverageGenerator
         private readonly AllocationService $allocationService = new AllocationService,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
-    ) {}
+        ?ClientActivityRecorder $activities = null,
+    ) {
+        $this->activities = $activities ?? app(ClientActivityRecorder::class);
+    }
 
     /**
      * Generate or refresh one month's interim overage invoice inside a cycle.
@@ -191,6 +197,7 @@ final class InterimOverageGenerator
             // target falls to zero, and returning at that point left the stale
             // charge and its pivots on the draft - so the cadence invoice then
             // skipped work that an interim overage no longer claimed.
+            $wasCreated = ! $existingInvoice instanceof ClientInvoice;
             if ($existingInvoice instanceof ClientInvoice) {
                 $this->invoiceLineComposer->resetSystemGeneratedLines($existingInvoice);
             }
@@ -310,6 +317,7 @@ final class InterimOverageGenerator
 
             $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
             $invoice->recalculateTotals();
+            $this->recordInvoiceActivity($company, $invoice, $wasCreated);
 
             return $invoice->fresh(['lines']);
         });
@@ -332,6 +340,7 @@ final class InterimOverageGenerator
 
         $invoice->update(['hours_billed_at_rate' => 0]);
         $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice->refresh());
+        $this->recordInvoiceActivity($invoice->clientCompany, $invoice->refresh(), false);
     }
 
     /**
@@ -456,10 +465,28 @@ final class InterimOverageGenerator
             // The lines are gone, so the stored totals describe a charge that no
             // longer exists - and `issue()` would send that number.
             $draft->refresh()->recalculateTotals();
+            $this->recordInvoiceActivity($company, $draft->refresh(), false);
             $released++;
         }
 
         return $released;
+    }
+
+    private function recordInvoiceActivity(ClientCompany $company, ClientInvoice $invoice, bool $wasCreated): void
+    {
+        $this->activities->record(
+            $company->workspace,
+            $company,
+            $wasCreated ? 'invoice.generated' : 'invoice.updated',
+            $invoice,
+            [
+                'invoice_kind' => $invoice->invoiceKindValue(),
+                'status' => $invoice->status,
+                'total_amount' => $invoice->total_amount,
+                'currency' => $invoice->currency,
+            ],
+            occurrence: $wasCreated ? null : 'generation-'.$invoice->lock_version,
+        );
     }
 
     public function interimOverageHoursForCycle(ClientAgreement $agreement, BillingCycle $cycle): float

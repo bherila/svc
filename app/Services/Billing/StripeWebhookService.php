@@ -12,7 +12,11 @@ use Stripe\Event;
 
 final class StripeWebhookService
 {
-    public function __construct(private readonly InvoiceLifecycleService $invoices) {}
+    public function __construct(
+        private readonly InvoiceLifecycleService $invoices,
+        private readonly StripePaymentMethodService $paymentMethods,
+        private readonly StripeGateway $gateway,
+    ) {}
 
     public function process(Event $event, string $payload): bool
     {
@@ -64,41 +68,96 @@ final class StripeWebhookService
     private function handle(Event $event, array $object, ClientStripeEvent $ledger): bool
     {
         return DB::transaction(function () use ($event, $object, $ledger): bool {
-            $payment = $this->findPayment($object);
-            $status = match ((string) $event->type) {
-                'payment_intent.succeeded' => 'succeeded',
-                'payment_intent.payment_failed' => 'failed',
-                'charge.dispute.created' => 'disputed',
-                'charge.dispute.closed' => ($object['status'] ?? null) === 'won' ? 'succeeded' : 'disputed',
-                default => null,
-            };
-
-            if ($event->type === 'charge.refunded' && $payment !== null) {
-                $currency = strtoupper((string) ($object['currency'] ?? ''));
-                $refundedAmount = (int) ($object['amount_refunded'] ?? 0);
-                if ($currency !== $payment->currency) {
-                    throw new \DomainException('Stripe refund currency does not match the invoice payment.');
+            if (in_array($event->type, ['payment_method.attached', 'setup_intent.succeeded'], true)) {
+                $paymentMethod = $this->paymentMethodObject($event, $object);
+                if ($paymentMethod !== null) {
+                    $method = $this->paymentMethods->attach($paymentMethod, (string) $event->id);
+                    $workspaceId = $method?->workspace_id;
+                    $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
                 }
-                $this->invoices->setRefundedAmount($payment, $refundedAmount);
-                $ledger->workspace_id = $payment->workspace_id;
-            } elseif ($status !== null && $payment !== null) {
-                if ($status === 'succeeded') {
-                    $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
-                    $currency = strtoupper((string) ($object['currency'] ?? ''));
-                    if ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
-                        throw new \DomainException('Stripe payment does not match the pending invoice payment.');
-                    }
+            } elseif ($event->type === 'payment_method.detached') {
+                $providerId = is_string($object['id'] ?? null) ? $object['id'] : '';
+                if ($providerId !== '') {
+                    $workspaceId = $this->paymentMethods->detach($providerId, (string) $event->id);
+                    $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
                 }
-                $this->invoices->setPaymentStatus($payment, $status);
-                $ledger->workspace_id = $payment->workspace_id;
-            } elseif ($event->type === 'payment_intent.succeeded') {
-                $this->createSuccessfulPayment($object, $ledger);
+            } elseif ($event->type === 'customer.updated') {
+                $customerId = is_string($object['id'] ?? null) ? $object['id'] : '';
+                $settings = is_array($object['invoice_settings'] ?? null) ? $object['invoice_settings'] : [];
+                $default = $settings['default_payment_method'] ?? null;
+                $defaultId = is_string($default) && $default !== ''
+                    ? $default
+                    : (is_array($default) && is_string($default['id'] ?? null) ? $default['id'] : null);
+                if ($customerId !== '') {
+                    $workspaceId = $this->paymentMethods->changeDefault($customerId, $defaultId, (string) $event->id);
+                    $ledger->workspace_id = $workspaceId > 0 ? $workspaceId : null;
+                }
+            } else {
+                $this->handleInvoiceEvent($event, $object, $ledger);
             }
 
             $ledger->forceFill(['status' => 'processed', 'processed_at' => now()])->save();
 
             return true;
         });
+    }
+
+    /** @param array<string, mixed> $object */
+    private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger): void
+    {
+        $payment = $this->findPayment($object);
+        $status = match ((string) $event->type) {
+            'payment_intent.succeeded' => 'succeeded',
+            'payment_intent.processing' => 'pending',
+            'payment_intent.payment_failed' => 'failed',
+            'payment_intent.canceled' => 'failed',
+            'charge.dispute.created' => 'disputed',
+            'charge.dispute.closed' => ($object['status'] ?? null) === 'won' ? 'succeeded' : 'disputed',
+            default => null,
+        };
+
+        if ($event->type === 'charge.refunded' && $payment !== null) {
+            $currency = strtoupper((string) ($object['currency'] ?? ''));
+            $refundedAmount = (int) ($object['amount_refunded'] ?? 0);
+            if ($currency !== $payment->currency) {
+                throw new \DomainException('Stripe refund currency does not match the invoice payment.');
+            }
+            $this->invoices->setRefundedAmount($payment, $refundedAmount);
+            $ledger->workspace_id = $payment->workspace_id;
+        } elseif ($status !== null && $payment !== null) {
+            if ($status === 'succeeded') {
+                $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
+                $currency = strtoupper((string) ($object['currency'] ?? ''));
+                if ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
+                    throw new \DomainException('Stripe payment does not match the pending invoice payment.');
+                }
+            }
+            $this->invoices->setPaymentStatus($payment, $status);
+            $ledger->workspace_id = $payment->workspace_id;
+        } elseif ($event->type === 'payment_intent.succeeded') {
+            $this->createSuccessfulPayment($object, $ledger);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $object
+     * @return array<string, mixed>|null
+     */
+    private function paymentMethodObject(Event $event, array $object): ?array
+    {
+        if ($event->type === 'payment_method.attached') {
+            return $object;
+        }
+
+        $paymentMethod = $object['payment_method'] ?? null;
+        if (is_array($paymentMethod)) {
+            return $paymentMethod;
+        }
+        if (! is_string($paymentMethod) || $paymentMethod === '') {
+            return null;
+        }
+
+        return $this->gateway->client()->paymentMethods->retrieve($paymentMethod, [])->toArray();
     }
 
     /** @param array<string, mixed> $object */

@@ -93,11 +93,11 @@ For invoice-specific tests, create the PaymentIntent through the portal so metad
 
 ## Replay Guidance
 
-Webhook payloads are stored in `client_invoice_stripe_events.payload`. To replay a stored event safely:
+Webhook bodies are deliberately not stored. `client_invoice_stripe_events` retains the Stripe event ID, type, object ID, payload hash, status, and a bounded error summary. To replay an event safely:
 
-1. Confirm the original event row has an `error` and no `processed_at`, or decide that reprocessing is intentional.
-2. Delete or rename the stored `stripe_event_id` row before replaying, because duplicate event IDs are intentionally ignored.
-3. Resend the event from the Stripe Dashboard or the Stripe CLI.
-4. Verify `processed_at` is set and the corresponding `client_invoice_payments` ledger rows match the expected invoice state.
+1. Confirm the event row is still `received`, or investigate a `failed` row before deciding that reprocessing is intentional.
+2. Resend the original event from the Stripe Dashboard or CLI; do not reconstruct it from database material because the raw body is not retained.
+3. Exact repeats of a `processed` or `failed` event ID are intentionally acknowledged as duplicates. An operator-approved replay therefore needs a new Stripe delivery/event identity or a deliberate repair workflow.
+4. Verify `processed_at`, the corresponding invoice/payment-method state, and the single matching company-activity event.
 
 For one-off local debugging, prefer replaying through Stripe instead of manually editing ledger rows; the webhook path is the behavior under test.

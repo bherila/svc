@@ -57,6 +57,10 @@ final class ImportedColumnCoverageTest extends TestCase
      * @var array<string, array<string, string>>
      */
     private const TABLE_EXEMPT = [
+        'client_company_activity' => [
+            'subject_public_id' => 'Native events point at SVC public UUIDs. Imported subjects have only the predecessor numeric reference in external_subject_id.',
+            'deduplication_key' => 'Native writers hash an operation occurrence to suppress retries. Preserved historical events are already deduplicated by the import ledger.',
+        ],
         'client_company_memberships' => [
             'access_scope' => 'Project-level client scoping is an SVC concept the source had no column for, and it is opt-in: inferring a scope on import would narrow every portal at once.',
         ],

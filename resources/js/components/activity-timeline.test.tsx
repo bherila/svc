@@ -59,4 +59,26 @@ describe('activity timeline', () => {
         ).toBeVisible();
         expect(screen.queryByRole('button')).not.toBeInTheDocument();
     });
+
+    it('renders the native public-subject shape without an import wrapper', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-native',
+                        action: 'invoice.issued',
+                        actor_name: 'Synthetic Manager',
+                        subject_type: 'client_invoice',
+                        subject_id: '11111111-1111-4111-8111-111111111111',
+                        payload: { invoice_kind: 'ad_hoc' },
+                        created_at: '2026-08-30T00:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByText('Invoice issued')).toBeVisible();
+        expect(screen.getByText('ad hoc')).toBeVisible();
+        expect(screen.getByText('By Synthetic Manager')).toBeVisible();
+    });
 });

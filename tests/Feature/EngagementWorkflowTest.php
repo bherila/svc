@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
@@ -78,6 +79,19 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame('Synthetic Signer', $agreement->signer_name);
         $this->assertSame('Synthetic Signer', $proposal->acceptance_signer_name);
         $this->assertSame(1, ClientAgreement::query()->count());
+        $this->assertSame(3, ClientCompanyActivity::query()->count());
+        $this->assertSame(
+            ['agreement.created', 'agreement.activated', 'agreement.signed'],
+            ClientCompanyActivity::query()->orderBy('id')->pluck('action')->all(),
+        );
+        $this->assertSame(
+            [$agreement->public_id],
+            ClientCompanyActivity::query()->pluck('subject_public_id')->unique()->values()->all(),
+        );
+        $this->assertSame(
+            [$clientUser->id],
+            ClientCompanyActivity::query()->pluck('actor_user_id')->unique()->values()->all(),
+        );
 
         $this->expectException(\LogicException::class);
         $proposal->update(['title' => 'Attempted mutation']);
@@ -140,6 +154,16 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame('active', $agreement->status);
         $this->assertSame(18000, $agreement->hourly_rate_amount);
         $this->assertNotNull($agreement->signed_at);
+        $this->assertSame(
+            ['agreement.created', 'agreement.activated', 'agreement.signed'],
+            ClientCompanyActivity::query()->orderBy('id')->pluck('action')->all(),
+        );
+        $this->assertTrue(ClientCompanyActivity::query()->get()->every(
+            fn (ClientCompanyActivity $activity): bool => $activity->workspace_id === $workspace->id
+                && $activity->client_company_id === $company->id
+                && $activity->actor_user_id === $owner->id
+                && $activity->subject_public_id === $agreement->public_id,
+        ));
     }
 
     /** @return array{0: Workspace, 1: ClientCompany} */

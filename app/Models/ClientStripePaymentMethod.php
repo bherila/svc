@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_stripe_customer_id', 'stripe_payment_method_id',
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_stripe_customer_id', 'stripe_payment_method_id', 'metadata'])]
 class ClientStripePaymentMethod extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, SoftDeletes;
 
     protected function casts(): array
     {

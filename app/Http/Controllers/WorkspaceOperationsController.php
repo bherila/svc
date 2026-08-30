@@ -220,6 +220,8 @@ class WorkspaceOperationsController extends Controller
                         'id' => $activity->public_id,
                         'action' => $activity->action,
                         'actor_name' => $activity->actor?->name,
+                        'subject_type' => $activity->subject_type,
+                        'subject_id' => $activity->subject_public_id,
                         'payload' => $activity->payload ?? [],
                         'created_at' => $activity->created_at?->toISOString(),
                     ])

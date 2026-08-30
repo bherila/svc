@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -182,6 +184,9 @@ final class RetainerDrawConsistencyTest extends TestCase
         );
 
         $this->assertInstanceOf(ClientInvoice::class, $invoice);
+        $activity = ClientCompanyActivity::query()->where('action', 'invoice.generated')->sole();
+        $this->assertSame($invoice->public_id, $activity->subject_public_id);
+        $this->assertSame(InvoiceKind::InterimOverage->value, $activity->payload['invoice_kind']);
     }
 
     /**
