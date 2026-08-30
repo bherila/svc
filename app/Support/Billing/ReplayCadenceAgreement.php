@@ -22,6 +22,9 @@ final readonly class ReplayCadenceAgreement implements RetainerAgreementTerms
         public ?float $periodFeeOverride,
         public int $hourlyRateAmount,
         public int $catchUpThresholdMinutes,
+        public int $rolloverMonths,
+        public int $initialRolloverMinutes,
+        public bool $usesPeriodRetainerTerms,
     ) {}
 
     public function effectiveBillingCadence(): BillingCadence

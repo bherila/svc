@@ -102,6 +102,39 @@ final readonly class ReplayInvoiceSnapshot
         return $minutes;
     }
 
+    /**
+     * Historical equivalent of sourceBackedCapacityDrawMinutes(). Legacy rows
+     * stored a display quantity of one, so reserve their proved hours without
+     * requiring the current generator's zero-quantity presentation contract.
+     */
+    public function sourceBackedHistoricalCapacityDrawMinutes(int $agreementId): ?int
+    {
+        $servicePeriodEnd = $this->servicePeriodEnd?->toDateString();
+        if ($servicePeriodEnd === null) {
+            return null;
+        }
+
+        $minutes = 0;
+        foreach ($this->linesOfType('prior_month_retainer') as $line) {
+            $lineMinutes = $line->hoursMinutes();
+            if ($lineMinutes === null
+                || $lineMinutes < 0
+                || $line->sourceMinutes !== $lineMinutes
+                || $line->agreementRateSourceMinutes !== $lineMinutes
+                || $line->agreementId !== (string) $agreementId
+                || $line->unitAmount !== 0
+                || $line->taxAmount !== 0
+                || $line->totalAmount !== 0
+                || $line->lineDate !== $servicePeriodEnd
+                || ! $line->hasNoAuxiliaryOwnership()) {
+                return null;
+            }
+            $minutes += $lineMinutes;
+        }
+
+        return $minutes;
+    }
+
     /** @return array<string, int> */
     public function contractLineMultisetOfType(string $type): array
     {

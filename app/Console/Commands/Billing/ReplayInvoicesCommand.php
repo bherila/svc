@@ -538,6 +538,18 @@ final class ReplayInvoicesCommand extends Command
             ->orderBy('id')
             ->get();
 
+        $invoiceIds = $invoices->pluck('id');
+        if ($invoiceIds->isNotEmpty()
+            && DB::table('client_invoice_lines')
+                ->whereIn('client_invoice_id', $invoiceIds)
+                ->where('workspace_id', '!=', $workspace->id)
+                ->exists()) {
+            // Do not load or report the foreign row. Its mere attachment to a
+            // selected invoice is a tenant-chain violation, and filtering it
+            // out would let clear() delete data the snapshots never compared.
+            throw new RuntimeException('A selected invoice has a line owned by another workspace.');
+        }
+
         // Which deliverable each milestone line billed. A task's title and
         // price are both editable, so the wording and the amount can change
         // together and leave nothing linking the two versions - but the claim
@@ -1186,8 +1198,13 @@ final class ReplayInvoicesCommand extends Command
                     // capacity for a later monetary waiver.
                     break;
                 }
+                $historicalDrawMinutes = $row['before']->sourceBackedHistoricalCapacityDrawMinutes($context->agreementId);
+                if ($historicalDrawMinutes === null) {
+                    break;
+                }
+                $remainingForCorrection = max(0, $remainingMinutes - $historicalDrawMinutes);
                 $proof = $classifier->historyOmittedOpeningCapacity(
-                    $context->forRemainingMinutes($remainingMinutes),
+                    $context->forRemainingMinutes($remainingForCorrection),
                     $row['before'],
                     $row['after'],
                 );

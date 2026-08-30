@@ -340,7 +340,7 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         ];
         $command = new ReplayInvoicesCommand;
         $contexts = new ReflectionProperty(ReplayInvoicesCommand::class, 'openingCapacityContexts');
-        $contexts->setValue($command, [7 => $this->openingCapacityContext()->forRemainingMinutes(200)]);
+        $contexts->setValue($command, [7 => $this->openingCapacityContext()->forRemainingMinutes(400)]);
         $prove = new ReflectionMethod(ReplayInvoicesCommand::class, 'proveOpeningCapacityChain');
 
         $proofs = $prove->invoke($command, $expected, $actual);
@@ -421,6 +421,16 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             [$laterKey => $row($beforeCorrection, '2026-01')],
             [$laterKey => $row($afterCorrection, '2026-01')],
         )), 'The later 600-minute correction is valid when the seed has not already been drawn.');
+
+        $beforeSameRow = $beforeCorrection;
+        $beforeSameRow['lines'][] = $this->line('prior_month_retainer', 0, 0, '0.0000', 500, 'same-row-draw');
+        $afterSameRow = $afterCorrection;
+        $afterSameRow['lines'][1] = $this->line('prior_month_retainer', 0, 0, '0.0000', 1100, 'same-row-draw');
+        $this->assertSame([], $prove->invoke(
+            $command,
+            [$laterKey => $row($beforeSameRow, '2026-01')],
+            [$laterKey => $row($afterSameRow, '2026-01')],
+        ), 'An unchanged same-row draw reserves capacity before the newly moved minutes are proved.');
     }
 
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void

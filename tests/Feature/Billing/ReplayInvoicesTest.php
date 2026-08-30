@@ -213,7 +213,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame(60, $validSnapshotLine['source_minutes']);
         $this->assertSame(60, $validSnapshotLine['source_agreement_rate_minutes']);
         $this->assertFalse($validSnapshotLine['canonical_cadence_overage_description']);
-        $this->assertCount(6, $queries, implode("\n", $queries));
+        $this->assertCount(7, $queries, implode("\n", $queries));
 
         $line->update(['description' => 'Catch-up hours for prior month overage and minimum availability']);
         $this->assertTrue($snapshotLine()['canonical_cadence_overage_description']);
@@ -268,6 +268,43 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         $this->assertSame(0, $snapshotLine()['source_agreement_rate_minutes']);
         $this->assertSame(60, $snapshotLine()['source_minutes'], 'Malformed scope is retained in the total source aggregate so the proof fails closed.');
+    }
+
+    public function test_snapshot_fails_before_hiding_a_foreign_workspace_invoice_line(): void
+    {
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'FOREIGN-LINE-GUARD',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        $foreignWorkspace = Workspace::query()->create([
+            'name' => 'Foreign line owner',
+            'slug' => 'foreign-line-owner',
+        ]);
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            'client_invoice_id' => $invoice->id,
+            'type' => 'adjustment',
+            'description' => 'Synthetic malformed ownership',
+            'quantity' => '0.0000',
+            'unit_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'sort_order' => 1,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('line owned by another workspace');
+        (new ReflectionMethod(ReplayInvoicesCommand::class, 'snapshot'))->invoke(
+            app(ReplayInvoicesCommand::class),
+            $this->workspace,
+            collect([$this->company]),
+        );
     }
 
     /**
@@ -1696,6 +1733,29 @@ final class ReplayInvoicesTest extends TestCase
             $anchors,
         ), 'A zero-value capacity line still needs a matching source-work allocation.');
 
+        $overdrawnCapacity = $actual;
+        $overdrawnCapacity[$finalKey]['lines'][] = [
+            'type' => 'prior_month_retainer',
+            'unit_amount' => 0,
+            'quantity' => '0',
+            'hours' => 13.0,
+            'source_minutes' => 780,
+            'source_agreement_rate_minutes' => 780,
+            'total_amount' => 0,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'recurring_item_id' => '',
+            'project_id' => '',
+            'claimed_by' => '',
+            'line_date' => '2026-12-31',
+        ];
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
+            $expected,
+            $overdrawnCapacity,
+            $anchors,
+        ), 'A source-backed draw cannot exceed the configured capacity available to its service cycle.');
+
         $agreement->update(['ends_on' => '2026-10-15']);
         $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
             $this->workspace,
@@ -1876,6 +1936,13 @@ final class ReplayInvoicesTest extends TestCase
             $proof->invoke(...$arguments),
             'The configured one-hour minimum-availability buffer may be source-free.',
         );
+
+        $arguments[6][] = $arguments[6][1];
+        $this->assertFalse(
+            $proof->invoke(...$arguments),
+            'The source-free allowance is one invoice-wide threshold, not a fresh allowance per line.',
+        );
+        array_pop($arguments[6]);
 
         $arguments[6][1]['hours'] = 1.0167;
         $arguments[6][1]['quantity'] = '1.0167';
