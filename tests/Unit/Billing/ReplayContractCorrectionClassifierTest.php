@@ -315,6 +315,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         [$before, $after] = $this->allocationSnapshots();
         $row = static function (array $snapshot, string $month): array {
             $start = CarbonImmutable::parse($month.'-01');
+            $snapshot['cycle_start'] = $start->toDateString();
+            $snapshot['cycle_end'] = $start->endOfMonth()->toDateString();
             $snapshot['service_period_start'] = $start->toDateString();
             $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
             foreach ($snapshot['lines'] as &$line) {
@@ -359,6 +361,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         [$beforeCorrection, $afterCorrection] = $this->allocationSnapshots();
         $row = static function (array $snapshot, string $month): array {
             $start = CarbonImmutable::parse($month.'-01');
+            $snapshot['cycle_start'] = $start->toDateString();
+            $snapshot['cycle_end'] = $start->endOfMonth()->toDateString();
             $snapshot['service_period_start'] = $start->toDateString();
             $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
             foreach ($snapshot['lines'] as &$line) {
@@ -448,6 +452,26 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             [$laterKey => $row($beforeTwoLots, '2026-01')],
             [$laterKey => $row($afterTwoLots, '2026-01')],
         )), 'Ordinary contracted capacity remains independently available after the opening lot is reserved.');
+
+        $beforeDistinctCycles = $beforeTwoLots;
+        $beforeDistinctCycles['lines'][2] = $this->line('prior_month_retainer', 0, 0, '0.0000', 1200, 'same-row-draw');
+        $afterDistinctCycles = $afterTwoLots;
+        $afterDistinctCycles['lines'][1] = $this->line('prior_month_retainer', 0, 0, '0.0000', 1350, 'same-row-draw');
+        $beforeDistinctCycles = $row($beforeDistinctCycles, '2026-01');
+        $afterDistinctCycles = $row($afterDistinctCycles, '2026-01');
+        $this->assertSame([], $prove->invoke(
+            $command,
+            [$laterKey => $beforeDistinctCycles],
+            [$laterKey => $afterDistinctCycles],
+        ), 'One sold cycle is one capacity lot even when both snapshots carry its retainer line.');
+
+        $afterDistinctCycles['cycle_start'] = '2026-02-01';
+        $afterDistinctCycles['cycle_end'] = '2026-02-28';
+        $this->assertSame([$laterKey], array_keys($prove->invoke(
+            $command,
+            [$laterKey => $beforeDistinctCycles],
+            [$laterKey => $afterDistinctCycles],
+        )), 'Legacy and successor-cycle retainer lines prove two distinct sold capacity lots.');
     }
 
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void
@@ -823,6 +847,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             currency: 'USD',
             retainerMinutes: 600,
             retainerAmount: 150000,
+            hourlyRateAmount: 20000,
+            catchUpThresholdMinutes: 60,
             rolloverMonths: 2,
             cadence: BillingCadence::Monthly,
             agreementStart: CarbonImmutable::parse('2026-01-01'),

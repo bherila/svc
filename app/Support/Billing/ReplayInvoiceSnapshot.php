@@ -2,6 +2,7 @@
 
 namespace App\Support\Billing;
 
+use App\Services\Billing\MoneyService;
 use Carbon\CarbonImmutable;
 
 /** Immutable input to replay correction proofs. */
@@ -166,6 +167,50 @@ final readonly class ReplayInvoiceSnapshot
             && $line->hasNoAuxiliaryOwnership()
                 ? $minutes
                 : null;
+    }
+
+    /**
+     * Source-free minimum-availability capacity bought by this generated row.
+     * Every monetary and ownership fact is checked before the bounded aggregate
+     * may carry into the following service period.
+     */
+    public function sourceFreeOverageCapacityMinutes(
+        int $agreementId,
+        string $currency,
+        int $hourlyRateAmount,
+        int $maximumMinutes,
+    ): ?int {
+        if ($this->currency !== $currency || $hourlyRateAmount <= 0 || $maximumMinutes < 0) {
+            return null;
+        }
+
+        $sourceFreeMinutes = 0;
+        foreach ($this->linesOfType('additional_hours') as $line) {
+            $minutes = $line->roundedHoursMinutes();
+            $sourceMinutes = $line->sourceMinutes;
+            if ($minutes === null
+                || ! $line->quantityMatchesHours()
+                || $sourceMinutes === null
+                || $sourceMinutes < 0
+                || $sourceMinutes > $minutes) {
+                return null;
+            }
+            if ($sourceMinutes === $minutes) {
+                continue;
+            }
+            if ($line->agreementRateSourceMinutes !== $sourceMinutes
+                || $line->agreementId !== (string) $agreementId
+                || $line->unitAmount !== $hourlyRateAmount
+                || $line->taxAmount !== 0
+                || $line->totalAmount !== MoneyService::hourlyAmount($minutes, $hourlyRateAmount)
+                || ! $line->canonicalCadenceOverageDescription
+                || ! $line->hasNoAuxiliaryOwnership()) {
+                return null;
+            }
+            $sourceFreeMinutes += $minutes - $sourceMinutes;
+        }
+
+        return $sourceFreeMinutes <= $maximumMinutes ? $sourceFreeMinutes : null;
     }
 
     /** @return array<string, int> */

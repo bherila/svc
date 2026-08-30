@@ -445,6 +445,8 @@ final class ReplayInvoicesCommand extends Command
                 currency: (string) $agreement->currency,
                 retainerMinutes: (int) round($agreement->periodRetainerHours() * 60),
                 retainerAmount: (int) round($agreement->periodRetainerFee() * 100),
+                hourlyRateAmount: (int) ($agreement->hourly_rate_amount ?? 0),
+                catchUpThresholdMinutes: (int) round($agreement->catch_up_threshold_hours * 60),
                 rolloverMonths: (int) ($agreement->rollover_months ?? 0),
                 cadence: $agreement->effectiveBillingCadence(),
                 agreementStart: CarbonImmutable::instance($agreement->starts_on)->startOfDay(),
@@ -1182,6 +1184,8 @@ final class ReplayInvoicesCommand extends Command
             ]);
 
             $remainingMinutes = $context->capacityMinutes;
+            $carriedOrdinaryMinutes = 0;
+            $accountedRetainerCycles = [$context->startsAt->toDateString() => true];
             foreach ($rows as $row) {
                 if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
                     continue;
@@ -1202,21 +1206,39 @@ final class ReplayInvoicesCommand extends Command
                 if ($historicalDrawMinutes === null) {
                     break;
                 }
-                $ordinaryCapacityMinutes = $row['before']->contractRetainerCapacityMinutes(
+                $ordinaryCapacityMinutes = 0;
+                foreach ([$row['before'], $row['after']] as $snapshot) {
+                    $cycleStart = $snapshot->cycleStart?->toDateString();
+                    if ($cycleStart === null || isset($accountedRetainerCycles[$cycleStart])) {
+                        continue;
+                    }
+                    $cycleCapacityMinutes = $snapshot->contractRetainerCapacityMinutes(
+                        $context->agreementId,
+                        $context->currency,
+                        $context->retainerAmount,
+                    );
+                    if ($cycleCapacityMinutes === null) {
+                        break 2;
+                    }
+                    $accountedRetainerCycles[$cycleStart] = true;
+                    $ordinaryCapacityMinutes += $cycleCapacityMinutes;
+                }
+                $sourceFreeBufferMinutes = $row['after']->sourceFreeOverageCapacityMinutes(
                     $context->agreementId,
                     $context->currency,
-                    $context->retainerAmount,
+                    $context->hourlyRateAmount,
+                    $context->catchUpThresholdMinutes,
                 );
-                if ($ordinaryCapacityMinutes === null) {
+                if ($sourceFreeBufferMinutes === null) {
                     break;
                 }
                 // Reserve the unchanged draw before proving the increase. The
-                // row's ordinary contracted retainer is independent capacity,
-                // so the ceiling is that proved lot plus the replay-only lot;
-                // the latter is still consumed FIFO below across later rows.
+                // ordinary retainer and earlier bounded catch-up buffers are
+                // independent capacity. The replay-only lot remains oldest and
+                // is still consumed FIFO below across later rows.
                 $remainingForCorrection = max(
                     0,
-                    $remainingMinutes + $ordinaryCapacityMinutes - $historicalDrawMinutes,
+                    $remainingMinutes + $carriedOrdinaryMinutes + $ordinaryCapacityMinutes - $historicalDrawMinutes,
                 );
                 $proof = $classifier->historyOmittedOpeningCapacity(
                     $context->forRemainingMinutes($remainingForCorrection),
@@ -1227,7 +1249,13 @@ final class ReplayInvoicesCommand extends Command
                     $proofs[$row['key']] = $proof;
                 }
 
-                $remainingMinutes -= min($remainingMinutes, $drawMinutes);
+                $seedDrawMinutes = min($remainingMinutes, $drawMinutes);
+                $remainingMinutes -= $seedDrawMinutes;
+                $ordinaryDrawMinutes = max(0, $drawMinutes - $seedDrawMinutes);
+                $carriedOrdinaryMinutes = max(
+                    0,
+                    $carriedOrdinaryMinutes + $ordinaryCapacityMinutes - $ordinaryDrawMinutes,
+                ) + $sourceFreeBufferMinutes;
             }
         }
 

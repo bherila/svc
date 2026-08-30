@@ -12,6 +12,8 @@ final readonly class ReplayOpeningCapacityContext
         public string $currency,
         public int $capacityMinutes,
         public int $retainerAmount,
+        public int $hourlyRateAmount,
+        public int $catchUpThresholdMinutes,
         public CarbonImmutable $startsAt,
         public CarbonImmutable $expiresAt,
     ) {}
@@ -50,6 +52,8 @@ final readonly class ReplayOpeningCapacityContext
             currency: $seed->currency,
             capacityMinutes: $seed->retainerMinutes,
             retainerAmount: $seed->retainerAmount,
+            hourlyRateAmount: $seed->hourlyRateAmount,
+            catchUpThresholdMinutes: $seed->catchUpThresholdMinutes,
             startsAt: $seed->seedStart,
             expiresAt: $seed->capacityExpiresAt,
         );
@@ -62,6 +66,8 @@ final readonly class ReplayOpeningCapacityContext
             currency: $this->currency,
             capacityMinutes: max(0, $remainingMinutes),
             retainerAmount: $this->retainerAmount,
+            hourlyRateAmount: $this->hourlyRateAmount,
+            catchUpThresholdMinutes: $this->catchUpThresholdMinutes,
             startsAt: $this->startsAt,
             expiresAt: $this->expiresAt,
         );
