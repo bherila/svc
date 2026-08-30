@@ -2335,6 +2335,10 @@ class ExternalImportTest extends TestCase
             'title' => 'Synthetic Agreement',
             'hourly_rate_amount' => null,
             'retainer_amount' => null,
+            'retainer_minutes' => null,
+            'period_retainer_minutes' => null,
+            'catch_up_threshold_minutes' => null,
+            'initial_rollover_minutes' => null,
         ]);
         $this->assertDatabaseHas('client_time_entries', [
             'workspace_id' => $workspace->getKey(),
