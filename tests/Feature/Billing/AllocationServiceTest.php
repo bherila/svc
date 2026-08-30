@@ -14,6 +14,7 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -23,6 +24,7 @@ use Tests\TestCase;
 final class AllocationServiceTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -176,7 +178,13 @@ final class AllocationServiceTest extends TestCase
             'slug' => 'root-elsewhere',
         ]);
 
-        $root->forceFill(['workspace_id' => $otherWorkspace->id])->save();
+        // Moving the root alone leaves its company and project behind, which the
+        // composite tenant keys refuse. Enforcement is suspended because the
+        // recombination guard is the subject: a database migrated from before
+        // those keys can still hold a row shaped like this.
+        $this->writingLegacyCrossTenantRows(
+            fn () => $root->forceFill(['workspace_id' => $otherWorkspace->id])->save(),
+        );
 
         try {
             $this->recombine();
