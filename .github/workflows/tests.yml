@@ -1,3 +1,6 @@
+# Both database lanes run the PHP suite with four ParaTest workers. Laravel gives
+# each MariaDB worker an isolated `svc_testing_test_<token>` schema, created
+# automatically by the root CI connection inside the ephemeral service container.
 name: tests
 
 on:
@@ -136,7 +139,7 @@ jobs:
       # No lint or static analysis here; `ci` already runs those and they say
       # nothing about the engine. This job exists for the database alone.
       - name: Run the test suite against MariaDB
-        run: php artisan test
+        run: php artisan test --parallel --processes=4
 
   mutation:
     name: Diff-scoped mutation tests
