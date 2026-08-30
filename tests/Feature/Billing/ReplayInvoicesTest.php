@@ -16,6 +16,7 @@ use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\MoneyService;
+use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Billing\ReplayRecurringItemIncidenceRepository;
@@ -211,7 +212,12 @@ final class ReplayInvoicesTest extends TestCase
         $validSnapshotLine = $snapshotLine();
         $this->assertSame(60, $validSnapshotLine['source_minutes']);
         $this->assertSame(60, $validSnapshotLine['source_agreement_rate_minutes']);
+        $this->assertFalse($validSnapshotLine['canonical_cadence_overage_description']);
         $this->assertCount(6, $queries, implode("\n", $queries));
+
+        $line->update(['description' => 'Catch-up hours for prior month overage and minimum availability']);
+        $this->assertTrue($snapshotLine()['canonical_cadence_overage_description']);
+        $line->update(['description' => 'Synthetic scoped work']);
 
         $capturedRetainer = function () use ($snapshot): array {
             /** @var array<string, array<string, mixed>> $rows */
@@ -655,6 +661,49 @@ final class ReplayInvoicesTest extends TestCase
         $seeded = $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company]));
 
         $this->assertSame(['2025-12-01'], $seeded);
+    }
+
+    public function test_interim_overage_does_not_break_the_cadence_history_seed_chain(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Cadence history with an interim charge',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        foreach ([
+            ['CADENCE-SEED', 'cadence_period', '2025-12-01', '2025-12-31'],
+            ['INTERIM-CHARGE', 'interim_overage', '2025-12-15', '2025-12-15'],
+        ] as [$number, $kind, $periodStart, $periodEnd]) {
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => $number,
+                'currency' => 'USD',
+                'status' => 'issued',
+                'invoice_kind' => $kind,
+                'cycle_start' => '2025-12-01',
+                'cycle_end' => '2025-12-31',
+                'service_period_start' => $periodStart,
+                'service_period_end' => $periodEnd,
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+        }
+
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+
+        $this->assertSame(
+            ['2025-12-01'],
+            $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company])),
+        );
     }
 
     public function test_a_void_latest_attempt_cannot_resurrect_an_older_replay_seed(): void
@@ -1337,6 +1386,7 @@ final class ReplayInvoicesTest extends TestCase
             ]);
             $actual[$key] = [
                 'invoice_kind' => 'cadence_period',
+                'status' => 'draft',
                 'currency' => 'USD',
                 'subtotal_amount' => 150000,
                 'tax_amount' => 0,
@@ -1346,9 +1396,19 @@ final class ReplayInvoicesTest extends TestCase
         }
 
         $classifier = new ReplayContractCorrectionClassifier;
+        $cadenceRepository = app(ReplayCadenceAgreementRepository::class);
+        $repositoryQueries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$repositoryQueries): void {
+            $repositoryQueries[] = $query->sql;
+        });
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
+            $this->workspace,
+            [$this->company->id],
+        );
+        $this->assertCount(1, $repositoryQueries, implode("\n", $repositoryQueries));
         $anchors = [$this->company->id => Carbon::parse('2026-12-31')->endOfDay()];
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $actual,
             $anchors,
@@ -1362,6 +1422,7 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         $actual[$finalKey] = [
             'invoice_kind' => 'cadence_period',
+            'status' => 'draft',
             'currency' => 'USD',
             'subtotal_amount' => 150000,
             'tax_amount' => 0,
@@ -1373,17 +1434,17 @@ final class ReplayInvoicesTest extends TestCase
             $queries[] = $query->sql;
         });
         $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $actual,
             $anchors,
         ));
-        $this->assertCount(2, $queries, implode("\n", $queries));
+        $this->assertSame([], $queries, implode("\n", $queries));
 
         $wrongRetainerDescription = $actual;
         $wrongRetainerDescription[$finalKey]['lines'][0]['canonical_cadence_description'] = false;
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $wrongRetainerDescription,
             $anchors,
@@ -1395,7 +1456,7 @@ final class ReplayInvoicesTest extends TestCase
         $mispriced[$finalKey]['subtotal_amount'] = 149999;
         $mispriced[$finalKey]['total_amount'] = 149999;
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $mispriced,
             $anchors,
@@ -1417,7 +1478,7 @@ final class ReplayInvoicesTest extends TestCase
         $extraCharge[$finalKey]['subtotal_amount'] = 165000;
         $extraCharge[$finalKey]['total_amount'] = 165000;
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $extraCharge,
             $anchors,
@@ -1434,16 +1495,44 @@ final class ReplayInvoicesTest extends TestCase
             'total_amount' => 15000,
             'tax_amount' => 0,
             'agreement_id' => $agreementId,
+            'canonical_cadence_overage_description' => true,
             'line_date' => '2026-12-31',
         ];
         $eligibleOverage[$finalKey]['subtotal_amount'] = 165000;
         $eligibleOverage[$finalKey]['total_amount'] = 165000;
         $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $eligibleOverage,
             $anchors,
         ));
+
+        $wrongOverageDescription = $eligibleOverage;
+        $wrongOverageDescription[$finalKey]['lines'][1]['canonical_cadence_overage_description'] = false;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
+            $expected,
+            $wrongOverageDescription,
+            $anchors,
+        ), 'Cadence overage needs the generator\'s exact client-facing description.');
+
+        $wrongOverageDate = $eligibleOverage;
+        $wrongOverageDate[$finalKey]['lines'][1]['line_date'] = '2026-08-15';
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
+            $expected,
+            $wrongOverageDate,
+            $anchors,
+        ), 'Non-monthly cadence overage must use the service-period end date.');
+
+        $issuedCadence = $actual;
+        $issuedCadence[$finalKey]['status'] = 'issued';
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
+            $expected,
+            $issuedCadence,
+            $anchors,
+        ), 'A generated cadence chain must remain draft before it can be waived.');
 
         foreach ([
             'project_id' => '99',
@@ -1453,7 +1542,7 @@ final class ReplayInvoicesTest extends TestCase
             $misownedOverage = $eligibleOverage;
             $misownedOverage[$finalKey]['lines'][1][$field] = $value;
             $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-                $this->workspace,
+                $cadenceAgreements,
                 $expected,
                 $misownedOverage,
                 $anchors,
@@ -1463,7 +1552,7 @@ final class ReplayInvoicesTest extends TestCase
         $ineligibleOverage = $eligibleOverage;
         $ineligibleOverage[$finalKey]['lines'][1]['source_agreement_rate_minutes'] = 0;
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $ineligibleOverage,
             $anchors,
@@ -1480,29 +1569,41 @@ final class ReplayInvoicesTest extends TestCase
             'retainer_amount' => 10000,
             'billing_cadence' => 'monthly',
         ]);
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
+            $this->workspace,
+            [$this->company->id],
+        );
         $monthEndAnchors = [$this->company->id => Carbon::parse('2026-08-31')->endOfDay()];
         $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $actual,
             $monthEndAnchors,
         ), 'October 1 is not within the one-month selection window from August 31.');
 
         $monthEndFutureAgreement->update(['starts_on' => '2026-09-30']);
-        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
             $this->workspace,
+            [$this->company->id],
+        );
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
             $expected,
             $actual,
             $monthEndAnchors,
         ), 'September 30 is the inclusive month-end selection boundary.');
         $monthEndFutureAgreement->delete();
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
+            $this->workspace,
+            [$this->company->id],
+        );
 
         $duplicateRetainer = $actual;
         $duplicateRetainer[$finalKey]['lines'][] = $retainerLine('2027-01-01');
         $duplicateRetainer[$finalKey]['subtotal_amount'] = 300000;
         $duplicateRetainer[$finalKey]['total_amount'] = 300000;
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $duplicateRetainer,
             $anchors,
@@ -1518,7 +1619,7 @@ final class ReplayInvoicesTest extends TestCase
             $misattachedRetainer = $actual;
             $misattachedRetainer[$finalKey]['lines'][0][$field] = $value;
             $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-                $this->workspace,
+                $cadenceAgreements,
                 $expected,
                 $misattachedRetainer,
                 $anchors,
@@ -1538,20 +1639,25 @@ final class ReplayInvoicesTest extends TestCase
             'line_date' => '2026-12-31',
         ];
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $unsupportedCapacity,
             $anchors,
         ), 'A zero-value capacity line still needs a matching source-work allocation.');
 
         $agreement->update(['ends_on' => '2026-10-15']);
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
+            $this->workspace,
+            [$this->company->id],
+        );
+        $cadenceAgreement = $cadenceAgreements[$this->company->id][0];
         $cadenceLinesProof = new ReflectionMethod(
             ReplayContractCorrectionClassifier::class,
             'hasOnlyConfiguredCadenceLines',
         );
         $this->assertFalse($cadenceLinesProof->invoke(
             $classifier,
-            $agreement,
+            $cadenceAgreement,
             Carbon::parse('2027-01-01'),
             Carbon::parse('2027-06-30'),
             Carbon::parse('2026-07-01'),
@@ -1559,7 +1665,7 @@ final class ReplayInvoicesTest extends TestCase
             [$retainerLine('2027-01-01')],
         ), 'The line proof itself must reject a retainer after entitlement ended.');
         $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $actual,
             $anchors,
@@ -1598,6 +1704,7 @@ final class ReplayInvoicesTest extends TestCase
         $terminatedActual[array_keys($terminatedActual)[1]]['lines'] = [$terminatedRetainer];
         $terminatedActual[$finalKey] = [
             'invoice_kind' => 'cadence_period',
+            'status' => 'draft',
             'currency' => 'USD',
             'subtotal_amount' => 0,
             'tax_amount' => 0,
@@ -1605,12 +1712,16 @@ final class ReplayInvoicesTest extends TestCase
             'lines' => [],
         ];
         $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
-            $this->workspace,
+            $cadenceAgreements,
             $expected,
             $terminatedActual,
             $anchors,
         ), 'A complete terminated chain ends at the successor of the cycle containing termination, not the replay anchor.');
         $agreement->update(['ends_on' => null]);
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
+            $this->workspace,
+            [$this->company->id],
+        );
 
         ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -1623,8 +1734,12 @@ final class ReplayInvoicesTest extends TestCase
             'retainer_amount' => 10000,
             'billing_cadence' => 'monthly',
         ]);
-        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+        $cadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
             $this->workspace,
+            [$this->company->id],
+        );
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
             $expected,
             $actual,
             $anchors,
@@ -1634,12 +1749,81 @@ final class ReplayInvoicesTest extends TestCase
             'name' => 'Other cadence proof',
             'slug' => 'other-cadence-proof',
         ]);
-        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+        $foreignCadenceAgreements = $cadenceRepository->forWorkspaceCompanies(
             $otherWorkspace,
+            [$this->company->id],
+        );
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $foreignCadenceAgreements,
             $expected,
             $actual,
             $anchors,
         ), 'The cadence proof must not resolve a company by numeric id outside the selected workspace.');
+    }
+
+    public function test_monthly_cadence_overage_uses_the_service_period_start_date(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Monthly overage date proof',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 120,
+            'retainer_amount' => 25000,
+            'hourly_rate_amount' => 15000,
+            'billing_cadence' => 'monthly',
+        ]);
+        $agreementId = (string) $agreement->id;
+        $cadenceAgreement = app(ReplayCadenceAgreementRepository::class)
+            ->forWorkspaceCompanies($this->workspace, [$this->company->id])[$this->company->id][0];
+        $lines = [[
+            'type' => 'retainer',
+            'unit_amount' => 25000,
+            'quantity' => '1',
+            'hours' => 2.0,
+            'total_amount' => 25000,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'canonical_cadence_description' => true,
+            'source_minutes' => 0,
+            'source_agreement_rate_minutes' => 0,
+            'line_date' => '2026-02-01',
+        ], [
+            'type' => 'additional_hours',
+            'unit_amount' => 15000,
+            'quantity' => '1',
+            'hours' => 1.0,
+            'total_amount' => 15000,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'canonical_cadence_overage_description' => true,
+            'source_minutes' => 60,
+            'source_agreement_rate_minutes' => 60,
+            'line_date' => '2026-01-01',
+        ]];
+        $proof = new ReflectionMethod(
+            ReplayContractCorrectionClassifier::class,
+            'hasOnlyConfiguredCadenceLines',
+        );
+        $arguments = [
+            new ReplayContractCorrectionClassifier,
+            $cadenceAgreement,
+            Carbon::parse('2026-02-01'),
+            Carbon::parse('2026-02-28'),
+            Carbon::parse('2026-01-01'),
+            Carbon::parse('2026-01-31'),
+            $lines,
+        ];
+
+        $this->assertTrue($proof->invoke(...$arguments));
+
+        $arguments[6][1]['line_date'] = '2026-01-15';
+        $this->assertFalse(
+            $proof->invoke(...$arguments),
+            'A middle-of-period date is in range but is not the monthly generator date.',
+        );
     }
 
     public function test_recurring_item_proof_cannot_resolve_a_company_from_another_workspace(): void

@@ -16,6 +16,7 @@ use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
+use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -868,7 +869,7 @@ final class ClientInvoicingService
                 $catchUpLine = $this->createHourlyLine(
                     $invoice,
                     $agreement,
-                    'Catch-up hours for prior month overage and minimum availability',
+                    CadenceOverageLineDescription::for(BillingCadence::Monthly),
                     $totalCatchupHours,
                     $periodStart,
                     $sortOrder,
@@ -1141,7 +1142,7 @@ final class ClientInvoicingService
                 $line = $this->createHourlyLine(
                     $invoice,
                     $agreement,
-                    'Additional hours beyond cadence retainer',
+                    CadenceOverageLineDescription::for($agreement->effectiveBillingCadence()),
                     $overageHours,
                     $periodEnd,
                     $sortOrder,

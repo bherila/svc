@@ -2,15 +2,13 @@
 
 namespace App\Services\Billing;
 
-use App\Models\ClientAgreement;
-use App\Models\ClientCompany;
-use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\ReplayCadenceAgreement;
 use App\Support\Billing\ReplayInvoiceLineSnapshot;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
@@ -493,13 +491,14 @@ final class ReplayContractCorrectionClassifier
      * belong to one recurring retainer agreement; and the generated cycles
      * must be the contiguous sequence beginning at the recorded start.
      *
+     * @param  array<int, list<ReplayCadenceAgreement>>  $agreementsByCompany
      * @param  array<string, array<string, mixed>>  $expected
      * @param  array<string, array<string, mixed>>  $actual
      * @param  array<int, Carbon>  $anchors
      * @return array<string, true>
      */
     public function contractCadenceHistoryGapKeys(
-        Workspace $workspace,
+        array $agreementsByCompany,
         array $expected,
         array $actual,
         array $anchors,
@@ -529,21 +528,6 @@ final class ReplayContractCorrectionClassifier
             return [];
         }
 
-        $companyIds = array_values(array_unique(array_map('intval', array_keys($unexpectedByCompany))));
-        $workspaceCompanyIds = ClientCompany::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('id', $companyIds)
-            ->pluck('id')
-            ->map(ReplaySnapshotValue::integer(...))
-            ->all();
-        $agreementsByCompany = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('client_company_id', $workspaceCompanyIds)
-            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
-            ->whereNotNull('starts_on')
-            ->get()
-            ->groupBy('client_company_id');
-
         $explained = [];
         foreach ($unexpectedByCompany as $companyId => $rows) {
             if (($history[$companyId]['ad_hoc'] ?? 0) === 0 || ($history[$companyId]['machine'] ?? 0) !== 0
@@ -558,35 +542,32 @@ final class ReplayContractCorrectionClassifier
 
             $anchor = $anchors[(int) $companyId] ?? null;
             if (! $anchor instanceof CarbonInterface
-                || ! in_array((int) $companyId, $workspaceCompanyIds, true)) {
+                || ! isset($agreementsByCompany[(int) $companyId])) {
                 continue;
             }
 
             // AgreementSelector includes every non-draft recurring agreement
             // that starts by one month after the pinned replay date. Prove that
-            // complete eligible set here from one eager query: if a second
-            // agreement could have generated a cadence chain, explaining only
-            // the rows the engine happened to emit would hide its omission.
+            // complete eligible set here from the immutable repository result.
+            // If a second agreement could have generated a cadence chain,
+            // explaining only the rows the engine emitted would hide its omission.
             $selectionCeiling = Carbon::instance($anchor)->copy()->addMonthNoOverflow()->startOfDay();
-            $eligibleAgreements = $agreementsByCompany->get((int) $companyId, collect())
-                ->filter(static fn (ClientAgreement $candidate): bool => $candidate->billsOnARecurringCadence()
-                    && $candidate->starts_on !== null
-                    && Carbon::instance($candidate->starts_on)->startOfDay()->lte($selectionCeiling))
-                ->values();
-            if ($eligibleAgreements->count() !== 1) {
+            $eligibleAgreements = array_values(array_filter(
+                $agreementsByCompany[(int) $companyId],
+                static fn (ReplayCadenceAgreement $candidate): bool => $candidate->startsOn->lte($selectionCeiling),
+            ));
+            if (count($eligibleAgreements) !== 1) {
                 continue;
             }
 
-            $agreement = $eligibleAgreements->first();
-            if (! $agreement instanceof ClientAgreement || $agreement->starts_on === null
-                || (string) $agreement->id !== (string) $agreementIds[0]
-                || ! $agreement->billsOnARecurringCadence()
+            $agreement = $eligibleAgreements[0];
+            if ((string) $agreement->agreementId !== (string) $agreementIds[0]
                 || $agreement->periodRetainerHours() <= 0
                 || $agreement->periodRetainerFee() <= 0) {
                 continue;
             }
 
-            if (Carbon::instance($agreement->starts_on)->startOfDay()->gt($anchor)) {
+            if ($agreement->startsOn->gt($anchor)) {
                 continue;
             }
 
@@ -604,13 +585,14 @@ final class ReplayContractCorrectionClassifier
                     $lines,
                 ));
                 if ($row['kind'] !== InvoiceKind::CadencePeriod->value
-                    || ReplaySnapshotValue::text($row['snapshot']['currency'] ?? null) !== (string) $agreement->currency
+                    || ReplaySnapshotValue::text($row['snapshot']['status'] ?? null) !== InvoiceStatus::Draft->value
+                    || ReplaySnapshotValue::text($row['snapshot']['currency'] ?? null) !== $agreement->currency
                     || $lineTotal !== ReplaySnapshotValue::integer($row['snapshot']['total_amount'] ?? null)
                     || $lineTax !== ReplaySnapshotValue::integer($row['snapshot']['tax_amount'] ?? null)
                     || $lineTotal - $lineTax !== ReplaySnapshotValue::integer($row['snapshot']['subtotal_amount'] ?? null)
                     || count(array_filter(
                         $lines,
-                        static fn (array $line): bool => ReplaySnapshotValue::text($line['agreement_id'] ?? null) !== (string) $agreement->id,
+                        static fn (array $line): bool => ReplaySnapshotValue::text($line['agreement_id'] ?? null) !== (string) $agreement->agreementId,
                     )) > 0) {
                     $valid = false;
                     break;
@@ -644,7 +626,7 @@ final class ReplayContractCorrectionClassifier
             // anchoring this proof to the literal start date would reject the
             // engine's valid prorated opening invoice.
             $nextStart = $this->billingCycleResolver
-                ->cycleContaining($agreement, Carbon::instance($agreement->starts_on)->startOfDay())
+                ->cycleContaining($agreement, $agreement->startsOn)
                 ->start
                 ->copy()
                 ->startOfDay();
@@ -684,16 +666,14 @@ final class ReplayContractCorrectionClassifier
             // makes the resolver see the next cycle. Normalize the proof to the
             // same calendar day before asking which cycle contains it.
             $anchorDay = Carbon::instance($anchor)->copy()->startOfDay();
-            $terminationDay = $agreement->ends_on === null
-                ? null
-                : Carbon::instance($agreement->ends_on)->startOfDay();
+            $terminationDay = $agreement->endsOn;
             $generationDay = $terminationDay instanceof CarbonInterface && $terminationDay->lt($anchorDay)
                 ? $terminationDay
                 : $anchorDay;
             $generationCycle = $this->billingCycleResolver->cycleContaining($agreement, $generationDay);
             $expectedLastStart = $generationCycle->end->copy()->addDay()->startOfDay();
             $expectedLastEnd = $expectedLastStart->copy()
-                ->addMonths($agreement->effectiveBillingCadence()->monthsInCycle())
+                ->addMonths($agreement->cadence->monthsInCycle())
                 ->subDay()
                 ->startOfDay();
             $lastCycle = $cycles[count($cycles) - 1];
@@ -714,7 +694,7 @@ final class ReplayContractCorrectionClassifier
      * @param  list<array<string, mixed>>  $lines
      */
     private function hasOnlyConfiguredCadenceLines(
-        ClientAgreement $agreement,
+        ReplayCadenceAgreement $agreement,
         Carbon $cycleStart,
         Carbon $cycleEnd,
         Carbon $periodStart,
@@ -749,7 +729,7 @@ final class ReplayContractCorrectionClassifier
                 round($agreement->periodRetainerFee() * $retainerMultiplier, 2) * 100,
             );
         } else {
-            $retainerHours = $agreement->retainer_hours !== null
+            $retainerHours = $agreement->periodHoursOverride !== null
                 ? $this->retainerCalculator->cyclePeriodRetainerHours($agreement, $cycle)
                 : array_sum(array_map(
                     fn (Carbon $monthStart): float => $this->retainerCalculator->retainerHoursForMonth(
@@ -759,10 +739,10 @@ final class ReplayContractCorrectionClassifier
                     ),
                     $monthStarts,
                 ));
-            $retainerMultiplier = $agreement->retainer_hours !== null
+            $retainerMultiplier = $agreement->periodHoursOverride !== null
                 ? $this->retainerCalculator->cyclePeriodRetainerMultiplier($agreement, $cycle)
-                : ($agreement->monthly_retainer_hours > 0
-                    ? $retainerHours / $agreement->monthly_retainer_hours
+                : ($agreement->monthlyHours > 0
+                    ? $retainerHours / $agreement->monthlyHours
                     : count($monthStarts));
             $expectedFee = (int) round($this->retainerCalculator->cycleRetainerFee(
                 $agreement,
@@ -791,7 +771,7 @@ final class ReplayContractCorrectionClassifier
                 || self::decimalString($retainer->quantity) !== '1'
                 || round($retainer->hours ?? 0.0, 4) !== round($expectedHours, 4)
                 || $retainer->lineDate !== $cycleStart->toDateString()
-                || $retainer->agreementId !== (string) $agreement->id
+                || $retainer->agreementId !== (string) $agreement->agreementId
                 || ! $retainer->canonicalCadenceDescription
                 || $retainer->recurringItemId !== ''
                 || $retainer->projectId !== ''
@@ -815,17 +795,21 @@ final class ReplayContractCorrectionClassifier
             // source-backed proof; until then replay fails closed.
             if ($line->type === InvoiceLineType::AdditionalHours->value) {
                 $minutes = $line->hoursMinutes();
+                $expectedLineDate = $agreement->cadence === BillingCadence::Monthly
+                    ? $periodStart->toDateString()
+                    : $periodEnd->toDateString();
                 if ($minutes === null
                     || $minutes <= 0
                     || $line->quantityMinutes() !== $minutes
                     || $line->sourceMinutes !== $minutes
                     || $line->agreementRateSourceMinutes !== $minutes
-                    || $line->agreementId !== (string) $agreement->id
+                    || $line->agreementId !== (string) $agreement->agreementId
                     || ! $line->hasNoAuxiliaryOwnership()
-                    || $line->unitAmount !== (int) ($agreement->hourly_rate_amount ?? 0)
+                    || ! $line->canonicalCadenceOverageDescription
+                    || $line->unitAmount !== $agreement->hourlyRateAmount
                     || $line->taxAmount !== 0
                     || $line->totalAmount !== MoneyService::hourlyAmount($minutes, $line->unitAmount)
-                    || ! self::lineFallsWithin($line, $periodStart, $periodEnd)) {
+                    || $line->lineDate !== $expectedLineDate) {
                     return false;
                 }
 
@@ -833,7 +817,7 @@ final class ReplayContractCorrectionClassifier
             }
 
             if ($line->type === InvoiceLineType::PriorMonthRetainer->value) {
-                if (! $line->isCanonicalCapacityDraw((int) $agreement->id, $periodEnd->toDateString())) {
+                if (! $line->isCanonicalCapacityDraw($agreement->agreementId, $periodEnd->toDateString())) {
                     return false;
                 }
 
@@ -844,16 +828,6 @@ final class ReplayContractCorrectionClassifier
         }
 
         return true;
-    }
-
-    private static function lineFallsWithin(
-        ReplayInvoiceLineSnapshot $line,
-        Carbon $periodStart,
-        Carbon $periodEnd,
-    ): bool {
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $line->lineDate) === 1
-            && $line->lineDate >= $periodStart->toDateString()
-            && $line->lineDate <= $periodEnd->toDateString();
     }
 
     private static function decimalString(mixed $value): string

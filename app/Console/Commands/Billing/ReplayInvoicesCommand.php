@@ -11,12 +11,15 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Billing\ReplayRecurringItemIncidenceRepository;
+use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\ReplayHistoricalCycle;
 use App\Support\Billing\ReplayHistorySeed;
@@ -368,7 +371,7 @@ final class ReplayInvoicesCommand extends Command
             ->whereNotNull('client_agreement_id')
             ->where(function (Builder $query): void {
                 $query->whereNull('invoice_kind')
-                    ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
             })
             ->orderBy('client_agreement_id')
             ->orderBy('service_period_start')
@@ -547,7 +550,7 @@ final class ReplayInvoicesCommand extends Command
         foreach ($invoices as $invoice) {
             $snapshotAgreement = $this->agreementForSnapshot($workspace, $invoice);
             $sourceScope = $this->sourceScopeForInvoice($workspace, $invoice, $snapshotAgreement);
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, canonical_cadence_description: bool, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, canonical_cadence_description: bool, canonical_cadence_overage_description: bool, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -595,6 +598,10 @@ final class ReplayInvoicesCommand extends Command
                     // text or needing the per-run digest key.
                     'canonical_cadence_description' => $this->hasCanonicalCadenceDescription(
                         $invoice,
+                        $line,
+                        $snapshotAgreement,
+                    ),
+                    'canonical_cadence_overage_description' => $this->hasCanonicalCadenceOverageDescription(
                         $line,
                         $snapshotAgreement,
                     ),
@@ -758,6 +765,21 @@ final class ReplayInvoicesCommand extends Command
                 $invoice->cycle_start,
                 $invoice->cycle_end,
             ),
+            (string) $line->description,
+        );
+    }
+
+    private function hasCanonicalCadenceOverageDescription(
+        ClientInvoiceLine $line,
+        ?ClientAgreement $agreement,
+    ): bool {
+        if (! $agreement instanceof ClientAgreement
+            || (string) $line->type !== InvoiceLineType::AdditionalHours->value) {
+            return false;
+        }
+
+        return hash_equals(
+            CadenceOverageLineDescription::for($agreement->effectiveBillingCadence()),
             (string) $line->description,
         );
     }
@@ -1017,8 +1039,10 @@ final class ReplayInvoicesCommand extends Command
         $comparisons = [];
         $this->recurringItemIncidences = app(ReplayRecurringItemIncidenceRepository::class)
             ->forSnapshots($workspace, $actual, $this->digestKey);
+        $cadenceAgreements = app(ReplayCadenceAgreementRepository::class)
+            ->forWorkspaceCompanies($workspace, array_map('intval', array_keys($anchors)));
         $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
-            ->contractCadenceHistoryGapKeys($workspace, $expected, $actual, $anchors);
+            ->contractCadenceHistoryGapKeys($cadenceAgreements, $expected, $actual, $anchors);
         $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
 
         foreach ($expected as $key => $before) {

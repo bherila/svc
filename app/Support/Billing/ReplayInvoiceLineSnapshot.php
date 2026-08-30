@@ -18,6 +18,7 @@ final readonly class ReplayInvoiceLineSnapshot
         public string $claimedBy,
         public string $descriptionHash,
         public bool $canonicalCadenceDescription,
+        public bool $canonicalCadenceOverageDescription,
         public string $identityHash,
         public ?float $hours,
         public ?int $sourceMinutes,
@@ -40,6 +41,7 @@ final readonly class ReplayInvoiceLineSnapshot
             claimedBy: ReplaySnapshotValue::text($line['claimed_by'] ?? null),
             descriptionHash: ReplaySnapshotValue::text($line['description_hash'] ?? null),
             canonicalCadenceDescription: ($line['canonical_cadence_description'] ?? null) === true,
+            canonicalCadenceOverageDescription: ($line['canonical_cadence_overage_description'] ?? null) === true,
             identityHash: ReplaySnapshotValue::text($line['identity_hash'] ?? null),
             hours: ReplaySnapshotValue::number($line['hours'] ?? null),
             sourceMinutes: array_key_exists('source_minutes', $line)
