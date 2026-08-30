@@ -28,6 +28,10 @@
         CastFloat: {
             ignore: [
                 "App\\Services\\Billing\\ClientInvoicingService::totalBilledOveragesThrough",
+                // Same shape on a local: the sum feeds a float subtraction two
+                // lines down, which coerces a numeric string identically, and
+                // the strict lane requires the cast for the same reason.
+                "App\\Services\\Billing\\InterimOverageGenerator::generateInterimOverageInvoice",
             ],
         },
     },

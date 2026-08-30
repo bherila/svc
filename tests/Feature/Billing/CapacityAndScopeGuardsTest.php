@@ -781,6 +781,21 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertSame(20.0, (float) $first->hours_billed_at_rate, "January's excess over its retainer");
         $first->forceFill(['status' => 'issued', 'service_period_end' => null])->save();
 
+        // A charged interim later in the same cycle - an import can land one
+        // out of order. Cumulative excess through February does not include
+        // March, so this must stay outside February's subtraction: the null
+        // case widens the window, it does not remove it.
+        $outOfOrder = $this->invoice($agreement);
+        $outOfOrder->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'service_period_start' => '2024-03-01',
+            'service_period_end' => '2024-03-10',
+        ])->save();
+
         $second = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
             $this->company,
             Carbon::parse('2024-02-01'),
