@@ -136,12 +136,12 @@ final readonly class ReplayInvoiceSnapshot
         return $minutes;
     }
 
-    /** Capacity sold by this historical row under its immutable retainer contract. */
-    public function contractRetainerCapacityMinutes(
+    /** Capacity sold by this row under its immutable retainer contract. */
+    public function contractRetainerCapacityLot(
         int $agreementId,
         string $currency,
         int $retainerAmount,
-    ): ?int {
+    ): ?ReplayRetainerCapacityLot {
         if ($this->currency !== $currency) {
             return null;
         }
@@ -156,6 +156,7 @@ final readonly class ReplayInvoiceSnapshot
 
         return $minutes !== null
             && $minutes > 0
+            && $line->lineDate !== ''
             && $line->agreementId === (string) $agreementId
             && $line->unitAmount === $retainerAmount
             && $line->taxAmount === 0
@@ -165,7 +166,7 @@ final readonly class ReplayInvoiceSnapshot
             && $line->sourceMinutes === 0
             && $line->agreementRateSourceMinutes === 0
             && $line->hasNoAuxiliaryOwnership()
-                ? $minutes
+                ? new ReplayRetainerCapacityLot($line->lineDate, $minutes)
                 : null;
     }
 

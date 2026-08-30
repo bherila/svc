@@ -213,7 +213,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame(60, $validSnapshotLine['source_minutes']);
         $this->assertSame(60, $validSnapshotLine['source_agreement_rate_minutes']);
         $this->assertFalse($validSnapshotLine['canonical_cadence_overage_description']);
-        $this->assertCount(7, $queries, implode("\n", $queries));
+        $this->assertCount(8, $queries, implode("\n", $queries));
 
         $line->update(['description' => 'Catch-up hours for prior month overage and minimum availability']);
         $this->assertTrue($snapshotLine()['canonical_cadence_overage_description']);
@@ -268,6 +268,18 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         $this->assertSame(0, $snapshotLine()['source_agreement_rate_minutes']);
         $this->assertSame(60, $snapshotLine()['source_minutes'], 'Malformed scope is retained in the total source aggregate so the proof fails closed.');
+
+        $foreignWorkspace = Workspace::query()->create([
+            'name' => 'Foreign allocation owner',
+            'slug' => 'foreign-allocation-owner',
+        ]);
+        DB::table('client_invoice_line_time_entries')
+            ->where('client_invoice_line_id', $line->id)
+            ->where('client_time_entry_id', $entry->id)
+            ->update(['workspace_id' => $foreignWorkspace->id]);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('invalid or foreign-workspace time allocation');
+        $snapshotLine();
     }
 
     public function test_snapshot_fails_before_hiding_a_foreign_workspace_invoice_line(): void
@@ -1880,7 +1892,7 @@ final class ReplayInvoicesTest extends TestCase
             'title' => 'Monthly overage date proof',
             'status' => 'active',
             'currency' => 'USD',
-            'starts_on' => '2026-01-01',
+            'starts_on' => '2026-01-16',
             'retainer_minutes' => 120,
             'retainer_amount' => 25000,
             'hourly_rate_amount' => 15000,
@@ -1889,6 +1901,18 @@ final class ReplayInvoicesTest extends TestCase
         $agreementId = (string) $agreement->id;
         $cadenceAgreement = app(ReplayCadenceAgreementRepository::class)
             ->forWorkspaceCompanies($this->workspace, [$this->company->id])[$this->company->id][0];
+        $capacityProof = new ReflectionMethod(
+            ReplayContractCorrectionClassifier::class,
+            'maximumCapacityMinutesForPeriod',
+        );
+        $this->assertSame(62, $capacityProof->invoke(
+            new ReplayContractCorrectionClassifier,
+            $cadenceAgreement,
+            Carbon::parse('2026-01-01'),
+            Carbon::parse('2026-01-31'),
+            Carbon::parse('2025-12-01'),
+            Carbon::parse('2025-12-31'),
+        ), 'The opening invoice may allocate pre-start work against the same prorated capacity the generator sells for the opening month.');
         $lines = [[
             'type' => 'retainer',
             'unit_amount' => 25000,

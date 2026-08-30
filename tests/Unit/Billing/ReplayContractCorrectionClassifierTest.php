@@ -35,6 +35,10 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
 
         $this->assertTrue($classifier->exactMinuteArithmetic($before, $after));
 
+        $after['lines'][0]['description_hash'] = 'wrong-generated-numeric-description';
+        $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
+        $after['lines'][0]['description_hash'] = $before['lines'][0]['description_hash'];
+
         $before['lines'][0]['source_minutes']--;
         $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
         $before['lines'][0]['source_minutes']++;
@@ -467,11 +471,11 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
 
         $afterDistinctCycles['cycle_start'] = '2026-02-01';
         $afterDistinctCycles['cycle_end'] = '2026-02-28';
-        $this->assertSame([$laterKey], array_keys($prove->invoke(
+        $this->assertSame([], $prove->invoke(
             $command,
             [$laterKey => $beforeDistinctCycles],
             [$laterKey => $afterDistinctCycles],
-        )), 'Legacy and successor-cycle retainer lines prove two distinct sold capacity lots.');
+        ), 'Different comparison cycle labels cannot duplicate one retainer sale.');
     }
 
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void

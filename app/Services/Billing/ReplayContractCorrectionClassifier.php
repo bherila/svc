@@ -147,7 +147,9 @@ final class ReplayContractCorrectionClassifier
                     || (int) ($historical['unit_amount'] ?? 0) !== $rate
                     || (int) ($historical['tax_amount'] ?? 0) !== 0
                     || (int) ($generated['tax_amount'] ?? 0) !== 0
-                    || round((float) ($historical['hours'] ?? 0), 4) !== round((float) $hours, 4)) {
+                    || round((float) ($historical['hours'] ?? 0), 4) !== round((float) $hours, 4)
+                    || ReplaySnapshotValue::text($historical['description_hash'] ?? null)
+                        !== ReplaySnapshotValue::text($generated['description_hash'] ?? null)) {
                     return false;
                 }
 
@@ -648,6 +650,8 @@ final class ReplayContractCorrectionClassifier
                         $cycle['lines'],
                         $this->maximumCapacityMinutesForPeriod(
                             $agreement,
+                            $cycle['start'],
+                            $cycle['end'],
                             $cycle['period_start'],
                             $cycle['period_end'],
                         ),
@@ -862,63 +866,85 @@ final class ReplayContractCorrectionClassifier
      */
     private function maximumCapacityMinutesForPeriod(
         ReplayCadenceAgreement $agreement,
+        Carbon $cycleStart,
+        Carbon $cycleEnd,
         Carbon $periodStart,
         Carbon $periodEnd,
     ): int {
-        if ($periodEnd->lt($agreement->startsOn)
-            || ($agreement->endsOn instanceof CarbonInterface && $periodStart->gt($agreement->endsOn))) {
-            return 0;
-        }
-
+        $workPeriodMinutes = 0;
         if ($agreement->usesPeriodRetainerTerms) {
-            $monthStarts = [];
-            $cursor = $periodStart->copy()->startOfMonth();
+            if (! $periodEnd->lt($agreement->startsOn)
+                && ! ($agreement->endsOn instanceof CarbonInterface && $periodStart->gt($agreement->endsOn))) {
+                $workPeriodMinutes = $this->periodCapacityMinutes($agreement, $periodStart, $periodEnd);
+            }
+        } elseif (! $periodEnd->lt($agreement->startsOn)
+            && ! ($agreement->endsOn instanceof CarbonInterface && $periodStart->gt($agreement->endsOn))) {
+            $firstCapacityMonth = $periodStart->copy()->startOfMonth()->subMonths($agreement->rolloverMonths);
+            $cursor = $firstCapacityMonth;
             while ($cursor->lte($periodEnd)) {
-                $monthStarts[] = $cursor->copy();
+                $monthStart = $cursor->copy()->startOfMonth();
+                $workPeriodMinutes += (int) round($this->retainerCalculator->retainerHoursForMonth(
+                    $agreement,
+                    $monthStart,
+                    $monthStart->copy()->endOfMonth()->startOfDay(),
+                ) * 60);
                 $cursor->addMonth()->startOfMonth();
             }
 
-            $minutes = (int) round($this->retainerCalculator->cyclePeriodRetainerHours(
+            if ($agreement->initialRolloverMinutes > 0
+                && $periodStart->copy()->startOfMonth()->diffInMonths($agreement->startsOn->startOfMonth()) <= $agreement->rolloverMonths) {
+                $workPeriodMinutes += $agreement->initialRolloverMinutes;
+            }
+        }
+
+        $soldCycleMinutes = $agreement->cadence === BillingCadence::Monthly
+            ? $this->periodCapacityMinutes($agreement, $cycleStart, $cycleEnd)
+            : 0;
+
+        return max(0, $workPeriodMinutes + $soldCycleMinutes);
+    }
+
+    private function periodCapacityMinutes(
+        ReplayCadenceAgreement $agreement,
+        Carbon $start,
+        Carbon $end,
+    ): int {
+        if ($agreement->cadence === BillingCadence::Monthly) {
+            return (int) round($this->retainerCalculator->retainerHoursForMonth(
+                $agreement,
+                $start->copy()->startOfMonth(),
+                $end->copy()->endOfMonth()->startOfDay(),
+            ) * 60);
+        }
+
+        $monthStarts = [];
+        $cursor = $start->copy()->startOfMonth();
+        while ($cursor->lte($end)) {
+            $monthStarts[] = $cursor->copy();
+            $cursor->addMonth()->startOfMonth();
+        }
+
+        if ($agreement->usesPeriodRetainerTerms) {
+            return (int) round($this->retainerCalculator->cyclePeriodRetainerHours(
                 $agreement,
                 new BillingCycle(
-                    start: $periodStart,
-                    end: $periodEnd,
+                    start: $start,
+                    end: $end,
                     isProrated: false,
                     monthCount: count($monthStarts),
                     monthStarts: $monthStarts,
                 ),
             ) * 60);
-
-            // A monthly minimum-availability charge buys this bounded buffer
-            // for the following period even when no source row is attached.
-            return $minutes + ($agreement->cadence === BillingCadence::Monthly
-                ? $agreement->catchUpThresholdMinutes
-                : 0);
         }
 
-        $minutes = 0;
-        $firstCapacityMonth = $periodStart->copy()->startOfMonth()->subMonths($agreement->rolloverMonths);
-        $cursor = $firstCapacityMonth;
-        while ($cursor->lte($periodEnd)) {
-            $monthStart = $cursor->copy()->startOfMonth();
-            $minutes += (int) round($this->retainerCalculator->retainerHoursForMonth(
+        return (int) round(array_sum(array_map(
+            fn (Carbon $monthStart): float => $this->retainerCalculator->retainerHoursForMonth(
                 $agreement,
                 $monthStart,
                 $monthStart->copy()->endOfMonth()->startOfDay(),
-            ) * 60);
-            $cursor->addMonth()->startOfMonth();
-        }
-
-        if ($agreement->initialRolloverMinutes > 0
-            && $periodStart->copy()->startOfMonth()->diffInMonths($agreement->startsOn->startOfMonth()) <= $agreement->rolloverMonths) {
-            $minutes += $agreement->initialRolloverMinutes;
-        }
-
-        if ($agreement->cadence === BillingCadence::Monthly) {
-            $minutes += $agreement->catchUpThresholdMinutes;
-        }
-
-        return max(0, $minutes);
+            ),
+            $monthStarts,
+        )) * 60);
     }
 
     private static function decimalString(mixed $value): string

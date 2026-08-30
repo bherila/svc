@@ -551,6 +551,22 @@ final class ReplayInvoicesCommand extends Command
             // out would let clear() delete data the snapshots never compared.
             throw new RuntimeException('A selected invoice has a line owned by another workspace.');
         }
+        if ($invoiceIds->isNotEmpty()
+            && DB::table('client_invoice_line_time_entries as allocations')
+                ->join('client_invoice_lines as lines', 'lines.id', '=', 'allocations.client_invoice_line_id')
+                ->leftJoin('client_time_entries as entries', 'entries.id', '=', 'allocations.client_time_entry_id')
+                ->whereIn('lines.client_invoice_id', $invoiceIds)
+                ->where(function ($query) use ($workspace): void {
+                    $query->where('allocations.workspace_id', '!=', $workspace->id)
+                        ->orWhere('entries.workspace_id', '!=', $workspace->id)
+                        ->orWhereNull('entries.id');
+                })
+                ->exists()) {
+            // clear() addresses allocations by line id. Detect a broken tenant
+            // chain before eager-load scoping can hide it and before rollback-
+            // only replay touches the referenced entry.
+            throw new RuntimeException('A selected invoice line has an invalid or foreign-workspace time allocation.');
+        }
 
         // Which deliverable each milestone line billed. A task's title and
         // price are both editable, so the wording and the amount can change
@@ -656,6 +672,7 @@ final class ReplayInvoicesCommand extends Command
                                     projectWorkspaceId: (int) $project->workspace_id,
                                     projectCompanyId: (int) $project->client_company_id,
                                     workedOn: $entry->worked_on,
+                                    deferred: (bool) $entry->is_deferred,
                                 );
                         })
                         ->sum('minutes'),
@@ -1185,7 +1202,7 @@ final class ReplayInvoicesCommand extends Command
 
             $remainingMinutes = $context->capacityMinutes;
             $carriedOrdinaryMinutes = 0;
-            $accountedRetainerCycles = [$context->startsAt->toDateString() => true];
+            $accountedRetainerLots = [$context->retainerLotIdentity => true];
             foreach ($rows as $row) {
                 if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
                     continue;
@@ -1208,20 +1225,19 @@ final class ReplayInvoicesCommand extends Command
                 }
                 $ordinaryCapacityMinutes = 0;
                 foreach ([$row['before'], $row['after']] as $snapshot) {
-                    $cycleStart = $snapshot->cycleStart?->toDateString();
-                    if ($cycleStart === null || isset($accountedRetainerCycles[$cycleStart])) {
-                        continue;
-                    }
-                    $cycleCapacityMinutes = $snapshot->contractRetainerCapacityMinutes(
+                    $capacityLot = $snapshot->contractRetainerCapacityLot(
                         $context->agreementId,
                         $context->currency,
                         $context->retainerAmount,
                     );
-                    if ($cycleCapacityMinutes === null) {
+                    if ($capacityLot === null) {
                         break 2;
                     }
-                    $accountedRetainerCycles[$cycleStart] = true;
-                    $ordinaryCapacityMinutes += $cycleCapacityMinutes;
+                    if (isset($accountedRetainerLots[$capacityLot->identity])) {
+                        continue;
+                    }
+                    $accountedRetainerLots[$capacityLot->identity] = true;
+                    $ordinaryCapacityMinutes += $capacityLot->minutes;
                 }
                 $sourceFreeBufferMinutes = $row['after']->sourceFreeOverageCapacityMinutes(
                     $context->agreementId,

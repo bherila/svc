@@ -29,6 +29,7 @@ final readonly class ReplayInvoiceSourceScope
         int $projectWorkspaceId,
         int $projectCompanyId,
         CarbonImmutable $workedOn,
+        bool $deferred,
     ): bool {
         return $this->servicePeriodStart->lte($this->servicePeriodEnd)
             && $entryWorkspaceId === $this->workspaceId
@@ -36,6 +37,11 @@ final readonly class ReplayInvoiceSourceScope
             && $projectWorkspaceId === $this->workspaceId
             && $projectCompanyId === $this->companyId
             && ($this->agreementProjectId === null || $entryProjectId === $this->agreementProjectId)
-            && $workedOn->betweenIncluded($this->servicePeriodStart, $this->servicePeriodEnd);
+            // DeferredBillingAllocator intentionally reaches back without a
+            // lower date bound once deferred work becomes allocatable. It
+            // retains the invoice's upper boundary and every tenant/project
+            // check above.
+            && $workedOn->lte($this->servicePeriodEnd)
+            && ($deferred || $workedOn->gte($this->servicePeriodStart));
     }
 }
