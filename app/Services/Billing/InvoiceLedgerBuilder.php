@@ -110,7 +110,9 @@ class InvoiceLedgerBuilder
             $cursor->addMonth()->startOfMonth();
         }
 
-        $months = $this->withOpeningRollover($agreement, $activeDate, $months);
+        if ($months !== []) {
+            $months = $this->withOpeningRollover($agreement, $activeDate, $months);
+        }
 
         return $this->rolloverCalculator->calculateMultipleMonths(
             $months,
@@ -146,8 +148,8 @@ class InvoiceLedgerBuilder
      * history it can be checked against. The tests are the only exercise this
      * has.
      *
-     * @param  array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>  $months
-     * @return array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>
+     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>  $months
+     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>
      */
     private function withOpeningRollover(ClientAgreement $agreement, Carbon $activeDate, array $months): array
     {
@@ -178,9 +180,10 @@ class InvoiceLedgerBuilder
         // recorded start at all, so there is no opening to grant. Prepending
         // regardless would put a later month at the front of a list the
         // rollover calculator reads in order.
-        $lastKey = $months === [] ? null : $months[array_key_last($months)]['year_month'];
-
-        if ($lastKey !== null && $carrierKey > $lastKey) {
+        //
+        // Non-emptiness is the caller's to establish, and it does so by type
+        // rather than by a branch in here that no input could reach.
+        if ($carrierKey > $months[array_key_last($months)]['year_month']) {
             return $months;
         }
 

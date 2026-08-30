@@ -427,6 +427,50 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(6.0, $byMonth['2026-03']->opening->expiredHours, 'Reported as expired once');
     }
 
+    /**
+     * The grant is rounded to the ledger's own four-decimal precision.
+     *
+     * Both paths round, and neither had a value that could show it: every
+     * fixture above uses whole hours, where rounding and its precision are
+     * invisible. A hundred minutes is one and two thirds of an hour, so it
+     * distinguishes `round(..., 4)` from no rounding at all and from a
+     * neighbouring precision - which is what the ledger's own arithmetic needs,
+     * since these hours are added to retainer figures carried at four places.
+     */
+    public function test_the_grant_is_rounded_to_the_ledgers_precision(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 1,
+            'retainer_hours' => null,
+        ]);
+        // 100 minutes: 1.6666... hours, which four places render as 1.6667.
+        $agreement->forceFill(['initial_rollover_minutes' => 100])->save();
+
+        $prepended = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $prepended[0]->yearMonth);
+        $this->assertSame(1.6667, $prepended[0]->retainerHours, 'The carrier month it creates');
+
+        // And the same on the path that adds to a month already there.
+        $basis = new ReplayHistoryBasis;
+        $basis->seed($agreement, Carbon::parse('2025-12-01'));
+        $merged = (new InvoiceLedgerBuilder(replayHistoryBasis: $basis))->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $merged[0]->yearMonth);
+        $this->assertSame(11.6667, $merged[0]->retainerHours, 'The month it joins');
+    }
+
     public function test_the_ledger_refuses_time_whose_project_belongs_to_another_company(): void
     {
         $company = $this->company();
