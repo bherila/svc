@@ -62,7 +62,7 @@ final class AgreementSelector
 
         $agreements = $company->agreements()
             ->where('workspace_id', $company->workspace_id)
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             // Every cadence bills its opening retainer in advance, monthly
             // included, so an agreement starting next month is selected now.
             // Excluding monthly here made exactly those first invoices late
@@ -120,7 +120,7 @@ final class AgreementSelector
     {
         return $company->agreements()
             ->where('workspace_id', $company->workspace_id)
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             ->where('starts_on', '<=', $date->toDateString())
             ->where(function ($query) use ($date): void {
                 $query->whereNull('ends_on')->orWhere('ends_on', '>=', $date->toDateString());

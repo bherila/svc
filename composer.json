@@ -34,7 +34,8 @@
         "laravel/sail": "^1.53",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.9.3",
-        "phpunit/phpunit": "^12.5.23"
+        "phpunit/phpunit": "^12.5.23",
+        "spaze/phpstan-disallowed-calls": "^4.14"
     },
     "repositories": [
         {
@@ -85,7 +86,8 @@
             "@test"
         ],
         "types:check": [
-            "phpstan analyse --memory-limit=1G"
+            "phpstan analyse --memory-limit=1G",
+            "phpstan analyse --configuration=phpstan-strict.neon --memory-limit=1G app/Services/Billing app/Services/ExternalImport app/Support/Billing"
         ],
         "test:mutation-diff": [
             "Composer\\Config::disableProcessTimeout",

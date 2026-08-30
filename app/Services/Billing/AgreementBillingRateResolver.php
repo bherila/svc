@@ -18,7 +18,7 @@ final class AgreementBillingRateResolver
             // An agreement that has since ended was still in force on the day the
             // work happened, so eligibility is the effective date range, not the
             // current lifecycle status. Only a draft was never in force at all.
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             ->where(function ($query) use ($entry): void {
                 $query->whereNull('client_project_id')->orWhere('client_project_id', $entry->client_project_id);
             })

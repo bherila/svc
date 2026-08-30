@@ -1,0 +1,122 @@
+# Legacy raw-clock violations only: this baseline may shrink, but it must never grow.
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Services/Activity/ClientActivityRecorder.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Services/AgentApi/AgentMutationExecutor.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 2
+			path: app/Services/AgentApi/TimeEntryMutationService.php
+
+		-
+			message: '#^Calling Carbon\\CarbonImmutable\:\:now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.method
+			count: 1
+			path: app/Services/Billing/AgreementSelector.php
+
+		-
+			message: '#^Calling Carbon\\Carbon\:\:now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.method
+			count: 3
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Calling Carbon\\Carbon\:\:now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.method
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Services/Billing/InvoiceEmailService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 4
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 2
+			path: app/Services/Billing/SendInvoiceEmailJob.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Services/Billing/StripePaymentIntentService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 3
+			path: app/Services/Billing/StripePaymentMethodService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 6
+			path: app/Services/Billing/StripeWebhookService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 2
+			path: app/Services/Engagement/AgreementWorkflow.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 2
+			path: app/Services/Engagement/ProposalWorkflow.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 10
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Calling Carbon\\CarbonImmutable\:\:now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.method
+			count: 2
+			path: app/Services/Files/AttachmentStorageService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 3
+			path: app/Services/Files/AttachmentStorageService.php
+
+		-
+			message: '#^Calling now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.function
+			count: 1
+			path: app/Support/AgentApi/ResourceAccessTokenRepository.php
+
+		-
+			message: '#^Calling Carbon\\CarbonImmutable\:\:now\(\) is forbidden, inject the workspace clock helper instead\.$#'
+			identifier: disallowed.method
+			count: 2
+			path: app/Support/Engagement/TimeSheetWindow.php

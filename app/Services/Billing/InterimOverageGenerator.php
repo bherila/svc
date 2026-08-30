@@ -162,7 +162,7 @@ final class InterimOverageGenerator
             $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
-                ->where('status', '!=', 'void')
+                ->whereIn('status', InvoiceStatus::live())
                 ->when(
                     $refreshInvoice instanceof ClientInvoice,
                     fn (Builder $query): Builder => $query->whereKey($refreshInvoice->id),
@@ -384,7 +384,7 @@ final class InterimOverageGenerator
                 $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
                     ->whereDate('service_period_start', $periodStart->toDateString())
                     ->whereDate('service_period_end', $periodEnd->toDateString())
-                    ->where('status', '!=', 'void')
+                    ->whereIn('status', InvoiceStatus::live())
                     ->first();
 
                 if ($existingInvoice instanceof ClientInvoice

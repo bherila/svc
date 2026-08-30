@@ -373,7 +373,7 @@ final class ClientInvoicingService
     ): void {
         $candidates = $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
-            ->where('status', '!=', InvoiceStatus::Void->value);
+            ->whereIn('status', InvoiceStatus::live());
 
         if ($kind === InvoiceKind::InterimOverage) {
             $candidates->where('invoice_kind', InvoiceKind::InterimOverage->value)
@@ -615,7 +615,7 @@ final class ClientInvoicingService
                     ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
             })
             ->whereDate('cycle_start', $retainerMonthStart->toDateString())
-            ->where('status', '!=', 'void')
+            ->whereIn('status', InvoiceStatus::live())
             ->when(
                 $invoice instanceof ClientInvoice,
                 fn (Builder $query): Builder => $query->whereKeyNot($invoice->getKey()),
@@ -675,7 +675,7 @@ final class ClientInvoicingService
                 $query->whereNull('invoice_kind')
                     ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
             })
-            ->where('status', '!=', 'void')
+            ->whereIn('status', InvoiceStatus::live())
             ->lockForUpdate()
             ->first();
     }
@@ -1028,7 +1028,7 @@ final class ClientInvoicingService
                     ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
-                ->where('status', '!=', 'void')
+                ->whereIn('status', InvoiceStatus::live())
                 ->lockForUpdate()
                 ->first();
 
@@ -1346,7 +1346,7 @@ final class ClientInvoicingService
         ?ClientInvoice $invoice,
     ): void {
         $overlapping = $this->scopedInvoices($company)
-            ->where('status', '!=', 'void')
+            ->whereIn('status', InvoiceStatus::live())
             ->where(function ($query): void {
                 $query->whereNull('invoice_kind')
                     ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());

@@ -1,0 +1,27 @@
+parameters:
+    filesRootDir: %currentWorkingDirectory%
+
+    disallowedFunctionCalls:
+        -
+            function: 'now()'
+            message: 'inject the workspace clock helper instead'
+            allowExceptIn:
+                - app/Services/*
+                - app/Support/*
+
+    disallowedStaticCalls:
+        -
+            method:
+                - 'Carbon\Carbon::now()'
+                - 'Carbon\CarbonImmutable::now()'
+                - 'Illuminate\Support\Carbon::now()'
+                - 'Illuminate\Support\Facades\Date::now()'
+            message: 'inject the workspace clock helper instead'
+            allowExceptIn:
+                - app/Services/*
+                - app/Support/*
+
+services:
+    -
+        class: Tests\PHPStan\DisallowStatusNegationRule
+        tags: [phpstan.rules.rule]

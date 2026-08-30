@@ -11,3 +11,4 @@ SVC is a standalone Laravel 13 and React operations platform for independent ser
 - Use `pnpm`, never `npm ci`. Run focused PHP and frontend checks during iteration, then the repository checks before publication.
 - Before re-requesting review after a fix, update `origin/main`, run `composer test:mutation-diff`, and require a green result. Escaped mutants need either the missing assertion or an `@infection-ignore-all` reason comment.
 - Prefer one reviewable PR with stacked commits for a coherent slice of work.
+- Keep `match` expressions over billing enums exhaustive: enumerate every case and never add a `default` arm. Adding an enum case must make every undecided billing path fail static analysis instead of silently inheriting fallback behavior.
