@@ -45,7 +45,7 @@ jobs:
           corepack prepare pnpm@11.5.0 --activate
 
       - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
@@ -124,7 +124,7 @@ jobs:
           coverage: none
 
       - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
@@ -184,7 +184,7 @@ jobs:
 
       - name: Authorize private MCP bridge dependency
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
@@ -219,7 +219,7 @@ jobs:
           coverage: none
 
       - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
