@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AgreementWorkflow
 {
@@ -90,6 +91,7 @@ class AgreementWorkflow
                 'agreement.activated',
                 $locked,
                 ['changes' => ['status' => ['old' => $previousStatus, 'new' => 'active']]],
+                occurrence: (string) Str::uuid(),
             );
 
             return $locked;

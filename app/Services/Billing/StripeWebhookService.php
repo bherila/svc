@@ -138,11 +138,23 @@ final class StripeWebhookService
                     throw new \DomainException('Stripe payment does not match the pending invoice payment.');
                 }
             }
-            $this->invoices->setPaymentStatus($payment, $status);
+            if (! $this->isStalePaymentTransition($payment->status, $status)) {
+                $this->invoices->setPaymentStatus($payment, $status);
+            }
             $ledger->workspace_id = $payment->workspace_id;
         } elseif ($event->type === 'payment_intent.succeeded') {
             $this->createSuccessfulPayment($object, $ledger);
         }
+    }
+
+    private function isStalePaymentTransition(string $current, string $next): bool
+    {
+        return match ($current) {
+            'succeeded' => in_array($next, ['pending', 'failed'], true),
+            'disputed' => in_array($next, ['pending', 'failed'], true),
+            'refunded' => $next !== 'refunded',
+            default => false,
+        };
     }
 
     /**

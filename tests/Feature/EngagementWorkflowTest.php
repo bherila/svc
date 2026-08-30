@@ -8,6 +8,7 @@ use App\Models\ClientCompanyActivity;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Engagement\AgreementWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -164,6 +165,31 @@ class EngagementWorkflowTest extends TestCase
                 && $activity->actor_user_id === $owner->id
                 && $activity->subject_public_id === $agreement->public_id,
         ));
+    }
+
+    public function test_paused_agreement_can_be_reactivated_with_a_distinct_activity_occurrence(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $workflow = app(AgreementWorkflow::class);
+        $agreement = $workflow->create($workspace, $company, null, null, [
+            'title' => 'Synthetic reactivation agreement',
+            'currency' => 'USD',
+        ]);
+
+        $workflow->activate($agreement);
+        $agreement->forceFill(['status' => 'paused'])->save();
+        $workflow->activate($agreement->fresh());
+
+        $activations = ClientCompanyActivity::query()
+            ->where('action', 'agreement.activated')
+            ->orderBy('id')
+            ->get();
+        $this->assertCount(2, $activations);
+        $this->assertSame('draft', $activations[0]->payload['changes']['status']['old']);
+        $this->assertSame('paused', $activations[1]->payload['changes']['status']['old']);
+        $this->assertNotSame($activations[0]->deduplication_key, $activations[1]->deduplication_key);
+        $this->assertSame('active', $agreement->fresh()->status);
     }
 
     /** @return array{0: Workspace, 1: ClientCompany} */

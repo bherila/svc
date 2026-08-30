@@ -8,6 +8,7 @@ use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use DomainException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
 
 final class StripePaymentMethodService
@@ -26,14 +27,12 @@ final class StripePaymentMethodService
         [$workspace, $company, $customer] = $this->tenant($providerCustomerId);
         $existing = ClientStripePaymentMethod::query()
             ->withTrashed()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->where('client_stripe_customer_id', $customer->id)
             ->where('stripe_payment_method_id', $providerId)
             ->lockForUpdate()
             ->first();
-        if ($existing !== null && ($existing->workspace_id !== $workspace->id
-            || $existing->client_company_id !== $company->id
-            || $existing->client_stripe_customer_id !== $customer->id)) {
-            throw new DomainException('A Stripe payment method cannot cross client or workspace scope.');
-        }
 
         $type = $this->string($object['type'] ?? null) ?? 'unknown';
         $details = is_array($object[$type] ?? null) ? $object[$type] : [];
@@ -42,17 +41,21 @@ final class StripePaymentMethodService
         if ($method->trashed()) {
             $method->restore();
         }
-        $method->forceFill([
-            'workspace_id' => $workspace->id,
-            'client_company_id' => $company->id,
-            'client_stripe_customer_id' => $customer->id,
-            'stripe_payment_method_id' => $providerId,
-            'type' => mb_substr($type, 0, 40),
-            'brand' => $this->limited($details['brand'] ?? $details['bank_name'] ?? null, 40),
-            'last4' => $this->lastFour($details['last4'] ?? null),
-            'exp_month' => $this->boundedInteger($details['exp_month'] ?? null, 1, 12),
-            'exp_year' => $this->boundedInteger($details['exp_year'] ?? null, 2000, 9999),
-        ])->save();
+        try {
+            $method->forceFill([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'client_stripe_customer_id' => $customer->id,
+                'stripe_payment_method_id' => $providerId,
+                'type' => mb_substr($type, 0, 40),
+                'brand' => $this->limited($details['brand'] ?? $details['bank_name'] ?? null, 40),
+                'last4' => $this->lastFour($details['last4'] ?? null),
+                'exp_month' => $this->boundedInteger($details['exp_month'] ?? null, 1, 12),
+                'exp_year' => $this->boundedInteger($details['exp_year'] ?? null, 2000, 9999),
+            ])->save();
+        } catch (UniqueConstraintViolationException) {
+            throw new DomainException('A Stripe payment method cannot cross client or workspace scope.');
+        }
 
         if ($wasAdded) {
             $this->activities->record($workspace, $company, 'payment_method.added', $method, [

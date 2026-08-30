@@ -142,6 +142,36 @@ class StripeWebhookTest extends TestCase
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_disputed')->count());
     }
 
+    public function test_out_of_order_processing_event_cannot_reopen_a_paid_invoice(): void
+    {
+        [, $workspace, $company] = $this->tenant('late-processing');
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-LATE-PROCESSING', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $payment = $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_late_processing',
+        ], $workspace);
+
+        $succeeded = $this->payload($invoice->public_id, $workspace->public_id, 'evt_late_success', 'pi_late_processing');
+        $this->webhookPost($succeeded, $this->signature($succeeded))->assertOk();
+        $processing = $this->eventPayload('evt_stale_processing', 'payment_intent.processing', [
+            'id' => 'pi_late_processing',
+        ]);
+        $this->webhookPost($processing, $this->signature($processing))->assertOk();
+
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(0, $invoice->fresh()->balance_amount);
+        $this->assertDatabaseHas('client_stripe_events', [
+            'stripe_event_id' => 'evt_stale_processing',
+            'workspace_id' => $workspace->id,
+            'status' => 'processed',
+        ]);
+    }
+
     public function test_payment_method_webhooks_sync_safe_metadata_and_native_lifecycle_events(): void
     {
         [, $workspace, $company] = $this->tenant('methods');
