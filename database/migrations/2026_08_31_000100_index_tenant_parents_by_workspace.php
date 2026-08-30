@@ -50,12 +50,63 @@ return new class extends Migration
         }
     }
 
+    /**
+     * Put back the index InnoDB discarded when this one arrived.
+     *
+     * Each of these tables has its own `workspace_id` key to `workspaces`, and
+     * InnoDB served it with an index it created implicitly, named after the
+     * constraint. Adding a unique `(workspace_id, id)` gives InnoDB a better index
+     * for the same key, and **it drops the implicit one**. Dropping ours then
+     * leaves the key with nothing, and MariaDB refuses with errno 1553 - so this
+     * migration could be applied but not reversed.
+     *
+     * Migration order rules out fixing it from the other end: `000000` rolls back
+     * after this file, so a table whose key this file displaced cannot wait for
+     * that. The index is instead restored here, under the name it originally had,
+     * before the unique index goes.
+     *
+     * Which tables need it is read from the live schema rather than listed,
+     * because the question is "does anything else here lead with workspace_id",
+     * and the answer changes whenever an index is added elsewhere. Today it is
+     * `client_projects` alone: every other parent already has one, and
+     * `client_company_memberships` got `ccm_workspace_idx` in `000000`.
+     *
+     * SQLite creates no implicit index, refuses nothing, and needs none of this.
+     */
     public function down(): void
     {
+        $restoring = Schema::getConnection()->getDriverName() !== 'sqlite';
+
         foreach (array_reverse(self::PARENTS) as $parent) {
+            if ($restoring && ! $this->hasAnotherWorkspaceIndex($parent)) {
+                Schema::table($parent, function (Blueprint $table) use ($parent): void {
+                    $table->index('workspace_id', $parent.'_workspace_id_foreign');
+                });
+            }
+
             Schema::table($parent, function (Blueprint $table) use ($parent): void {
                 $table->dropUnique($parent.'_workspace_id_id_unique');
             });
         }
+    }
+
+    /**
+     * Whether anything but the index about to be dropped leads with `workspace_id`.
+     */
+    private function hasAnotherWorkspaceIndex(string $parent): bool
+    {
+        foreach (Schema::getIndexes($parent) as $index) {
+            if ($index['name'] === $parent.'_workspace_id_id_unique') {
+                continue;
+            }
+
+            $columns = array_map(strtolower(...), $index['columns']);
+
+            if (($columns[0] ?? null) === 'workspace_id') {
+                return true;
+            }
+        }
+
+        return false;
     }
 };
