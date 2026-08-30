@@ -31,6 +31,7 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
         is_billable: true,
         is_deferred: false,
         is_visible_to_client: false,
+        subcontractor_billing_mode: null,
         status: 'draft',
         project: { id: 'project-1', name: 'Main project' },
         task: null,
@@ -89,6 +90,25 @@ function props({
 }
 
 describe('time sheet controls', () => {
+    it.each([
+        ['flat_hourly', 'Subcontractor · billed separately'],
+        ['retainer', 'Subcontractor · retainer'],
+        ['direct', 'Subcontractor · direct'],
+    ] as const)(
+        'labels %s subcontractor time by billing treatment',
+        (mode, label) => {
+            render(
+                <TimeSheet
+                    {...props({
+                        timeEntry: entry({ subcontractor_billing_mode: mode }),
+                    })}
+                />,
+            );
+
+            expect(screen.getByText(label)).toBeInTheDocument();
+        },
+    );
+
     it('keeps bulk approval single-flight until the request finishes', async () => {
         const user = userEvent.setup();
         render(<TimeSheet {...props()} />);

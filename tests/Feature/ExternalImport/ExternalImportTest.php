@@ -2190,6 +2190,7 @@ class ExternalImportTest extends TestCase
         // guard never fires.
         $this->assertNotNull($entry);
         $this->assertSame(8000, (int) $entry->subcontractor_cost_amount);
+        $this->assertSame('flat_hourly', $entry->subcontractor_billing_mode);
         $this->assertSame('EUR', $entry->subcontractor_cost_currency);
 
         $blank = DB::table('client_time_entries')->where('workspace_id', $workspace->getKey())
@@ -2197,6 +2198,46 @@ class ExternalImportTest extends TestCase
         $this->assertNotNull($blank);
         $this->assertNotSame('', (string) $blank->subcontractor_cost_currency);
         $this->assertNotSame('', (string) $blank->currency);
+    }
+
+    public function test_subcontractor_modes_import_as_billing_snapshots_and_invalid_terms_fail_closed(): void
+    {
+        $user = User::factory()->create();
+        Config::set('external-import.user_bindings.7', $user->public_id);
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_time_entries (id INTEGER PRIMARY KEY, project_id INTEGER, client_company_id INTEGER, task_id INTEGER, user_id INTEGER, name TEXT, minutes_worked INTEGER, date_worked TEXT, is_billable INTEGER, is_deferred_billing INTEGER, approval_status TEXT, subcontractor_billing_mode TEXT, subcontractor_hourly_rate TEXT, currency TEXT)');
+        $pdo->exec("INSERT INTO client_time_entries VALUES (41, 13, 11, NULL, 7, 'Synthetic flat work', 60, '2026-02-02', 1, 0, 'approved', 'flat_hourly', '80.00', 'USD')");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (42, 13, 11, NULL, 7, 'Synthetic retainer work', 60, '2026-02-03', 1, 0, 'approved', 'retainer', NULL, 'USD')");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (43, 13, 11, NULL, 7, 'Synthetic direct work', 60, '2026-02-04', 1, 0, 'approved', 'direct', NULL, 'USD')");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (44, 13, 11, NULL, 7, 'Synthetic unknown work', 60, '2026-02-05', 1, 0, 'approved', 'mystery', NULL, 'USD')");
+        $pdo->exec("INSERT INTO client_time_entries VALUES (45, 13, 11, NULL, 7, 'Synthetic unpriced flat work', 60, '2026-02-06', 1, 0, 'approved', 'flat_hourly', NULL, 'USD')");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame('completed_with_failures', $summary['status']);
+        $this->assertSame(2, (int) ($summary['counts']['failure_reasons']['row_transaction_failed'] ?? 0));
+        $this->assertDatabaseHas('client_time_entries', [
+            'workspace_id' => $workspace->id,
+            'description' => 'Synthetic flat work',
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 8000,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $this->assertDatabaseHas('client_time_entries', [
+            'workspace_id' => $workspace->id,
+            'description' => 'Synthetic retainer work',
+            'subcontractor_billing_mode' => 'retainer',
+            'subcontractor_cost_amount' => null,
+        ]);
+        $this->assertDatabaseHas('client_time_entries', [
+            'workspace_id' => $workspace->id,
+            'description' => 'Synthetic direct work',
+            'subcontractor_billing_mode' => 'direct',
+            'subcontractor_cost_amount' => null,
+        ]);
+        $this->assertDatabaseMissing('client_time_entries', ['description' => 'Synthetic unknown work']);
+        $this->assertDatabaseMissing('client_time_entries', ['description' => 'Synthetic unpriced flat work']);
     }
 
     public function test_a_milestone_link_already_decided_here_is_not_repointed(): void
@@ -2299,6 +2340,7 @@ class ExternalImportTest extends TestCase
             'workspace_id' => $workspace->getKey(),
             'description' => 'Synthetic work',
             'billing_rate_amount' => null,
+            'subcontractor_billing_mode' => 'flat_hourly',
             'subcontractor_cost_amount' => 7500,
         ]);
     }

@@ -17,6 +17,7 @@ use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -250,6 +251,46 @@ final class InvoiceLineComposerTest extends TestCase
         $this->assertSame(45000, (int) $line->total_amount);
         $this->assertTrue($first->refresh()->invoiceLines()->exists());
         $this->assertTrue($second->refresh()->invoiceLines()->exists());
+    }
+
+    public function test_termination_preserves_each_subcontractor_billing_mode(): void
+    {
+        $consultant = $this->entry(60);
+        $retainer = $this->entry(30);
+        $retainer->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Retainer,
+        ]);
+        $flat = $this->entry(120);
+        $flat->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_amount' => 12500,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $direct = $this->entry(90);
+        $direct->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Direct,
+        ]);
+        $invoice = $this->invoice();
+        $sort = 0;
+
+        app(InvoiceLineComposer::class)->addDeferredTerminationLine(
+            $invoice,
+            $this->agreement,
+            collect([$consultant, $retainer, $flat, $direct]),
+            $sort,
+        );
+
+        $ordinaryLine = $invoice->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail();
+        $flatLine = $invoice->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail();
+        $this->assertSame(45000, (int) $ordinaryLine->total_amount);
+        $this->assertSame(30000, (int) $ordinaryLine->unit_amount);
+        $this->assertSame(25000, (int) $flatLine->total_amount);
+        $this->assertSame(12500, (int) $flatLine->unit_amount);
+        $this->assertSame('2026-03-31', $flatLine->line_date?->format('Y-m-d'));
+        $this->assertTrue($consultant->refresh()->invoiceLines()->exists());
+        $this->assertTrue($retainer->refresh()->invoiceLines()->exists());
+        $this->assertTrue($flat->refresh()->invoiceLines()->exists());
+        $this->assertFalse($direct->refresh()->invoiceLines()->exists());
     }
 
     public function test_an_entry_spanning_two_lines_is_split_into_rows_that_can_recombine(): void

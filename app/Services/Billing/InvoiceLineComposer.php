@@ -12,6 +12,7 @@ use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -223,9 +224,10 @@ class InvoiceLineComposer
     }
 
     /**
-     * Add an additional_hours line that force-bills every outstanding deferred
-     * entry at the agreement's hourly rate. Used on termination invoices so
-     * the client is never left with unbilled deferred work.
+     * Force-bill every outstanding deferred entry we are responsible for on a
+     * termination invoice. Consultant and retainer-mode work use the agreement
+     * rate; flat-hourly work keeps its snapshotted subcontractor rate. Direct
+     * work is tracked but never billed here.
      *
      * @param  Collection<int, ClientTimeEntry>  $entries
      */
@@ -235,8 +237,40 @@ class InvoiceLineComposer
         Collection $entries,
         int &$sortOrder,
     ): void {
-        $totalMinutes = (int) $entries->sum('minutes_worked');
+        $ordinary = collect();
+        $flatHourly = collect();
+
+        foreach ($entries as $entry) {
+            $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
+            $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
+
+            if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
+                throw new RuntimeException('Deferred time has an unsupported subcontractor billing mode.');
+            }
+            if ($mode === SubcontractorBillingMode::Direct) {
+                continue;
+            }
+            if ($mode === SubcontractorBillingMode::FlatHourly) {
+                $flatHourly->push($entry);
+
+                continue;
+            }
+            if ($mode === null && $entry->subcontractor_cost_amount !== null) {
+                throw new RuntimeException('Deferred time has a subcontractor cost without a billing mode.');
+            }
+
+            $ordinary->push($entry);
+        }
+
+        $totalMinutes = (int) $ordinary->sum('minutes_worked');
         if ($totalMinutes <= 0) {
+            $this->addFlatHourlySubcontractorEntries(
+                $invoice,
+                $flatHourly,
+                Carbon::parse($invoice->service_period_end),
+                $sortOrder,
+            );
+
             return;
         }
         $hours = round($totalMinutes / 60, 4);
@@ -261,9 +295,16 @@ class InvoiceLineComposer
             'sort_order' => $sortOrder++,
         ]);
 
-        foreach ($entries as $entry) {
+        foreach ($ordinary as $entry) {
             $this->attach($line, $entry);
         }
+
+        $this->addFlatHourlySubcontractorEntries(
+            $invoice,
+            $flatHourly,
+            Carbon::parse($invoice->service_period_end),
+            $sortOrder,
+        );
     }
 
     /**
@@ -280,10 +321,6 @@ class InvoiceLineComposer
         Carbon $periodEnd,
         int &$sortOrder,
     ): void {
-        // The predecessor selected by subcontractor billing mode. This schema
-        // keeps the per-entry cost but not the mode, so the cost being present
-        // is the whole signal. Restoring modes means restoring that column and
-        // narrowing this query again.
         $agreement = $this->agreementFor($invoice);
 
         $entries = ClientTimeEntry::query()
@@ -296,13 +333,32 @@ class InvoiceLineComposer
             ->whereDoesntHave('invoiceLines')
             ->where('is_billable', true)
             ->where('is_deferred', false)
-            ->whereNotNull('subcontractor_cost_amount')
-            ->approved()
+            ->flatHourlySubcontractor()
             ->whereBetween('worked_on', [$periodStart, $periodEnd])
             ->with('user:id,name')
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
+
+        $this->addFlatHourlySubcontractorEntries($invoice, $entries, $periodEnd, $sortOrder);
+    }
+
+    /**
+     * @param  Collection<int, ClientTimeEntry>  $entries
+     */
+    private function addFlatHourlySubcontractorEntries(
+        ClientInvoice $invoice,
+        Collection $entries,
+        Carbon $lineDate,
+        int &$sortOrder,
+    ): void {
+        $missingRate = $entries->first(
+            fn (ClientTimeEntry $entry): bool => $entry->subcontractor_cost_amount === null
+                || trim((string) $entry->subcontractor_cost_currency) === '',
+        );
+        if ($missingRate instanceof ClientTimeEntry) {
+            throw new RuntimeException('Flat-hourly subcontractor time requires a snapshotted amount and currency.');
+        }
 
         // Group by (user, project, snapshot rate, rate currency) so a mid-period
         // rate change produces correctly-priced separate lines rather than one
@@ -359,7 +415,7 @@ class InvoiceLineComposer
                 'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
                 'type' => InvoiceLineType::Subcontractor->value,
                 'hours' => $hours,
-                'line_date' => $periodEnd,
+                'line_date' => $lineDate,
                 'sort_order' => $sortOrder++,
             ]);
 

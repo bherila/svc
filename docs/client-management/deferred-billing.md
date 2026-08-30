@@ -35,7 +35,7 @@ Included entries are attached to a single `prior_month_retainer` invoice line ti
 
 ## Termination path
 
-When generating a post-termination invoice (`isRetainerMonthPostTermination = true`), the allocator switches modes: it selects **all** outstanding deferred entries (no capacity filter) and attaches them to a single `additional_hours` line priced at `agreement.hourly_rate`. This termination-only deferred-billing path does **not** increment `hours_billed_at_rate` — that counter tracks the regular catch-up/overage pool used by the cumulative balance snapshot, which is a separate concept. The dollar amount is captured entirely by the line's `line_total`.
+When generating a post-termination invoice (`isRetainerMonthPostTermination = true`), the allocator switches modes and selects all outstanding deferred entries that the agreement may invoice, without a capacity filter. Consultant and `retainer`-mode hours attach to an `additional_hours` line priced at `agreement.hourly_rate`; `flat_hourly` hours keep their snapshotted rate on separate `subcontractor` lines; `direct` hours remain tracked and unbilled because the subcontractor invoices the client. A project-scoped agreement collects only its project. This termination-only deferred-billing path does **not** increment `hours_billed_at_rate` — that counter tracks the regular catch-up/overage pool used by the cumulative balance snapshot, which is a separate concept. The dollar amount is captured entirely by the generated lines' totals.
 
 ## Regeneration
 

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -22,16 +23,14 @@ use Tests\TestCase;
  * interim overage generator. The predecessor answered it once, in
  * `scopeRetainerBillable()`, so all of its call sites agreed by construction.
  *
- * The port emptied that scope - the reasoning being that this schema has no
- * `subcontractor_billing_mode` column, which is true of the column and false of
- * the concept, since `subcontractor_cost_amount` is the same signal here. The
- * conditions were then reintroduced one caller at a time and reached one of the
- * three, so the ledger and the interim generator kept drawing on work the
- * cadence generator had already excluded.
+ * The port originally emptied that scope because the billing-mode snapshot was
+ * absent. The conditions were then reintroduced one caller at a time and
+ * reached only one of the three, so the ledger and interim generator kept
+ * drawing on flat-hourly work the cadence generator had excluded.
  *
  * No migrated data is affected: every one of the 455 source time entries has a
- * null billing mode, so nothing has been mispriced. These tests pin the shape
- * before the first subcontractor entry makes it cost something.
+ * null billing mode, so nothing was mispriced. These tests pin all three modes
+ * before the first native subcontractor entry makes them operational.
  */
 final class RetainerDrawConsistencyTest extends TestCase
 {
@@ -98,6 +97,47 @@ final class RetainerDrawConsistencyTest extends TestCase
         );
 
         $this->assertNull($invoice, 'Subcontractor hours are billed by the composer, not drawn as overage');
+    }
+
+    public function test_each_subcontractor_mode_has_one_consistent_billing_path(): void
+    {
+        $project = $this->project('Modes');
+        $consultant = $this->entry($project, '2024-01-10', 60);
+        $retainer = $this->entry($project, '2024-01-11', 60);
+        $retainer->forceFill(['subcontractor_billing_mode' => SubcontractorBillingMode::Retainer])->save();
+        $flatHourly = $this->entry($project, '2024-01-12', 60, subcontractorCost: 9000);
+        $direct = $this->entry($project, '2024-01-13', 60);
+        $direct->forceFill(['subcontractor_billing_mode' => SubcontractorBillingMode::Direct])->save();
+
+        $retainerIds = ClientTimeEntry::query()->retainerBillable()->pluck('id')->all();
+        $invoiceableIds = ClientTimeEntry::query()->billableForInvoicing()->pluck('id')->all();
+        $flatHourlyIds = ClientTimeEntry::query()->flatHourlySubcontractor()->pluck('id')->all();
+
+        $this->assertEqualsCanonicalizing([$consultant->id, $retainer->id], $retainerIds);
+        $this->assertEqualsCanonicalizing([$consultant->id, $retainer->id, $flatHourly->id], $invoiceableIds);
+        $this->assertSame([$flatHourly->id], $flatHourlyIds);
+        $this->assertNotContains($direct->id, $retainerIds, 'Direct time never consumes our retainer.');
+        $this->assertNotContains($direct->id, $invoiceableIds, 'Direct time is tracked but never billed by us.');
+    }
+
+    public function test_retainer_mode_draws_on_capacity_at_the_agreement_rate(): void
+    {
+        $project = $this->project('Retainer subcontractor');
+        $agreement = $this->agreement();
+        $entry = $this->entry($project, '2024-01-15', 300);
+        $entry->forceFill(['subcontractor_billing_mode' => SubcontractorBillingMode::Retainer])->save();
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $this->company,
+            $agreement,
+            Carbon::parse('2024-01-31'),
+            false,
+        );
+
+        $this->assertSame(
+            5.0,
+            array_sum(array_map(static fn ($month): float => $month->hoursWorked, $ledger)),
+        );
     }
 
     /**
@@ -277,6 +317,10 @@ final class RetainerDrawConsistencyTest extends TestCase
             'status' => 'approved',
             'currency' => 'USD',
             'subcontractor_cost_amount' => $subcontractorCost,
+            'subcontractor_billing_mode' => $subcontractorCost === null
+                ? null
+                : SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_currency' => $subcontractorCost === null ? null : 'USD',
         ]);
     }
 }

@@ -175,6 +175,8 @@ final class AgentTimeBillingWorkflowTest extends TestCase
                 'description' => 'Attempted rate injection',
                 'billing_rate_amount' => 1,
                 'subcontractor_cost_amount' => 1,
+                'subcontractor_billing_mode' => 'flat_hourly',
+                'subcontractor_cost_currency' => 'USD',
             ]]],
         )->assertUnprocessable();
         $this->assertDatabaseCount('client_time_entries', 0);

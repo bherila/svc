@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -30,12 +31,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $billing_rate_amount
  * @property string|null $currency
  * @property string $status
+ * @property SubcontractorBillingMode|null $subcontractor_billing_mode
  * @property int $lock_version
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',
     'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'billing_rate_source', 'currency',
-    'status', 'approved_by_user_id', 'approved_at', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
+    'status', 'approved_by_user_id', 'approved_at', 'subcontractor_billing_mode', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
     'subcontractor_cost_metadata',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id'])]
@@ -53,6 +55,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'is_visible_to_client' => 'boolean',
             'billing_rate_amount' => 'integer',
             'approved_at' => 'immutable_datetime',
+            'subcontractor_billing_mode' => SubcontractorBillingMode::class,
             'subcontractor_cost_amount' => 'integer',
             'subcontractor_cost_metadata' => 'array',
         ];
@@ -113,27 +116,26 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     /**
      * Work that may draw on retainer capacity.
      *
-     * The predecessor excluded subcontractor work billed in modes that bypass
-     * the retainer, and did it here - so all seven of its call sites got the
-     * exclusion for free. This port dropped it, reasoning that the schema has
-     * no `subcontractor_billing_mode` column. That was true of the column and
-     * false of the concept: `subcontractor_cost_amount` is the flat-hourly
-     * signal in this schema, and InvoiceLineComposer already bills off it.
-     *
-     * With the exclusion gone from here it was added back one caller at a time,
-     * and reached only one of the three. The ledger and the interim generator
-     * were still letting flat-hourly hours consume retainer pool that the
-     * composer then billed again as its own line - charged once to the pool and
-     * once on the invoice.
-     *
-     * It belongs here, where a caller cannot forget it.
+     * Consultant time (no mode) and retainer-mode subcontractor time draw on
+     * the pool. Flat-hourly time bills separately; direct time is only tracked.
+     * A legacy/inconsistent row with a cost but no mode is excluded fail-closed
+     * so it cannot consume capacity and then be charged again as a separate
+     * line. The migration labels every such existing row flat-hourly.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
     public function scopeRetainerBillable(Builder $query): Builder
     {
-        return $query->approved()->whereNull('subcontractor_cost_amount');
+        return $query->approved()->where(
+            fn (Builder $mode): Builder => $mode
+                ->where('subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value)
+                ->orWhere(
+                    fn (Builder $consultant): Builder => $consultant
+                        ->whereNull('subcontractor_billing_mode')
+                        ->whereNull('subcontractor_cost_amount'),
+                ),
+        );
     }
 
     /**
@@ -152,7 +154,8 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         return $this->status === 'draft'
             && $this->is_billable
             && ! $this->is_deferred
-            && $this->subcontractor_cost_amount === null;
+            && ($this->subcontractor_billing_mode === SubcontractorBillingMode::Retainer
+                || ($this->subcontractor_billing_mode === null && $this->subcontractor_cost_amount === null));
     }
 
     /**
@@ -214,17 +217,35 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     /**
      * Work that may appear on an invoice at all.
      *
-     * Distinct from {@see scopeRetainerBillable()} in the predecessor, where it
-     * excluded only directly-billed subcontractor work. This schema records no
-     * billing mode, so the two currently coincide; they stay separate because
-     * the generator asks two different questions of them.
+     * Direct-mode subcontractor work is visible time but never ours to invoice.
+     * Restrict to known values so a malformed mode fails closed rather than
+     * becoming billable by accident.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
     public function scopeBillableForInvoicing(Builder $query): Builder
     {
-        return $query->approved();
+        return $query->approved()->where(
+            fn (Builder $mode): Builder => $mode
+                ->whereNull('subcontractor_billing_mode')
+                ->orWhereIn('subcontractor_billing_mode', [
+                    SubcontractorBillingMode::FlatHourly->value,
+                    SubcontractorBillingMode::Retainer->value,
+                ]),
+        );
+    }
+
+    /**
+     * Approved work billed additively at its snapshotted subcontractor rate.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeFlatHourlySubcontractor(Builder $query): Builder
+    {
+        return $query->approved()
+            ->where('subcontractor_billing_mode', SubcontractorBillingMode::FlatHourly->value);
     }
 
     /**

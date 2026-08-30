@@ -10,6 +10,8 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -129,18 +131,16 @@ final class InvoiceFromTimeService
                 );
             }
 
+            /** @var list<array{entry:ClientTimeEntry, terms:array{type:string, unit_amount:int}}> $eligible */
             $eligible = [];
             foreach ($entryIds as $entryId) {
                 $entry = $entries->get($entryId);
-                $valid = $entry instanceof ClientTimeEntry
+                $terms = $entry instanceof ClientTimeEntry
                     && $entry->client_company_id === $locked->client_company_id
-                    && $entry->status === 'approved'
-                    && $entry->is_billable
-                    && ! $entry->is_deferred
-                    && $entry->billing_rate_amount !== null
-                    && $entry->currency === $locked->currency;
+                        ? $this->selectedTimeTerms($entry, (string) $locked->currency)
+                        : null;
 
-                if (! $valid) {
+                if ($terms === null) {
                     if ($entryId !== $mutatedEntryId) {
                         throw new DomainException('Another selected time entry is no longer invoiceable; refresh the draft explicitly.');
                     }
@@ -148,7 +148,7 @@ final class InvoiceFromTimeService
                     continue;
                 }
 
-                $eligible[] = $entry;
+                $eligible[] = ['entry' => $entry, 'terms' => $terms];
             }
 
             $linkedLineIds = $links->pluck('line_id')->map(fn ($id): int => (int) $id)->unique()->values();
@@ -171,17 +171,19 @@ final class InvoiceFromTimeService
                 $line->delete();
             }
 
-            foreach ($eligible as $entry) {
+            foreach ($eligible as $candidate) {
+                $entry = $candidate['entry'];
+                $terms = $candidate['terms'];
                 $originalLink = $links->first(fn ($link): bool => (int) $link->entry_id === $entry->id);
                 $line = $locked->lines()->create([
                     'workspace_id' => $workspace->id,
                     'client_project_id' => $entry->client_project_id,
-                    'type' => 'time',
+                    'type' => $terms['type'],
                     'description' => $entry->description,
                     'quantity' => MoneyService::hoursForMinutes($entry->minutes),
-                    'unit_amount' => $entry->billing_rate_amount,
+                    'unit_amount' => $terms['unit_amount'],
                     'tax_amount' => 0,
-                    'total_amount' => MoneyService::hourlyAmount($entry->minutes, $entry->billing_rate_amount),
+                    'total_amount' => MoneyService::hourlyAmount($entry->minutes, $terms['unit_amount']),
                     'sort_order' => (int) $originalLink->line_sort_order,
                 ]);
                 $line->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
@@ -228,8 +230,11 @@ final class InvoiceFromTimeService
             if (! $entry instanceof ClientTimeEntry) {
                 throw new DomainException('One or more selected time entries were not found.');
             }
-            if ($entry->client_company_id !== $company->id || $entry->status !== 'approved' || ! $entry->is_billable || $entry->is_deferred || $entry->billing_rate_amount === null || $entry->currency !== $currency) {
-                throw new DomainException('Selected time must be approved, billable, non-deferred, and currency-compatible.');
+            $terms = $entry->client_company_id === $company->id
+                ? $this->selectedTimeTerms($entry, $currency)
+                : null;
+            if ($terms === null) {
+                throw new DomainException('Selected time must be approved, billable by this workspace, non-deferred, completely priced, and currency-compatible.');
             }
             $allocated = $entry->invoiceLines();
             if ($currentInvoice !== null) {
@@ -241,21 +246,62 @@ final class InvoiceFromTimeService
             $index = count($lines);
             $lines[] = [
                 'client_project_id' => $entry->client_project_id,
-                'type' => 'time',
+                'type' => $terms['type'],
                 'description' => $entry->description,
                 'quantity' => MoneyService::hoursForMinutes($entry->minutes),
-                'unit_amount' => $entry->billing_rate_amount,
+                'unit_amount' => $terms['unit_amount'],
                 'tax_amount' => 0,
                 'sort_order' => $index,
                 '_entry_id' => $entry->id,
             ];
-            $subtotalOverrides[$index] = MoneyService::hourlyAmount($entry->minutes, $entry->billing_rate_amount);
+            $subtotalOverrides[$index] = MoneyService::hourlyAmount($entry->minutes, $terms['unit_amount']);
         }
         if ($lines === []) {
             throw new DomainException('Select time or provide a manual line.');
         }
 
         return [$lines, $subtotalOverrides];
+    }
+
+    /**
+     * Price one explicitly selected entry through the same subcontractor-mode
+     * boundary as cadence generation. Direct work is never ours to bill;
+     * flat-hourly uses its immutable cost snapshot; consultant and retainer
+     * work use the ordinary billing-rate snapshot. Unknown modes and legacy
+     * cost-bearing rows without a mode fail closed.
+     *
+     * @return array{type:string, unit_amount:int}|null
+     */
+    private function selectedTimeTerms(ClientTimeEntry $entry, string $currency): ?array
+    {
+        if ($entry->status !== 'approved' || ! $entry->is_billable || $entry->is_deferred) {
+            return null;
+        }
+
+        $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
+        $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
+        if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
+            return null;
+        }
+
+        if ($mode === SubcontractorBillingMode::Direct) {
+            return null;
+        }
+
+        if ($mode === SubcontractorBillingMode::FlatHourly) {
+            return $entry->subcontractor_cost_amount !== null
+                && $entry->subcontractor_cost_currency === $currency
+                    ? ['type' => InvoiceLineType::Subcontractor->value, 'unit_amount' => $entry->subcontractor_cost_amount]
+                    : null;
+        }
+
+        if ($mode === null && $entry->subcontractor_cost_amount !== null) {
+            return null;
+        }
+
+        return $entry->billing_rate_amount !== null && $entry->currency === $currency
+            ? ['type' => 'time', 'unit_amount' => $entry->billing_rate_amount]
+            : null;
     }
 
     /**

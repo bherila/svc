@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\DeferredAllocationResult;
@@ -16,8 +17,9 @@ use Illuminate\Support\Collection;
  * - Entries are never split.
  * - Only entries that fit wholly in the remaining retainer capacity are billed.
  * - Entries that don't fit stay unlinked and roll to a future invoice.
- * - On agreement termination, all outstanding deferred entries are force-billed
- *   at the hourly rate via {@see collectForTermination()}.
+ * - On agreement termination, all outstanding invoiceable deferred entries are
+ *   collected via {@see collectForTermination()}; the composer preserves their
+ *   ordinary or flat-hourly pricing and excludes direct work.
  */
 class DeferredBillingAllocator
 {
@@ -68,35 +70,41 @@ class DeferredBillingAllocator
     }
 
     /**
-     * All outstanding unbilled deferred entries for a company. Used when
-     * generating the final (post-termination) invoice so the client is
-     * never left with unbilled deferred work.
+     * All outstanding unbilled deferred entries this agreement may invoice.
+     * Used when generating the final (post-termination) invoice so invoiceable
+     * work is not left behind. Direct work remains tracked but is the
+     * subcontractor's responsibility to bill.
      *
      * @return Collection<int, ClientTimeEntry>
      */
-    public function collectForTermination(ClientCompany $company, ?Carbon $upTo = null): Collection
-    {
-        $query = ClientTimeEntry::query()
+    public function collectForTermination(
+        ClientCompany $company,
+        ?Carbon $upTo = null,
+        ?ClientAgreement $agreement = null,
+    ): Collection {
+        $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
             ->where('is_deferred', true)
-            // Approved, not retainer-billable. Flat-hourly subcontractor work
-            // is excluded from the retainer everywhere - rightly, it is billed
-            // additively - and the subcontractor composer excludes everything
-            // deferred. An entry that is both belonged to neither path and
-            // stayed unbilled for good. Termination is the sweep that must
-            // leave nothing behind, so it is the one that owns the overlap.
-            ->approved()
             ->whereDoesntHave('invoiceLines')
+            ->when($upTo !== null, fn ($query) => $query->where('worked_on', '<=', $upTo));
+
+        // Validate the complete deferred chain before applying an agreement's
+        // project filter, so a malformed row cannot disappear from the check.
+        $this->projectChainGuard->assertProjectChainsAgree($company, $companyEntries);
+
+        $query = (clone $companyEntries)
+            // Direct-mode work is tracked but is never ours to invoice. Flat
+            // hourly and retainer-mode work are both collected, then composed
+            // through their own rates by InvoiceLineComposer.
+            ->billableForInvoicing()
+            ->when(
+                $agreement instanceof ClientAgreement,
+                fn ($scoped) => $scoped->forAgreementScope($agreement),
+            )
             ->orderBy('worked_on', 'asc')
             ->orderBy('id', 'asc');
-
-        if ($upTo !== null) {
-            $query->where('worked_on', '<=', $upTo);
-        }
-
-        $this->projectChainGuard->assertProjectChainsAgree($company, $query);
 
         return $query->get();
     }

@@ -1634,6 +1634,8 @@ class TimeSheetTest extends TestCase
             'worked_on' => '2026-07-05',
             'minutes' => 120,
             'subcontractor_cost_amount' => 5000,
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_currency' => 'USD',
         ]);
 
         $this->travelTo('2026-07-20');
@@ -1643,6 +1645,7 @@ class TimeSheetTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.capacity.0.pending_minutes', 60)
+                ->where('months.0.entries.0.subcontractor_billing_mode', 'flat_hourly')
                 ->where('months.0.total_minutes', 180));
     }
 

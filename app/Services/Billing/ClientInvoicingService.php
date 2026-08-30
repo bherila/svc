@@ -1207,7 +1207,7 @@ final class ClientInvoicingService
         int &$sortOrder,
     ): void {
         if ($isPostTermination) {
-            $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd);
+            $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd, $agreement);
             if ($deferredToBill->isNotEmpty()) {
                 $this->invoiceLineComposer->addDeferredTerminationLine($invoice, $agreement, $deferredToBill, $sortOrder);
             }

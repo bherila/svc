@@ -602,6 +602,18 @@ function MonthCard({
                                                         Deferred
                                                     </Badge>
                                                 )}
+                                                {entry.subcontractor_billing_mode !==
+                                                    null && (
+                                                    <Badge variant="outline">
+                                                        {entry.subcontractor_billing_mode ===
+                                                        'flat_hourly'
+                                                            ? 'Subcontractor · billed separately'
+                                                            : entry.subcontractor_billing_mode ===
+                                                                'retainer'
+                                                              ? 'Subcontractor · retainer'
+                                                              : 'Subcontractor · direct'}
+                                                    </Badge>
+                                                )}
                                                 {entry.is_visible_to_client && (
                                                     <Badge variant="outline">
                                                         Client-visible

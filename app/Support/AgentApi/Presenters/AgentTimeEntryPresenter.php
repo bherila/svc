@@ -34,6 +34,9 @@ final class AgentTimeEntryPresenter
         if ($includeFinancials) {
             $payload['billing_rate_amount'] = $entry->billing_rate_amount;
             $payload['currency'] = $entry->currency;
+            $payload['subcontractor_billing_mode'] = $entry->subcontractor_billing_mode?->value;
+            $payload['subcontractor_cost_amount'] = $entry->subcontractor_cost_amount;
+            $payload['subcontractor_cost_currency'] = $entry->subcontractor_cost_currency;
         }
 
         return $payload;
