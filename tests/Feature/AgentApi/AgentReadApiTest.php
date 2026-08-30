@@ -128,7 +128,16 @@ class AgentReadApiTest extends TestCase
         $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreign->id, 'name' => 'Foreign Tenant Client', 'slug' => 'foreign-tenant-client']);
         $foreignProject = ClientProject::query()->create(['workspace_id' => $foreign->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Foreign Tenant Project']);
         $this->workspaceMember($foreign, $foreignWorker, 'member');
-        $this->time($foreign, $foreignCompany, $foreignProject, $foreignWorker, 'Foreign tenant work');
+        $this->time($foreign, $foreignCompany, $foreignProject, $foreignWorker, 'Foreign colleague work');
+
+        // The contributor themselves owns a row in the foreign workspace and
+        // holds contributor membership on its project, so every ownership and
+        // membership predicate in visibleTo() matches it — the workspace
+        // predicate is the only thing keeping it out of this listing, which
+        // is exactly the boundary this test must pin on its own.
+        $this->workspaceMember($foreign, $contributor, 'member');
+        ClientProjectMembership::query()->create(['workspace_id' => $foreign->id, 'client_project_id' => $foreignProject->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->time($foreign, $foreignCompany, $foreignProject, $contributor, 'Foreign tenant work');
 
         $this->actingAsAgent($contributor, [AgentApiScopes::TIME_READ]);
 
@@ -138,6 +147,7 @@ class AgentReadApiTest extends TestCase
             'Colleague private work',
             'Colleague Worker Name',
             'Foreign tenant work',
+            'Foreign colleague work',
             'Foreign Tenant Worker',
             'Foreign Tenant Project',
             'billing_rate_amount',
