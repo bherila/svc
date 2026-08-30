@@ -1,0 +1,26 @@
+{
+    "$schema": "./vendor/infection/infection/resources/schema.json",
+    source: {
+        directories: [
+            "app/Services/Billing",
+            "app/Services/ExternalImport",
+            "app/Support/Billing",
+        ],
+    },
+    // Changed lines must not be silently pre-skipped when their covering tests
+    // exceed the tighter full-suite budget.
+    timeout: 120,
+    threads: "max",
+    tmpDir: "storage/framework/cache/infection-diff",
+    ignoreMsiWithNoMutations: true,
+    timeoutsAsEscaped: true,
+    mutators: {
+        "@default": true,
+    },
+    // Under Infection's generated coverage config, PHPUnit 12's isolated child
+    // loses its CodeCoverage object. This test does not cover configured source.
+    testFrameworkExtraArgs: "--order-by=default --exclude-filter=ProjectAccessLegacyOrphanTest",
+    phpUnit: {
+        configDir: ".",
+    },
+}

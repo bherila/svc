@@ -81,13 +81,15 @@ enum InvoiceStatus: string
     /**
      * Statuses that count toward balances and history.
      *
-     * Everything except void, which by definition never happened.
+     * Every currently recognized status except void, which by definition never
+     * happened. This list is deliberately explicit: a newly-added case stays
+     * excluded until billing code decides whether acting on it is safe.
      *
      * @return list<string>
      */
     public static function live(): array
     {
-        return array_values(array_diff(self::all(), [self::Void->value]));
+        return [self::Draft->value, self::Issued->value, self::PartiallyPaid->value, self::Paid->value];
     }
 
     public function isSettled(): bool

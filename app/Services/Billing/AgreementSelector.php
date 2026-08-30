@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -23,6 +24,8 @@ use RuntimeException;
  */
 final class AgreementSelector
 {
+    public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+
     /**
      * The agreement in force, falling back to the most recent one.
      *
@@ -39,7 +42,7 @@ final class AgreementSelector
      */
     public function agreementForInvoiceGeneration(ClientCompany $company): ClientAgreement
     {
-        $agreement = $company->activeAgreement() ?? $company->mostRecentAgreement();
+        $agreement = $company->activeAgreement($this->clock->today($company->workspace)) ?? $company->mostRecentAgreement();
         if (! $agreement instanceof ClientAgreement) {
             throw new RuntimeException('No agreement found for this client company.');
         }
@@ -58,11 +61,11 @@ final class AgreementSelector
      */
     public function agreementsForInvoiceGeneration(ClientCompany $company): Collection
     {
-        $now = CarbonImmutable::now();
+        $now = $this->clock->now($company->workspace);
 
         $agreements = $company->agreements()
             ->where('workspace_id', $company->workspace_id)
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             // Every cadence bills its opening retainer in advance, monthly
             // included, so an agreement starting next month is selected now.
             // Excluding monthly here made exactly those first invoices late
@@ -120,7 +123,7 @@ final class AgreementSelector
     {
         return $company->agreements()
             ->where('workspace_id', $company->workspace_id)
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             ->where('starts_on', '<=', $date->toDateString())
             ->where(function ($query) use ($date): void {
                 $query->whereNull('ends_on')->orWhere('ends_on', '>=', $date->toDateString());

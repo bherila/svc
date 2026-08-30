@@ -8,6 +8,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -17,6 +18,7 @@ final class StripePaymentIntentService
         private readonly StripeGateway $gateway,
         private readonly InvoiceLifecycleService $invoices,
         private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
@@ -100,7 +102,7 @@ final class StripePaymentIntentService
         $payment = $this->invoices->applyPayment($invoice, [
             'amount' => $chargeAmount,
             'currency' => $invoice->currency,
-            'received_on' => now()->toDateString(),
+            'received_on' => $this->clock->today($invoice->workspace)->toDateString(),
             'method' => 'stripe',
             'status' => 'pending',
             'provider' => 'stripe',

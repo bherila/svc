@@ -7,12 +7,16 @@ use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
 final class InvoiceEmailService
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
     /** @param list<string> $recipients */
     public function queue(ClientInvoice $invoice, array $recipients, ?Workspace $workspace = null): ClientInvoiceEmailDelivery
@@ -39,7 +43,7 @@ final class InvoiceEmailService
                 'recipients' => $recipients,
                 'subject' => 'Invoice '.$invoice->invoice_number,
                 'status' => 'pending',
-                'queued_at' => now(),
+                'queued_at' => $this->clock->now($invoice->workspace),
             ]);
             $invoice->advanceAgentRevision();
             dispatch(new SendInvoiceEmailJob($invoice->id, $delivery->id))->afterCommit();

@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -257,6 +258,7 @@ final class ExternalImportService
         private readonly SourceGuard $sourceGuard,
         private readonly ImporterRegistry $registry,
         private readonly InventoryService $inventory,
+        private readonly WorkspaceClock $clock,
     ) {
         $this->activeQueryCache = $this->newQueryCache();
     }
@@ -315,10 +317,10 @@ final class ExternalImportService
                     : (($counts['skipped'] > 0 || $counts['deleted_at_source'] > 0)
                         ? 'completed_with_skips'
                         : 'completed'),
-                'completed_at' => now(),
+                'completed_at' => $this->clock->now($workspace),
             ])->save();
         } catch (Throwable) {
-            $run->forceFill(['counts' => $counts, 'status' => 'failed', 'completed_at' => now()])->save();
+            $run->forceFill(['counts' => $counts, 'status' => 'failed', 'completed_at' => $this->clock->now($workspace)])->save();
             throw new SourceConfigurationException('import_failed');
         }
 
@@ -596,10 +598,10 @@ final class ExternalImportService
             $attributes['public_id'] = $publicId;
         }
         if (in_array('created_at', $columns, true)) {
-            $attributes['created_at'] ??= now();
+            $attributes['created_at'] ??= $this->clock->now();
         }
         if (in_array('updated_at', $columns, true)) {
-            $attributes['updated_at'] ??= now();
+            $attributes['updated_at'] ??= $this->clock->now();
         }
 
         $existing = in_array('public_id', $columns, true) ? DB::connection($destinationName)->table($spec['target_table'])->where('public_id', $publicId)->first() : null;
@@ -1573,8 +1575,8 @@ final class ExternalImportService
             [
                 'observed_status' => $status,
                 'source_fingerprint' => $fingerprint,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'created_at' => $this->clock->now(),
+                'updated_at' => $this->clock->now(),
             ],
         );
     }
@@ -1622,7 +1624,7 @@ final class ExternalImportService
                 'paid_amount' => $paid,
                 'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
                 'is_visible_to_client' => $status !== 'draft' ? true : (bool) $invoice->is_visible_to_client,
-                'updated_at' => now(),
+                'updated_at' => $this->clock->now(),
             ]);
         }
     }
@@ -1748,8 +1750,8 @@ final class ExternalImportService
                     'workspace_id' => $run->workspace_id,
                     'client_invoice_line_id' => $lineId,
                     'client_time_entry_id' => $timeId,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'created_at' => $this->clock->now(),
+                    'updated_at' => $this->clock->now(),
                 ]);
             } catch (QueryException $exception) {
                 // The line can also go between the checks above and this
@@ -2034,7 +2036,7 @@ final class ExternalImportService
             'source_high_water_marks' => $marks,
             'counts' => $this->emptyCounts($inventory),
             'fingerprints' => $fingerprints,
-            'started_at' => now(),
+            'started_at' => $this->clock->now($workspace),
         ]);
     }
 

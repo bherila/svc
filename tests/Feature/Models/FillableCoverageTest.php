@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Models;
 
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +56,9 @@ final class FillableCoverageTest extends TestCase
         ],
         ClientInvoiceEmailDelivery::class => [
             'external_metadata' => 'Written only by the external importer, which inserts through the query builder rather than Eloquent.',
+        ],
+        ClientCompanyMembership::class => [
+            'workspace_id' => 'Derived from the named company by the model\'s creating hook. A caller that could set it could set it wrongly, and the composite key added in 2026_08_31_000200 would then refuse the write anyway.',
         ],
     ];
 

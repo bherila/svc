@@ -46,8 +46,9 @@ final class InvoiceStatusVocabularyTest extends TestCase
 
     /**
      * A literal list of two or more invoice statuses is the shape that goes
-     * stale. Single comparisons against one status are left alone: `!= 'void'`
-     * says something specific and stays correct when a status is added.
+     * stale. This lexical guard only detects literal lists; PHPStan separately
+     * rejects negative status predicates such as `!= 'void'`, because they
+     * silently admit every status added later.
      */
     public function test_no_billing_service_enumerates_invoice_statuses_by_hand(): void
     {
@@ -113,8 +114,12 @@ final class InvoiceStatusVocabularyTest extends TestCase
         $this->assertNotContains('draft', InvoiceStatus::charged());
 
         // Live is everything that happened.
-        $this->assertNotContains('void', InvoiceStatus::live());
-        $this->assertContains('draft', InvoiceStatus::live());
+        $this->assertSame([
+            InvoiceStatus::Draft->value,
+            InvoiceStatus::Issued->value,
+            InvoiceStatus::PartiallyPaid->value,
+            InvoiceStatus::Paid->value,
+        ], InvoiceStatus::live());
     }
 
     public function test_an_unrecognised_stored_value_reads_as_the_least_privileged_state(): void

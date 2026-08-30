@@ -15,6 +15,7 @@ use App\Services\Billing\StripePaymentIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -59,6 +60,27 @@ class BillingWorkflowTest extends TestCase
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
         $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'invoice.marked_paid')->count());
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.issued')->count());
+    }
+
+    public function test_issuing_an_undated_invoice_uses_the_workspace_calendar_date(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-08-30 05:30:00 UTC'));
+        try {
+            [, $workspace, $company] = $this->tenant();
+            $workspace->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+            $service = app(InvoiceLifecycleService::class);
+            $invoice = $service->createDraft($workspace, $company, [
+                'invoice_number' => 'INV-WORKSPACE-DATE',
+                'currency' => 'USD',
+            ], [$this->line()]);
+
+            $issued = $service->issue($invoice, $workspace);
+
+            $this->assertSame('2026-08-29', $issued->issue_date?->toDateString());
+            $this->assertSame('2026-08-29', $issued->due_date?->toDateString());
+        } finally {
+            Date::setTestNow();
+        }
     }
 
     public function test_partial_refund_reopens_only_the_refunded_balance(): void

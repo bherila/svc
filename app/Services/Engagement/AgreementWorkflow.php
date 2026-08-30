@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -18,6 +19,7 @@ class AgreementWorkflow
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -83,7 +85,7 @@ class AgreementWorkflow
             $previousStatus = $locked->status;
             $locked->forceFill([
                 'status' => 'active',
-                'activated_at' => $locked->activated_at ?? now(),
+                'activated_at' => $locked->activated_at ?? $this->clock->now($locked->workspace),
             ])->save();
             $this->activities->record(
                 $locked->workspace,
@@ -112,7 +114,7 @@ class AgreementWorkflow
             }
 
             $locked->forceFill([
-                'signed_at' => now(),
+                'signed_at' => $this->clock->now($locked->workspace),
                 'signed_by_user_id' => $signingUser?->id,
                 'signer_name' => $signerName,
                 'signer_title' => $signerTitle,

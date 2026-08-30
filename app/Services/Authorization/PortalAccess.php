@@ -45,7 +45,12 @@ final class PortalAccess
             return null;
         }
 
+        // Scoped on the workspace as well as the company. The composite key
+        // added in #113 makes a membership naming a company of another tenant
+        // unstorable, but a database migrated from before it can still hold
+        // one, and this read is what would consume it.
         $membership = ClientCompanyMembership::query()
+            ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('user_id', $viewer->id)
             ->first();
@@ -107,10 +112,15 @@ final class PortalAccess
             ->whereHas('clientCompany.portalUsers', fn (Builder $users): Builder => $users->whereKey($viewerId))
             ->where(function (Builder $scope) use ($viewerId): void {
                 // Unrestricted membership: the whole company's portal.
+                // Both subqueries match the membership on its workspace as well
+                // as its company. Company ids are globally unique, so joining on
+                // the company alone reads a membership that was migrated in
+                // before the composite key and now names another tenant.
                 $scope->whereExists(function (QueryBuilder $sub) use ($viewerId): void {
                     $sub->selectRaw('1')
                         ->from('client_company_memberships')
                         ->whereColumn('client_company_memberships.client_company_id', 'client_projects.client_company_id')
+                        ->whereColumn('client_company_memberships.workspace_id', 'client_projects.workspace_id')
                         ->where('client_company_memberships.user_id', $viewerId)
                         ->where(function (QueryBuilder $unrestricted): void {
                             $unrestricted->whereNull('client_company_memberships.access_scope')
@@ -128,6 +138,8 @@ final class PortalAccess
                                 'client_portal_project_access.client_company_membership_id',
                             )
                             ->whereColumn('client_portal_project_access.client_project_id', 'client_projects.id')
+                            ->whereColumn('client_portal_project_access.workspace_id', 'client_projects.workspace_id')
+                            ->whereColumn('client_company_memberships.workspace_id', 'client_projects.workspace_id')
                             ->where('client_company_memberships.user_id', $viewerId);
                     });
             });
