@@ -1399,9 +1399,8 @@ final class ClientInvoicingService
         Carbon $retainerMonthStart,
         ?string $terminationMonthKey,
     ): array {
-        $agreementStart = $this->replayHistoryBasis
-            ->startFor($agreement, $this->agreementStart($agreement))
-            ->startOfMonth();
+        $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
+        $agreementStart = $this->agreementStart($ledgerAgreement)->startOfMonth();
 
         $earliestEntryDate = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
@@ -1459,7 +1458,7 @@ final class ClientInvoicingService
                 'retainer_hours' => ($isPreAgreement || $isPostTermination)
                     ? 0.0
                     : $this->retainerCalculator->retainerHoursForMonth(
-                        $agreement,
+                        $ledgerAgreement,
                         Carbon::parse($monthKey.'-01')->startOfDay(),
                         Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
                     ),

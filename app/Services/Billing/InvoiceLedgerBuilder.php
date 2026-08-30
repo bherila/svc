@@ -36,10 +36,8 @@ class InvoiceLedgerBuilder
         Carbon $through,
         bool $billExcessImmediately = false,
     ): array {
-        $activeDate = $this->replayHistoryBasis->startFor(
-            $agreement,
-            Carbon::parse($agreement->active_date),
-        );
+        $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
+        $activeDate = Carbon::parse($ledgerAgreement->active_date)->startOfDay();
         $terminationDate = $agreement->termination_date
             ? Carbon::parse($agreement->termination_date)->startOfDay()
             : null;
@@ -83,9 +81,6 @@ class InvoiceLedgerBuilder
             // everywhere else. Replay is the one exception: its ledger must
             // contain a historical opening cycle without changing which
             // cycles ordinary generation may sell or mutating the model row.
-            $ledgerAgreement = clone $agreement;
-            $ledgerAgreement->setAttribute('starts_on', $activeDate->toDateString());
-
             return $this->buildPeriodRetainerLedgerThrough(
                 $ledgerAgreement,
                 $ledgerEnd,
@@ -116,7 +111,7 @@ class InvoiceLedgerBuilder
             $monthEntries = $entriesByMonth->get($monthKey, collect());
             $months[] = [
                 'year_month' => $monthKey,
-                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($agreement, $monthStart, $monthEnd),
+                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
                 'reset_rollover' => false,
             ];

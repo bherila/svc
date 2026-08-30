@@ -4,9 +4,11 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\Workspace;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 /**
  * Proves the narrow billing-contract differences an invoice replay may accept.
@@ -17,6 +19,10 @@ use Carbon\Carbon;
  */
 final class ReplayContractCorrectionClassifier
 {
+    public function __construct(
+        private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
+    ) {}
+
     /**
      * Did the source price decimal hours differently from exact whole minutes?
      *
@@ -139,8 +145,10 @@ final class ReplayContractCorrectionClassifier
 
                 $exact = MoneyService::hourlyAmount($minutes, $rate);
                 $historicalTotal = (int) ($historical['total_amount'] ?? 0);
+                $canonicalQuantity = self::decimalString(HoursQuantity::decimal((float) $hours));
                 if ((int) ($generated['total_amount'] ?? 0) !== $exact
-                    || (string) ($generated['quantity'] ?? '') !== self::decimalString(HoursQuantity::decimal((float) $hours))) {
+                    || (string) ($generated['quantity'] ?? '') !== $canonicalQuantity
+                    || (string) ($historical['quantity'] ?? '') !== $canonicalQuantity) {
                     return false;
                 }
 
@@ -171,7 +179,7 @@ final class ReplayContractCorrectionClassifier
      * @param  array<string, mixed>  $before
      * @param  array<string, mixed>  $after
      */
-    public function openingRecurringItemIncidence(string $key, array $before, array $after): bool
+    public function openingRecurringItemIncidence(Workspace $workspace, string $key, array $before, array $after): bool
     {
         [$companyId, $agreementId, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
         if ($agreementId === '' || $agreementId === 'none' || $kind !== InvoiceKind::CadencePeriod->value
@@ -235,13 +243,16 @@ final class ReplayContractCorrectionClassifier
             return false;
         }
 
-        [$cycle] = array_pad(explode('@', $identity, 2), 2, '');
-        [$cycleStartText, $cycleEndText] = array_pad(explode('..', $cycle, 2), 2, '');
+        $cycleStartText = (string) ($after['cycle_start'] ?? '');
+        $cycleEndText = (string) ($after['cycle_end'] ?? '');
         if ($cycleStartText === '' || $cycleEndText === '' || $cycleStartText === '?' || $cycleEndText === '?') {
             return false;
         }
 
-        $company = ClientCompany::query()->find((int) $companyId);
+        $company = ClientCompany::query()
+            ->whereKey((int) $companyId)
+            ->where('workspace_id', $workspace->id)
+            ->first();
         if (! $company instanceof ClientCompany) {
             return false;
         }
@@ -269,9 +280,7 @@ final class ReplayContractCorrectionClassifier
         $cycleEnd = Carbon::parse($cycleEndText)->startOfDay();
         if (! $lineDate->isSameDay($item->start_date)
             || $lineDate->lt($cycleStart)
-            || $lineDate->gt($cycleEnd)
-            || ($item->anchor_day !== null && (int) $item->anchor_day !== $lineDate->day)
-            || ($item->anchor_month !== null && (int) $item->anchor_month !== $lineDate->month)) {
+            || $lineDate->gt($cycleEnd)) {
             return false;
         }
 
@@ -311,10 +320,15 @@ final class ReplayContractCorrectionClassifier
      *
      * @param  array<string, array<string, mixed>>  $expected
      * @param  array<string, array<string, mixed>>  $actual
+     * @param  array<int, Carbon>  $anchors
      * @return array<string, true>
      */
-    public function contractCadenceHistoryGapKeys(array $expected, array $actual): array
-    {
+    public function contractCadenceHistoryGapKeys(
+        Workspace $workspace,
+        array $expected,
+        array $actual,
+        array $anchors,
+    ): array {
         $history = [];
         foreach ($expected as $key => $snapshot) {
             [$companyId] = array_pad(explode('|', $key, 2), 2, '');
@@ -344,7 +358,10 @@ final class ReplayContractCorrectionClassifier
                 continue;
             }
 
-            $company = ClientCompany::query()->find((int) $companyId);
+            $company = ClientCompany::query()
+                ->whereKey((int) $companyId)
+                ->where('workspace_id', $workspace->id)
+                ->first();
             if (! $company instanceof ClientCompany) {
                 continue;
             }
@@ -356,7 +373,17 @@ final class ReplayContractCorrectionClassifier
             if (! $agreement instanceof ClientAgreement || $agreement->starts_on === null
                 || ! $agreement->billsOnARecurringCadence()
                 || $agreement->periodRetainerHours() <= 0
-                || $agreement->periodRetainerFee() <= 0) {
+                || $agreement->periodRetainerFee() <= 0
+                // Terminated/successor segments have additional generation
+                // boundaries. Refuse the exception until it can prove those
+                // rather than treating a plausible prefix as a complete chain.
+                || $agreement->ends_on !== null) {
+                continue;
+            }
+
+            $anchor = $anchors[(int) $companyId] ?? null;
+            if (! $anchor instanceof CarbonInterface
+                || Carbon::instance($agreement->starts_on)->startOfDay()->gt($anchor)) {
                 continue;
             }
 
@@ -418,6 +445,27 @@ final class ReplayContractCorrectionClassifier
                 $nextStart = $expectedEnd->copy()->addDay()->startOfDay();
             }
             if (! $valid) {
+                continue;
+            }
+
+            // A contiguous prefix is not necessarily the complete output the
+            // pinned replay should have generated. The generator bills one
+            // cycle in advance, so the last accepted cycle must be exactly the
+            // successor of the cycle containing the per-company replay anchor.
+            // Command anchors are end-of-day timestamps. Billing cycles are
+            // inclusive date ranges ending at start-of-day, so passing 23:59:59
+            // makes the resolver see the next cycle. Normalize the proof to the
+            // same calendar day before asking which cycle contains it.
+            $anchorDay = Carbon::instance($anchor)->copy()->startOfDay();
+            $anchorCycle = $this->billingCycleResolver->cycleContaining($agreement, $anchorDay);
+            $expectedLastStart = $anchorCycle->end->copy()->addDay()->startOfDay();
+            $expectedLastEnd = $expectedLastStart->copy()
+                ->addMonths($agreement->effectiveBillingCadence()->monthsInCycle())
+                ->subDay()
+                ->startOfDay();
+            $lastCycle = $cycles[count($cycles) - 1];
+            if (! $lastCycle['start']->isSameDay($expectedLastStart)
+                || ! $lastCycle['end']->isSameDay($expectedLastEnd)) {
                 continue;
             }
 

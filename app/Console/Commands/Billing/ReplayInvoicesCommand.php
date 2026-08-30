@@ -257,7 +257,12 @@ final class ReplayInvoicesCommand extends Command
                 Carbon::setTestNow();
             }
 
-            $outcome['comparisons'] = $this->compare($expected, $this->snapshot($workspace, $companies));
+            $outcome['comparisons'] = $this->compare(
+                $workspace,
+                $expected,
+                $this->snapshot($workspace, $companies),
+                $anchors,
+            );
 
             if ($this->skipReasons !== []) {
                 // Only the count here. The generator's messages quote invoice
@@ -354,6 +359,33 @@ final class ReplayInvoicesCommand extends Command
 
             $seed = Carbon::parse((string) $firstCycle)->startOfDay();
             if (! $seed->lt(Carbon::instance($agreement->starts_on)->startOfDay())) {
+                continue;
+            }
+
+            // The replay identity below deliberately substitutes service period
+            // for sold cycle. That is sound only when this agreement's complete
+            // predecessor history consistently used period-equals-cycle. One
+            // stale, partial or differently-labelled row makes the convention
+            // ambiguous, so leave the agreement unseeded and let replay fail on
+            // the ordinary identities instead of manufacturing a match.
+            $incompatibleHistory = ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $agreement->client_company_id)
+                ->where('client_agreement_id', $agreement->id)
+                ->where(function (Builder $query): void {
+                    $query->whereNull('invoice_kind')
+                        ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+                })
+                ->where(function (Builder $query): void {
+                    $query->whereNull('cycle_start')
+                        ->orWhereNull('cycle_end')
+                        ->orWhereNull('service_period_start')
+                        ->orWhereNull('service_period_end')
+                        ->orWhereColumn('cycle_start', '!=', 'service_period_start')
+                        ->orWhereColumn('cycle_end', '!=', 'service_period_end');
+                })
+                ->exists();
+            if ($incompatibleHistory) {
                 continue;
             }
 
@@ -488,6 +520,14 @@ final class ReplayInvoicesCommand extends Command
                 'id' => (int) $invoice->id,
                 'invoice_number' => (string) $invoice->invoice_number,
                 'invoice_kind' => $invoice->invoiceKindValue(),
+                // Keep the sold cycle even when replay pairing uses service
+                // period as its key. Correction proofs need the real cycle the
+                // biller evaluated; parsing the substituted key silently asks
+                // them about a different incidence window.
+                'cycle_start' => $invoice->cycle_start?->toDateString(),
+                'cycle_end' => $invoice->cycle_end?->toDateString(),
+                'service_period_start' => $invoice->service_period_start?->toDateString(),
+                'service_period_end' => $invoice->service_period_end?->toDateString(),
                 'status' => (string) $invoice->status,
                 'currency' => (string) $invoice->currency,
                 'subtotal_amount' => (int) $invoice->subtotal_amount,
@@ -746,13 +786,14 @@ final class ReplayInvoicesCommand extends Command
     /**
      * @param  array<string, array<string, mixed>>  $expected
      * @param  array<string, array<string, mixed>>  $actual
+     * @param  array<int, Carbon>  $anchors
      * @return list<array<string, mixed>>
      */
-    private function compare(array $expected, array $actual): array
+    private function compare(Workspace $workspace, array $expected, array $actual, array $anchors): array
     {
         $comparisons = [];
         $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
-            ->contractCadenceHistoryGapKeys($expected, $actual);
+            ->contractCadenceHistoryGapKeys($workspace, $expected, $actual, $anchors);
 
         foreach ($expected as $key => $before) {
             if ($before['invoice_kind'] === InvoiceKind::AdHoc->value) {
@@ -774,7 +815,7 @@ final class ReplayInvoicesCommand extends Command
                 continue;
             }
 
-            $examined = $this->examine($before, $after, $key);
+            $examined = $this->examine($workspace, $before, $after, $key);
             $notes = $examined['notes'];
             $changedTypes = $examined['changed_types'];
             $changedFields = $examined['changed_fields'];
@@ -826,7 +867,7 @@ final class ReplayInvoicesCommand extends Command
             }
         }
 
-        return $this->reconcileLegacyPeriods($comparisons);
+        return $this->reconcileLegacyPeriods($workspace, $comparisons);
     }
 
     /**
@@ -841,7 +882,7 @@ final class ReplayInvoicesCommand extends Command
      * @param  array<string, mixed>  $after
      * @return array{notes: list<string>, changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, exact_minute_arithmetic: bool, opening_recurring_item_incidence: bool, hour_notes: list<string>}
      */
-    private function examine(array $before, array $after, ?string $key = null): array
+    private function examine(Workspace $workspace, array $before, array $after, ?string $key = null): array
     {
         $notes = [];
         // What actually changed, collected as it is found rather than read back
@@ -903,7 +944,7 @@ final class ReplayInvoicesCommand extends Command
                 ->exactMinuteArithmetic($before, $after),
             'opening_recurring_item_incidence' => $key !== null
                 && app(ReplayContractCorrectionClassifier::class)
-                    ->openingRecurringItemIncidence($key, $before, $after),
+                    ->openingRecurringItemIncidence($workspace, $key, $before, $after),
             'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
         ];
     }
@@ -927,7 +968,7 @@ final class ReplayInvoicesCommand extends Command
      * @param  list<array<string, mixed>>  $comparisons
      * @return list<array<string, mixed>>
      */
-    private function reconcileLegacyPeriods(array $comparisons): array
+    private function reconcileLegacyPeriods(Workspace $workspace, array $comparisons): array
     {
         $cycleOf = static function (string $key): string {
             [$company, $agreement, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
@@ -970,7 +1011,7 @@ final class ReplayInvoicesCommand extends Command
             $historicalSnapshot = $historical['snapshot'] ?? [];
             /** @var array<string, mixed> $generatedSnapshot */
             $generatedSnapshot = $generated['snapshot'] ?? [];
-            $examined = $this->examine($historicalSnapshot, $generatedSnapshot, (string) $generated['key']);
+            $examined = $this->examine($workspace, $historicalSnapshot, $generatedSnapshot, (string) $generated['key']);
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],

@@ -33,4 +33,25 @@ final class ReplayHistoryBasis
     {
         return ($this->starts[(int) $agreement->id] ?? Carbon::instance($storedStart))->copy()->startOfDay();
     }
+
+    /**
+     * An in-memory agreement whose start reflects the replay ledger basis.
+     *
+     * RetainerCalculator and BillingCycleResolver correctly read `starts_on`
+     * themselves. Giving only their caller an earlier cursor therefore grants
+     * no capacity in that month. Clone the model for replay arithmetic while
+     * leaving the persisted agreement and ordinary generation unchanged.
+     */
+    public function agreementForLedger(ClientAgreement $agreement): ClientAgreement
+    {
+        $start = $this->starts[(int) $agreement->id] ?? null;
+        if (! $start instanceof Carbon) {
+            return $agreement;
+        }
+
+        $ledgerAgreement = clone $agreement;
+        $ledgerAgreement->setAttribute('starts_on', $start->toDateString());
+
+        return $ledgerAgreement;
+    }
 }
