@@ -242,6 +242,191 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame('2026-01-01', $agreement->fresh()->starts_on?->toDateString());
     }
 
+    /**
+     * The carrier month carries capacity, never work, so the grant arrives whole.
+     *
+     * What this pins is the arrival: the full grant is available in the first
+     * recorded month and is still whole at its close, drawn from that month's
+     * own retainer first.
+     *
+     * What it deliberately does not claim is that the entry window is what
+     * keeps the carrier month empty. It is not: widening the window a month
+     * back changes nothing observable here, because the ledger emits months
+     * only from its opening forward and work grouped into a month it never
+     * emits is dropped without trace. The carrier reports zero worked because
+     * it is constructed that way. Anyone tempted to make it read entries
+     * instead should note that the grant would then be consumable by work done
+     * before the agreement existed.
+     */
+    public function test_work_before_the_recorded_start_does_not_consume_the_opening_rollover(): void
+    {
+        $company = $this->company();
+        $project = $this->project($company);
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 1,
+            'initial_rollover_hours' => 5,
+            'retainer_hours' => null,
+        ]);
+
+        // Eight hours in the carrier month itself, before the agreement began.
+        $this->entry($company, $project, [
+            'date_worked' => '2025-12-10',
+            'minutes_worked' => 480,
+        ]);
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $ledger[0]->yearMonth);
+        $this->assertSame(0.0, $ledger[0]->hoursWorked, 'The pre-agreement work is not in the ledger');
+        $this->assertSame(5.0, $ledger[1]->opening->rolloverHours, 'So the whole grant reaches January');
+
+        // The same eight hours inside the agreement's own first month, which is
+        // where they would have to be to consume it.
+        $this->entry($company, $project, [
+            'date_worked' => '2026-01-10',
+            'minutes_worked' => 480,
+        ]);
+
+        $consumed = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame(8.0, $consumed[1]->hoursWorked);
+        $this->assertSame(15.0, $consumed[1]->opening->totalAvailable);
+
+        // Drawn from January's own retainer first, so the grant is still whole
+        // at the close. `unusedHours` is the month's own remainder and does not
+        // fold the carried hours in - which is why asserting on it alone would
+        // not have distinguished a grant that survived from one that was never
+        // made.
+        $this->assertSame(8.0, $consumed[1]->closing->hoursUsedFromRetainer);
+        $this->assertSame(0.0, $consumed[1]->closing->hoursUsedFromRollover);
+        $this->assertSame(2.0, $consumed[1]->closing->unusedHours);
+        $this->assertSame(5.0, $consumed[1]->closing->remainingRollover);
+    }
+
+    /**
+     * A ledger that stops before the carrier month grants nothing.
+     *
+     * Reachable only under a replay basis, which is the one thing that can put
+     * the ledger's opening earlier than the agreement's recorded start. Without
+     * the guard the carrier is prepended anyway and the rollover calculator -
+     * which reads the array in order - is handed a later month at the front of
+     * an earlier sequence.
+     */
+    public function test_a_ledger_ending_before_the_carrier_month_grants_no_opening_capacity(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 1,
+            'initial_rollover_hours' => 5,
+            'retainer_hours' => null,
+        ]);
+
+        $basis = new ReplayHistoryBasis;
+        $basis->seed($agreement, Carbon::parse('2025-09-01'));
+        $ledger = (new InvoiceLedgerBuilder(replayHistoryBasis: $basis))->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            // Stops two months before the carrier month, 2025-12.
+            Carbon::parse('2025-10-31'),
+        );
+
+        $keys = array_map(static fn (MonthSummary $month): string => $month->yearMonth, $ledger);
+        $this->assertSame(['2025-09', '2025-10'], $keys, 'In order, and no carrier among them');
+        $this->assertSame(10.0, $ledger[0]->opening->totalAvailable, 'Opening on its own retainer alone');
+    }
+
+    /**
+     * An agreement with period retainer terms never receives the grant.
+     *
+     * `buildPeriodRetainerLedgerThrough` returns before the grant is applied,
+     * so the opening rollover reaches the monthly ledger only. This is the
+     * branch boundary the audit in #137 counts on when it excludes cadence
+     * agreements from the affected population; if the grant ever moved above
+     * that return, the audit would be undercounting and nothing else would say
+     * so.
+     */
+    public function test_a_period_retainer_agreement_never_receives_an_opening_rollover(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'billing_cadence' => 'quarterly',
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 1,
+            'initial_rollover_hours' => 5,
+            'retainer_hours' => 30,
+        ]);
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2026-01', $ledger[0]->yearMonth, 'The cycle opens at the agreement start');
+        $this->assertSame(0.0, $ledger[0]->opening->rolloverHours);
+
+        // The same terms without the period override, so the assertion is
+        // pinned to the branch rather than to the cadence arithmetic.
+        $agreement->forceFill(['period_retainer_minutes' => null])->save();
+        $monthly = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $monthly[0]->yearMonth, 'Which does receive one');
+        $this->assertSame(5.0, $monthly[1]->opening->rolloverHours);
+    }
+
+    /**
+     * The grant lives exactly as long as any other unused hour.
+     *
+     * `rollover_months = 2` keeps the carrier month's remainder spendable
+     * through the second month after it and expires it at the end of that one.
+     * Asserting the expiry as well as the survival is what distinguishes a
+     * grant that ages on the agreement's policy from one that never ages.
+     */
+    public function test_the_opening_rollover_ages_on_the_agreements_window_like_any_other_hour(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 0,
+            'rollover_months' => 2,
+            'initial_rollover_hours' => 6,
+            'retainer_hours' => null,
+        ]);
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-03-31'),
+        );
+
+        $byMonth = [];
+        foreach ($ledger as $month) {
+            $byMonth[$month->yearMonth] = $month;
+        }
+
+        $this->assertSame(6.0, $byMonth['2026-01']->opening->rolloverHours, 'Spendable in the first month');
+        $this->assertSame(6.0, $byMonth['2026-02']->opening->rolloverHours, 'And the second');
+        $this->assertSame(0.0, $byMonth['2026-03']->opening->rolloverHours, 'Gone in the third');
+        $this->assertSame(6.0, $byMonth['2026-03']->opening->expiredHours, 'Reported as expired once');
+    }
+
     public function test_the_ledger_refuses_time_whose_project_belongs_to_another_company(): void
     {
         $company = $this->company();
