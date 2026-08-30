@@ -109,14 +109,19 @@ final class AuditTenantForeignKeysCommand extends Command
             return null;
         }
 
+        // The parent is aliased because one reference is self-referential
+        // (client_time_entries.split_from_time_entry_id). Unaliased, both sides of
+        // the correlation would bind to the subquery's own copy of the table, and
+        // every row with a split parent would be counted as a violation - a check
+        // that reports a number nobody can act on is worse than no check.
         return DB::table($child)
             ->whereNotNull($child.'.workspace_id')
             ->whereNotNull($child.'.'.$reference->childColumn)
             ->whereNotExists(function (Builder $query) use ($child, $parent, $reference): void {
                 $query->selectRaw('1')
-                    ->from($parent)
-                    ->whereColumn($parent.'.id', $child.'.'.$reference->childColumn)
-                    ->whereColumn($parent.'.workspace_id', $child.'.workspace_id');
+                    ->from($parent.' as tenant_parent')
+                    ->whereColumn('tenant_parent.id', $child.'.'.$reference->childColumn)
+                    ->whereColumn('tenant_parent.workspace_id', $child.'.workspace_id');
             })
             ->count();
     }

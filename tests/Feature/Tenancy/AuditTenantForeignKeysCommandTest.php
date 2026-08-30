@@ -4,6 +4,8 @@ namespace Tests\Feature\Tenancy;
 
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -109,6 +111,52 @@ final class AuditTenantForeignKeysCommandTest extends TestCase
         $this->assertSame(1, $decoded['summary']['violating_rows']);
         $this->assertSame(1, $decoded['summary']['violating_references']);
         $this->assertSame(0, $decoded['summary']['pending']);
+    }
+
+    /**
+     * `client_time_entries.split_from_time_entry_id` names its own table.
+     *
+     * Correlating an unaliased subquery against the same table binds both sides
+     * to the subquery's copy, so every legitimately split entry reads as a
+     * violation and the command fails on a database with nothing wrong with it.
+     * A gate that cries wolf gets ignored, which is the same as not having one.
+     */
+    public function test_a_self_referencing_column_does_not_report_a_false_violation(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Splits', 'slug' => 'splits']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Split Client',
+            'slug' => 'split-client',
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Split Project',
+        ]);
+        $root = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-15',
+            'minutes' => 120,
+            'description' => 'Root',
+            'status' => 'approved',
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-15',
+            'minutes' => 60,
+            'description' => 'Fragment',
+            'status' => 'approved',
+            'split_from_time_entry_id' => $root->id,
+        ]);
+
+        $this->artisan('svc:schema:audit-tenant-fks')->assertExitCode(0);
     }
 
     public function test_an_invalid_format_is_refused_rather_than_guessed(): void
