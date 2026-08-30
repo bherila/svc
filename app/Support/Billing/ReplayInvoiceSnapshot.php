@@ -135,6 +135,39 @@ final readonly class ReplayInvoiceSnapshot
         return $minutes;
     }
 
+    /** Capacity sold by this historical row under its immutable retainer contract. */
+    public function contractRetainerCapacityMinutes(
+        int $agreementId,
+        string $currency,
+        int $retainerAmount,
+    ): ?int {
+        if ($this->currency !== $currency) {
+            return null;
+        }
+
+        $retainers = $this->linesOfType('retainer');
+        if (count($retainers) !== 1) {
+            return null;
+        }
+
+        $line = $retainers[0];
+        $minutes = $line->hoursMinutes();
+
+        return $minutes !== null
+            && $minutes > 0
+            && $line->agreementId === (string) $agreementId
+            && $line->unitAmount === $retainerAmount
+            && $line->taxAmount === 0
+            && $line->totalAmount === $retainerAmount
+            && is_numeric($line->quantity)
+            && (float) $line->quantity === 1.0
+            && $line->sourceMinutes === 0
+            && $line->agreementRateSourceMinutes === 0
+            && $line->hasNoAuxiliaryOwnership()
+                ? $minutes
+                : null;
+    }
+
     /** @return array<string, int> */
     public function contractLineMultisetOfType(string $type): array
     {

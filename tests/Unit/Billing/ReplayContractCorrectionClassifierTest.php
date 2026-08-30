@@ -431,6 +431,23 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             [$laterKey => $row($beforeSameRow, '2026-01')],
             [$laterKey => $row($afterSameRow, '2026-01')],
         ), 'An unchanged same-row draw reserves capacity before the newly moved minutes are proved.');
+
+        $beforeTwoLots = $beforeCorrection;
+        $beforeTwoLots['lines'][0] = $this->line('retainer', 150000, 150000, '1.0000', 600, 'retainer-fee');
+        $beforeTwoLots['lines'][1] = $this->line('additional_hours', 50000, 20000, '2.5000', 150, 'hourly');
+        $beforeTwoLots['lines'][] = $this->line('prior_month_retainer', 0, 0, '0.0000', 600, 'same-row-draw');
+        $beforeTwoLots['subtotal_amount'] = 200000;
+        $beforeTwoLots['total_amount'] = 200000;
+        $afterTwoLots = $afterCorrection;
+        $afterTwoLots['lines'][0] = $this->line('retainer', 150000, 150000, '1.0000', 600, 'retainer-fee');
+        $afterTwoLots['lines'][1] = $this->line('prior_month_retainer', 0, 0, '0.0000', 750, 'same-row-draw');
+        $afterTwoLots['subtotal_amount'] = 150000;
+        $afterTwoLots['total_amount'] = 150000;
+        $this->assertSame([$laterKey], array_keys($prove->invoke(
+            $command,
+            [$laterKey => $row($beforeTwoLots, '2026-01')],
+            [$laterKey => $row($afterTwoLots, '2026-01')],
+        )), 'Ordinary contracted capacity remains independently available after the opening lot is reserved.');
     }
 
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void

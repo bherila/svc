@@ -1202,7 +1202,22 @@ final class ReplayInvoicesCommand extends Command
                 if ($historicalDrawMinutes === null) {
                     break;
                 }
-                $remainingForCorrection = max(0, $remainingMinutes - $historicalDrawMinutes);
+                $ordinaryCapacityMinutes = $row['before']->contractRetainerCapacityMinutes(
+                    $context->agreementId,
+                    $context->currency,
+                    $context->retainerAmount,
+                );
+                if ($ordinaryCapacityMinutes === null) {
+                    break;
+                }
+                // Reserve the unchanged draw before proving the increase. The
+                // row's ordinary contracted retainer is independent capacity,
+                // so the ceiling is that proved lot plus the replay-only lot;
+                // the latter is still consumed FIFO below across later rows.
+                $remainingForCorrection = max(
+                    0,
+                    $remainingMinutes + $ordinaryCapacityMinutes - $historicalDrawMinutes,
+                );
                 $proof = $classifier->historyOmittedOpeningCapacity(
                     $context->forRemainingMinutes($remainingForCorrection),
                     $row['before'],
