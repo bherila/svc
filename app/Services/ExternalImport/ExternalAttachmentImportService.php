@@ -13,6 +13,7 @@ use App\Models\ExternalImportItem;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentStorageService;
+use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
@@ -58,6 +59,7 @@ final class ExternalAttachmentImportService
     public function __construct(
         private readonly SourceGuard $sourceGuard,
         private readonly AttachmentStorageService $storage,
+        private readonly WorkspaceClock $clock,
     ) {}
 
     /** @return array<string, mixed> */
@@ -490,7 +492,7 @@ final class ExternalAttachmentImportService
                 'source_sha256' => $sourceFile['sha256'],
                 'source_bytes' => $sourceFile['bytes'],
                 'destination_object_key_hash' => hash('sha256', $attachment->object_key),
-                'copied_at' => now(),
+                'copied_at' => $this->clock->now($workspace),
             ]);
             $item->forceFill([
                 'target_public_id' => $attachment->public_id,

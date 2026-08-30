@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 
 class ProposalWorkflow
@@ -16,6 +17,7 @@ class ProposalWorkflow
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /**
@@ -75,7 +77,7 @@ class ProposalWorkflow
 
             $locked->forceFill([
                 'status' => 'sent',
-                'sent_at' => now(),
+                'sent_at' => $this->clock->now($locked->workspace),
                 'is_visible_to_client' => true,
             ])->save();
 
@@ -96,11 +98,11 @@ class ProposalWorkflow
                 throw new EngagementException('Only sent proposals can be accepted.');
             }
 
-            if ($locked->valid_until !== null && $locked->valid_until->isBefore(today())) {
+            if ($locked->valid_until !== null && $locked->valid_until->isBefore($this->clock->today($locked->workspace))) {
                 throw new EngagementException('This proposal has expired.');
             }
 
-            $acceptedAt = now();
+            $acceptedAt = $this->clock->now($locked->workspace);
             $locked->forceFill([
                 'status' => 'accepted',
                 'accepted_at' => $acceptedAt,

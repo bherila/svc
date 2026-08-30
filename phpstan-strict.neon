@@ -1,0 +1,6 @@
+includes:
+    - phpstan.neon
+    - phpstan-strict-baseline.neon
+
+parameters:
+    level: 9

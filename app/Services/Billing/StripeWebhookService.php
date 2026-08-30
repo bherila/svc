@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
+use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Stripe\Event;
@@ -17,6 +18,7 @@ final class StripeWebhookService
         private readonly InvoiceLifecycleService $invoices,
         private readonly StripePaymentMethodService $paymentMethods,
         private readonly StripeGateway $gateway,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     public function process(Event $event, string $payload): bool
@@ -36,8 +38,8 @@ final class StripeWebhookService
             'object_id' => isset($object['id']) ? (string) $object['id'] : null,
             'payload_hash' => $payloadHash,
             'status' => 'received',
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $this->clock->now(),
+            'updated_at' => $this->clock->now(),
         ]);
         $ledger = ClientStripeEvent::query()->where('stripe_event_id', $event->id)->firstOrFail();
         if (! hash_equals($ledger->payload_hash, $payloadHash)
@@ -58,7 +60,7 @@ final class StripeWebhookService
             $ledger->forceFill([
                 'status' => 'failed',
                 'error_summary' => mb_substr($exception->getMessage(), 0, 1000),
-                'processed_at' => now(),
+                'processed_at' => $this->clock->now(),
             ])->save();
 
             throw $exception;
@@ -111,7 +113,7 @@ final class StripeWebhookService
                 $this->handleInvoiceEvent($event, $object, $ledger);
             }
 
-            $ledger->forceFill(['status' => 'processed', 'processed_at' => now()])->save();
+            $ledger->forceFill(['status' => 'processed', 'processed_at' => $this->clock->now()])->save();
 
             return true;
         });
@@ -200,7 +202,7 @@ final class StripeWebhookService
             ->update([
                 'provider_event_created_at' => max(0, $providerCreatedAt),
                 'provider_event_id' => $eventId,
-                'updated_at' => now(),
+                'updated_at' => $this->clock->now(),
             ]);
     }
 
@@ -281,7 +283,7 @@ final class StripeWebhookService
         $payment = $this->invoices->applyPayment($invoice, [
             'amount' => $amount,
             'currency' => $currency,
-            'received_on' => now()->toDateString(),
+            'received_on' => $this->clock->today($workspace)->toDateString(),
             'method' => 'stripe',
             'status' => 'succeeded',
             'provider' => 'stripe',

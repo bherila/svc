@@ -85,10 +85,8 @@ class ClientCompany extends Model implements WorkspaceOwned
      * outside its own term, and invoice generation must not bill against one
      * that has ended.
      */
-    public function activeAgreement(): ?ClientAgreement
+    public function activeAgreement(CarbonImmutable $today): ?ClientAgreement
     {
-        $today = CarbonImmutable::now()->startOfDay();
-
         return $this->agreements()
             ->where('workspace_id', $this->workspace_id)
             ->where('status', 'active')
@@ -107,7 +105,7 @@ class ClientCompany extends Model implements WorkspaceOwned
     {
         return $this->agreements()
             ->where('workspace_id', $this->workspace_id)
-            ->where('status', '!=', 'draft')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             ->orderByDesc('starts_on')
             ->orderByDesc('id')
             ->first();

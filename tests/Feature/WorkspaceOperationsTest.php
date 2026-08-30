@@ -18,10 +18,12 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
 
 class WorkspaceOperationsTest extends TestCase
 {
+    use AssertsSurfaceIsolation;
     use RefreshDatabase;
 
     public function test_workspace_manager_can_use_the_integrated_operations_screen(): void
@@ -288,5 +290,329 @@ class WorkspaceOperationsTest extends TestCase
         $this->assertArrayNotHasKey('id', $membership->toArray());
         $this->assertArrayNotHasKey('workspace_id', $membership->toArray());
         $this->assertArrayNotHasKey('user_id', $membership->toArray());
+    }
+
+    public function test_nothing_from_another_workspace_reaches_the_operations_payload(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Visible', 'slug' => 'synthetic-visible']);
+        $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Synthetic Visible Client',
+            'slug' => 'synthetic-visible-client',
+        ]);
+        $visibleProposal = ClientProposal::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Visible Synthetic Proposal',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $visibleProject = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Synthetic Visible Project',
+            'status' => 'active',
+        ]);
+
+        $foreignWorker = User::factory()->create(['name' => 'Foreign Worker Name']);
+        $foreign = Workspace::query()->create(['name' => 'Foreign Tenant Name', 'slug' => 'foreign-tenant']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreign->id,
+            'name' => 'Foreign Client Name',
+            'slug' => 'foreign-client-name',
+        ]);
+        $foreignProject = ClientProject::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'name' => 'Foreign Project Name',
+            'status' => 'active',
+        ]);
+        ClientProposal::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'title' => 'Foreign Proposal Title',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'title' => 'Foreign Agreement Title',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'invoice_number' => 'FOREIGN-INV-7777',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 10000,
+            'tax_amount' => 0,
+            'total_amount' => 10000,
+        ]);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'actor_user_id' => $foreignWorker->id,
+            'action' => 'invoice.generated',
+            'payload' => ['note' => 'Foreign Activity Payload'],
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $foreignCompany->id,
+            'client_project_id' => $foreignProject->id,
+            'user_id' => $foreignWorker->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 60,
+            'description' => 'Foreign Time Description',
+            'status' => 'draft',
+        ]);
+
+        // Cross-tenant child rows: a foreign workspace_id pointing at the
+        // VISIBLE company and project. The parent whereIn filters cannot
+        // exclude these, so only the workspace predicate on each query keeps
+        // them out — which is exactly what this test must pin independently.
+        // #113's composite (workspace_id, id) foreign keys will make these
+        // rows unrepresentable; when that lands, this block is the fixture
+        // fallout to remove in favour of the schema-level guarantee.
+        ClientProposal::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $company->id,
+            'title' => 'Mixed Tenant Proposal Title',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $company->id,
+            'title' => 'Mixed Tenant Agreement Title',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $company->id,
+            'invoice_number' => 'MIXED-INV-8888',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 10000,
+            'tax_amount' => 0,
+            'total_amount' => 10000,
+        ]);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $company->id,
+            'actor_user_id' => $foreignWorker->id,
+            'action' => 'invoice.generated',
+            'payload' => ['note' => 'Mixed Tenant Activity Payload'],
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $foreign->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $visibleProject->id,
+            'user_id' => $foreignWorker->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 60,
+            'description' => 'Mixed Tenant Time Description',
+            'status' => 'draft',
+        ]);
+        ClientAttachment::query()->create([
+            'workspace_id' => $foreign->id,
+            'record_type' => 'proposal',
+            'record_public_id' => $visibleProposal->public_id,
+            'object_key' => 'synthetic/mixed-tenant/proposal.txt',
+            'original_filename' => 'Mixed Tenant Attachment Name.txt',
+            'media_type' => 'text/plain',
+            'bytes' => 32,
+            'sha256' => hash('sha256', 'synthetic-mixed-tenant-proposal'),
+            'uploader_id' => $foreignWorker->id,
+            'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+            'available_at' => now(),
+        ]);
+
+        $response = $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/operations")
+            ->assertOk();
+
+        $this->assertInertiaPayloadOmits($response, [
+            'Foreign Tenant Name',
+            'Foreign Client Name',
+            'Foreign Project Name',
+            'Foreign Proposal Title',
+            'Foreign Agreement Title',
+            'FOREIGN-INV-7777',
+            'Foreign Activity Payload',
+            'Foreign Time Description',
+            'Foreign Worker Name',
+            'Mixed Tenant Proposal Title',
+            'Mixed Tenant Agreement Title',
+            'MIXED-INV-8888',
+            'Mixed Tenant Activity Payload',
+            'Mixed Tenant Time Description',
+            'Mixed Tenant Attachment Name.txt',
+        ], 'Visible Synthetic Proposal');
+    }
+
+    public function test_the_operations_page_names_only_columns_that_exist(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Identifier Scope', 'slug' => 'synthetic-identifier-scope']);
+        $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Synthetic Client',
+            'slug' => 'synthetic-client',
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Synthetic Project',
+            'status' => 'active',
+        ]);
+        $proposal = ClientProposal::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Synthetic Proposal',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Synthetic Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+        ]);
+        ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly',
+            'next_run_on' => '2026-09-01',
+            'due_days' => 30,
+            'currency' => 'USD',
+            'is_active' => true,
+            'line_template' => [['type' => 'service', 'description' => 'Synthetic service', 'quantity' => '1', 'unit_amount' => 10000]],
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'invoice_number' => 'SYN-IDENT-1',
+            'status' => 'issued',
+            'currency' => 'USD',
+            'subtotal_amount' => 10000,
+            'tax_amount' => 0,
+            'total_amount' => 10000,
+        ]);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'actor_user_id' => $manager->id,
+            'action' => 'invoice.generated',
+            'payload' => ['invoice_kind' => 'cadence_period'],
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => $manager->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 60,
+            'description' => 'Synthetic identifier work',
+            'status' => 'draft',
+        ]);
+        ClientAttachment::query()->create([
+            'workspace_id' => $workspace->id,
+            'record_type' => 'proposal',
+            'record_public_id' => $proposal->public_id,
+            'object_key' => 'synthetic/identifier-scope/proposal.txt',
+            'original_filename' => 'synthetic-proposal.txt',
+            'media_type' => 'text/plain',
+            'bytes' => 32,
+            'sha256' => hash('sha256', 'synthetic-identifier-proposal'),
+            'uploader_id' => $manager->id,
+            'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+            'available_at' => now(),
+        ]);
+
+        $this->assertQueriesNameOnlyRealIdentifiers(
+            fn () => $this->actingAs($manager)
+                ->get("/workspaces/{$workspace->public_id}/operations")
+                ->assertOk(),
+        );
+    }
+
+    public function test_the_operations_page_does_not_query_once_per_row(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Row Scope', 'slug' => 'synthetic-row-scope']);
+        $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+
+        // A full company bundle, so the second render grows the PARENT
+        // collections too — the controller iterates companies and projects,
+        // and a lazy query per parent repeats identically across two renders
+        // of the same parent count, which is how a child-only version of this
+        // test would stay green through a real multi-client N+1.
+        $sequence = 0;
+        $addCompanyBundle = function (int $entries, int $activities) use ($workspace, $manager, &$sequence): void {
+            $sequence++;
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => "Synthetic Client {$sequence}",
+                'slug' => "synthetic-client-{$sequence}",
+            ]);
+            $project = ClientProject::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'name' => "Synthetic Project {$sequence}",
+                'status' => 'active',
+            ]);
+            ClientProposal::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'title' => "Synthetic Proposal {$sequence}",
+                'currency' => 'USD',
+                'status' => 'draft',
+            ]);
+            for ($i = 0; $i < $entries; $i++) {
+                ClientTimeEntry::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id,
+                    'client_project_id' => $project->id,
+                    'user_id' => $manager->id,
+                    'worked_on' => '2026-08-20',
+                    'minutes' => 30,
+                    'description' => "Synthetic row work {$sequence}-{$i}",
+                    'status' => 'draft',
+                ]);
+            }
+            for ($i = 0; $i < $activities; $i++) {
+                ClientCompanyActivity::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id,
+                    'actor_user_id' => $manager->id,
+                    'action' => 'invoice.generated',
+                    'payload' => ['invoice_kind' => 'cadence_period'],
+                ]);
+            }
+        };
+
+        $addCompanyBundle(3, 2);
+
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->actingAs($manager)
+                ->get("/workspaces/{$workspace->public_id}/operations")
+                ->assertOk(),
+            function () use ($addCompanyBundle): void {
+                $addCompanyBundle(27, 40);
+                $addCompanyBundle(5, 3);
+            },
+        );
     }
 }
