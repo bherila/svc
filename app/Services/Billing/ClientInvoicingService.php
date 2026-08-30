@@ -1616,7 +1616,13 @@ final class ClientInvoicingService
         $terminationDate = $this->agreementEnd($agreement);
 
         if ($agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
-            $retainerPeriodStart = Carbon::instance($this->clock->today($agreement->workspace))->addMonth();
+            // Generate through the end of the next calendar month. Adding one
+            // month to an arbitrary month-end date can overflow (August 31 +
+            // one month becomes October 1), which would sell an extra future
+            // retainer and reconcile a work period that has not happened yet.
+            $retainerPeriodStart = Carbon::instance($this->clock->today($agreement->workspace))
+                ->startOfMonth()
+                ->addMonth();
 
             if ($successorAgreement instanceof ClientAgreement && $terminationDate instanceof Carbon) {
                 // Leave room for the final catch-up invoice: the month after

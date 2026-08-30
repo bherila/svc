@@ -561,7 +561,7 @@ final class ReplayContractCorrectionClassifier
             // complete eligible set here from one eager query: if a second
             // agreement could have generated a cadence chain, explaining only
             // the rows the engine happened to emit would hide its omission.
-            $selectionCeiling = Carbon::instance($anchor)->copy()->addMonth()->startOfDay();
+            $selectionCeiling = Carbon::instance($anchor)->copy()->addMonthNoOverflow()->startOfDay();
             $eligibleAgreements = $agreementsByCompany->get((int) $companyId, collect())
                 ->filter(static fn (ClientAgreement $candidate): bool => $candidate->billsOnARecurringCadence()
                     && $candidate->starts_on !== null

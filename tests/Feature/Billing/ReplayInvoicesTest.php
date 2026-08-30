@@ -1243,6 +1243,34 @@ final class ReplayInvoicesTest extends TestCase
             $anchors,
         ), 'Agreement-rate cadence cannot be proved from flat-hourly or direct source work.');
 
+        $monthEndFutureAgreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Outside the month-end selection window',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-10-01',
+            'retainer_minutes' => 60,
+            'retainer_amount' => 10000,
+            'billing_cadence' => 'monthly',
+        ]);
+        $monthEndAnchors = [$this->company->id => Carbon::parse('2026-08-31')->endOfDay()];
+        $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $actual,
+            $monthEndAnchors,
+        ), 'October 1 is not within the one-month selection window from August 31.');
+
+        $monthEndFutureAgreement->update(['starts_on' => '2026-09-30']);
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $actual,
+            $monthEndAnchors,
+        ), 'September 30 is the inclusive month-end selection boundary.');
+        $monthEndFutureAgreement->delete();
+
         $duplicateRetainer = $actual;
         $duplicateRetainer[$finalKey]['lines'][] = $retainerLine('2027-01-01');
         $duplicateRetainer[$finalKey]['subtotal_amount'] = 300000;
