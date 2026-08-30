@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\ReplayInvoiceLineSnapshot;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
@@ -624,7 +625,16 @@ final class ReplayContractCorrectionClassifier
 
             usort($cycles, static fn (array $left, array $right): int => $left['start'] <=> $right['start']);
             $months = $agreement->effectiveBillingCadence()->monthsInCycle();
-            $nextStart = Carbon::instance($agreement->starts_on)->startOfDay();
+            // Use the same natural opening cycle as invoice generation. A
+            // monthly agreement may start mid-month, but cycleContaining()
+            // deliberately resolves that opening sale to the calendar month;
+            // anchoring this proof to the literal start date would reject the
+            // engine's valid prorated opening invoice.
+            $nextStart = $this->billingCycleResolver
+                ->cycleContaining($agreement, Carbon::instance($agreement->starts_on)->startOfDay())
+                ->start
+                ->copy()
+                ->startOfDay();
             foreach ($cycles as $cycle) {
                 $expectedEnd = $nextStart->copy()->addMonths($months)->subDay()->startOfDay();
                 $expectedPeriodStart = $nextStart->copy()->subMonths($months)->startOfDay();
@@ -633,7 +643,14 @@ final class ReplayContractCorrectionClassifier
                     || ! $cycle['end']->isSameDay($expectedEnd)
                     || ! $cycle['period_start']->isSameDay($expectedPeriodStart)
                     || ! $cycle['period_end']->isSameDay($expectedPeriodEnd)
-                    || ! $this->hasConfiguredRetainerLine($agreement, $cycle['start'], $cycle['end'], $cycle['lines'])) {
+                    || ! $this->hasOnlyConfiguredCadenceLines(
+                        $agreement,
+                        $cycle['start'],
+                        $cycle['end'],
+                        $cycle['period_start'],
+                        $cycle['period_end'],
+                        $cycle['lines'],
+                    )) {
                     $valid = false;
                     break;
                 }
@@ -678,10 +695,12 @@ final class ReplayContractCorrectionClassifier
     /**
      * @param  list<array<string, mixed>>  $lines
      */
-    private function hasConfiguredRetainerLine(
+    private function hasOnlyConfiguredCadenceLines(
         ClientAgreement $agreement,
         Carbon $cycleStart,
         Carbon $cycleEnd,
+        Carbon $periodStart,
+        Carbon $periodEnd,
         array $lines,
     ): bool {
         $monthStarts = [];
@@ -719,25 +738,88 @@ final class ReplayContractCorrectionClassifier
         ) * 100);
         $expectedHours = round($retainerHours, 4);
 
+        $snapshots = array_map(ReplayInvoiceLineSnapshot::fromArray(...), $lines);
         $retainerLines = array_values(array_filter(
-            $lines,
-            static fn (array $line): bool => ($line['type'] ?? null) === 'retainer',
+            $snapshots,
+            static fn (ReplayInvoiceLineSnapshot $line): bool => $line->type === InvoiceLineType::Retainer->value,
         ));
         if ($expectedFee <= 0 && $expectedHours <= 0) {
-            return $retainerLines === [];
+            if ($retainerLines !== []) {
+                return false;
+            }
+        } elseif (count($retainerLines) !== 1) {
+            return false;
+        } else {
+            $retainer = $retainerLines[0];
+            if ($retainer->unitAmount !== $expectedFee
+                || $retainer->totalAmount !== $expectedFee
+                || $retainer->taxAmount !== 0
+                || self::decimalString($retainer->quantity) !== '1'
+                || round($retainer->hours ?? 0.0, 4) !== round($expectedHours, 4)
+                || $retainer->lineDate !== $cycleStart->toDateString()) {
+                return false;
+            }
         }
-        if (count($retainerLines) !== 1) {
+
+        foreach ($snapshots as $line) {
+            if ($line->type === InvoiceLineType::Retainer->value) {
+                continue;
+            }
+
+            // This attribution is intentionally narrower than the invoice
+            // generator. It can independently prove ordinary retainer draws
+            // and agreement-rate overage, the only extra composition observed
+            // in the omitted cadence. Recurring items, milestones, credits,
+            // subcontractor rates, and any future line type need their own
+            // source-backed proof; until then replay fails closed.
+            if ($line->type === InvoiceLineType::AdditionalHours->value) {
+                $minutes = $line->hoursMinutes();
+                if ($minutes === null
+                    || $minutes <= 0
+                    || $line->quantityMinutes() !== $minutes
+                    || $line->sourceMinutes !== $minutes
+                    || $line->agreementId !== (string) $agreement->id
+                    || $line->unitAmount !== (int) ($agreement->hourly_rate_amount ?? 0)
+                    || $line->taxAmount !== 0
+                    || $line->totalAmount !== MoneyService::hourlyAmount($minutes, $line->unitAmount)
+                    || ! self::lineFallsWithin($line, $periodStart, $periodEnd)) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if ($line->type === InvoiceLineType::PriorMonthRetainer->value) {
+                $minutes = $line->hoursMinutes();
+                if ($minutes === null
+                    || $minutes <= 0
+                    || $line->sourceMinutes !== $minutes
+                    || self::decimalString($line->quantity) !== '0'
+                    || $line->agreementId !== (string) $agreement->id
+                    || $line->unitAmount !== 0
+                    || $line->taxAmount !== 0
+                    || $line->totalAmount !== 0
+                    || ! self::lineFallsWithin($line, $periodStart, $periodEnd)) {
+                    return false;
+                }
+
+                continue;
+            }
+
             return false;
         }
 
-        $line = $retainerLines[0];
+        return true;
+    }
 
-        return ReplaySnapshotValue::integer($line['unit_amount'] ?? null) === $expectedFee
-            && ReplaySnapshotValue::integer($line['total_amount'] ?? null) === $expectedFee
-            && ReplaySnapshotValue::integer($line['tax_amount'] ?? null) === 0
-            && self::decimalString($line['quantity'] ?? null) === '1'
-            && round(ReplaySnapshotValue::number($line['hours'] ?? null) ?? 0.0, 4) === round($expectedHours, 4)
-            && ReplaySnapshotValue::text($line['line_date'] ?? null) === $cycleStart->toDateString();
+    private static function lineFallsWithin(
+        ReplayInvoiceLineSnapshot $line,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+    ): bool {
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $line->lineDate) === 1
+            && $line->lineDate >= $periodStart->toDateString()
+            && $line->lineDate <= $periodEnd->toDateString();
     }
 
     private static function decimalString(mixed $value): string

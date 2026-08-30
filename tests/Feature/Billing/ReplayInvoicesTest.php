@@ -886,6 +886,54 @@ final class ReplayInvoicesTest extends TestCase
         }
     }
 
+    public function test_a_mid_month_monthly_start_uses_the_generators_opening_cycle_in_the_cadence_proof(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Synthetic mid-month monthly retainer',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-15',
+            'retainer_minutes' => 120,
+            'retainer_amount' => 25000,
+            'hourly_rate_amount' => 15000,
+            'billing_cadence' => 'monthly',
+            'rollover_months' => 0,
+        ]);
+        $this->adHocHistory('ADHOC-MID-MONTH-1', '2026-03-01', '2024-01-01', '2024-01-31');
+        $this->adHocHistory('ADHOC-MID-MONTH-2', '2026-04-01', '2024-02-01', '2024-02-29');
+
+        $report = tempnam(sys_get_temp_dir(), 'replay-mid-month-cadence-gap-');
+        $this->assertNotFalse($report);
+        try {
+            $exit = Artisan::call('svc:billing:replay', [
+                '--workspace' => $this->workspace->public_id,
+                '--as-of' => '2026-03-15',
+                '--report' => $report,
+            ]);
+
+            /** @var array{comparisons:list<array<string,mixed>>} $detail */
+            $detail = json_decode((string) file_get_contents($report), true, 512, JSON_THROW_ON_ERROR);
+            $explained = array_values(array_filter(
+                $detail['comparisons'],
+                static fn (array $comparison): bool => $comparison['verdict'] === 'unexpected'
+                    && in_array(
+                        'configured_cadence_absent_from_history',
+                        array_column((array) ($comparison['explained_by'] ?? []), 'key'),
+                        true,
+                    ),
+            ));
+
+            $this->assertSame(0, $exit, (string) json_encode($detail['comparisons']));
+            $this->assertCount(4, $explained);
+        } finally {
+            if (is_file($report)) {
+                unlink($report);
+            }
+        }
+    }
+
     public function test_a_later_omitted_recurring_incidence_is_not_waived_as_the_opening_charge(): void
     {
         $item = null;
@@ -1016,6 +1064,27 @@ final class ReplayInvoicesTest extends TestCase
             $mispriced,
             $anchors,
         ), 'A self-consistent invoice still needs the exact retainer price configured on the agreement.');
+
+        $extraCharge = $actual;
+        $extraCharge[$finalKey]['lines'][] = [
+            'type' => 'additional_hours',
+            'unit_amount' => 15000,
+            'quantity' => '1',
+            'hours' => 1.0,
+            'source_minutes' => 0,
+            'total_amount' => 15000,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'line_date' => '2026-12-31',
+        ];
+        $extraCharge[$finalKey]['subtotal_amount'] = 165000;
+        $extraCharge[$finalKey]['total_amount'] = 165000;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $extraCharge,
+            $anchors,
+        ), 'A correct retainer line cannot hide an additional charge with no source work allocation.');
 
         ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,

@@ -19,6 +19,7 @@ final readonly class ReplayInvoiceLineSnapshot
         public string $descriptionHash,
         public string $identityHash,
         public ?float $hours,
+        public ?int $sourceMinutes,
     ) {}
 
     /** @param array<string, mixed> $line */
@@ -38,6 +39,9 @@ final readonly class ReplayInvoiceLineSnapshot
             descriptionHash: ReplaySnapshotValue::text($line['description_hash'] ?? null),
             identityHash: ReplaySnapshotValue::text($line['identity_hash'] ?? null),
             hours: ReplaySnapshotValue::number($line['hours'] ?? null),
+            sourceMinutes: array_key_exists('source_minutes', $line)
+                ? ReplaySnapshotValue::integer($line['source_minutes'])
+                : null,
         );
     }
 

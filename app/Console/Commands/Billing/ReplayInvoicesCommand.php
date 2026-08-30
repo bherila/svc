@@ -485,7 +485,15 @@ final class ReplayInvoicesCommand extends Command
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companies->pluck('id'))
-            ->with('lines')
+            ->with([
+                'lines' => fn ($lines) => $lines
+                    ->where('workspace_id', $workspace->id)
+                    ->with([
+                        'timeEntries' => fn ($entries) => $entries
+                            ->where('client_time_entries.workspace_id', $workspace->id)
+                            ->where('client_invoice_line_time_entries.workspace_id', $workspace->id),
+                    ]),
+            ])
             ->orderBy('id')
             ->get();
 
@@ -499,7 +507,7 @@ final class ReplayInvoicesCommand extends Command
             ->pluck('public_id', 'client_invoice_line_id');
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null, source_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -550,6 +558,11 @@ final class ReplayInvoicesCommand extends Command
                     // removed and another added.
                     'identity_hash' => substr(hash_hmac('sha256', self::withoutAmounts((string) $line->description, (string) $line->type), $this->digestKey), 0, 12),
                     'hours' => $line->hours === null ? null : round((float) $line->hours, 4),
+                    // Only the aggregate allocation is retained. It proves a
+                    // priced or capacity line is backed by work without moving
+                    // descriptions, people, project identifiers, or raw entry
+                    // data into the replay report.
+                    'source_minutes' => (int) $line->timeEntries->sum('minutes'),
                 ];
             }
 
