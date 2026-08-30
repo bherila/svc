@@ -116,10 +116,14 @@ final class TenantReferenceInventory
             TenantReference::exempt('client_time_entries', 'client_task_id', 'client_tasks', self::REASON_SET_NULL),
             TenantReference::exempt('client_time_entries', 'split_from_time_entry_id', 'client_time_entries', self::REASON_SET_NULL),
             TenantReference::exempt('external_import_attachment_copies', 'client_attachment_id', 'client_attachments', self::REASON_SET_NULL),
-            TenantReference::exempt('client_invoices', 'client_agreement_id', 'client_agreements', self::REASON_LINEAGE),
-            TenantReference::exempt('client_invoices', 'client_billing_schedule_id', 'client_billing_schedules', self::REASON_LINEAGE),
-            TenantReference::exempt('client_invoice_lines', 'client_agreement_id', 'client_agreements', self::REASON_LINEAGE),
-            TenantReference::exempt('client_invoice_lines', 'client_agreement_recurring_item_id', 'client_agreement_recurring_items', self::REASON_LINEAGE),
+            // Declared as lineage rather than plain exemptions: the row these
+            // name may legitimately be deleted, so the audit asks whether an
+            // existing parent is in the wrong workspace instead of treating a
+            // permitted deletion as a violation it can never clear.
+            TenantReference::lineage('client_invoices', 'client_agreement_id', 'client_agreements', self::REASON_LINEAGE),
+            TenantReference::lineage('client_invoices', 'client_billing_schedule_id', 'client_billing_schedules', self::REASON_LINEAGE),
+            TenantReference::lineage('client_invoice_lines', 'client_agreement_id', 'client_agreements', self::REASON_LINEAGE),
+            TenantReference::lineage('client_invoice_lines', 'client_agreement_recurring_item_id', 'client_agreement_recurring_items', self::REASON_LINEAGE),
 
             // stripe_payment_method_states is a webhook-ordering cache whose own
             // workspace_id is nullable: a payment-method event can arrive before

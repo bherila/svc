@@ -22,7 +22,9 @@ use Illuminate\Support\Facades\Schema;
  */
 final class AuditTenantForeignKeysCommand extends Command
 {
-    protected $signature = 'svc:schema:audit-tenant-fks {--format=text : Output text or json}';
+    protected $signature = 'svc:schema:audit-tenant-fks
+        {--format=text : Output text or json}
+        {--allow-pending : Exit successfully even when some references could not be inspected}';
 
     protected $description = 'Count rows whose tenant-owned parent lives in another workspace';
 
@@ -35,6 +37,8 @@ final class AuditTenantForeignKeysCommand extends Command
 
             return self::INVALID;
         }
+
+        $allowPending = (bool) $this->option('allow-pending');
 
         $rows = [];
         $violations = 0;
@@ -84,17 +88,51 @@ final class AuditTenantForeignKeysCommand extends Command
             $this->components->twoColumnDetail('References not yet migrated', (string) $summary['pending']);
             $this->components->twoColumnDetail('References with violations', (string) $summary['violating_references']);
             $this->components->twoColumnDetail('Violating rows', (string) $summary['violating_rows']);
+
+            if ($pending > 0 && ! $allowPending) {
+                $this->newLine();
+                $this->components->error(
+                    "{$pending} reference(s) could not be inspected on this schema. Migrate first, or pass --allow-pending if this run is deliberately checking a pre-migration database."
+                );
+            }
+        }
+
+        // A check that cannot tell "passed" from "did not run" has to fail. A
+        // reference reported as pending is one the schema could not answer, so
+        // a clean exit here would tell a deployment that a schema nobody
+        // finished inspecting is safe to migrate.
+        //
+        // --allow-pending is for the one legitimate case: running the audit
+        // against a database that has not had 2026_08_31_000000 applied yet, to
+        // see what the rest of the schema looks like before scheduling the
+        // migration. It is never right in a deployment gate.
+        if ($pending > 0 && ! $allowPending) {
+            return self::FAILURE;
         }
 
         return $violations === 0 ? self::SUCCESS : self::FAILURE;
     }
 
     /**
-     * Rows whose parent is absent, or present in a different workspace.
+     * Rows whose tenant ownership disagrees with the parent they name.
      *
-     * Returns null when the schema cannot answer the question yet - the child
-     * column or its `workspace_id` has not been migrated in - which is reported
-     * as `pending` rather than as a pass.
+     * Three shapes count, and the third is the one that is easy to miss:
+     *
+     * 1. The parent is in a different workspace.
+     * 2. The parent is absent — except on a lineage column, where the named row
+     *    is allowed to be deleted and the invoice is meant to outlive it. Counting
+     *    that would leave the audit permanently red after a deletion the schema
+     *    explicitly permits, and a gate that cannot be cleared gets waved through.
+     * 3. The parent is populated while the child's own `workspace_id` is null. Only
+     *    `stripe_payment_method_states` can be in that state, and only because a
+     *    payment-method event can arrive before anything here knows the tenant —
+     *    but that is the *all-null* case. A row naming a company while claiming no
+     *    workspace is a row whose ownership nothing can decide, and since these
+     *    references carry no composite key, this audit is their only detector.
+     *
+     * Returns null when the schema cannot answer the question yet — the child
+     * column or its `workspace_id` has not been migrated in — which is reported as
+     * `pending` and, unless `--allow-pending`, fails the run.
      */
     private function countViolations(TenantReference $reference): ?int
     {
@@ -105,23 +143,54 @@ final class AuditTenantForeignKeysCommand extends Command
             return null;
         }
 
+        // The parent's own `workspace_id` matters as much as the child's: a
+        // pre-migration schema where `client_company_memberships` has no tenant
+        // column cannot answer the question about
+        // `client_portal_project_access.client_company_membership_id` either, and
+        // asking anyway is an error rather than a count.
         if (! Schema::hasColumn($child, 'workspace_id') || ! Schema::hasColumn($child, $reference->childColumn)) {
             return null;
         }
 
-        // The parent is aliased because one reference is self-referential
-        // (client_time_entries.split_from_time_entry_id). Unaliased, both sides of
-        // the correlation would bind to the subquery's own copy of the table, and
-        // every row with a split parent would be counted as a violation - a check
-        // that reports a number nobody can act on is worse than no check.
+        if (! Schema::hasColumn($parent, 'workspace_id')) {
+            return null;
+        }
+
+        $column = $child.'.'.$reference->childColumn;
+
         return DB::table($child)
-            ->whereNotNull($child.'.workspace_id')
-            ->whereNotNull($child.'.'.$reference->childColumn)
-            ->whereNotExists(function (Builder $query) use ($child, $parent, $reference): void {
-                $query->selectRaw('1')
-                    ->from($parent.' as tenant_parent')
-                    ->whereColumn('tenant_parent.id', $child.'.'.$reference->childColumn)
-                    ->whereColumn('tenant_parent.workspace_id', $child.'.workspace_id');
+            ->whereNotNull($column)
+            ->where(function (Builder $row) use ($child, $column, $parent, $reference): void {
+                // Shape 3: a named parent with no workspace of its own.
+                $row->whereNull($child.'.workspace_id')
+                    ->orWhere(function (Builder $mismatched) use ($child, $column, $parent, $reference): void {
+                        $mismatched->whereNotNull($child.'.workspace_id');
+
+                        // The parent is aliased because one reference is
+                        // self-referential (split_from_time_entry_id). Unaliased,
+                        // both sides of the correlation bind to the subquery's own
+                        // copy of the table and every split row reads as a
+                        // violation.
+                        if ($reference->parentMayBeAbsent) {
+                            // Shape 1 only: an existing parent in the wrong place.
+                            $mismatched->whereExists(function (Builder $query) use ($child, $column, $parent): void {
+                                $query->selectRaw('1')
+                                    ->from($parent.' as tenant_parent')
+                                    ->whereColumn('tenant_parent.id', $column)
+                                    ->whereColumn('tenant_parent.workspace_id', '!=', $child.'.workspace_id');
+                            });
+
+                            return;
+                        }
+
+                        // Shapes 1 and 2: no parent agrees with this row.
+                        $mismatched->whereNotExists(function (Builder $query) use ($child, $column, $parent): void {
+                            $query->selectRaw('1')
+                                ->from($parent.' as tenant_parent')
+                                ->whereColumn('tenant_parent.id', $column)
+                                ->whereColumn('tenant_parent.workspace_id', $child.'.workspace_id');
+                        });
+                    });
             })
             ->count();
     }

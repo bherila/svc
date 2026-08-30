@@ -12,6 +12,14 @@ namespace App\Support\Tenancy;
  */
 final readonly class TenantReference
 {
+    /**
+     * @param  bool  $parentMayBeAbsent  whether a populated column naming a row
+     *                                   that no longer exists is legitimate. True only for
+     *                                   lineage columns, whose whole purpose is to outlive
+     *                                   what they name - for those, the audit asks whether an
+     *                                   existing parent is in the wrong workspace rather than
+     *                                   treating a permitted deletion as corruption.
+     */
     public function __construct(
         public string $childTable,
         public string $childColumn,
@@ -19,6 +27,7 @@ final readonly class TenantReference
         public bool $enforced,
         public ?string $constraintName,
         public string $note,
+        public bool $parentMayBeAbsent = false,
     ) {}
 
     public static function enforcedBy(string $childTable, string $childColumn, string $parentTable, string $constraintName): self
@@ -26,9 +35,22 @@ final readonly class TenantReference
         return new self($childTable, $childColumn, $parentTable, true, $constraintName, '');
     }
 
+    /**
+     * Exempt from the composite key, but the parent must still exist: these
+     * columns carry a single-column foreign key, so an absent parent is
+     * corruption rather than a permitted deletion.
+     */
     public static function exempt(string $childTable, string $childColumn, string $parentTable, string $note): self
     {
         return new self($childTable, $childColumn, $parentTable, false, null, $note);
+    }
+
+    /**
+     * Exempt, and the named row may legitimately be gone.
+     */
+    public static function lineage(string $childTable, string $childColumn, string $parentTable, string $note): self
+    {
+        return new self($childTable, $childColumn, $parentTable, false, null, $note, true);
     }
 
     public function label(): string
