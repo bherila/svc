@@ -7,6 +7,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,10 @@ use RuntimeException;
 
 final class StripePaymentMethodService
 {
-    public function __construct(private readonly ClientActivityRecorder $activities) {}
+    public function __construct(
+        private readonly ClientActivityRecorder $activities,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
     /** @param array<string, mixed> $object */
     public function attach(array $object, string $occurrence, int $providerCreatedAt): ?ClientStripePaymentMethod
@@ -195,7 +199,7 @@ final class StripePaymentMethodService
             ->where('client_company_id', $company->id)
             ->where('client_stripe_customer_id', $customer->id)
             ->where('is_default', true)
-            ->update(['is_default' => false, 'updated_at' => now()]);
+            ->update(['is_default' => false, 'updated_at' => $this->clock->now($workspace)]);
         if ($next instanceof ClientStripePaymentMethod) {
             $next->forceFill(['is_default' => true])->save();
         }
@@ -247,7 +251,7 @@ final class StripePaymentMethodService
     private function lockState(string $providerId): StripePaymentMethodState
     {
         $providerHash = hash('sha256', $providerId);
-        $now = now();
+        $now = $this->clock->now();
         DB::table('stripe_payment_method_states')->insertOrIgnore([
             'provider_id_hash' => $providerHash,
             'state' => 'unknown',
@@ -294,7 +298,7 @@ final class StripePaymentMethodService
             'state' => $state,
             'provider_created_at' => max(0, $providerCreatedAt),
             'stripe_event_id' => $eventId,
-            'updated_at' => now(),
+            'updated_at' => $this->clock->now(),
         ]);
     }
 

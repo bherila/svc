@@ -2,6 +2,7 @@
 
 namespace App\Support\Engagement;
 
+use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 
 /**
@@ -24,11 +25,11 @@ final class TimeSheetWindow
 
     public static function start(string $timezone): CarbonImmutable
     {
-        return CarbonImmutable::now($timezone)->startOfMonth()->subMonths(self::MONTHS - 1);
+        return app(WorkspaceClock::class)->now($timezone)->startOfMonth()->subMonths(self::MONTHS - 1);
     }
 
     public static function end(string $timezone): CarbonImmutable
     {
-        return CarbonImmutable::now($timezone)->endOfMonth();
+        return app(WorkspaceClock::class)->now($timezone)->endOfMonth();
     }
 }

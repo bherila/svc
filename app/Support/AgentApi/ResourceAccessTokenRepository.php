@@ -2,6 +2,7 @@
 
 namespace App\Support\AgentApi;
 
+use App\Support\WorkspaceClock;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Schema;
@@ -12,7 +13,7 @@ use League\OAuth2\Server\Entities\AccessTokenEntityInterface;
 
 final class ResourceAccessTokenRepository extends AccessTokenRepository
 {
-    public function __construct(Dispatcher $events)
+    public function __construct(Dispatcher $events, private readonly WorkspaceClock $clock)
     {
         parent::__construct($events);
     }
@@ -21,7 +22,7 @@ final class ResourceAccessTokenRepository extends AccessTokenRepository
     {
         Passport::token()->forceFill(['id' => $token->getIdentifier(), 'user_id' => $token->getUserIdentifier(), 'client_id' => $clientId = $token->getClient()->getIdentifier(), 'scopes' => $token->getScopes(), 'revoked' => false, 'resource_uri' => OAuthResourceIndicator::validatedFor(request()), 'expires_at' => $token->getExpiryDateTime()])->save();
         if (Schema::hasColumns('oauth_clients', ['dynamically_registered_at', 'last_used_at'])) {
-            Passport::client()->newQuery()->whereKey($clientId)->whereNotNull('dynamically_registered_at')->update(['last_used_at' => now()]);
+            Passport::client()->newQuery()->whereKey($clientId)->whereNotNull('dynamically_registered_at')->update(['last_used_at' => $this->clock->now()]);
         }
         $this->events->dispatch(new AccessTokenCreated($token->getIdentifier(), $token->getUserIdentifier(), $clientId));
     }
