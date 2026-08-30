@@ -145,12 +145,16 @@ final class ReplayInvoicesCommand extends Command
     /** @var array<int, ReplayOpeningCapacityContext> */
     private array $openingCapacityContexts = [];
 
+    /** @var array<string, ReplayOpeningCapacityProof> */
+    private array $openingCapacityProofs = [];
+
     public function handle(): int
     {
         $this->digestKey = bin2hex(random_bytes(32));
         $this->historyBasisAgreementIds = [];
         $this->historySeeds = [];
         $this->openingCapacityContexts = [];
+        $this->openingCapacityProofs = [];
         $historyBasis = app(ReplayHistoryBasis::class);
         $historyBasis->reset();
 
@@ -341,6 +345,7 @@ final class ReplayInvoicesCommand extends Command
                 'id',
                 'client_company_id',
                 'client_agreement_id',
+                'status',
                 'invoice_kind',
                 'cycle_start',
                 'cycle_end',
@@ -373,7 +378,22 @@ final class ReplayInvoicesCommand extends Command
 
         $seeded = [];
         foreach ($agreements as $agreement) {
-            $cycles = array_values($historyByAgreement->get($agreement->id, collect())
+            $attempts = [];
+            foreach ($historyByAgreement->get($agreement->id, collect()) as $invoice) {
+                $identity = implode('|', [
+                    $invoice->invoiceKindValue(),
+                    $invoice->service_period_start?->toDateString() ?? '?',
+                    $invoice->service_period_end?->toDateString() ?? '?',
+                ]);
+                $incumbent = $attempts[$identity] ?? null;
+                if (! $incumbent instanceof ClientInvoice
+                    || $this->supersedes($invoice, ['id' => $incumbent->id, 'status' => $incumbent->status])) {
+                    $attempts[$identity] = $invoice;
+                }
+            }
+
+            $cycles = array_values(collect($attempts)
+                ->sortBy('service_period_start')
                 ->map(static fn (ClientInvoice $invoice): ReplayHistoricalCycle => new ReplayHistoricalCycle(
                     invoiceKind: $invoice->invoiceKindValue(),
                     cycleStart: $invoice->cycle_start === null ? null : CarbonImmutable::instance($invoice->cycle_start)->startOfDay(),
@@ -389,10 +409,14 @@ final class ReplayInvoicesCommand extends Command
                 companyId: (int) $agreement->client_company_id,
                 agreementId: (int) $agreement->id,
                 currency: (string) $agreement->currency,
-                retainerMinutes: (int) $agreement->retainer_minutes,
-                retainerAmount: (int) $agreement->retainer_amount,
+                retainerMinutes: (int) round($agreement->periodRetainerHours() * 60),
+                retainerAmount: (int) round($agreement->periodRetainerFee() * 100),
+                rolloverMonths: (int) ($agreement->rollover_months ?? 0),
                 cadence: $agreement->effectiveBillingCadence(),
                 agreementStart: CarbonImmutable::instance($agreement->starts_on)->startOfDay(),
+                agreementEnd: $agreement->ends_on === null
+                    ? null
+                    : CarbonImmutable::instance($agreement->ends_on)->startOfDay(),
                 cycles: $cycles,
             );
             if (! $seed instanceof ReplayHistorySeed) {
@@ -682,6 +706,10 @@ final class ReplayInvoicesCommand extends Command
         if ($company !== null && $this->historyBasisAgreementIds !== []) {
             $newestHistoryPeriodEnd = $scope()
                 ->whereIn('client_agreement_id', array_keys($this->historyBasisAgreementIds))
+                ->where(function (Builder $q): void {
+                    $q->whereNull('invoice_kind')
+                        ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+                })
                 ->max('service_period_end');
             if ($newestHistoryPeriodEnd !== null) {
                 $historyAnchor = Carbon::parse((string) $newestHistoryPeriodEnd)->endOfDay();
@@ -837,6 +865,7 @@ final class ReplayInvoicesCommand extends Command
         $comparisons = [];
         $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
             ->contractCadenceHistoryGapKeys($workspace, $expected, $actual, $anchors);
+        $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
 
         foreach ($expected as $key => $before) {
             if ($before['invoice_kind'] === InvoiceKind::AdHoc->value) {
@@ -889,11 +918,13 @@ final class ReplayInvoicesCommand extends Command
                 'hour_notes' => $hourNotes,
                 'line_money_differs' => $lineMoneyDiffers,
                 'line_repriced' => $examined['line_repriced'],
+                'capacity_reallocated_at_same_rate' => $examined['capacity_reallocated_at_same_rate'],
                 'exact_minute_arithmetic' => $examined['exact_minute_arithmetic'],
                 'opening_recurring_item_incidence' => $examined['opening_recurring_item_incidence'],
                 'history_omitted_opening_capacity' => $examined['history_omitted_opening_capacity'],
                 'opening_capacity_also_corrects_minute_rounding' => $examined['opening_capacity_also_corrects_minute_rounding'],
                 'changed_types' => $changedTypes,
+                'attribution_changed_types' => $examined['attribution_changed_types'],
                 'changed_fields' => $changedFields,
             ];
         }
@@ -916,6 +947,72 @@ final class ReplayInvoicesCommand extends Command
     }
 
     /**
+     * Consume a replay-only opening lot once, in service-period order.
+     *
+     * The classifier proves one invoice without persistence. This coordinator
+     * supplies the remaining immutable context for each step, so the same lot
+     * cannot explain more minutes than it granted or survive its configured
+     * rollover window.
+     *
+     * @param  array<string, array<string, mixed>>  $expected
+     * @param  array<string, array<string, mixed>>  $actual
+     * @return array<string, ReplayOpeningCapacityProof>
+     */
+    private function proveOpeningCapacityChain(array $expected, array $actual): array
+    {
+        $rowsByAgreement = [];
+        foreach ($expected as $key => $before) {
+            $after = $actual[$key] ?? null;
+            if (! is_array($after)) {
+                continue;
+            }
+            [, $agreementId] = array_pad(explode('|', $key, 3), 3, '');
+            $context = $this->openingCapacityContexts[(int) $agreementId] ?? null;
+            if (! $context instanceof ReplayOpeningCapacityContext) {
+                continue;
+            }
+            $rowsByAgreement[$context->agreementId][] = [
+                'key' => $key,
+                'before' => ReplayInvoiceSnapshot::fromArray($before),
+                'after' => ReplayInvoiceSnapshot::fromArray($after),
+            ];
+        }
+
+        $proofs = [];
+        $classifier = new ReplayContractCorrectionClassifier;
+        foreach ($rowsByAgreement as $agreementId => $rows) {
+            $context = $this->openingCapacityContexts[$agreementId];
+            usort($rows, static fn (array $left, array $right): int => [
+                $left['before']->servicePeriodStart?->toDateString() ?? '',
+                $left['key'],
+            ] <=> [
+                $right['before']->servicePeriodStart?->toDateString() ?? '',
+                $right['key'],
+            ]);
+
+            $remainingMinutes = $context->capacityMinutes;
+            foreach ($rows as $row) {
+                if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
+                    continue;
+                }
+                $proof = $classifier->historyOmittedOpeningCapacity(
+                    $context->forRemainingMinutes($remainingMinutes),
+                    $row['before'],
+                    $row['after'],
+                );
+                if (! $proof instanceof ReplayOpeningCapacityProof) {
+                    continue;
+                }
+
+                $proofs[$row['key']] = $proof;
+                $remainingMinutes -= $proof->movedMinutes;
+            }
+        }
+
+        return $proofs;
+    }
+
+    /**
      * Everything one snapshot says about another, in one place.
      *
      * Both comparison paths ask the same questions, and the legacy pairing has
@@ -925,7 +1022,7 @@ final class ReplayInvoicesCommand extends Command
      *
      * @param  array<string, mixed>  $before
      * @param  array<string, mixed>  $after
-     * @return array{notes: list<string>, changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, exact_minute_arithmetic: bool, opening_recurring_item_incidence: bool, history_omitted_opening_capacity: bool, opening_capacity_also_corrects_minute_rounding: bool, hour_notes: list<string>}
+     * @return array{notes: list<string>, changed_types: list<string>, attribution_changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, capacity_reallocated_at_same_rate: bool, exact_minute_arithmetic: bool, opening_recurring_item_incidence: bool, history_omitted_opening_capacity: bool, opening_capacity_also_corrects_minute_rounding: bool, hour_notes: list<string>}
      */
     private function examine(Workspace $workspace, array $before, array $after, ?string $key = null): array
     {
@@ -953,6 +1050,15 @@ final class ReplayInvoicesCommand extends Command
             $changedFields[] = 'tax';
         }
 
+        [, $agreementId] = array_pad(explode('|', (string) $key, 3), 3, '');
+        $beforeSnapshot = ReplayInvoiceSnapshot::fromArray($before);
+        $afterSnapshot = ReplayInvoiceSnapshot::fromArray($after);
+        if (isset($this->historyBasisAgreementIds[(int) $agreementId])
+            && ! $afterSnapshot->sellsMonthlySuccessorOfServicePeriod()) {
+            $notes[] = 'generated sold cycle is not the monthly successor of its service period';
+            $changedFields[] = 'cycle';
+        }
+
         /** @var list<array<string, mixed>> $beforeLines */
         $beforeLines = $before['lines'] ?? [];
         /** @var list<array<string, mixed>> $afterLines */
@@ -972,21 +1078,27 @@ final class ReplayInvoicesCommand extends Command
         // that money is exact; a charge the client did not have is not the same
         // money differently arranged.
         $lineComparison = $this->lineMultisetDifferences($beforeLines, $afterLines);
-        $openingCapacityContext = $key === null ? null : $this->openingCapacityContextFor($key);
-        $openingCapacityProof = $openingCapacityContext instanceof ReplayOpeningCapacityContext
-            ? app(ReplayContractCorrectionClassifier::class)->historyOmittedOpeningCapacity(
-                $openingCapacityContext,
-                ReplayInvoiceSnapshot::fromArray($before),
-                ReplayInvoiceSnapshot::fromArray($after),
-            )
-            : null;
+        $changedTypes = array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']]));
+        $attributionChangedTypes = $changedTypes;
+        if ($beforeSnapshot->contractLineMultisetOfType('retainer')
+            === $afterSnapshot->contractLineMultisetOfType('retainer')) {
+            $attributionChangedTypes = array_values(array_filter(
+                $attributionChangedTypes,
+                static fn (string $type): bool => $type !== 'retainer',
+            ));
+        }
+        $openingCapacityProof = $key === null ? null : ($this->openingCapacityProofs[$key] ?? null);
         $openingCapacityAlsoCorrectsRounding = $openingCapacityProof instanceof ReplayOpeningCapacityProof
             ? $openingCapacityProof->alsoCorrectsHistoricalMinuteRounding
             : false;
 
         return [
             'notes' => $notes,
-            'changed_types' => array_values(array_unique([...$lineDifferences['changed_types'], ...$lineComparison['changed_types']])),
+            'changed_types' => $changedTypes,
+            // Fixed retainer money still blocks a capacity attribution. A pure
+            // wording digest change does not: the immutable contract multiset
+            // proves fee, hours, dates, tax and ownership are unchanged.
+            'attribution_changed_types' => $attributionChangedTypes,
             'changed_fields' => array_values(array_unique($changedFields)),
             // Strictly about the lines. The summary counts on this to tell an
             // operator a charge moved, and an invoice that only changed
@@ -996,6 +1108,8 @@ final class ReplayInvoicesCommand extends Command
             // and the summary must not confuse with the above.
             'metadata_differs' => $changedFields !== [],
             'line_repriced' => $lineComparison['repriced'],
+            'capacity_reallocated_at_same_rate' => app(ReplayContractCorrectionClassifier::class)
+                ->capacityReallocatedAtSameRate($beforeSnapshot, $afterSnapshot),
             'exact_minute_arithmetic' => app(ReplayContractCorrectionClassifier::class)
                 ->exactMinuteArithmetic($before, $after),
             'opening_recurring_item_incidence' => $key !== null
@@ -1005,13 +1119,6 @@ final class ReplayInvoicesCommand extends Command
             'opening_capacity_also_corrects_minute_rounding' => $openingCapacityAlsoCorrectsRounding,
             'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
         ];
-    }
-
-    private function openingCapacityContextFor(string $key): ?ReplayOpeningCapacityContext
-    {
-        [, $agreementId] = array_pad(explode('|', $key, 3), 3, '');
-
-        return $this->openingCapacityContexts[(int) $agreementId] ?? null;
     }
 
     /**
@@ -1101,11 +1208,13 @@ final class ReplayInvoicesCommand extends Command
                 'money_delta' => $delta,
                 'line_money_differs' => $examined['line_money_differs'],
                 'line_repriced' => $examined['line_repriced'],
+                'capacity_reallocated_at_same_rate' => $examined['capacity_reallocated_at_same_rate'],
                 'exact_minute_arithmetic' => $examined['exact_minute_arithmetic'],
                 'opening_recurring_item_incidence' => $examined['opening_recurring_item_incidence'],
                 'history_omitted_opening_capacity' => $examined['history_omitted_opening_capacity'],
                 'opening_capacity_also_corrects_minute_rounding' => $examined['opening_capacity_also_corrects_minute_rounding'],
                 'changed_types' => $examined['changed_types'],
+                'attribution_changed_types' => $examined['attribution_changed_types'],
                 'changed_fields' => $examined['changed_fields'],
                 'notes' => array_merge(
                     ['paired with the engine\'s invoice for the same cycle; history labels the period under the older period-equals-cycle convention'],
@@ -1727,11 +1836,12 @@ final class ReplayInvoicesCommand extends Command
         }
 
         // A correction is a claim about which line types a period should carry,
-        // never about what a line of that type costs. Attribution works on type
-        // names, and the per-line notes are type-prefixed too - so without this
-        // a repriced additional_hours line would be waived by the very
-        // correction that explains why additional_hours moved at all.
-        if (($comparison['line_repriced'] ?? false) === true) {
+        // never about changing a rate. Attribution works on type names, so a
+        // repriced additional_hours line must normally gate. The one exception
+        // is a complete DTO proof that the same rate merely moved minutes from
+        // priced overage to zero-value capacity lines.
+        if (($comparison['line_repriced'] ?? false) === true
+            && ($comparison['capacity_reallocated_at_same_rate'] ?? false) !== true) {
             $comparison['explained_by'] = null;
 
             return $comparison;
@@ -1742,7 +1852,9 @@ final class ReplayInvoicesCommand extends Command
         // a changed line type. One stray token makes confinedTo() reject every
         // correction, so only real line types are taken.
         /** @var list<string> $changedTypes */
-        $changedTypes = array_values(array_unique((array) ($comparison['changed_types'] ?? [])));
+        $changedTypes = array_values(array_unique((array) (
+            $comparison['attribution_changed_types'] ?? $comparison['changed_types'] ?? []
+        )));
         /** @var list<string> $changedFields */
         $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
 

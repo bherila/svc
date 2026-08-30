@@ -21,6 +21,7 @@ final readonly class ReplayHistorySeed
         public int $retainerAmount,
         public CarbonImmutable $agreementStart,
         public CarbonImmutable $seedStart,
+        public CarbonImmutable $capacityExpiresAt,
     ) {}
 
     /**
@@ -33,8 +34,10 @@ final readonly class ReplayHistorySeed
         string $currency,
         int $retainerMinutes,
         int $retainerAmount,
+        int $rolloverMonths,
         BillingCadence $cadence,
         CarbonImmutable $agreementStart,
+        ?CarbonImmutable $agreementEnd,
         array $cycles,
     ): ?self {
         if ($cadence !== BillingCadence::Monthly || $cycles === []) {
@@ -102,6 +105,23 @@ final readonly class ReplayHistorySeed
             retainerAmount: $retainerAmount,
             agreementStart: $agreementStart,
             seedStart: $first->servicePeriodStart,
+            capacityExpiresAt: self::capacityExpiry(
+                $first->servicePeriodStart,
+                $rolloverMonths,
+                $agreementEnd,
+            ),
         );
+    }
+
+    private static function capacityExpiry(
+        CarbonImmutable $seedStart,
+        int $rolloverMonths,
+        ?CarbonImmutable $agreementEnd,
+    ): CarbonImmutable {
+        $expiry = $seedStart->addMonths(max(0, $rolloverMonths))->endOfMonth()->startOfDay();
+
+        return $agreementEnd !== null && $agreementEnd->lt($expiry)
+            ? $agreementEnd->startOfDay()
+            : $expiry;
     }
 }

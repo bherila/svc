@@ -2322,10 +2322,22 @@ final class ExternalImportService
     /** NULL/'' means the optional hours term was not configured. */
     private static function minutesFromDecimal(mixed $value): ?int
     {
-        if ($value === null || trim((string) $value) === '') {
+        if ($value === null) {
             return null;
         }
 
-        return (int) round(((float) $value) * 60);
+        if (! is_int($value) && ! is_float($value) && ! is_string($value)) {
+            throw new \InvalidArgumentException('External hours must be numeric.');
+        }
+
+        $text = trim(is_string($value) ? $value : (string) $value);
+        if ($text === '') {
+            return null;
+        }
+        if (! is_numeric($text)) {
+            throw new \InvalidArgumentException('External hours must be numeric.');
+        }
+
+        return (int) round(((float) $text) * 60);
     }
 }

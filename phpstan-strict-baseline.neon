@@ -550,7 +550,7 @@ parameters:
 		-
 			message: '#^Cannot cast mixed to float\.$#'
 			identifier: cast.double
-			count: 2
+			count: 1
 			path: app/Services/ExternalImport/ExternalImportService.php
 
 		-

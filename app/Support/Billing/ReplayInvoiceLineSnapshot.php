@@ -25,21 +25,19 @@ final readonly class ReplayInvoiceLineSnapshot
     public static function fromArray(array $line): self
     {
         return new self(
-            type: (string) ($line['type'] ?? ''),
-            totalAmount: (int) ($line['total_amount'] ?? 0),
-            unitAmount: (int) ($line['unit_amount'] ?? 0),
-            taxAmount: (int) ($line['tax_amount'] ?? 0),
-            quantity: (string) ($line['quantity'] ?? ''),
-            lineDate: (string) ($line['line_date'] ?? ''),
-            recurringItemId: (string) ($line['recurring_item_id'] ?? ''),
-            projectId: (string) ($line['project_id'] ?? ''),
-            agreementId: (string) ($line['agreement_id'] ?? ''),
-            claimedBy: (string) ($line['claimed_by'] ?? ''),
-            descriptionHash: (string) ($line['description_hash'] ?? ''),
-            identityHash: (string) ($line['identity_hash'] ?? ''),
-            hours: array_key_exists('hours', $line) && $line['hours'] !== null
-                ? (float) $line['hours']
-                : null,
+            type: ReplaySnapshotValue::text($line['type'] ?? null),
+            totalAmount: ReplaySnapshotValue::integer($line['total_amount'] ?? null),
+            unitAmount: ReplaySnapshotValue::integer($line['unit_amount'] ?? null),
+            taxAmount: ReplaySnapshotValue::integer($line['tax_amount'] ?? null),
+            quantity: ReplaySnapshotValue::text($line['quantity'] ?? null),
+            lineDate: ReplaySnapshotValue::text($line['line_date'] ?? null),
+            recurringItemId: ReplaySnapshotValue::text($line['recurring_item_id'] ?? null),
+            projectId: ReplaySnapshotValue::text($line['project_id'] ?? null),
+            agreementId: ReplaySnapshotValue::text($line['agreement_id'] ?? null),
+            claimedBy: ReplaySnapshotValue::text($line['claimed_by'] ?? null),
+            descriptionHash: ReplaySnapshotValue::text($line['description_hash'] ?? null),
+            identityHash: ReplaySnapshotValue::text($line['identity_hash'] ?? null),
+            hours: ReplaySnapshotValue::number($line['hours'] ?? null),
         );
     }
 

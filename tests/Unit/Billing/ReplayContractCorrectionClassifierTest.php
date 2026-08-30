@@ -5,6 +5,7 @@ namespace Tests\Unit\Billing;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\ReplayHistoricalCycle;
 use App\Support\Billing\ReplayHistorySeed;
 use App\Support\Billing\ReplayInvoiceSnapshot;
@@ -13,6 +14,7 @@ use App\Support\Billing\ReplayOpeningCapacityProof;
 use Carbon\CarbonImmutable;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
+use ReflectionProperty;
 
 final class ReplayContractCorrectionClassifierTest extends TestCase
 {
@@ -20,6 +22,12 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
     {
         $context = $this->openingCapacityContext();
         [$before, $after] = $this->allocationSnapshots();
+
+        $this->assertSame(
+            ReplayInvoiceSnapshot::fromArray($before)->contractLineMultisetOfType('retainer'),
+            ReplayInvoiceSnapshot::fromArray($after)->contractLineMultisetOfType('retainer'),
+            'Display wording must not make an unchanged fixed retainer look contractually different.',
+        );
 
         $proof = (new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
             $context,
@@ -31,6 +39,61 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $this->assertSame(120, $proof->movedMinutes);
         $this->assertSame(-40000, $proof->moneyDelta);
         $this->assertFalse($proof->alsoCorrectsHistoricalMinuteRounding);
+    }
+
+    public function test_capacity_reallocation_at_the_same_rate_is_proved_without_an_opening_seed(): void
+    {
+        [$before, $after] = $this->allocationSnapshots();
+        $classifier = new ReplayContractCorrectionClassifier;
+
+        $this->assertTrue($classifier->capacityReallocatedAtSameRate(
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        ));
+
+        $after['lines'][1]['unit_amount']--;
+        $after['lines'][1]['total_amount'] = 59997;
+        $after['subtotal_amount'] = 209997;
+        $after['total_amount'] = 209997;
+
+        $this->assertFalse($classifier->capacityReallocatedAtSameRate(
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        ));
+    }
+
+    public function test_proved_same_rate_reallocation_can_reach_capacity_attribution(): void
+    {
+        $command = new ReplayInvoicesCommand;
+        $facts = new ReflectionProperty(ReplayInvoicesCommand::class, 'factCache');
+        $facts->setValue($command, ['proved-reallocation' => new CorrectionFacts(
+            rolloverMonths: 1,
+            fullyUsedMonthInRolloverWindow: true,
+            projectScoped: false,
+            otherProjectWork: false,
+            deferredWork: true,
+            cycleOpensMidMonth: false,
+            recurringItemAnchoredBeforeCycleOpens: false,
+        )]);
+        $attribute = new ReflectionMethod(ReplayInvoicesCommand::class, 'attribute');
+        $comparison = [
+            'key' => 'proved-reallocation',
+            'verdict' => 'money_differs',
+            'line_repriced' => true,
+            'capacity_reallocated_at_same_rate' => true,
+            'attribution_changed_types' => ['additional_hours', 'prior_month_retainer'],
+            'changed_fields' => ['subtotal'],
+        ];
+
+        $attributed = $attribute->invoke($command, $comparison);
+
+        $this->assertSame(
+            ['rollover_expiry_ages_by_calendar', 'deferred_work_not_drawn_early'],
+            array_column($attributed['explained_by'], 'key'),
+        );
+
+        $comparison['capacity_reallocated_at_same_rate'] = false;
+        $this->assertNull($attribute->invoke($command, $comparison)['explained_by']);
     }
 
     public function test_proved_opening_capacity_omission_has_a_named_attribution(): void
@@ -67,6 +130,75 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $this->assertInstanceOf(ReplayOpeningCapacityProof::class, $proof);
         $this->assertTrue($proof->alsoCorrectsHistoricalMinuteRounding);
         $this->assertSame(-39999, $proof->moneyDelta);
+    }
+
+    public function test_opening_capacity_can_remove_all_overage_or_add_the_first_balance_line(): void
+    {
+        [$before, $after] = $this->allocationSnapshots();
+        array_splice($after['lines'], 1, 1);
+        $after['lines'][1]['hours'] = 3.5;
+        $after['lines'][2]['hours'] = 3.5;
+        $after['subtotal_amount'] = 150000;
+        $after['total_amount'] = 150000;
+
+        $removedHourly = (new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
+            $this->openingCapacityContext(),
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        );
+        $this->assertInstanceOf(ReplayOpeningCapacityProof::class, $removedHourly);
+        $this->assertSame(300, $removedHourly->movedMinutes);
+
+        [$before, $after] = $this->allocationSnapshots();
+        $before['lines'] = array_slice($before['lines'], 0, 2);
+        $after['lines'] = [$after['lines'][0], $after['lines'][1], $after['lines'][2]];
+        $after['lines'][2]['hours'] = 2.0;
+
+        $addedBalance = (new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
+            $this->openingCapacityContext(),
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        );
+        $this->assertInstanceOf(ReplayOpeningCapacityProof::class, $addedBalance);
+        $this->assertSame(120, $addedBalance->movedMinutes);
+    }
+
+    public function test_opening_capacity_chain_consumes_and_expires_the_seeded_lot(): void
+    {
+        [$before, $after] = $this->allocationSnapshots();
+        $row = static function (array $snapshot, string $month): array {
+            $start = CarbonImmutable::parse($month.'-01');
+            $snapshot['service_period_start'] = $start->toDateString();
+            $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
+
+            return $snapshot;
+        };
+        $decemberKey = '5|7|cadence_period|2025-12-01..2025-12-31@2025-12-01..2025-12-31';
+        $januaryKey = '5|7|cadence_period|2026-01-01..2026-01-31@2026-01-01..2026-01-31';
+        $marchKey = '5|7|cadence_period|2026-03-01..2026-03-31@2026-03-01..2026-03-31';
+        $expected = [
+            // Deliberately reverse chronological: the coordinator owns order.
+            $januaryKey => $row($before, '2026-01'),
+            $decemberKey => $row($before, '2025-12'),
+        ];
+        $actual = [
+            $januaryKey => $row($after, '2026-01'),
+            $decemberKey => $row($after, '2025-12'),
+        ];
+        $command = new ReplayInvoicesCommand;
+        $contexts = new ReflectionProperty(ReplayInvoicesCommand::class, 'openingCapacityContexts');
+        $contexts->setValue($command, [7 => $this->openingCapacityContext()->forRemainingMinutes(200)]);
+        $prove = new ReflectionMethod(ReplayInvoicesCommand::class, 'proveOpeningCapacityChain');
+
+        $proofs = $prove->invoke($command, $expected, $actual);
+        $this->assertSame([$decemberKey], array_keys($proofs));
+
+        $contexts->setValue($command, [7 => $this->openingCapacityContext()]);
+        $this->assertSame([], $prove->invoke(
+            $command,
+            [$marchKey => $row($before, '2026-03')],
+            [$marchKey => $row($after, '2026-03')],
+        ));
     }
 
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void
@@ -186,6 +318,29 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $this->assertNull($this->makeSeed(array_values($gap)));
     }
 
+    public function test_generated_monthly_snapshot_must_sell_the_service_period_successor(): void
+    {
+        $valid = ReplayInvoiceSnapshot::fromArray([
+            'currency' => 'USD',
+            'cycle_start' => '2026-02-01',
+            'cycle_end' => '2026-02-28',
+            'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31',
+            'lines' => [],
+        ]);
+        $shifted = ReplayInvoiceSnapshot::fromArray([
+            'currency' => 'USD',
+            'cycle_start' => '2026-03-01',
+            'cycle_end' => '2026-03-31',
+            'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31',
+            'lines' => [],
+        ]);
+
+        $this->assertTrue($valid->sellsMonthlySuccessorOfServicePeriod());
+        $this->assertFalse($shifted->sellsMonthlySuccessorOfServicePeriod());
+    }
+
     private function openingCapacityContext(): ReplayOpeningCapacityContext
     {
         $context = ReplayOpeningCapacityContext::fromOpeningInvoice(
@@ -284,8 +439,10 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             currency: 'USD',
             retainerMinutes: 600,
             retainerAmount: 150000,
+            rolloverMonths: 2,
             cadence: BillingCadence::Monthly,
             agreementStart: CarbonImmutable::parse('2026-01-01'),
+            agreementEnd: null,
             cycles: $cycles,
         );
     }

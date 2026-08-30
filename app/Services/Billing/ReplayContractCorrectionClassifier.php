@@ -5,12 +5,14 @@ namespace App\Services\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\ReplayInvoiceLineSnapshot;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
+use App\Support\Billing\ReplaySnapshotValue;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
@@ -25,6 +27,7 @@ final class ReplayContractCorrectionClassifier
 {
     public function __construct(
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
+        private readonly RetainerCalculator $retainerCalculator = new RetainerCalculator,
     ) {}
 
     /**
@@ -36,7 +39,8 @@ final class ReplayContractCorrectionClassifier
     public function exactMinuteArithmetic(array $before, array $after): bool
     {
         if (($before['currency'] ?? null) !== ($after['currency'] ?? null)
-            || (int) ($before['tax_amount'] ?? 0) !== (int) ($after['tax_amount'] ?? 0)) {
+            || ReplaySnapshotValue::integer($before['tax_amount'] ?? null)
+                !== ReplaySnapshotValue::integer($after['tax_amount'] ?? null)) {
             return false;
         }
 
@@ -169,8 +173,10 @@ final class ReplayContractCorrectionClassifier
             return false;
         }
 
-        return (int) ($after['subtotal_amount'] ?? 0) - (int) ($before['subtotal_amount'] ?? 0) === $lineDelta
-            && (int) ($after['total_amount'] ?? 0) - (int) ($before['total_amount'] ?? 0) === $lineDelta;
+        return ReplaySnapshotValue::integer($after['subtotal_amount'] ?? null)
+                - ReplaySnapshotValue::integer($before['subtotal_amount'] ?? null) === $lineDelta
+            && ReplaySnapshotValue::integer($after['total_amount'] ?? null)
+                - ReplaySnapshotValue::integer($before['total_amount'] ?? null) === $lineDelta;
     }
 
     /**
@@ -188,7 +194,8 @@ final class ReplayContractCorrectionClassifier
         [$companyId, $agreementId, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
         if ($agreementId === '' || $agreementId === 'none' || $kind !== InvoiceKind::CadencePeriod->value
             || ($before['currency'] ?? null) !== ($after['currency'] ?? null)
-            || (int) ($before['tax_amount'] ?? 0) !== (int) ($after['tax_amount'] ?? 0)) {
+            || ReplaySnapshotValue::integer($before['tax_amount'] ?? null)
+                !== ReplaySnapshotValue::integer($after['tax_amount'] ?? null)) {
             return false;
         }
 
@@ -247,8 +254,8 @@ final class ReplayContractCorrectionClassifier
             return false;
         }
 
-        $cycleStartText = (string) ($after['cycle_start'] ?? '');
-        $cycleEndText = (string) ($after['cycle_end'] ?? '');
+        $cycleStartText = ReplaySnapshotValue::text($after['cycle_start'] ?? null);
+        $cycleEndText = ReplaySnapshotValue::text($after['cycle_end'] ?? null);
         if ($cycleStartText === '' || $cycleEndText === '' || $cycleStartText === '?' || $cycleEndText === '?') {
             return false;
         }
@@ -271,24 +278,28 @@ final class ReplayContractCorrectionClassifier
 
         $item = $agreement->recurringItems()
             ->whereKey((int) $line['recurring_item_id'])
+            ->where('workspace_id', $workspace->id)
             ->where('is_active', true)
             ->first();
-        if ($item === null || $item->start_date === null
-            || (bool) $item->is_taxable
-            || (string) $item->currency !== (string) ($after['currency'] ?? '')) {
+        if ($item === null || (bool) $item->is_taxable
+            || (string) $item->currency !== ReplaySnapshotValue::text($after['currency'] ?? null)) {
             return false;
         }
 
         $lineDate = Carbon::parse((string) $line['line_date'])->startOfDay();
         $cycleStart = Carbon::parse($cycleStartText)->startOfDay();
         $cycleEnd = Carbon::parse($cycleEndText)->startOfDay();
-        if (! $lineDate->isSameDay($item->start_date)
+        $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on ?? $cycleStart)->startOfDay();
+        if (! $lineDate->isSameDay($itemStart)
             || $lineDate->lt($cycleStart)
             || $lineDate->gt($cycleEnd)) {
             return false;
         }
 
-        $agreement->setRelation('recurringItems', $agreement->recurringItems()->get());
+        $agreement->setRelation(
+            'recurringItems',
+            $agreement->recurringItems()->where('workspace_id', $workspace->id)->get(),
+        );
         $biller = new RecurringItemBiller;
         $incidence = collect($biller->linesForCycle($agreement, $cycleStart, $cycleEnd))
             ->first(fn (array $candidate): bool => (int) $candidate['item']->id === (int) $item->id
@@ -310,8 +321,10 @@ final class ReplayContractCorrectionClassifier
 
         $delta = (int) $expectedLine->total_amount;
 
-        return (int) ($after['subtotal_amount'] ?? 0) - (int) ($before['subtotal_amount'] ?? 0) === $delta
-            && (int) ($after['total_amount'] ?? 0) - (int) ($before['total_amount'] ?? 0) === $delta;
+        return ReplaySnapshotValue::integer($after['subtotal_amount'] ?? null)
+                - ReplaySnapshotValue::integer($before['subtotal_amount'] ?? null) === $delta
+            && ReplaySnapshotValue::integer($after['total_amount'] ?? null)
+                - ReplaySnapshotValue::integer($before['total_amount'] ?? null) === $delta;
     }
 
     /**
@@ -328,9 +341,54 @@ final class ReplayContractCorrectionClassifier
         ReplayInvoiceSnapshot $before,
         ReplayInvoiceSnapshot $after,
     ): ?ReplayOpeningCapacityProof {
-        if ($context->capacityMinutes <= 0
-            || $before->currency !== $context->currency
-            || $after->currency !== $context->currency
+        return $this->proveCapacityReallocation(
+            agreementId: $context->agreementId,
+            currency: $context->currency,
+            retainerAmount: $context->retainerAmount,
+            maximumMinutes: $context->capacityMinutes,
+            before: $before,
+            after: $after,
+        );
+    }
+
+    /**
+     * Did capacity move from priced overage to zero-value balance lines without
+     * changing its contract, rate, tax, or any unrelated charge?
+     *
+     * Unlike the opening-history proof, this makes no claim about which ledger
+     * correction caused the move. It only lets the established rollover,
+     * deferred-work, and project-scope facts evaluate a proved reallocation.
+     */
+    public function capacityReallocatedAtSameRate(
+        ReplayInvoiceSnapshot $before,
+        ReplayInvoiceSnapshot $after,
+    ): bool {
+        $retainers = $before->linesOfType('retainer');
+        if (count($retainers) !== 1 || ! ctype_digit($retainers[0]->agreementId)) {
+            return false;
+        }
+
+        return $this->proveCapacityReallocation(
+            agreementId: (int) $retainers[0]->agreementId,
+            currency: $before->currency,
+            retainerAmount: $retainers[0]->totalAmount,
+            maximumMinutes: null,
+            before: $before,
+            after: $after,
+        ) instanceof ReplayOpeningCapacityProof;
+    }
+
+    private function proveCapacityReallocation(
+        int $agreementId,
+        string $currency,
+        int $retainerAmount,
+        ?int $maximumMinutes,
+        ReplayInvoiceSnapshot $before,
+        ReplayInvoiceSnapshot $after,
+    ): ?ReplayOpeningCapacityProof {
+        if (($maximumMinutes !== null && $maximumMinutes <= 0)
+            || $before->currency !== $currency
+            || $after->currency !== $currency
             || $before->taxAmount !== $after->taxAmount
             || $before->lineMultisetExcluding(['additional_hours', 'prior_month_retainer', 'retainer'])
                 !== $after->lineMultisetExcluding(['additional_hours', 'prior_month_retainer', 'retainer'])) {
@@ -344,33 +402,33 @@ final class ReplayContractCorrectionClassifier
         $historicalRetainer = $before->linesOfType('retainer');
         $generatedRetainer = $after->linesOfType('retainer');
         if (count($historicalHourly) !== 1
-            || count($generatedHourly) !== 1
-            || $historicalPrior === []
-            || count($historicalPrior) !== count($generatedPrior)
+            || count($generatedHourly) > 1
             || count($historicalRetainer) !== 1
             || count($generatedRetainer) !== 1) {
             return null;
         }
 
         $beforeHourly = $historicalHourly[0];
-        $afterHourly = $generatedHourly[0];
-        if ($beforeHourly->allocationIdentity() !== $afterHourly->allocationIdentity()
-            || $beforeHourly->agreementId !== (string) $context->agreementId
+        $afterHourly = $generatedHourly[0] ?? null;
+        if ($beforeHourly->agreementId !== (string) $agreementId
             || $beforeHourly->unitAmount <= 0
-            || $beforeHourly->unitAmount !== $afterHourly->unitAmount
             || $beforeHourly->taxAmount !== 0
-            || $afterHourly->taxAmount !== 0
-            || self::allocationMultiset($historicalPrior) !== self::allocationMultiset($generatedPrior)
-            || ! self::allZeroValueBalanceLines($historicalPrior, $context->agreementId)
-            || ! self::allZeroValueBalanceLines($generatedPrior, $context->agreementId)
+            || ($afterHourly instanceof ReplayInvoiceLineSnapshot
+                && ($beforeHourly->allocationIdentity() !== $afterHourly->allocationIdentity()
+                    || $afterHourly->taxAmount !== 0))
+            || ! self::allocationMultisetIsSubset($historicalPrior, $generatedPrior)
+            || ! self::allZeroValueBalanceLines($historicalPrior, $agreementId)
+            || ! self::allZeroValueBalanceLines($generatedPrior, $agreementId)
             || $historicalRetainer[0]->contractSignature() !== $generatedRetainer[0]->contractSignature()
-            || $historicalRetainer[0]->agreementId !== (string) $context->agreementId
-            || $historicalRetainer[0]->totalAmount !== $context->retainerAmount) {
+            || $historicalRetainer[0]->agreementId !== (string) $agreementId
+            || $historicalRetainer[0]->totalAmount !== $retainerAmount) {
             return null;
         }
 
         $beforeHourlyMinutes = self::pricedMinutes($beforeHourly);
-        $afterHourlyMinutes = self::pricedMinutes($afterHourly);
+        $afterHourlyMinutes = $afterHourly instanceof ReplayInvoiceLineSnapshot
+            ? self::pricedMinutes($afterHourly)
+            : 0;
         $beforePriorMinutes = self::totalHoursMinutes($historicalPrior);
         $afterPriorMinutes = self::totalHoursMinutes($generatedPrior);
         if ($beforeHourlyMinutes === null
@@ -382,20 +440,25 @@ final class ReplayContractCorrectionClassifier
 
         $movedMinutes = $beforeHourlyMinutes - $afterHourlyMinutes;
         if ($movedMinutes <= 0
-            || $movedMinutes > $context->capacityMinutes
+            || ($maximumMinutes !== null && $movedMinutes > $maximumMinutes)
             || $afterPriorMinutes - $beforePriorMinutes !== $movedMinutes) {
             return null;
         }
 
         $historicalHourlyTotal = MoneyService::hourlyAmount($beforeHourlyMinutes, $beforeHourly->unitAmount);
-        $generatedHourlyTotal = MoneyService::hourlyAmount($afterHourlyMinutes, $afterHourly->unitAmount);
+        $generatedHourlyTotal = $afterHourly instanceof ReplayInvoiceLineSnapshot
+            ? MoneyService::hourlyAmount($afterHourlyMinutes, $afterHourly->unitAmount)
+            : 0;
+        $generatedLineTotal = $afterHourly instanceof ReplayInvoiceLineSnapshot
+            ? $afterHourly->totalAmount
+            : 0;
         $historicalRoundingDelta = $beforeHourly->totalAmount - $historicalHourlyTotal;
         if (abs($historicalRoundingDelta) > 1
-            || $afterHourly->totalAmount !== $generatedHourlyTotal) {
+            || $generatedLineTotal !== $generatedHourlyTotal) {
             return null;
         }
 
-        $moneyDelta = $afterHourly->totalAmount - $beforeHourly->totalAmount;
+        $moneyDelta = $generatedLineTotal - $beforeHourly->totalAmount;
 
         if ($moneyDelta >= 0
             || $after->subtotalAmount - $before->subtotalAmount !== $moneyDelta
@@ -432,7 +495,7 @@ final class ReplayContractCorrectionClassifier
         $history = [];
         foreach ($expected as $key => $snapshot) {
             [$companyId] = array_pad(explode('|', $key, 2), 2, '');
-            $kind = (string) ($snapshot['invoice_kind'] ?? '');
+            $kind = ReplaySnapshotValue::text($snapshot['invoice_kind'] ?? null);
             $history[$companyId][$kind === InvoiceKind::AdHoc->value ? 'ad_hoc' : 'machine'] =
                 ($history[$companyId][$kind === InvoiceKind::AdHoc->value ? 'ad_hoc' : 'machine'] ?? 0) + 1;
         }
@@ -446,6 +509,25 @@ final class ReplayContractCorrectionClassifier
             $unexpectedByCompany[$companyId][] = compact('key', 'agreementId', 'kind', 'identity', 'snapshot');
         }
 
+        if ($unexpectedByCompany === []) {
+            return [];
+        }
+
+        $companyIds = array_values(array_unique(array_map('intval', array_keys($unexpectedByCompany))));
+        $workspaceCompanyIds = ClientCompany::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('id', $companyIds)
+            ->pluck('id')
+            ->map(ReplaySnapshotValue::integer(...))
+            ->all();
+        $agreementsByCompany = ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_id', $workspaceCompanyIds)
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
+            ->whereNotNull('starts_on')
+            ->get()
+            ->groupBy('client_company_id');
+
         $explained = [];
         foreach ($unexpectedByCompany as $companyId => $rows) {
             if (($history[$companyId]['ad_hoc'] ?? 0) === 0 || ($history[$companyId]['machine'] ?? 0) !== 0
@@ -458,28 +540,37 @@ final class ReplayContractCorrectionClassifier
                 continue;
             }
 
-            $company = ClientCompany::query()
-                ->whereKey((int) $companyId)
-                ->where('workspace_id', $workspace->id)
-                ->first();
-            if (! $company instanceof ClientCompany) {
+            $anchor = $anchors[(int) $companyId] ?? null;
+            if (! $anchor instanceof CarbonInterface
+                || ! in_array((int) $companyId, $workspaceCompanyIds, true)) {
                 continue;
             }
-            $agreement = ClientAgreement::query()
-                ->whereKey((int) $agreementIds[0])
-                ->where('workspace_id', $company->workspace_id)
-                ->where('client_company_id', $company->id)
-                ->first();
+
+            // AgreementSelector includes every non-draft recurring agreement
+            // that starts by one month after the pinned replay date. Prove that
+            // complete eligible set here from one eager query: if a second
+            // agreement could have generated a cadence chain, explaining only
+            // the rows the engine happened to emit would hide its omission.
+            $selectionCeiling = Carbon::instance($anchor)->copy()->addMonth()->startOfDay();
+            $eligibleAgreements = $agreementsByCompany->get((int) $companyId, collect())
+                ->filter(static fn (ClientAgreement $candidate): bool => $candidate->billsOnARecurringCadence()
+                    && $candidate->starts_on !== null
+                    && Carbon::instance($candidate->starts_on)->startOfDay()->lte($selectionCeiling))
+                ->values();
+            if ($eligibleAgreements->count() !== 1) {
+                continue;
+            }
+
+            $agreement = $eligibleAgreements->first();
             if (! $agreement instanceof ClientAgreement || $agreement->starts_on === null
+                || (string) $agreement->id !== (string) $agreementIds[0]
                 || ! $agreement->billsOnARecurringCadence()
                 || $agreement->periodRetainerHours() <= 0
                 || $agreement->periodRetainerFee() <= 0) {
                 continue;
             }
 
-            $anchor = $anchors[(int) $companyId] ?? null;
-            if (! $anchor instanceof CarbonInterface
-                || Carbon::instance($agreement->starts_on)->startOfDay()->gt($anchor)) {
+            if (Carbon::instance($agreement->starts_on)->startOfDay()->gt($anchor)) {
                 continue;
             }
 
@@ -488,18 +579,24 @@ final class ReplayContractCorrectionClassifier
             foreach ($rows as $row) {
                 /** @var list<array<string, mixed>> $lines */
                 $lines = (array) ($row['snapshot']['lines'] ?? []);
-                $lineTotal = array_sum(array_map(static fn (array $line): int => (int) ($line['total_amount'] ?? 0), $lines));
-                $lineTax = array_sum(array_map(static fn (array $line): int => (int) ($line['tax_amount'] ?? 0), $lines));
+                $lineTotal = array_sum(array_map(
+                    static fn (array $line): int => ReplaySnapshotValue::integer($line['total_amount'] ?? null),
+                    $lines,
+                ));
+                $lineTax = array_sum(array_map(
+                    static fn (array $line): int => ReplaySnapshotValue::integer($line['tax_amount'] ?? null),
+                    $lines,
+                ));
                 if ($row['kind'] !== InvoiceKind::CadencePeriod->value
-                    || (int) ($row['snapshot']['total_amount'] ?? 0) <= 0
+                    || ReplaySnapshotValue::integer($row['snapshot']['total_amount'] ?? null) <= 0
                     || $lines === []
-                    || (string) ($row['snapshot']['currency'] ?? '') !== (string) $agreement->currency
-                    || $lineTotal !== (int) ($row['snapshot']['total_amount'] ?? 0)
-                    || $lineTax !== (int) ($row['snapshot']['tax_amount'] ?? 0)
-                    || $lineTotal - $lineTax !== (int) ($row['snapshot']['subtotal_amount'] ?? 0)
+                    || ReplaySnapshotValue::text($row['snapshot']['currency'] ?? null) !== (string) $agreement->currency
+                    || $lineTotal !== ReplaySnapshotValue::integer($row['snapshot']['total_amount'] ?? null)
+                    || $lineTax !== ReplaySnapshotValue::integer($row['snapshot']['tax_amount'] ?? null)
+                    || $lineTotal - $lineTax !== ReplaySnapshotValue::integer($row['snapshot']['subtotal_amount'] ?? null)
                     || count(array_filter(
                         $lines,
-                        static fn (array $line): bool => (string) ($line['agreement_id'] ?? '') !== (string) $agreement->id,
+                        static fn (array $line): bool => ReplaySnapshotValue::text($line['agreement_id'] ?? null) !== (string) $agreement->id,
                     )) > 0) {
                     $valid = false;
                     break;
@@ -518,6 +615,7 @@ final class ReplayContractCorrectionClassifier
                     'end' => Carbon::parse($cycleEnd)->startOfDay(),
                     'period_start' => Carbon::parse($periodStart)->startOfDay(),
                     'period_end' => Carbon::parse($periodEnd)->startOfDay(),
+                    'lines' => $lines,
                 ];
             }
             if (! $valid) {
@@ -534,7 +632,8 @@ final class ReplayContractCorrectionClassifier
                 if (! $cycle['start']->isSameDay($nextStart)
                     || ! $cycle['end']->isSameDay($expectedEnd)
                     || ! $cycle['period_start']->isSameDay($expectedPeriodStart)
-                    || ! $cycle['period_end']->isSameDay($expectedPeriodEnd)) {
+                    || ! $cycle['period_end']->isSameDay($expectedPeriodEnd)
+                    || ! $this->hasConfiguredRetainerLine($agreement, $cycle['start'], $cycle['end'], $cycle['lines'])) {
                     $valid = false;
                     break;
                 }
@@ -576,9 +675,74 @@ final class ReplayContractCorrectionClassifier
         return $explained;
     }
 
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     */
+    private function hasConfiguredRetainerLine(
+        ClientAgreement $agreement,
+        Carbon $cycleStart,
+        Carbon $cycleEnd,
+        array $lines,
+    ): bool {
+        $monthStarts = [];
+        $cursor = $cycleStart->copy()->startOfMonth();
+        while ($cursor->lte($cycleEnd)) {
+            $monthStarts[] = $cursor->copy();
+            $cursor->addMonth()->startOfMonth();
+        }
+        $cycle = new BillingCycle(
+            start: $cycleStart,
+            end: $cycleEnd,
+            isProrated: false,
+            monthCount: count($monthStarts),
+            monthStarts: $monthStarts,
+        );
+        $retainerHours = $agreement->retainer_hours !== null
+            ? $this->retainerCalculator->cyclePeriodRetainerHours($agreement, $cycle)
+            : array_sum(array_map(
+                fn (Carbon $monthStart): float => $this->retainerCalculator->retainerHoursForMonth(
+                    $agreement,
+                    $monthStart,
+                    $monthStart->copy()->endOfMonth()->startOfDay(),
+                ),
+                $monthStarts,
+            ));
+        $retainerMultiplier = $agreement->retainer_hours !== null
+            ? $this->retainerCalculator->cyclePeriodRetainerMultiplier($agreement, $cycle)
+            : ($agreement->monthly_retainer_hours > 0
+                ? $retainerHours / $agreement->monthly_retainer_hours
+                : count($monthStarts));
+        $expectedFee = (int) round($this->retainerCalculator->cycleRetainerFee(
+            $agreement,
+            $cycle,
+            ['retainer_multiplier' => $retainerMultiplier],
+        ) * 100);
+        $expectedHours = round($retainerHours, 4);
+
+        $retainerLines = array_values(array_filter(
+            $lines,
+            static fn (array $line): bool => ($line['type'] ?? null) === 'retainer',
+        ));
+        if ($expectedFee <= 0 && $expectedHours <= 0) {
+            return $retainerLines === [];
+        }
+        if (count($retainerLines) !== 1) {
+            return false;
+        }
+
+        $line = $retainerLines[0];
+
+        return ReplaySnapshotValue::integer($line['unit_amount'] ?? null) === $expectedFee
+            && ReplaySnapshotValue::integer($line['total_amount'] ?? null) === $expectedFee
+            && ReplaySnapshotValue::integer($line['tax_amount'] ?? null) === 0
+            && self::decimalString($line['quantity'] ?? null) === '1'
+            && round(ReplaySnapshotValue::number($line['hours'] ?? null) ?? 0.0, 4) === round($expectedHours, 4)
+            && ReplaySnapshotValue::text($line['line_date'] ?? null) === $cycleStart->toDateString();
+    }
+
     private static function decimalString(mixed $value): string
     {
-        $text = trim((string) $value);
+        $text = trim(ReplaySnapshotValue::text($value));
         if ($text === '') {
             return '0';
         }
@@ -628,6 +792,22 @@ final class ReplayContractCorrectionClassifier
         ksort($multiset);
 
         return $multiset;
+    }
+
+    /**
+     * @param  list<ReplayInvoiceLineSnapshot>  $subset
+     * @param  list<ReplayInvoiceLineSnapshot>  $superset
+     */
+    private static function allocationMultisetIsSubset(array $subset, array $superset): bool
+    {
+        $available = self::allocationMultiset($superset);
+        foreach (self::allocationMultiset($subset) as $identity => $count) {
+            if (($available[$identity] ?? 0) < $count) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param list<ReplayInvoiceLineSnapshot> $lines */

@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use ReflectionMethod;
+use Symfony\Component\Console\Input\ArrayInput;
 use Tests\TestCase;
 
 /**
@@ -361,6 +362,93 @@ final class ReplayInvoicesTest extends TestCase
         );
     }
 
+    public function test_history_seed_deduplicates_attempts_with_the_same_service_period(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Duplicate historical attempts',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        foreach ([
+            ['SETTLED-ATTEMPT', 'issued', '2025-12-01'],
+            // Newer, but still a draft: snapshot selection keeps the settled
+            // attempt, and seed validation must make the same choice.
+            ['ABANDONED-ATTEMPT', 'draft', '2026-01-01'],
+        ] as [$number, $status, $cycleStart]) {
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => $number,
+                'currency' => 'USD',
+                'status' => $status,
+                'invoice_kind' => 'cadence_period',
+                'cycle_start' => $cycleStart,
+                'cycle_end' => Carbon::parse($cycleStart)->endOfMonth(),
+                'service_period_start' => '2025-12-01',
+                'service_period_end' => '2025-12-31',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+        }
+
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+        $seeded = $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company]));
+
+        $this->assertSame(['2025-12-01'], $seeded);
+    }
+
+    public function test_history_seed_uses_effective_period_retainer_terms(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Native period terms',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            // Legacy monthly columns deliberately disagree with the native
+            // period overrides the billing engine actually uses.
+            'retainer_minutes' => 60,
+            'retainer_amount' => 10000,
+            'period_retainer_minutes' => 600,
+            'period_retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'PERIOD-TERMS-SEED',
+            'currency' => 'USD',
+            'status' => 'issued',
+            'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2025-12-01',
+            'cycle_end' => '2025-12-31',
+            'service_period_start' => '2025-12-01',
+            'service_period_end' => '2025-12-31',
+            'subtotal_amount' => 150000,
+            'tax_amount' => 0,
+            'total_amount' => 150000,
+        ]);
+
+        $command = app(ReplayInvoicesCommand::class);
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+        $this->assertSame(['2025-12-01'], $method->invoke($command, $this->workspace, collect([$this->company])));
+        $seeds = new \ReflectionProperty(ReplayInvoicesCommand::class, 'historySeeds');
+        $seed = $seeds->getValue($command)[$agreement->id];
+
+        $this->assertSame(600, $seed->retainerMinutes);
+        $this->assertSame(150000, $seed->retainerAmount);
+    }
+
     public function test_history_seed_loads_all_candidate_chains_in_two_queries(): void
     {
         foreach (range(1, 3) as $ordinal) {
@@ -403,6 +491,64 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->assertCount(3, $seeded);
         $this->assertCount(2, $queries, implode("\n", $queries));
+    }
+
+    public function test_seeded_as_of_ignores_a_later_ad_hoc_service_period(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Seed anchor contract',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SEED-ANCHOR',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'invoice_kind' => 'cadence_period',
+            'cycle_start' => '2025-12-01',
+            'cycle_end' => '2025-12-31',
+            'service_period_start' => '2025-12-01',
+            'service_period_end' => '2025-12-31',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        $command = app(ReplayInvoicesCommand::class);
+        $command->setInput(new ArrayInput([], $command->getDefinition()));
+        $prepare = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+        $this->assertCount(1, $prepare->invoke($command, $this->workspace, collect([$this->company])));
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'ADHOC-LATER-SERVICE',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'invoice_kind' => 'ad_hoc',
+            'cycle_start' => '2025-12-01',
+            'cycle_end' => '2025-12-31',
+            'service_period_start' => '2027-01-01',
+            'service_period_end' => '2027-01-31',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        $asOf = new ReflectionMethod(ReplayInvoicesCommand::class, 'asOf');
+        $this->assertSame(
+            '2025-12-31',
+            $asOf->invoke($command, $this->workspace, $this->company)->toDateString(),
+        );
     }
 
     public function test_an_omitted_opening_recurring_item_incidence_is_proved_from_the_item_contract(): void
@@ -460,6 +606,42 @@ final class ReplayInvoicesTest extends TestCase
                 unlink($report);
             }
         }
+    }
+
+    public function test_an_accepted_proposal_item_uses_the_agreement_start_as_its_opening_incidence(): void
+    {
+        $item = null;
+        $this->generatedHistory(function (ClientAgreement $agreement) use (&$item): void {
+            $item = ClientAgreementRecurringItem::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_agreement_id' => $agreement->id,
+                'description' => 'Synthetic proposal service',
+                'cadence' => 'annual',
+                'anchor_month' => 1,
+                'anchor_day' => 1,
+                // Proposal acceptance intentionally leaves this null; the
+                // production biller falls back to the agreement start.
+                'effective_on' => null,
+                'quantity' => '1.000',
+                'amount' => 4200,
+                'currency' => 'USD',
+                'is_active' => true,
+            ]);
+        });
+        $this->assertInstanceOf(ClientAgreementRecurringItem::class, $item);
+
+        $line = ClientInvoiceLine::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->where('client_agreement_recurring_item_id', $item->id)
+            ->whereDate('line_date', '2024-01-01')
+            ->firstOrFail();
+        $invoice = $line->invoice()->firstOrFail();
+        $line->delete();
+        $invoice->recalculateTotals();
+
+        $this->artisan('svc:billing:replay', [
+            '--workspace' => $this->workspace->public_id,
+        ])->assertSuccessful();
     }
 
     public function test_a_seeded_replay_proves_an_opening_recurring_item_against_the_real_sold_cycle(): void
@@ -541,6 +723,95 @@ final class ReplayInvoicesTest extends TestCase
                 unlink($report);
             }
         }
+    }
+
+    public function test_seeded_comparison_rejects_a_generated_shifted_sold_cycle(): void
+    {
+        $command = new ReplayInvoicesCommand;
+        $historyBasis = new \ReflectionProperty(ReplayInvoicesCommand::class, 'historyBasisAgreementIds');
+        $historyBasis->setValue($command, [999 => true]);
+        $snapshot = [
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'cycle_start' => '2026-02-01',
+            'cycle_end' => '2026-02-28',
+            'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31',
+            'lines' => [],
+        ];
+        $shifted = $snapshot;
+        $shifted['cycle_start'] = '2026-03-01';
+        $shifted['cycle_end'] = '2026-03-31';
+
+        $examine = new ReflectionMethod(ReplayInvoicesCommand::class, 'examine');
+        $comparison = $examine->invoke(
+            $command,
+            $this->workspace,
+            $snapshot,
+            $shifted,
+            $this->company->id.'|999|cadence_period|2026-01-01..2026-01-31@2026-01-01..2026-01-31',
+        );
+
+        $this->assertContains('cycle', $comparison['changed_fields']);
+        $this->assertTrue($comparison['metadata_differs']);
+    }
+
+    public function test_capacity_attribution_ignores_only_an_unchanged_retainer_contract(): void
+    {
+        $line = static fn (string $type, int $total, int $unit, float $hours, string $identity): array => [
+            'type' => $type,
+            'total_amount' => $total,
+            'unit_amount' => $unit,
+            'tax_amount' => 0,
+            'quantity' => number_format($hours, 4, '.', ''),
+            'line_date' => '2026-04-01',
+            'recurring_item_id' => '',
+            'project_id' => '',
+            'agreement_id' => '7',
+            'claimed_by' => '',
+            'description_hash' => $identity.'-description',
+            'identity_hash' => $identity,
+            'hours' => $hours,
+        ];
+        $retainer = $line('retainer', 150000, 150000, 1, 'retainer');
+        $before = [
+            'currency' => 'USD', 'subtotal_amount' => 250000, 'tax_amount' => 0, 'total_amount' => 250000,
+            'lines' => [$retainer, $line('additional_hours', 100000, 20000, 5, 'hourly')],
+        ];
+        $retainer['description_hash'] = 'new-display-wording';
+        $retainer['identity_hash'] = 'new-display-identity';
+        $after = [
+            'currency' => 'USD', 'subtotal_amount' => 210000, 'tax_amount' => 0, 'total_amount' => 210000,
+            'lines' => [
+                $retainer,
+                $line('additional_hours', 60000, 20000, 3, 'hourly'),
+                $line('prior_month_retainer', 0, 0, 2, 'capacity'),
+            ],
+        ];
+
+        $comparison = (new ReflectionMethod(ReplayInvoicesCommand::class, 'examine'))->invoke(
+            new ReplayInvoicesCommand,
+            $this->workspace,
+            $before,
+            $after,
+        );
+
+        $this->assertContains('retainer', $comparison['changed_types'], 'Display changes remain visible in the report.');
+        $this->assertNotContains('retainer', $comparison['attribution_changed_types']);
+        $this->assertTrue($comparison['capacity_reallocated_at_same_rate']);
+
+        $after['lines'][0]['total_amount']--;
+        $changedContract = (new ReflectionMethod(ReplayInvoicesCommand::class, 'examine'))->invoke(
+            new ReplayInvoicesCommand,
+            $this->workspace,
+            $before,
+            $after,
+        );
+
+        $this->assertContains('retainer', $changedContract['attribution_changed_types']);
+        $this->assertFalse($changedContract['capacity_reallocated_at_same_rate']);
     }
 
     public function test_a_complete_configured_cadence_missing_from_ad_hoc_only_history_is_explained(): void
@@ -663,6 +934,16 @@ final class ReplayInvoicesTest extends TestCase
         $agreement = $this->cadenceGapAgreement();
         $companyId = (string) $this->company->id;
         $agreementId = (string) $agreement->id;
+        $retainerLine = static fn (string $cycleStart): array => [
+            'type' => 'retainer',
+            'unit_amount' => 150000,
+            'quantity' => '1',
+            'hours' => 12.0,
+            'total_amount' => 150000,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'line_date' => $cycleStart,
+        ];
         $expected = [
             $companyId.'|none|ad_hoc|2026-07-01..2026-12-31@2024-01-01..2024-01-31' => [
                 'invoice_kind' => 'ad_hoc',
@@ -682,14 +963,10 @@ final class ReplayInvoicesTest extends TestCase
             $actual[$key] = [
                 'invoice_kind' => 'cadence_period',
                 'currency' => 'USD',
-                'subtotal_amount' => 25000,
+                'subtotal_amount' => 150000,
                 'tax_amount' => 0,
-                'total_amount' => 25000,
-                'lines' => [[
-                    'total_amount' => 25000,
-                    'tax_amount' => 0,
-                    'agreement_id' => $agreementId,
-                ]],
+                'total_amount' => 150000,
+                'lines' => [$retainerLine($cycleStart)],
             ];
         }
 
@@ -711,21 +988,52 @@ final class ReplayInvoicesTest extends TestCase
         $actual[$finalKey] = [
             'invoice_kind' => 'cadence_period',
             'currency' => 'USD',
-            'subtotal_amount' => 25000,
+            'subtotal_amount' => 150000,
             'tax_amount' => 0,
-            'total_amount' => 25000,
-            'lines' => [[
-                'total_amount' => 25000,
-                'tax_amount' => 0,
-                'agreement_id' => $agreementId,
-            ]],
+            'total_amount' => 150000,
+            'lines' => [$retainerLine('2027-01-01')],
         ];
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
         $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
             $this->workspace,
             $expected,
             $actual,
             $anchors,
         ));
+        $this->assertCount(2, $queries, implode("\n", $queries));
+
+        $mispriced = $actual;
+        $mispriced[$finalKey]['lines'][0]['unit_amount'] = 149999;
+        $mispriced[$finalKey]['lines'][0]['total_amount'] = 149999;
+        $mispriced[$finalKey]['subtotal_amount'] = 149999;
+        $mispriced[$finalKey]['total_amount'] = 149999;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $mispriced,
+            $anchors,
+        ), 'A self-consistent invoice still needs the exact retainer price configured on the agreement.');
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Second eligible cadence',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 60,
+            'retainer_amount' => 10000,
+            'billing_cadence' => 'monthly',
+        ]);
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $actual,
+            $anchors,
+        ), 'Every eligible recurring agreement must be represented before an omitted cadence is explained.');
 
         $otherWorkspace = Workspace::query()->create([
             'name' => 'Other cadence proof',
@@ -812,6 +1120,112 @@ final class ReplayInvoicesTest extends TestCase
             $before,
             $after,
         ));
+    }
+
+    public function test_recurring_item_proof_cannot_follow_a_corrupt_item_workspace_chain(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Local proof agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign item scope', 'slug' => 'foreign-item-scope']);
+        $foreignItem = ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            // The schema currently permits this mismatched pair of independent
+            // foreign keys. Replay must still fail closed at the query seam.
+            'client_agreement_id' => $agreement->id,
+            'description' => 'Foreign chained service',
+            'cadence' => 'annual',
+            'anchor_month' => 1,
+            'anchor_day' => 1,
+            'effective_on' => '2026-01-01',
+            'quantity' => '1.000',
+            'amount' => 4200,
+            'currency' => 'USD',
+            'is_active' => true,
+        ]);
+        $key = implode('|', [
+            $this->company->id,
+            $agreement->id,
+            'cadence_period',
+            '2026-01-01..2026-01-31@2025-12-01..2025-12-31',
+        ]);
+        $before = [
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'lines' => [],
+        ];
+        $after = [
+            'currency' => 'USD',
+            'subtotal_amount' => 4200,
+            'tax_amount' => 0,
+            'total_amount' => 4200,
+            'cycle_start' => '2026-01-01',
+            'cycle_end' => '2026-01-31',
+            'lines' => [[
+                'type' => 'recurring_item',
+                'unit_amount' => 4200,
+                'quantity' => '1',
+                'tax_amount' => 0,
+                'total_amount' => 4200,
+                'project_id' => '',
+                'agreement_id' => (string) $agreement->id,
+                'line_date' => '2026-01-01',
+                'recurring_item_id' => (string) $foreignItem->id,
+                'claimed_by' => '',
+                'description_hash' => 'foreign-chain',
+            ]],
+        ];
+
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            if (str_contains($query->sql, 'client_agreement_recurring_items')) {
+                $queries[] = $query->sql;
+            }
+        });
+        $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
+            $this->workspace,
+            $key,
+            $before,
+            $after,
+        ));
+        $this->assertCount(1, $queries);
+        $this->assertStringContainsString('workspace_id', $queries[0]);
+
+        $localItem = ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => 'Local chained service',
+            'cadence' => 'annual',
+            'anchor_month' => 1,
+            'anchor_day' => 1,
+            'effective_on' => '2026-01-01',
+            'quantity' => '1.000',
+            'amount' => 4200,
+            'currency' => 'USD',
+            'is_active' => true,
+        ]);
+        $after['lines'][0]['recurring_item_id'] = (string) $localItem->id;
+        $queries = [];
+        $this->assertTrue((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
+            $this->workspace,
+            $key,
+            $before,
+            $after,
+        ));
+        $this->assertCount(2, $queries);
+        foreach ($queries as $query) {
+            $this->assertStringContainsString('workspace_id', $query);
+        }
     }
 
     /**
