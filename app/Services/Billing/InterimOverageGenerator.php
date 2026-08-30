@@ -16,6 +16,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
+use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,7 @@ final class InterimOverageGenerator
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         ?ClientActivityRecorder $activities = null,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {
         $this->activities = $activities ?? app(ClientActivityRecorder::class);
     }
@@ -366,7 +368,7 @@ final class InterimOverageGenerator
         }
 
         $cursor = $cycle->start->copy()->startOfMonth();
-        $today = Carbon::now()->startOfDay();
+        $today = Carbon::instance($this->clock->today($company->workspace));
 
         while ($cursor->lte($cycle->end)) {
             $periodStart = $cursor->copy()->startOfMonth();

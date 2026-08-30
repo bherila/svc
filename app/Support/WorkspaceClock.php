@@ -19,4 +19,9 @@ final class WorkspaceClock
 
         return Date::getFacadeRoot()->now($timezone)->toImmutable();
     }
+
+    public function today(Workspace|string|null $workspace = null): CarbonImmutable
+    {
+        return $this->now($workspace)->startOfDay();
+    }
 }

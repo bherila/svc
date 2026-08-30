@@ -3,7 +3,6 @@ includes:
     - vendor/nesbot/carbon/extension.neon
     - vendor/spaze/phpstan-disallowed-calls/extension.neon
     - phpstan-disallowed-calls.neon
-    - phpstan-disallowed-baseline.neon
 
 parameters:
     paths:

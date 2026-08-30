@@ -3,7 +3,9 @@ parameters:
 
     disallowedFunctionCalls:
         -
-            function: 'now()'
+            function:
+                - 'now()'
+                - 'today()'
             message: 'inject the workspace clock helper instead'
             allowExceptIn:
                 - app/Services/*
@@ -13,9 +15,13 @@ parameters:
         -
             method:
                 - 'Carbon\Carbon::now()'
+                - 'Carbon\Carbon::today()'
                 - 'Carbon\CarbonImmutable::now()'
+                - 'Carbon\CarbonImmutable::today()'
                 - 'Illuminate\Support\Carbon::now()'
+                - 'Illuminate\Support\Carbon::today()'
                 - 'Illuminate\Support\Facades\Date::now()'
+                - 'Illuminate\Support\Facades\Date::today()'
             message: 'inject the workspace clock helper instead'
             allowExceptIn:
                 - app/Services/*

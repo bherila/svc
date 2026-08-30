@@ -21,6 +21,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
+use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -120,6 +121,7 @@ final class ClientInvoicingService
         ?InvoiceLedgerBuilder $invoiceLedgerBuilder = null,
         ?InterimOverageGenerator $interimOverageGenerator = null,
         ?ClientActivityRecorder $activities = null,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {
         // These three share the collaborators above, so they are wired here
         // rather than defaulted in the signature - a second RolloverCalculator
@@ -139,6 +141,7 @@ final class ClientInvoicingService
             $this->invoiceNumberAllocator,
             $this->allocationService,
             activities: $this->activities,
+            clock: $this->clock,
         );
     }
 
@@ -212,7 +215,7 @@ final class ClientInvoicingService
     ): ClientInvoice {
         $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
-        $agreement ??= $company->activeAgreement();
+        $agreement ??= $company->activeAgreement($this->clock->today($company->workspace));
         if (! $agreement instanceof ClientAgreement) {
             throw new RuntimeException('No active agreement found for this client company.');
         }
@@ -1607,7 +1610,7 @@ final class ClientInvoicingService
         $terminationDate = $this->agreementEnd($agreement);
 
         if ($agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
-            $retainerPeriodStart = Carbon::now()->startOfMonth()->addMonth();
+            $retainerPeriodStart = Carbon::instance($this->clock->today($agreement->workspace))->addMonth();
 
             if ($successorAgreement instanceof ClientAgreement && $terminationDate instanceof Carbon) {
                 // Leave room for the final catch-up invoice: the month after
@@ -1626,7 +1629,7 @@ final class ClientInvoicingService
         }
 
         $activeDate = $this->agreementStart($agreement);
-        $referenceDate = Carbon::now()->startOfDay();
+        $referenceDate = Carbon::instance($this->clock->today($agreement->workspace));
 
         // An agreement that has not started yet still gets its first cycle
         // generated, because a cadence retainer is billed in advance.
@@ -1939,7 +1942,7 @@ final class ClientInvoicingService
     private function agreementStart(ClientAgreement $agreement): Carbon
     {
         return $agreement->starts_on === null
-            ? Carbon::now()->startOfDay()
+            ? Carbon::instance($this->clock->today($agreement->workspace))
             : Carbon::parse((string) $agreement->starts_on)->startOfDay();
     }
 
