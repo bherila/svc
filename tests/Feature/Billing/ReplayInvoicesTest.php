@@ -1086,6 +1086,58 @@ final class ReplayInvoicesTest extends TestCase
             $anchors,
         ), 'A correct retainer line cannot hide an additional charge with no source work allocation.');
 
+        $duplicateRetainer = $actual;
+        $duplicateRetainer[$finalKey]['lines'][] = $retainerLine('2027-01-01');
+        $duplicateRetainer[$finalKey]['subtotal_amount'] = 300000;
+        $duplicateRetainer[$finalKey]['total_amount'] = 300000;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $duplicateRetainer,
+            $anchors,
+        ), 'A second retainer line cannot be waived even when both lines use the configured price.');
+
+        $unsupportedCapacity = $actual;
+        $unsupportedCapacity[$finalKey]['lines'][] = [
+            'type' => 'prior_month_retainer',
+            'unit_amount' => 0,
+            'quantity' => '0',
+            'hours' => 1.0,
+            'source_minutes' => 0,
+            'total_amount' => 0,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'line_date' => '2026-12-31',
+        ];
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $unsupportedCapacity,
+            $anchors,
+        ), 'A zero-value capacity line still needs a matching source-work allocation.');
+
+        $agreement->update(['ends_on' => '2026-10-15']);
+        $cadenceLinesProof = new ReflectionMethod(
+            ReplayContractCorrectionClassifier::class,
+            'hasOnlyConfiguredCadenceLines',
+        );
+        $this->assertFalse($cadenceLinesProof->invoke(
+            $classifier,
+            $agreement,
+            Carbon::parse('2027-01-01'),
+            Carbon::parse('2027-06-30'),
+            Carbon::parse('2026-07-01'),
+            Carbon::parse('2026-12-31'),
+            [$retainerLine('2027-01-01')],
+        ), 'The line proof itself must reject a retainer after entitlement ended.');
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $actual,
+            $anchors,
+        ), 'A post-termination cycle with no retainer due cannot contain a retainer line.');
+        $agreement->update(['ends_on' => null]);
+
         ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
