@@ -26,3 +26,6 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Agent worktrees created by Claude Code; never part of the tree.
+/.claude/worktrees/
