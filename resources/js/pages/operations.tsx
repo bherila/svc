@@ -618,6 +618,12 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                         </div>
                         <div className="flex items-center gap-4">
                             <Link
+                                href={`/workspaces/${workspace.id}/clients`}
+                                className="text-sm font-semibold text-cyan-700"
+                            >
+                                Clients
+                            </Link>
+                            <Link
                                 href={`/workspaces/${workspace.id}/time`}
                                 className="text-sm font-semibold text-cyan-700"
                             >
