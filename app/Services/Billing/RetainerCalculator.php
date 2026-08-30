@@ -66,7 +66,13 @@ class RetainerCalculator
 
         $startsOn = $agreement->retainerStartsOn();
         if ($startsOn === null) {
-            throw new \RuntimeException('Retainer arithmetic requires an agreement start date.');
+            // An agreement with no start date has not started, so it grants no
+            // retainer entitlement. Throwing here would contradict
+            // ClientInvoicingService::agreementStart(), which deliberately
+            // surfaces an empty ledger rather than an exception for a
+            // half-configured agreement; parsing the null into "now" - the
+            // behaviour this replaced - silently invented a start date.
+            return 0.0;
         }
         $activeDate = Carbon::instance($startsOn)->startOfDay();
         $fullPeriodFirstCycle = $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod
@@ -123,7 +129,13 @@ class RetainerCalculator
     {
         $startsOn = $agreement->retainerStartsOn();
         if ($startsOn === null) {
-            throw new \RuntimeException('Retainer arithmetic requires an agreement start date.');
+            // An agreement with no start date has not started, so it grants no
+            // retainer entitlement. Throwing here would contradict
+            // ClientInvoicingService::agreementStart(), which deliberately
+            // surfaces an empty ledger rather than an exception for a
+            // half-configured agreement; parsing the null into "now" - the
+            // behaviour this replaced - silently invented a start date.
+            return 0.0;
         }
         $activeDate = Carbon::instance($startsOn)->startOfDay();
         $terminationDate = $agreement->retainerEndsOn()

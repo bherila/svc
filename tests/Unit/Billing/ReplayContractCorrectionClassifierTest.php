@@ -6,12 +6,15 @@ use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\CorrectionFacts;
+use App\Support\Billing\FirstCycleProration;
+use App\Support\Billing\ReplayCadenceAgreement;
 use App\Support\Billing\ReplayHistoricalCycle;
 use App\Support\Billing\ReplayHistorySeed;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
 use App\Support\Billing\ReplayRecurringItemIncidence;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -19,6 +22,51 @@ use ReflectionProperty;
 
 final class ReplayContractCorrectionClassifierTest extends TestCase
 {
+    public function test_the_opening_rollover_expires_from_the_capacity_ceiling(): void
+    {
+        $agreement = new ReplayCadenceAgreement(
+            companyId: 5,
+            agreementId: 7,
+            currency: 'USD',
+            startsOn: CarbonImmutable::parse('2026-01-01'),
+            endsOn: null,
+            cadence: BillingCadence::Monthly,
+            firstCycleProration: FirstCycleProration::FullPeriod,
+            monthlyHours: 10.0,
+            monthlyFee: 1500.0,
+            periodHoursOverride: null,
+            periodFeeOverride: null,
+            hourlyRateAmount: 15000,
+            catchUpThresholdMinutes: 0,
+            rolloverMonths: 1,
+            initialRolloverMinutes: 600,
+            usesPeriodRetainerTerms: false,
+        );
+
+        $ceiling = new ReflectionMethod(ReplayContractCorrectionClassifier::class, 'maximumCapacityMinutesForPeriod');
+        $classifier = new ReplayContractCorrectionClassifier;
+        $capacityFor = static fn (string $month): int => $ceiling->invoke(
+            $classifier,
+            $agreement,
+            Carbon::parse($month)->startOfMonth(),
+            Carbon::parse($month)->endOfMonth()->startOfDay(),
+            Carbon::parse($month)->startOfMonth(),
+            Carbon::parse($month)->endOfMonth()->startOfDay(),
+        );
+
+        // Both months draw the same configured retainer, so the only thing that
+        // may differ between them is the opening rollover - which the contract
+        // grants for `rolloverMonths` and not for the life of the agreement.
+        $withinWindow = $capacityFor('2026-02-01');
+        $longExpired = $capacityFor('2027-06-01');
+
+        $this->assertSame(
+            600,
+            $withinWindow - $longExpired,
+            'The opening rollover must raise this ceiling inside its window and nowhere else.',
+        );
+    }
+
     public function test_exact_minute_rounding_requires_both_source_allocations(): void
     {
         $line = $this->line('additional_hours', 14999, 10000, '1.5', 90, 'rounding');

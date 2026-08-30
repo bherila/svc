@@ -1160,7 +1160,6 @@ final class ReplayInvoicesTest extends TestCase
         $examine = new ReflectionMethod(ReplayInvoicesCommand::class, 'examine');
         $comparison = $examine->invoke(
             $command,
-            $this->workspace,
             $snapshot,
             $shifted,
             $this->company->id.'|999|cadence_period|2026-01-01..2026-01-31@2026-01-01..2026-01-31',
@@ -1209,7 +1208,6 @@ final class ReplayInvoicesTest extends TestCase
 
         $comparison = (new ReflectionMethod(ReplayInvoicesCommand::class, 'examine'))->invoke(
             new ReplayInvoicesCommand,
-            $this->workspace,
             $before,
             $after,
         );
@@ -1221,7 +1219,6 @@ final class ReplayInvoicesTest extends TestCase
         $after['lines'][0]['total_amount']--;
         $changedContract = (new ReflectionMethod(ReplayInvoicesCommand::class, 'examine'))->invoke(
             new ReplayInvoicesCommand,
-            $this->workspace,
             $before,
             $after,
         );

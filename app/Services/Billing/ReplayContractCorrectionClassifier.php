@@ -891,8 +891,15 @@ final class ReplayContractCorrectionClassifier
                 $cursor->addMonth()->startOfMonth();
             }
 
+            // Carbon's diffInMonths is signed and reads as `argument - receiver`,
+            // so the agreement start has to be the receiver: with the operands
+            // the other way round every period at or after the start returns a
+            // negative month count, the window is satisfied unconditionally, and
+            // the opening rollover inflates this ceiling forever.
+            $monthsSinceStart = $agreement->startsOn->startOfMonth()
+                ->diffInMonths($periodStart->copy()->startOfMonth());
             if ($agreement->initialRolloverMinutes > 0
-                && $periodStart->copy()->startOfMonth()->diffInMonths($agreement->startsOn->startOfMonth()) <= $agreement->rolloverMonths) {
+                && $monthsSinceStart <= $agreement->rolloverMonths) {
                 $workPeriodMinutes += $agreement->initialRolloverMinutes;
             }
         }

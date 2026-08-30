@@ -1097,7 +1097,7 @@ final class ReplayInvoicesCommand extends Command
                 continue;
             }
 
-            $examined = $this->examine($workspace, $before, $after, $key);
+            $examined = $this->examine($before, $after, $key);
             $notes = $examined['notes'];
             $changedTypes = $examined['changed_types'];
             $changedFields = $examined['changed_fields'];
@@ -1153,7 +1153,7 @@ final class ReplayInvoicesCommand extends Command
             }
         }
 
-        return $this->reconcileLegacyPeriods($workspace, $comparisons);
+        return $this->reconcileLegacyPeriods($comparisons);
     }
 
     /**
@@ -1294,7 +1294,7 @@ final class ReplayInvoicesCommand extends Command
      * @param  array<string, mixed>  $after
      * @return array{notes: list<string>, changed_types: list<string>, attribution_changed_types: list<string>, changed_fields: list<string>, line_money_differs: bool, metadata_differs: bool, line_repriced: bool, capacity_reallocated_at_same_rate: bool, exact_minute_arithmetic: bool, opening_recurring_item_incidence: bool, history_omitted_opening_capacity: bool, opening_capacity_also_corrects_minute_rounding: bool, hour_notes: list<string>}
      */
-    private function examine(Workspace $workspace, array $before, array $after, ?string $key = null): array
+    private function examine(array $before, array $after, ?string $key = null): array
     {
         $notes = [];
         // What actually changed, collected as it is found rather than read back
@@ -1415,7 +1415,7 @@ final class ReplayInvoicesCommand extends Command
      * @param  list<array<string, mixed>>  $comparisons
      * @return list<array<string, mixed>>
      */
-    private function reconcileLegacyPeriods(Workspace $workspace, array $comparisons): array
+    private function reconcileLegacyPeriods(array $comparisons): array
     {
         $cycleOf = static function (string $key): string {
             [$company, $agreement, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
@@ -1458,7 +1458,7 @@ final class ReplayInvoicesCommand extends Command
             $historicalSnapshot = $historical['snapshot'] ?? [];
             /** @var array<string, mixed> $generatedSnapshot */
             $generatedSnapshot = $generated['snapshot'] ?? [];
-            $examined = $this->examine($workspace, $historicalSnapshot, $generatedSnapshot, (string) $generated['key']);
+            $examined = $this->examine($historicalSnapshot, $generatedSnapshot, (string) $generated['key']);
 
             $comparisons[$missingIndexes[0]] = [
                 'key' => $historical['key'],
