@@ -16,16 +16,21 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'currency', 'received_on',
     'method', 'reference', 'notes', 'provider', 'provider_payment_identifier',
-    'external_finance_transaction_uuid', 'idempotency_key',
+    'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'external_finance_transaction_uuid', 'idempotency_key'])]
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {
-        return ['amount' => 'integer', 'refunded_amount' => 'integer', 'received_on' => 'date'];
+        return [
+            'amount' => 'integer',
+            'refunded_amount' => 'integer',
+            'received_on' => 'date',
+            'provider_event_created_at' => 'integer',
+        ];
     }
 
     /** @return BelongsTo<ClientInvoice, $this> */

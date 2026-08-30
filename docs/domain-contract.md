@@ -84,7 +84,7 @@ workflow. It is intentionally provider-neutral and contains no production data.
 `client_invoice_payments`
 
 - payment belongs to the same workspace as its invoice
-- status: `pending`, `succeeded`, `failed`, `refunded`, or `disputed`
+- status: `pending`, `succeeded`, `failed`, `refunded`, `disputed`, or `canceled`
 - amount/currency, received date, method, reference, notes, optional provider and
   provider payment identifier, and optional external finance transaction UUID
 - successful non-refunded payments determine invoice paid and balance amounts;

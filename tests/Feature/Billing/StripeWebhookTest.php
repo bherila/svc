@@ -201,6 +201,33 @@ class StripeWebhookTest extends TestCase
         $this->assertSame('void', $service->void($invoice->fresh(), $workspace)->status);
     }
 
+    public function test_older_processing_event_cannot_regress_a_failed_payment(): void
+    {
+        [, $workspace, $company] = $this->tenant('failed-ordering');
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-FAILED-ORDERING', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $payment = $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_failed_ordering',
+        ], $workspace);
+
+        $failed = $this->eventPayload('evt_newer_failure', 'payment_intent.payment_failed', [
+            'id' => 'pi_failed_ordering',
+        ], 200);
+        $processing = $this->eventPayload('evt_older_processing_after_failure', 'payment_intent.processing', [
+            'id' => 'pi_failed_ordering',
+        ], 100);
+        $this->webhookPost($failed, $this->signature($failed))->assertOk();
+        $this->webhookPost($processing, $this->signature($processing))->assertOk();
+
+        $this->assertSame('failed', $payment->fresh()->status);
+        $this->assertSame(200, $payment->fresh()->provider_event_created_at);
+        $this->assertSame('void', $service->void($invoice->fresh(), $workspace)->status);
+    }
+
     public function test_payment_method_webhooks_sync_safe_metadata_and_native_lifecycle_events(): void
     {
         [, $workspace, $company] = $this->tenant('methods');
@@ -286,6 +313,41 @@ class StripeWebhookTest extends TestCase
             'status' => 'processed',
             'workspace_id' => null,
         ]);
+    }
+
+    public function test_older_customer_update_cannot_rewind_the_default_payment_method(): void
+    {
+        [, $workspace, $company] = $this->tenant('default-ordering');
+        ClientStripeCustomer::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'stripe_customer_id' => 'cus_default_ordering',
+        ]);
+        foreach (['a', 'b'] as $suffix) {
+            $attached = $this->eventPayload('evt_attach_'.$suffix, 'payment_method.attached', [
+                'id' => 'pm_default_'.$suffix,
+                'customer' => 'cus_default_ordering',
+                'type' => 'card',
+                'card' => ['brand' => 'visa', 'last4' => $suffix === 'a' ? '4242' : '1881'],
+            ], 50);
+            $this->webhookPost($attached, $this->signature($attached))->assertOk();
+        }
+        $newer = $this->eventPayload('evt_default_b', 'customer.updated', [
+            'id' => 'cus_default_ordering',
+            'invoice_settings' => ['default_payment_method' => 'pm_default_b'],
+        ], 200);
+        $older = $this->eventPayload('evt_default_a', 'customer.updated', [
+            'id' => 'cus_default_ordering',
+            'invoice_settings' => ['default_payment_method' => 'pm_default_a'],
+        ], 100);
+
+        $this->webhookPost($newer, $this->signature($newer))->assertOk();
+        $this->webhookPost($older, $this->signature($older))->assertOk();
+
+        $this->assertTrue(ClientStripePaymentMethod::query()->where('stripe_payment_method_id', 'pm_default_b')->sole()->is_default);
+        $this->assertFalse(ClientStripePaymentMethod::query()->where('stripe_payment_method_id', 'pm_default_a')->sole()->is_default);
+        $this->assertSame(200, ClientStripeCustomer::query()->sole()->default_payment_method_event_created_at);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'payment_method.default_changed')->count());
     }
 
     public function test_detach_uses_the_adapter_route_to_scope_the_tenant_read(): void

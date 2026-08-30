@@ -100,7 +100,12 @@ final class StripeWebhookService
                 if ($customerId === '') {
                     throw new \DomainException('The Stripe event does not identify an updated customer.');
                 }
-                $workspaceId = $this->paymentMethods->changeDefault($customerId, $defaultId, (string) $event->id);
+                $workspaceId = $this->paymentMethods->changeDefault(
+                    $customerId,
+                    $defaultId,
+                    (string) $event->id,
+                    $providerCreatedAt,
+                );
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
             } else {
                 $this->handleInvoiceEvent($event, $object, $ledger);
@@ -116,6 +121,7 @@ final class StripeWebhookService
     private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger): void
     {
         $payment = $this->findPayment($object);
+        $providerCreatedAt = max(0, (int) ($event->created ?? 0));
         $status = match ((string) $event->type) {
             'payment_intent.succeeded' => 'succeeded',
             'payment_intent.processing' => 'pending',
@@ -127,14 +133,25 @@ final class StripeWebhookService
         };
 
         if ($event->type === 'charge.refunded' && $payment !== null) {
+            if ($this->isOlderPaymentEvent($payment, $providerCreatedAt, 'refunded')) {
+                $ledger->workspace_id = $payment->workspace_id;
+
+                return;
+            }
             $currency = strtoupper((string) ($object['currency'] ?? ''));
             $refundedAmount = (int) ($object['amount_refunded'] ?? 0);
             if ($currency !== $payment->currency) {
                 throw new \DomainException('Stripe refund currency does not match the invoice payment.');
             }
             $this->invoices->setRefundedAmount($payment, $refundedAmount);
+            $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
             $ledger->workspace_id = $payment->workspace_id;
         } elseif ($status !== null && $payment !== null) {
+            if ($this->isOlderPaymentEvent($payment, $providerCreatedAt, $status)) {
+                $ledger->workspace_id = $payment->workspace_id;
+
+                return;
+            }
             if ($status === 'succeeded') {
                 $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
                 $currency = strtoupper((string) ($object['currency'] ?? ''));
@@ -144,11 +161,47 @@ final class StripeWebhookService
             }
             if (! $this->isStalePaymentTransition($payment->status, $status)) {
                 $this->invoices->setPaymentStatus($payment, $status);
+                $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
             }
             $ledger->workspace_id = $payment->workspace_id;
         } elseif ($event->type === 'payment_intent.succeeded') {
-            $this->createSuccessfulPayment($object, $ledger);
+            $this->createSuccessfulPayment($event, $object, $ledger);
         }
+    }
+
+    private function isOlderPaymentEvent(
+        ClientInvoicePayment $payment,
+        int $providerCreatedAt,
+        string $nextStatus,
+    ): bool {
+        $lastCreatedAt = $payment->provider_event_created_at;
+        if ($lastCreatedAt === null) {
+            return false;
+        }
+        if ($lastCreatedAt > $providerCreatedAt) {
+            return true;
+        }
+
+        // Stripe event timestamps have one-second precision. Within a tied
+        // second, keep a failure rather than returning it to processing.
+        return $lastCreatedAt === $providerCreatedAt
+            && $payment->status === 'failed'
+            && $nextStatus === 'pending';
+    }
+
+    private function recordPaymentEvent(
+        ClientInvoicePayment $payment,
+        int $providerCreatedAt,
+        string $eventId,
+    ): void {
+        ClientInvoicePayment::query()
+            ->where('workspace_id', $payment->workspace_id)
+            ->whereKey($payment->id)
+            ->update([
+                'provider_event_created_at' => max(0, $providerCreatedAt),
+                'provider_event_id' => $eventId,
+                'updated_at' => now(),
+            ]);
     }
 
     private function isStalePaymentTransition(string $current, string $next): bool
@@ -194,11 +247,12 @@ final class StripeWebhookService
         return ClientInvoicePayment::query()
             ->where('provider', 'stripe')
             ->whereIn('provider_payment_identifier', $ids)
+            ->lockForUpdate()
             ->first();
     }
 
     /** @param array<string, mixed> $object */
-    private function createSuccessfulPayment(array $object, ClientStripeEvent $ledger): void
+    private function createSuccessfulPayment(Event $event, array $object, ClientStripeEvent $ledger): void
     {
         $metadata = is_array($object['metadata'] ?? null) ? $object['metadata'] : [];
         $invoiceId = $metadata['invoice_public_id'] ?? null;
@@ -233,6 +287,7 @@ final class StripeWebhookService
             'provider' => 'stripe',
             'provider_payment_identifier' => (string) ($object['id'] ?? ''),
         ]);
+        $this->recordPaymentEvent($payment, max(0, (int) ($event->created ?? 0)), (string) $event->id);
         $ledger->workspace_id = $payment->workspace_id;
     }
 }

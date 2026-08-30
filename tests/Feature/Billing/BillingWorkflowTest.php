@@ -190,6 +190,9 @@ class BillingWorkflowTest extends TestCase
             'amount' => 1000, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'reference' => 'SYNTH-REF', 'notes' => 'Synthetic', 'status' => 'succeeded',
         ]);
         $payment->assertCreated()->assertJsonPath('data.currency', 'USD');
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+            'amount' => 500, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'status' => 'canceled',
+        ])->assertCreated()->assertJsonPath('data.status', 'canceled');
         $this->assertSame('partially_paid', $invoice->fresh()->status);
     }
 

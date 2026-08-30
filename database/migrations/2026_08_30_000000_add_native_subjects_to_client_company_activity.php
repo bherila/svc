@@ -26,6 +26,16 @@ return new class extends Migration
             $table->softDeletes();
         });
 
+        Schema::table('client_invoice_payments', function (Blueprint $table): void {
+            $table->unsignedBigInteger('provider_event_created_at')->nullable();
+            $table->string('provider_event_id', 255)->nullable();
+        });
+
+        Schema::table('client_stripe_customers', function (Blueprint $table): void {
+            $table->unsignedBigInteger('default_payment_method_event_created_at')->nullable();
+            $table->string('default_payment_method_event_id', 255)->nullable();
+        });
+
         // Provider webhooks arrive without tenant route parameters. This is a
         // system-level adapter index, not a tenant domain record: it remembers
         // only a one-way provider-ID hash, the resolved owner (when known), and
@@ -70,6 +80,17 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('stripe_payment_method_states');
+
+        Schema::table('client_stripe_customers', function (Blueprint $table): void {
+            $table->dropColumn([
+                'default_payment_method_event_created_at',
+                'default_payment_method_event_id',
+            ]);
+        });
+
+        Schema::table('client_invoice_payments', function (Blueprint $table): void {
+            $table->dropColumn(['provider_event_created_at', 'provider_event_id']);
+        });
 
         Schema::table('client_stripe_payment_methods', function (Blueprint $table): void {
             $table->dropSoftDeletes();

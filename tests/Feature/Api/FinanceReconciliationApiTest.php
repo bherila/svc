@@ -45,6 +45,19 @@ class FinanceReconciliationApiTest extends TestCase
             ->assertJsonMissingPath('data.0.invoice.id_internal');
     }
 
+    public function test_payment_index_can_filter_canceled_payments(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Canceled API');
+        app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'canceled', $workspace);
+        $token = $owner->createToken('read canceled', ['finance.read'], now()->addHour())->plainTextToken;
+
+        $this->withToken($token)
+            ->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments?status=canceled")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.status', 'canceled');
+    }
+
     public function test_reconciliation_upsert_is_idempotent_deactivatable_and_cross_tenant_safe(): void
     {
         [$owner, $workspace, $payment] = $this->payment('Primary API', 6000);

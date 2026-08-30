@@ -11,15 +11,24 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata'])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata'])]
+#[Fillable([
+    'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata',
+    'default_payment_method_event_created_at', 'default_payment_method_event_id',
+])]
+#[Hidden([
+    'id', 'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata',
+    'default_payment_method_event_created_at', 'default_payment_method_event_id',
+])]
 class ClientStripeCustomer extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
 
     protected function casts(): array
     {
-        return ['metadata' => 'array'];
+        return [
+            'metadata' => 'array',
+            'default_payment_method_event_created_at' => 'integer',
+        ];
     }
 
     /** @return BelongsTo<ClientCompany, $this> */

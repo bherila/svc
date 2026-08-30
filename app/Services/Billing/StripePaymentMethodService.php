@@ -153,13 +153,24 @@ final class StripePaymentMethodService
         return $workspaceId;
     }
 
-    public function changeDefault(string $providerCustomerId, ?string $providerMethodId, string $occurrence): ?int
-    {
+    public function changeDefault(
+        string $providerCustomerId,
+        ?string $providerMethodId,
+        string $occurrence,
+        int $providerCreatedAt,
+    ): ?int {
         $tenant = $this->tenant($providerCustomerId);
         if ($tenant === null) {
             return null;
         }
         [$workspace, $company, $customer] = $tenant;
+        $lastCreatedAt = $customer->default_payment_method_event_created_at;
+        if ($lastCreatedAt !== null && ($lastCreatedAt > $providerCreatedAt
+            || ($lastCreatedAt === $providerCreatedAt
+                && $customer->default_payment_method_event_id !== null
+                && $customer->default_payment_method_event_id !== $occurrence))) {
+            return $workspace->id;
+        }
         $methods = ClientStripePaymentMethod::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
@@ -174,6 +185,8 @@ final class StripePaymentMethodService
             throw new RuntimeException('The new default Stripe payment method has not been synchronized yet.');
         }
         if ($current?->id === $next?->id) {
+            $this->recordDefaultEvent($customer, $providerCreatedAt, $occurrence);
+
             return $workspace->id;
         }
 
@@ -186,6 +199,7 @@ final class StripePaymentMethodService
         if ($next instanceof ClientStripePaymentMethod) {
             $next->forceFill(['is_default' => true])->save();
         }
+        $this->recordDefaultEvent($customer, $providerCreatedAt, $occurrence);
 
         $subject = $next ?? $current;
         if (! $subject instanceof ClientStripePaymentMethod) {
@@ -199,6 +213,17 @@ final class StripePaymentMethodService
         ], occurrence: $occurrence);
 
         return $workspace->id;
+    }
+
+    private function recordDefaultEvent(
+        ClientStripeCustomer $customer,
+        int $providerCreatedAt,
+        string $eventId,
+    ): void {
+        $customer->forceFill([
+            'default_payment_method_event_created_at' => max(0, $providerCreatedAt),
+            'default_payment_method_event_id' => $eventId,
+        ])->save();
     }
 
     /** @return array{Workspace, ClientCompany, ClientStripeCustomer}|null */
