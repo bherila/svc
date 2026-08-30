@@ -24,7 +24,7 @@ final readonly class ReplayRecurringItemIncidenceRepository
      * @param  array<string, array<string, mixed>>  $snapshots
      * @return array<string, list<ReplayRecurringItemIncidence>>
      */
-    public function forSnapshots(Workspace $workspace, array $snapshots): array
+    public function forSnapshots(Workspace $workspace, array $snapshots, string $digestKey): array
     {
         $candidates = [];
         foreach ($snapshots as $key => $snapshot) {
@@ -93,6 +93,7 @@ final readonly class ReplayRecurringItemIncidenceRepository
                     quantity: (string) $line->quantity,
                     taxAmount: (int) $line->tax_amount,
                     totalAmount: (int) $line->total_amount,
+                    descriptionHash: substr(hash_hmac('sha256', (string) $line->description, $digestKey), 0, 12),
                 );
             }
         }

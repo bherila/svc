@@ -101,6 +101,7 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             quantity: '1',
             taxAmount: 0,
             totalAmount: 4200,
+            descriptionHash: 'opening-item-description',
         );
         $classifier = new ReplayContractCorrectionClassifier;
 
@@ -112,6 +113,15 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         ));
 
         $after['lines'][0]['source_minutes'] = 15;
+        $this->assertFalse($classifier->openingRecurringItemIncidence(
+            '5|7|cadence_period|2026-01-01..2026-01-31@2025-12-01..2025-12-31',
+            $before,
+            $after,
+            [$context],
+        ));
+
+        $after['lines'][0]['source_minutes'] = 0;
+        $after['lines'][0]['description_hash'] = 'wrong-client-facing-description';
         $this->assertFalse($classifier->openingRecurringItemIncidence(
             '5|7|cadence_period|2026-01-01..2026-01-31@2025-12-01..2025-12-31',
             $before,
@@ -268,8 +278,10 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         array_splice($after['lines'], 1, 1);
         $after['lines'][1]['hours'] = 3.5;
         $after['lines'][1]['source_minutes'] = 210;
+        $after['lines'][1]['source_agreement_rate_minutes'] = 210;
         $after['lines'][2]['hours'] = 3.5;
         $after['lines'][2]['source_minutes'] = 210;
+        $after['lines'][2]['source_agreement_rate_minutes'] = 210;
         $after['subtotal_amount'] = 150000;
         $after['total_amount'] = 150000;
 
@@ -302,6 +314,12 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             $start = CarbonImmutable::parse($month.'-01');
             $snapshot['service_period_start'] = $start->toDateString();
             $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
+            foreach ($snapshot['lines'] as &$line) {
+                if (($line['type'] ?? null) === 'prior_month_retainer') {
+                    $line['line_date'] = $snapshot['service_period_end'];
+                }
+            }
+            unset($line);
 
             return $snapshot;
         };
@@ -340,6 +358,12 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             $start = CarbonImmutable::parse($month.'-01');
             $snapshot['service_period_start'] = $start->toDateString();
             $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
+            foreach ($snapshot['lines'] as &$line) {
+                if (($line['type'] ?? null) === 'prior_month_retainer') {
+                    $line['line_date'] = $snapshot['service_period_end'];
+                }
+            }
+            unset($line);
 
             return $snapshot;
         };
@@ -467,6 +491,36 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             },
             'generated capacity source allocation' => static function (array $before, array $after): array {
                 $after['lines'][2]['source_minutes']--;
+
+                return [$before, $after];
+            },
+            'capacity agreement-rate eligibility' => static function (array $before, array $after): array {
+                $after['lines'][2]['source_agreement_rate_minutes']--;
+
+                return [$before, $after];
+            },
+            'capacity recurring-item attachment' => static function (array $before, array $after): array {
+                $after['lines'][2]['recurring_item_id'] = '8';
+
+                return [$before, $after];
+            },
+            'capacity project attachment' => static function (array $before, array $after): array {
+                $after['lines'][2]['project_id'] = '9';
+
+                return [$before, $after];
+            },
+            'capacity task claim' => static function (array $before, array $after): array {
+                $after['lines'][2]['claimed_by'] = 'synthetic-claim';
+
+                return [$before, $after];
+            },
+            'capacity quantity' => static function (array $before, array $after): array {
+                $after['lines'][2]['quantity'] = '1.0000';
+
+                return [$before, $after];
+            },
+            'capacity line date' => static function (array $before, array $after): array {
+                $after['lines'][2]['line_date'] = '2026-02-02';
 
                 return [$before, $after];
             },
@@ -643,6 +697,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $retainer = $this->line('retainer', 150000, 150000, '1.0000', 60, 'retainer-fee');
         $before = [
             'currency' => 'USD',
+            'service_period_start' => '2026-02-01',
+            'service_period_end' => '2026-02-01',
             'subtotal_amount' => 250000,
             'tax_amount' => 0,
             'total_amount' => 250000,
@@ -658,6 +714,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $generatedRetainer['identity_hash'] = 'allocation-wording-changed';
         $after = [
             'currency' => 'USD',
+            'service_period_start' => '2026-02-01',
+            'service_period_end' => '2026-02-01',
             'subtotal_amount' => 210000,
             'tax_amount' => 0,
             'total_amount' => 210000,
@@ -698,6 +756,7 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             'identity_hash' => $identity,
             'hours' => $minutes / 60,
             'source_minutes' => $type === 'retainer' ? 0 : $minutes,
+            'source_agreement_rate_minutes' => $type === 'retainer' ? 0 : $minutes,
         ];
     }
 

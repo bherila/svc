@@ -83,16 +83,17 @@ final readonly class ReplayInvoiceSnapshot
      */
     public function sourceBackedCapacityDrawMinutes(int $agreementId): ?int
     {
+        $servicePeriodEnd = $this->servicePeriodEnd?->toDateString();
+        if ($servicePeriodEnd === null) {
+            return null;
+        }
+
         $minutes = 0;
         foreach ($this->linesOfType('prior_month_retainer') as $line) {
             $lineMinutes = $line->hoursMinutes();
             if ($lineMinutes === null
                 || $lineMinutes < 0
-                || $line->sourceMinutes !== $lineMinutes
-                || $line->agreementId !== (string) $agreementId
-                || $line->unitAmount !== 0
-                || $line->taxAmount !== 0
-                || $line->totalAmount !== 0) {
+                || ! $line->isCanonicalCapacityDraw($agreementId, $servicePeriodEnd)) {
                 return null;
             }
             $minutes += $lineMinutes;

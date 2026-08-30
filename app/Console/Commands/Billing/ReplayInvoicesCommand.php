@@ -22,6 +22,7 @@ use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
 use App\Support\Billing\ReplayRecurringItemIncidence;
+use App\Support\Billing\ReplaySnapshotValue;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -522,7 +523,7 @@ final class ReplayInvoicesCommand extends Command
             ->pluck('public_id', 'client_invoice_line_id');
 
         foreach ($invoices as $invoice) {
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null, source_minutes: int}> $lines */
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -578,6 +579,13 @@ final class ReplayInvoicesCommand extends Command
                     // descriptions, people, project identifiers, or raw entry
                     // data into the replay report.
                     'source_minutes' => (int) $line->timeEntries->sum('minutes'),
+                    // Eligibility is retained only as another aggregate. This
+                    // proves agreement-rate/capacity lines are backed entirely
+                    // by ordinary or retainer-mode work without exposing a
+                    // worker, mode, rate, description, or source identifier.
+                    'source_agreement_rate_minutes' => (int) $line->timeEntries
+                        ->filter(static fn (ClientTimeEntry $entry): bool => $entry->isAgreementRateBillable())
+                        ->sum('minutes'),
                 ];
             }
 
@@ -892,7 +900,7 @@ final class ReplayInvoicesCommand extends Command
     {
         $comparisons = [];
         $this->recurringItemIncidences = app(ReplayRecurringItemIncidenceRepository::class)
-            ->forSnapshots($workspace, $actual);
+            ->forSnapshots($workspace, $actual, $this->digestKey);
         $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
             ->contractCadenceHistoryGapKeys($workspace, $expected, $actual, $anchors);
         $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
@@ -1433,10 +1441,11 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['claimed_by'],
             (string) $line['description_hash'],
             (int) $line['source_minutes'],
+            ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
         ]);
 
         $describe = static fn (array $line): string => sprintf(
-            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s source %d min',
+            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s source %d min agreement-rate %d min',
             (string) $line['type'],
             (int) $line['unit_amount'],
             (string) $line['quantity'],
@@ -1449,6 +1458,7 @@ final class ReplayInvoicesCommand extends Command
             ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
             (string) $line['description_hash'],
             (int) $line['source_minutes'],
+            ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
         );
 
         /** @var array<string, string> $described */

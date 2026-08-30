@@ -67,6 +67,54 @@ final class ReplayInvoicesTest extends TestCase
         $this->artisan('svc:billing:replay', ['--workspace' => 'nope'])->assertFailed();
     }
 
+    public function test_agreement_rate_source_eligibility_is_available_without_queries(): void
+    {
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-01-10',
+            'minutes' => 60,
+            'description' => 'Synthetic eligibility proof',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+
+        $this->assertTrue($entry->isAgreementRateBillable());
+
+        $entry->forceFill([
+            'subcontractor_billing_mode' => 'retainer',
+            'subcontractor_cost_amount' => 5000,
+        ])->syncOriginal();
+        $this->assertTrue($entry->isAgreementRateBillable());
+
+        foreach (['flat_hourly', 'direct'] as $mode) {
+            $entry->forceFill(['subcontractor_billing_mode' => $mode])->syncOriginal();
+            $this->assertFalse($entry->isAgreementRateBillable(), $mode);
+        }
+
+        $entry->forceFill([
+            'subcontractor_billing_mode' => null,
+            'subcontractor_cost_amount' => 5000,
+        ])->syncOriginal();
+        $this->assertFalse($entry->isAgreementRateBillable(), 'Unclassified subcontractor cost fails closed.');
+
+        $entry->forceFill([
+            'subcontractor_cost_amount' => null,
+            'status' => 'draft',
+        ])->syncOriginal();
+        $this->assertFalse($entry->isAgreementRateBillable(), 'Unapproved work is not agreement-rate billable.');
+
+        $entry->forceFill([
+            'status' => 'approved',
+            'is_billable' => false,
+        ])->syncOriginal();
+        $this->assertFalse($entry->isAgreementRateBillable(), 'Non-billable work is not agreement-rate billable.');
+    }
+
     /**
      * Invoices the current engine produced are, by definition, reproducible by
      * the current engine. This is the control: if it fails, the harness is
@@ -814,7 +862,7 @@ final class ReplayInvoicesTest extends TestCase
             'total_amount' => $total,
             'unit_amount' => $unit,
             'tax_amount' => 0,
-            'quantity' => number_format($hours, 4, '.', ''),
+            'quantity' => $type === 'prior_month_retainer' ? '0.0000' : number_format($hours, 4, '.', ''),
             'line_date' => '2026-04-01',
             'recurring_item_id' => '',
             'project_id' => '',
@@ -824,16 +872,19 @@ final class ReplayInvoicesTest extends TestCase
             'identity_hash' => $identity,
             'hours' => $hours,
             'source_minutes' => $type === 'retainer' ? 0 : (int) round($hours * 60),
+            'source_agreement_rate_minutes' => $type === 'retainer' ? 0 : (int) round($hours * 60),
         ];
         $retainer = $line('retainer', 150000, 150000, 1, 'retainer');
         $before = [
-            'currency' => 'USD', 'subtotal_amount' => 250000, 'tax_amount' => 0, 'total_amount' => 250000,
+            'currency' => 'USD', 'service_period_end' => '2026-04-01',
+            'subtotal_amount' => 250000, 'tax_amount' => 0, 'total_amount' => 250000,
             'lines' => [$retainer, $line('additional_hours', 100000, 20000, 5, 'hourly')],
         ];
         $retainer['description_hash'] = 'new-display-wording';
         $retainer['identity_hash'] = 'new-display-identity';
         $after = [
-            'currency' => 'USD', 'subtotal_amount' => 210000, 'tax_amount' => 0, 'total_amount' => 210000,
+            'currency' => 'USD', 'service_period_end' => '2026-04-01',
+            'subtotal_amount' => 210000, 'tax_amount' => 0, 'total_amount' => 210000,
             'lines' => [
                 $retainer,
                 $line('additional_hours', 60000, 20000, 3, 'hourly'),
@@ -947,6 +998,8 @@ final class ReplayInvoicesTest extends TestCase
             'starts_on' => '2026-01-15',
             'retainer_minutes' => 120,
             'retainer_amount' => 25000,
+            'period_retainer_minutes' => 120,
+            'period_retainer_amount' => 25000,
             'hourly_rate_amount' => 15000,
             'billing_cadence' => 'monthly',
             'rollover_months' => 0,
@@ -982,6 +1035,22 @@ final class ReplayInvoicesTest extends TestCase
                 unlink($report);
             }
         }
+    }
+
+    public function test_void_ad_hoc_attempts_do_not_establish_an_omitted_cadence_exception(): void
+    {
+        $this->cadenceGapAgreement();
+        $this->adHocHistory('VOID-GAP-1', '2026-07-01', '2024-01-01', '2024-01-31');
+        $this->adHocHistory('VOID-GAP-2', '2027-01-01', '2024-02-01', '2024-02-29');
+        ClientInvoice::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->whereIn('invoice_number', ['VOID-GAP-1', 'VOID-GAP-2'])
+            ->update(['status' => 'void']);
+
+        $this->artisan('svc:billing:replay', [
+            '--workspace' => $this->workspace->public_id,
+            '--as-of' => '2026-12-31',
+        ])->assertFailed();
     }
 
     public function test_a_later_omitted_recurring_incidence_is_not_waived_as_the_opening_charge(): void
@@ -1044,11 +1113,13 @@ final class ReplayInvoicesTest extends TestCase
             'project_id' => '',
             'claimed_by' => '',
             'source_minutes' => 0,
+            'source_agreement_rate_minutes' => 0,
             'line_date' => $cycleStart,
         ];
         $expected = [
             $companyId.'|none|ad_hoc|2026-07-01..2026-12-31@2024-01-01..2024-01-31' => [
                 'invoice_kind' => 'ad_hoc',
+                'status' => 'draft',
             ],
         ];
         $actual = [];
@@ -1126,6 +1197,7 @@ final class ReplayInvoicesTest extends TestCase
             'quantity' => '1',
             'hours' => 1.0,
             'source_minutes' => 0,
+            'source_agreement_rate_minutes' => 0,
             'total_amount' => 15000,
             'tax_amount' => 0,
             'agreement_id' => $agreementId,
@@ -1139,6 +1211,37 @@ final class ReplayInvoicesTest extends TestCase
             $extraCharge,
             $anchors,
         ), 'A correct retainer line cannot hide an additional charge with no source work allocation.');
+
+        $eligibleOverage = $actual;
+        $eligibleOverage[$finalKey]['lines'][] = [
+            'type' => 'additional_hours',
+            'unit_amount' => 15000,
+            'quantity' => '1',
+            'hours' => 1.0,
+            'source_minutes' => 60,
+            'source_agreement_rate_minutes' => 60,
+            'total_amount' => 15000,
+            'tax_amount' => 0,
+            'agreement_id' => $agreementId,
+            'line_date' => '2026-12-31',
+        ];
+        $eligibleOverage[$finalKey]['subtotal_amount'] = 165000;
+        $eligibleOverage[$finalKey]['total_amount'] = 165000;
+        $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $eligibleOverage,
+            $anchors,
+        ));
+
+        $ineligibleOverage = $eligibleOverage;
+        $ineligibleOverage[$finalKey]['lines'][1]['source_agreement_rate_minutes'] = 0;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $ineligibleOverage,
+            $anchors,
+        ), 'Agreement-rate cadence cannot be proved from flat-hourly or direct source work.');
 
         $duplicateRetainer = $actual;
         $duplicateRetainer[$finalKey]['lines'][] = $retainerLine('2027-01-01');
@@ -1156,6 +1259,7 @@ final class ReplayInvoicesTest extends TestCase
             'recurring_item_id' => '99',
             'claimed_by' => 'synthetic-claim',
             'source_minutes' => 1,
+            'source_agreement_rate_minutes' => 1,
         ] as $field => $value) {
             $misattachedRetainer = $actual;
             $misattachedRetainer[$finalKey]['lines'][0][$field] = $value;
@@ -1349,11 +1453,12 @@ final class ReplayInvoicesTest extends TestCase
                 'claimed_by' => '',
                 'description_hash' => 'foreign-proof',
                 'source_minutes' => 0,
+                'source_agreement_rate_minutes' => 0,
             ]],
         ];
 
         $incidences = app(ReplayRecurringItemIncidenceRepository::class)
-            ->forSnapshots($this->workspace, [$key => $after]);
+            ->forSnapshots($this->workspace, [$key => $after], 'replay-test-digest');
         $this->assertSame([], $incidences);
         $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
             $key,
@@ -1425,6 +1530,7 @@ final class ReplayInvoicesTest extends TestCase
                 'claimed_by' => '',
                 'description_hash' => 'foreign-chain',
                 'source_minutes' => 0,
+                'source_agreement_rate_minutes' => 0,
             ]],
         ];
 
@@ -1435,7 +1541,7 @@ final class ReplayInvoicesTest extends TestCase
             }
         });
         $incidences = app(ReplayRecurringItemIncidenceRepository::class)
-            ->forSnapshots($this->workspace, [$key => $after]);
+            ->forSnapshots($this->workspace, [$key => $after], 'replay-test-digest');
         $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
             $key,
             $before,
@@ -1461,7 +1567,8 @@ final class ReplayInvoicesTest extends TestCase
         $after['lines'][0]['recurring_item_id'] = (string) $localItem->id;
         $queries = [];
         $incidences = app(ReplayRecurringItemIncidenceRepository::class)
-            ->forSnapshots($this->workspace, [$key => $after]);
+            ->forSnapshots($this->workspace, [$key => $after], 'replay-test-digest');
+        $after['lines'][0]['description_hash'] = $incidences[$key][0]->descriptionHash;
         $this->assertTrue((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
             $key,
             $before,
@@ -1474,6 +1581,7 @@ final class ReplayInvoicesTest extends TestCase
         }
 
         $after['lines'][0]['source_minutes'] = 15;
+        $after['lines'][0]['source_agreement_rate_minutes'] = 15;
         $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
             $key,
             $before,
@@ -1527,7 +1635,7 @@ final class ReplayInvoicesTest extends TestCase
             $queries[] = $query->sql;
         });
         $incidences = app(ReplayRecurringItemIncidenceRepository::class)
-            ->forSnapshots($this->workspace, $snapshots);
+            ->forSnapshots($this->workspace, $snapshots, 'replay-test-digest');
 
         $this->assertCount(2, $queries, implode("\n", $queries));
         $this->assertCount(3, $incidences);
@@ -1558,8 +1666,9 @@ final class ReplayInvoicesTest extends TestCase
                     'line_date' => $proof->lineDate,
                     'recurring_item_id' => (string) $proof->itemId,
                     'claimed_by' => '',
-                    'description_hash' => 'synthetic-bounded-proof',
+                    'description_hash' => $proof->descriptionHash,
                     'source_minutes' => 0,
+                    'source_agreement_rate_minutes' => 0,
                 ]],
             ];
             $this->assertTrue((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(

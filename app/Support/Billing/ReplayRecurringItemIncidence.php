@@ -17,5 +17,6 @@ final readonly class ReplayRecurringItemIncidence
         public string $quantity,
         public int $taxAmount,
         public int $totalAmount,
+        public string $descriptionHash,
     ) {}
 }

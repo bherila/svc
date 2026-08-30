@@ -20,6 +20,7 @@ final readonly class ReplayInvoiceLineSnapshot
         public string $identityHash,
         public ?float $hours,
         public ?int $sourceMinutes,
+        public ?int $agreementRateSourceMinutes,
     ) {}
 
     /** @param array<string, mixed> $line */
@@ -41,6 +42,9 @@ final readonly class ReplayInvoiceLineSnapshot
             hours: ReplaySnapshotValue::number($line['hours'] ?? null),
             sourceMinutes: array_key_exists('source_minutes', $line)
                 ? ReplaySnapshotValue::integer($line['source_minutes'])
+                : null,
+            agreementRateSourceMinutes: array_key_exists('source_agreement_rate_minutes', $line)
+                ? ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'])
                 : null,
         );
     }
@@ -87,6 +91,7 @@ final readonly class ReplayInvoiceLineSnapshot
             $this->descriptionHash,
             $this->hours === null ? 'null' : (string) $this->hours,
             $this->sourceMinutes === null ? 'null' : (string) $this->sourceMinutes,
+            $this->agreementRateSourceMinutes === null ? 'null' : (string) $this->agreementRateSourceMinutes,
         ]);
     }
 
@@ -106,7 +111,32 @@ final readonly class ReplayInvoiceLineSnapshot
             $this->claimedBy,
             $this->hours === null ? 'null' : (string) $this->hours,
             $this->sourceMinutes === null ? 'null' : (string) $this->sourceMinutes,
+            $this->agreementRateSourceMinutes === null ? 'null' : (string) $this->agreementRateSourceMinutes,
         ]);
+    }
+
+    /**
+     * Is this the exact source-backed zero-value line the generator emits when
+     * work consumes previously sold retainer capacity?
+     */
+    public function isCanonicalCapacityDraw(int $agreementId, string $servicePeriodEnd): bool
+    {
+        $minutes = $this->hoursMinutes();
+
+        return $this->type === InvoiceLineType::PriorMonthRetainer->value
+            && $minutes !== null
+            && $minutes > 0
+            && $this->sourceMinutes === $minutes
+            && $this->agreementRateSourceMinutes === $minutes
+            && $this->agreementId === (string) $agreementId
+            && $this->unitAmount === 0
+            && $this->taxAmount === 0
+            && $this->totalAmount === 0
+            && self::decimalString($this->quantity) === '0'
+            && $this->lineDate === $servicePeriodEnd
+            && $this->recurringItemId === ''
+            && $this->projectId === ''
+            && $this->claimedBy === '';
     }
 
     private static function wholeMinutes(float $hours): ?int
@@ -119,5 +149,17 @@ final readonly class ReplayInvoiceLineSnapshot
         return $minutes >= 0 && abs($rawMinutes - $minutes) <= 0.01
             ? $minutes
             : null;
+    }
+
+    private static function decimalString(string $value): string
+    {
+        $text = trim($value);
+        if ($text === '' || ! str_contains($text, '.')) {
+            return $text === '' ? '0' : $text;
+        }
+
+        $text = rtrim(rtrim($text, '0'), '.');
+
+        return $text === '' || $text === '-' ? '0' : $text;
     }
 }

@@ -6,9 +6,11 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
+use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\ReplayInvoiceLineSnapshot;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
@@ -77,6 +79,7 @@ final class ReplayContractCorrectionClassifier
                     (string) ($line['claimed_by'] ?? ''),
                     (string) ($line['identity_hash'] ?? ''),
                     ReplaySnapshotValue::integer($line['source_minutes'] ?? null),
+                    ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
                 ]);
                 $signatures[$signature] = ($signatures[$signature] ?? 0) + 1;
             }
@@ -105,6 +108,7 @@ final class ReplayContractCorrectionClassifier
                     (string) ($line['claimed_by'] ?? ''),
                     (string) ($line['identity_hash'] ?? ''),
                     $line['hours'] === null ? 'null' : (string) round((float) $line['hours'], 4),
+                    ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
                 ]);
                 $grouped[$identity][] = $line;
             }
@@ -161,7 +165,9 @@ final class ReplayContractCorrectionClassifier
                     || (string) ($generated['quantity'] ?? '') !== $canonicalQuantity
                     || (string) ($historical['quantity'] ?? '') !== $canonicalQuantity
                     || ReplaySnapshotValue::integer($historical['source_minutes'] ?? null) !== $minutes
-                    || ReplaySnapshotValue::integer($generated['source_minutes'] ?? null) !== $minutes) {
+                    || ReplaySnapshotValue::integer($generated['source_minutes'] ?? null) !== $minutes
+                    || ReplaySnapshotValue::integer($historical['source_agreement_rate_minutes'] ?? null) !== $minutes
+                    || ReplaySnapshotValue::integer($generated['source_agreement_rate_minutes'] ?? null) !== $minutes) {
                     return false;
                 }
 
@@ -224,6 +230,7 @@ final class ReplayContractCorrectionClassifier
             (string) ($line['claimed_by'] ?? ''),
             (string) ($line['description_hash'] ?? ''),
             ReplaySnapshotValue::integer($line['source_minutes'] ?? null),
+            ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null),
         ]);
 
         $tally = static function (array $lines) use ($signatureOf): array {
@@ -265,7 +272,9 @@ final class ReplayContractCorrectionClassifier
             || ($line['recurring_item_id'] ?? '') === ''
             || ($line['line_date'] ?? '') === ''
             || ! array_key_exists('source_minutes', $line)
-            || ReplaySnapshotValue::integer($line['source_minutes'] ?? null) !== 0) {
+            || ReplaySnapshotValue::integer($line['source_minutes'] ?? null) !== 0
+            || ! array_key_exists('source_agreement_rate_minutes', $line)
+            || ReplaySnapshotValue::integer($line['source_agreement_rate_minutes'] ?? null) !== 0) {
             return false;
         }
 
@@ -287,6 +296,7 @@ final class ReplayContractCorrectionClassifier
             || (int) ($line['unit_amount'] ?? 0) !== $incidence->unitAmount
             || (int) ($line['tax_amount'] ?? 0) !== $incidence->taxAmount
             || (int) ($line['total_amount'] ?? 0) !== $incidence->totalAmount
+            || (string) ($line['description_hash'] ?? '') !== $incidence->descriptionHash
             || self::decimalString($line['quantity'] ?? null) !== self::decimalString($incidence->quantity)
             || (string) ($line['agreement_id'] ?? '') !== (string) $incidence->agreementId
             || (string) ($line['project_id'] ?? '') !== ''
@@ -393,7 +403,11 @@ final class ReplayContractCorrectionClassifier
                     || $afterHourly->taxAmount !== 0))
             || ! self::allocationMultisetIsSubset($historicalPrior, $generatedPrior)
             || ! self::allZeroValueBalanceLines($historicalPrior, $agreementId)
-            || ! self::allZeroValueBalanceLines($generatedPrior, $agreementId)
+            || ! self::allCanonicalBalanceLines(
+                $generatedPrior,
+                $agreementId,
+                $after->servicePeriodEnd?->toDateString(),
+            )
             || $historicalRetainer[0]->contractSignature() !== $generatedRetainer[0]->contractSignature()
             || $historicalRetainer[0]->agreementId !== (string) $agreementId
             || $historicalRetainer[0]->totalAmount !== $retainerAmount) {
@@ -486,6 +500,10 @@ final class ReplayContractCorrectionClassifier
     ): array {
         $history = [];
         foreach ($expected as $key => $snapshot) {
+            if (! in_array(ReplaySnapshotValue::text($snapshot['status'] ?? null), InvoiceStatus::live(), true)) {
+                continue;
+            }
+
             [$companyId] = array_pad(explode('|', $key, 2), 2, '');
             $kind = ReplaySnapshotValue::text($snapshot['invoice_kind'] ?? null);
             $history[$companyId][$kind === InvoiceKind::AdHoc->value ? 'ad_hoc' : 'machine'] =
@@ -710,26 +728,42 @@ final class ReplayContractCorrectionClassifier
             monthCount: count($monthStarts),
             monthStarts: $monthStarts,
         );
-        $retainerHours = $agreement->retainer_hours !== null
-            ? $this->retainerCalculator->cyclePeriodRetainerHours($agreement, $cycle)
-            : array_sum(array_map(
-                fn (Carbon $monthStart): float => $this->retainerCalculator->retainerHoursForMonth(
-                    $agreement,
-                    $monthStart,
-                    $monthStart->copy()->endOfMonth()->startOfDay(),
-                ),
-                $monthStarts,
-            ));
-        $retainerMultiplier = $agreement->retainer_hours !== null
-            ? $this->retainerCalculator->cyclePeriodRetainerMultiplier($agreement, $cycle)
-            : ($agreement->monthly_retainer_hours > 0
-                ? $retainerHours / $agreement->monthly_retainer_hours
-                : count($monthStarts));
-        $expectedFee = (int) round($this->retainerCalculator->cycleRetainerFee(
-            $agreement,
-            $cycle,
-            ['retainer_multiplier' => $retainerMultiplier],
-        ) * 100);
+        if ($agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
+            // The monthly generator prorates both monthly values and period
+            // overrides with the calendar-month contract. cyclePeriod... is
+            // correct for multi-month cadence cycles but treats a calendar
+            // opening cycle as full when the agreement starts mid-month.
+            $retainerMultiplier = $this->retainerCalculator->monthRetainerMultiplier(
+                $agreement,
+                $cycleStart->copy()->startOfMonth()->startOfDay(),
+                $cycleEnd->copy()->endOfMonth()->startOfDay(),
+            );
+            $retainerHours = round($agreement->periodRetainerHours() * $retainerMultiplier, 4);
+            $expectedFee = (int) round(
+                round($agreement->periodRetainerFee() * $retainerMultiplier, 2) * 100,
+            );
+        } else {
+            $retainerHours = $agreement->retainer_hours !== null
+                ? $this->retainerCalculator->cyclePeriodRetainerHours($agreement, $cycle)
+                : array_sum(array_map(
+                    fn (Carbon $monthStart): float => $this->retainerCalculator->retainerHoursForMonth(
+                        $agreement,
+                        $monthStart,
+                        $monthStart->copy()->endOfMonth()->startOfDay(),
+                    ),
+                    $monthStarts,
+                ));
+            $retainerMultiplier = $agreement->retainer_hours !== null
+                ? $this->retainerCalculator->cyclePeriodRetainerMultiplier($agreement, $cycle)
+                : ($agreement->monthly_retainer_hours > 0
+                    ? $retainerHours / $agreement->monthly_retainer_hours
+                    : count($monthStarts));
+            $expectedFee = (int) round($this->retainerCalculator->cycleRetainerFee(
+                $agreement,
+                $cycle,
+                ['retainer_multiplier' => $retainerMultiplier],
+            ) * 100);
+        }
         $expectedHours = round($retainerHours, 4);
 
         $snapshots = array_map(ReplayInvoiceLineSnapshot::fromArray(...), $lines);
@@ -755,7 +789,8 @@ final class ReplayContractCorrectionClassifier
                 || $retainer->recurringItemId !== ''
                 || $retainer->projectId !== ''
                 || $retainer->claimedBy !== ''
-                || $retainer->sourceMinutes !== 0) {
+                || $retainer->sourceMinutes !== 0
+                || $retainer->agreementRateSourceMinutes !== 0) {
                 return false;
             }
         }
@@ -777,6 +812,7 @@ final class ReplayContractCorrectionClassifier
                     || $minutes <= 0
                     || $line->quantityMinutes() !== $minutes
                     || $line->sourceMinutes !== $minutes
+                    || $line->agreementRateSourceMinutes !== $minutes
                     || $line->agreementId !== (string) $agreement->id
                     || $line->unitAmount !== (int) ($agreement->hourly_rate_amount ?? 0)
                     || $line->taxAmount !== 0
@@ -793,6 +829,7 @@ final class ReplayContractCorrectionClassifier
                 if ($minutes === null
                     || $minutes <= 0
                     || $line->sourceMinutes !== $minutes
+                    || $line->agreementRateSourceMinutes !== $minutes
                     || self::decimalString($line->quantity) !== '0'
                     || $line->agreementId !== (string) $agreement->id
                     || $line->unitAmount !== 0
@@ -912,6 +949,25 @@ final class ReplayContractCorrectionClassifier
                 || $line->unitAmount !== 0
                 || $line->taxAmount !== 0
                 || $line->totalAmount !== 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param list<ReplayInvoiceLineSnapshot> $lines */
+    private static function allCanonicalBalanceLines(
+        array $lines,
+        int $agreementId,
+        ?string $servicePeriodEnd,
+    ): bool {
+        if ($servicePeriodEnd === null) {
+            return false;
+        }
+
+        foreach ($lines as $line) {
+            if (! $line->isCanonicalCapacityDraw($agreementId, $servicePeriodEnd)) {
                 return false;
             }
         }
