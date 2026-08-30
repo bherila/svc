@@ -164,6 +164,15 @@ why `ProjectAccessLegacyOrphanTest` runs in its own process without a transactio
 — but honours `PRAGMA defer_foreign_keys`, which postpones every check to a
 COMMIT a `RefreshDatabase` transaction never reaches.
 
+**The helper asserts on the way out that enforcement is back**, probing the
+engine rather than trusting its own `finally`. If a suspension leaked past the
+fixture, the assertion phase of a test whose whole point is that the application
+refuses the row would run unconstrained, and the test would go on passing while
+proving less than it claims. That is the shape this codebase has already paid for
+twice — a check that measures its own interference, and a check that reports
+success for a case it never examined — so restoration is a property of every call
+site rather than of the one test that thought to check.
+
 Reaching for that helper anywhere else means the schema is being argued with
 rather than tested.
 
