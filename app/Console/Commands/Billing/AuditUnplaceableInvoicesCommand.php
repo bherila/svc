@@ -5,6 +5,8 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientInvoice;
 use App\Support\Billing\InvoiceStatus;
 use Illuminate\Console\Command;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Count invoices whose service period cannot be placed on a calendar.
@@ -52,22 +54,32 @@ final class AuditUnplaceableInvoicesCommand extends Command
 
         $unplaceable = ClientInvoice::query()->whereNull('service_period_end');
 
-        // The same three conditions the overage sum applies, in the same order.
-        // Each one alone overstates: a draft has charged nobody, an invoice on
-        // no agreement is never summed against one, and a row with no overage
-        // hours contributes nothing to the total whichever side of the window
-        // it lands on.
+        // The same conditions the overage sum applies, in the same order. Each
+        // one alone overstates: a draft has charged nobody; an invoice is only
+        // summed against an agreement that exists in its own workspace, since
+        // the sum filters on both keys and the agreement column is
+        // unconstrained lineage that can dangle or cross tenants; and a row
+        // with zero overage hours contributes nothing whichever side of the
+        // window it lands on. Zero, not positive: negative hours move the sum
+        // too - they shrink it - so the hours at stake are a magnitude, kept
+        // from cancelling against the positive rows.
         $charged = (clone $unplaceable)->whereIn('status', InvoiceStatus::charged());
-        $onAgreement = (clone $charged)->whereNotNull('client_agreement_id');
-        $affected = (clone $onAgreement)->where('hours_billed_at_rate', '>', 0);
+        $onAgreement = (clone $charged)->whereExists(
+            fn (QueryBuilder $query): QueryBuilder => $query
+                ->select(DB::raw(1))
+                ->from('client_agreements')
+                ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
+                ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id'),
+        );
+        $affected = (clone $onAgreement)->where('hours_billed_at_rate', '!=', 0);
 
         $summary = [
             'invoices' => ClientInvoice::query()->count(),
-            'without_a_service_period' => (clone $unplaceable)->count(),
-            'charged_of_those' => (clone $charged)->count(),
-            'on_an_agreement_of_those' => (clone $onAgreement)->count(),
-            'affected' => (clone $affected)->count(),
-            'overage_hours_at_stake' => round((float) (clone $affected)->sum('hours_billed_at_rate'), 4),
+            'without_a_service_period' => $unplaceable->count(),
+            'charged_of_those' => $charged->count(),
+            'on_an_agreement_of_those' => $onAgreement->count(),
+            'affected' => $affected->count(),
+            'overage_hours_at_stake' => round((float) $affected->sum(DB::raw('abs(hours_billed_at_rate)')), 4),
         ];
 
         if ($format === 'json') {
@@ -85,7 +97,7 @@ final class AuditUnplaceableInvoicesCommand extends Command
         $this->components->twoColumnDetail('Invoices', (string) $summary['invoices']);
         $this->components->twoColumnDetail('Without a service period', (string) $summary['without_a_service_period']);
         $this->components->twoColumnDetail('... of those, charged', (string) $summary['charged_of_those']);
-        $this->components->twoColumnDetail('... of those, on an agreement', (string) $summary['on_an_agreement_of_those']);
+        $this->components->twoColumnDetail('... of those, on an agreement in their workspace', (string) $summary['on_an_agreement_of_those']);
         $this->components->twoColumnDetail('... of those, carrying overage', (string) $summary['affected']);
         $this->newLine();
         $this->components->twoColumnDetail('Overage hours at stake', (string) $summary['overage_hours_at_stake']);

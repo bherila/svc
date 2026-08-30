@@ -755,6 +755,87 @@ final class CapacityAndScopeGuardsTest extends TestCase
         );
     }
 
+    /**
+     * The interim path keeps its own already-billed sum, bounded by
+     * `service_period_end < period start` - false for a null, so a charged
+     * interim invoice whose period was lost would leave the subtraction and
+     * its hours would be billed a second time. The same fail-closed widening
+     * as `totalBilledOveragesThrough`: a null period reads as already billed.
+     */
+    public function test_a_charged_interim_invoice_with_no_service_period_still_reduces_the_next_interim(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        // 30h in January and 20h in February against a 10h/month retainer.
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-02-10', 1200);
+
+        $first = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $first);
+        $this->assertSame(20.0, (float) $first->hours_billed_at_rate, "January's excess over its retainer");
+        $first->forceFill(['status' => 'issued', 'service_period_end' => null])->save();
+
+        $second = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $second);
+        $this->assertSame(
+            10.0,
+            (float) $second->hours_billed_at_rate,
+            "Only February's new excess: the unplaceable interim already charged January's",
+        );
+    }
+
+    /**
+     * The widening is grouped inside the date window and nothing else. An
+     * unplaceable *draft* has charged nobody, so it must not suppress the
+     * interim that would actually bill the work - the leak an ungrouped
+     * `orWhereNull` would open.
+     */
+    public function test_an_unplaceable_interim_draft_does_not_suppress_interim_billing(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-02-10', 1200);
+
+        $draft = $this->invoice($agreement);
+        $draft->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'draft',
+            'hours_billed_at_rate' => '20',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'service_period_end' => null,
+        ])->save();
+
+        $interim = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(
+            ClientInvoice::class,
+            $interim,
+            'A draft with no period has still charged nobody, so the overage is still owed',
+        );
+        $this->assertSame(
+            20.0,
+            (float) $interim->hours_billed_at_rate,
+            "All of February's billable work is still owed, not the remainder after the draft",
+        );
+    }
+
     // ── Replay attribution ───────────────────────────────────────────────────
 
     /**

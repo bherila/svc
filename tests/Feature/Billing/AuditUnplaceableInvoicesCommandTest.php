@@ -124,12 +124,66 @@ final class AuditUnplaceableInvoicesCommandTest extends TestCase
         $this->assertSame(0.0, $summary['overage_hours_at_stake']);
     }
 
+    public function test_negative_overage_hours_are_counted_not_hidden(): void
+    {
+        // The sum carries no sign condition: a negative row shrinks billed
+        // overage exactly as a positive one grows it. A `> 0` filter here
+        // would print the all-clear while a fallback-placed row was actively
+        // moving balances - the one statement this command must not get wrong.
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5.5']);
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '-3']);
+
+        $summary = $this->summary();
+
+        $this->assertSame(2, $summary['affected']);
+        $this->assertSame(8.5, $summary['overage_hours_at_stake'], 'Magnitude, so signs cannot cancel');
+    }
+
+    public function test_an_invoice_whose_agreement_is_dangling_or_foreign_is_not_counted(): void
+    {
+        // The sum filters on agreement id and workspace together, and the
+        // agreement column is unconstrained lineage - a row can name an
+        // agreement that no longer exists, or one in another tenant. No sum
+        // ever reads such a row, so counting it would overstate the
+        // population this command exists to bound.
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'client_agreement_id' => $this->agreement->id + 424242,
+        ]);
+
+        $elsewhere = Workspace::query()->create(['name' => 'Foreign Workspace', 'slug' => 'foreign-workspace']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $elsewhere->id, 'name' => 'Foreign Client', 'slug' => 'foreign-client',
+        ]);
+        $foreignAgreement = ClientAgreement::query()->create([
+            'workspace_id' => $elsewhere->id,
+            'client_company_id' => $foreignCompany->id,
+            'title' => 'Their retainer',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+        ]);
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '7',
+            'client_agreement_id' => $foreignAgreement->id,
+        ]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(2, $summary['charged_of_those'], 'Both are charged with no period');
+        $this->assertSame(0, $summary['on_an_agreement_of_those'], 'But neither belongs to any sum');
+        $this->assertSame(0, $summary['affected']);
+    }
+
     public function test_the_report_names_no_workspace_company_agreement_or_invoice(): void
     {
         // The value of this command is that its output can be pasted into a
         // public issue. A count is safe to publish; the invoice number it
         // counted carries a client prefix and is not.
-        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5']);
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5', 'invoice_number' => 'UNPLACEABLE-1']);
 
         $this->assertSame(0, Artisan::call('svc:billing:audit-unplaceable-invoices'));
         $report = Artisan::output();
@@ -173,7 +227,7 @@ final class AuditUnplaceableInvoicesCommandTest extends TestCase
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'client_agreement_id' => $this->agreement->id,
-            'invoice_number' => 'UNPLACEABLE-1',
+            'invoice_number' => 'UNPLACEABLE-'.uniqid(),
             'status' => 'draft',
             'currency' => 'USD',
             'subtotal_amount' => 0,
