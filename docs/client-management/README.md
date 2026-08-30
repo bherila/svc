@@ -224,11 +224,22 @@ the third writes only when told to, and only if every check passes.
   clock, and retainer-ledger opening basis. That aligns the predecessor's
   period-equals-cycle label with the current engine's next-cycle label without
   changing the agreement date. A monetary or structural difference passes only
-  when a narrow rule proves the current contract requires it: whole-minute
-  arithmetic, a recurring item's exact opening incidence, or a complete
-  configured cadence that predecessor history omitted altogether. An isolated
-  extra cycle and a later missing recurring incidence still fail. The whole
-  command is always-rollback, and tested to be.
+  when a narrow rule proves the current contract requires it, and there are
+  five such rules:
+
+  - whole-minute arithmetic, where the source priced decimal hours;
+  - a recurring item's exact opening incidence;
+  - a complete configured cadence that predecessor history omitted altogether;
+  - the capacity a replay-only opening month sold, consumed once in service
+    period order and never beyond its configured rollover window;
+  - a same-rate move of billed overage into retainer capacity, accepted only
+    as a minute-for-minute transfer at identical currency, rate, tax, scope
+    and claims.
+
+  The last two exist because seeding the ledger one period earlier grants the
+  opening month capacity that history recorded but did not carry forward.
+  An isolated extra cycle and a later missing recurring incidence still fail.
+  The whole command is always-rollback, and tested to be.
 - `svc:billing:rehearse-generation` answers the operational question directly —
   would running generation change anything a client has already been charged
   for? It fingerprints every column and every line of every settled invoice

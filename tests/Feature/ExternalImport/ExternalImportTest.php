@@ -2316,6 +2316,23 @@ class ExternalImportTest extends TestCase
         $this->assertDatabaseMissing('client_invoice_lines', ['description' => 'Synthetic invalid quantity']);
     }
 
+    public function test_a_non_numeric_hours_term_fails_the_row_rather_than_importing_a_coerced_value(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, proposal_id INTEGER, title TEXT, active_date TEXT, termination_date TEXT, agreement_text TEXT, is_visible_to_client INTEGER, currency TEXT, hourly_rate TEXT, monthly_retainer_fee TEXT, retainer_fee TEXT, monthly_retainer_hours TEXT, retainer_hours TEXT, billing_cadence TEXT, client_company_signed_date TEXT, client_company_signed_user_id INTEGER, client_company_signed_name TEXT, client_company_signed_title TEXT)');
+        // 'ten' is neither a number nor an absent term. Treating it as either
+        // would silently write a capacity the source never stated - the same
+        // shape as the `h:mm` string that once reached a decimal column.
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, NULL, 'Synthetic Malformed Hours', '2026-01-01', NULL, NULL, 1, 'USD', NULL, NULL, NULL, 'ten', NULL, 'monthly', NULL, NULL, NULL, NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+
+        $this->assertSame('completed_with_failures', $summary['status']);
+        $this->assertSame(1, (int) ($summary['counts']['failure_reasons']['row_transaction_failed'] ?? 0));
+        $this->assertDatabaseMissing('client_agreements', ['title' => 'Synthetic Malformed Hours']);
+    }
+
     public function test_unset_imported_rates_import_as_null_and_cost_never_lands_in_the_billing_rate(): void
     {
         $user = User::factory()->create();

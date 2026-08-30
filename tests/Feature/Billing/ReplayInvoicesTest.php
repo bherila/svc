@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use ReflectionMethod;
 use Symfony\Component\Console\Input\ArrayInput;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -40,6 +41,7 @@ use Tests\TestCase;
 final class ReplayInvoicesTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -273,10 +275,12 @@ final class ReplayInvoicesTest extends TestCase
             'name' => 'Foreign allocation owner',
             'slug' => 'foreign-allocation-owner',
         ]);
-        DB::table('client_invoice_line_time_entries')
-            ->where('client_invoice_line_id', $line->id)
-            ->where('client_time_entry_id', $entry->id)
-            ->update(['workspace_id' => $foreignWorkspace->id]);
+        $this->writingLegacyCrossTenantRows(function () use ($line, $entry, $foreignWorkspace): void {
+            DB::table('client_invoice_line_time_entries')
+                ->where('client_invoice_line_id', $line->id)
+                ->where('client_time_entry_id', $entry->id)
+                ->update(['workspace_id' => $foreignWorkspace->id]);
+        });
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('invalid or foreign-workspace time allocation');
         $snapshotLine();
@@ -298,17 +302,19 @@ final class ReplayInvoicesTest extends TestCase
             'name' => 'Foreign line owner',
             'slug' => 'foreign-line-owner',
         ]);
-        ClientInvoiceLine::query()->create([
-            'workspace_id' => $foreignWorkspace->id,
-            'client_invoice_id' => $invoice->id,
-            'type' => 'adjustment',
-            'description' => 'Synthetic malformed ownership',
-            'quantity' => '0.0000',
-            'unit_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-            'sort_order' => 1,
-        ]);
+        $this->writingLegacyCrossTenantRows(function () use ($foreignWorkspace, $invoice): void {
+            ClientInvoiceLine::query()->create([
+                'workspace_id' => $foreignWorkspace->id,
+                'client_invoice_id' => $invoice->id,
+                'type' => 'adjustment',
+                'description' => 'Synthetic malformed ownership',
+                'quantity' => '0.0000',
+                'unit_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'sort_order' => 1,
+            ]);
+        });
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('line owned by another workspace');
@@ -486,10 +492,11 @@ final class ReplayInvoicesTest extends TestCase
     public function test_history_seed_cannot_follow_a_foreign_agreement_id_out_of_the_workspace(): void
     {
         $otherWorkspace = Workspace::query()->create(['name' => 'Other replay', 'slug' => 'other-replay']);
-        $foreignAgreement = ClientAgreement::query()->create([
+        // #113's composite keys now refuse this chain outright. The query seam
+        // is still the second line of defence for a database migrated from
+        // before them, and proving that needs a row the schema would reject.
+        $foreignAgreement = $this->writingLegacyCrossTenantRows(fn (): ClientAgreement => ClientAgreement::query()->create([
             'workspace_id' => $otherWorkspace->id,
-            // Independent foreign keys permit this corrupt chain. Company
-            // scope alone therefore cannot stand in for workspace scope.
             'client_company_id' => $this->company->id,
             'title' => 'Foreign retainer',
             'status' => 'active',
@@ -498,7 +505,7 @@ final class ReplayInvoicesTest extends TestCase
             'retainer_minutes' => 600,
             'retainer_amount' => 150000,
             'billing_cadence' => 'monthly',
-        ]);
+        ]));
         ClientInvoice::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
@@ -2080,10 +2087,10 @@ final class ReplayInvoicesTest extends TestCase
             'billing_cadence' => 'monthly',
         ]);
         $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign item scope', 'slug' => 'foreign-item-scope']);
-        $foreignItem = ClientAgreementRecurringItem::query()->create([
+        // Refused by the composite keys since #113; written legacy-style so the
+        // query seam can still be proved to fail closed on migrated data.
+        $foreignItem = $this->writingLegacyCrossTenantRows(fn (): ClientAgreementRecurringItem => ClientAgreementRecurringItem::query()->create([
             'workspace_id' => $foreignWorkspace->id,
-            // The schema currently permits this mismatched pair of independent
-            // foreign keys. Replay must still fail closed at the query seam.
             'client_agreement_id' => $agreement->id,
             'description' => 'Foreign chained service',
             'cadence' => 'annual',
@@ -2094,7 +2101,7 @@ final class ReplayInvoicesTest extends TestCase
             'amount' => 4200,
             'currency' => 'USD',
             'is_active' => true,
-        ]);
+        ]));
         $key = implode('|', [
             $this->company->id,
             $agreement->id,
