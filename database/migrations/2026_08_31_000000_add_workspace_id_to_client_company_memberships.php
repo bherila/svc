@@ -53,6 +53,22 @@ return new class extends Migration
             $table->unsignedBigInteger('workspace_id')->nullable(false)->change();
         });
 
+        // An explicit index before the key, so nothing implicit is created and
+        // nothing borrowed is depended on.
+        //
+        // InnoDB needs an index whose leftmost column is `workspace_id` to serve
+        // the key below. Without this one it would take the unique
+        // `(workspace_id, id)` that 2026_08_31_000100 adds - and then rolling that
+        // migration back is refused with errno 1553, because this key still needs
+        // it. Migration order makes that unfixable from the other end: 000100
+        // rolls back before this file does.
+        //
+        // SQLite needs no such index and reports no such error, which is why this
+        // only ever appeared on the MariaDB lane.
+        Schema::table('client_company_memberships', function (Blueprint $table): void {
+            $table->index('workspace_id', 'ccm_workspace_idx');
+        });
+
         // Laravel's generated name for this key is 47 characters, so it stays
         // inside MariaDB's 64-character identifier limit and `down()` can drop the
         // key by column - the only form SQLite's grammar accepts.
@@ -68,6 +84,12 @@ return new class extends Migration
     {
         Schema::table('client_company_memberships', function (Blueprint $table): void {
             $table->dropForeign(['workspace_id']);
+        });
+
+        // After the key, never before: InnoDB refuses to drop an index a foreign
+        // key still depends on.
+        Schema::table('client_company_memberships', function (Blueprint $table): void {
+            $table->dropIndex('ccm_workspace_idx');
         });
 
         Schema::table('client_company_memberships', function (Blueprint $table): void {
