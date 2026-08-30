@@ -16,10 +16,16 @@ final class AgentAccess
 {
     public function __construct(private readonly ProjectAccess $projects) {}
 
+    /**
+     * The column is qualified because `client_company_memberships` now carries a
+     * `workspace_id` of its own, so the join has two. An unqualified name is
+     * errno 1052 on MariaDB and an error on SQLite - loud either way, but only
+     * once the query runs.
+     */
     public function canViewWorkspace(User|AgentPrincipal $user, Workspace $workspace): bool
     {
         return $this->projects->workspaceRole($user, $workspace) !== null
-            || $user->clientCompanies()->where('workspace_id', $workspace->id)->exists();
+            || $user->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists();
     }
 
     public function isWorkspaceManager(User|AgentPrincipal $user, Workspace $workspace): bool
@@ -70,7 +76,7 @@ final class AgentAccess
 
     public function isWorkspaceClient(User|AgentPrincipal $user, Workspace $workspace): bool
     {
-        return $user->clientCompanies()->where('workspace_id', $workspace->id)->exists();
+        return $user->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists();
     }
 
     public function isCompanyMember(User|AgentPrincipal $user, ClientCompany $company): bool

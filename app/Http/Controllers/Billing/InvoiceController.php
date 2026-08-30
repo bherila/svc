@@ -34,7 +34,7 @@ class InvoiceController extends Controller
         $this->authorizeWorkspaceView($request, $workspace);
         $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany');
         if (! $workspace->memberships()->where('user_id', $request->user()->id)->exists()) {
-            $companyIds = $request->user()->clientCompanies()->where('workspace_id', $workspace->id)->pluck('client_companies.id');
+            $companyIds = $request->user()->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->pluck('client_companies.id');
             $query->whereIn('client_company_id', $companyIds)
                 ->where('is_visible_to_client', true)
                 ->whereIn('status', ['issued', 'partially_paid', 'paid']);
@@ -157,7 +157,7 @@ class InvoiceController extends Controller
         if (Gate::forUser($request->user())->allows('view', $workspace)) {
             return;
         }
-        abort_unless($request->user()->clientCompanies()->where('workspace_id', $workspace->id)->exists(), 403);
+        abort_unless($request->user()->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists(), 403);
     }
 
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
