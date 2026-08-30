@@ -70,17 +70,22 @@ final class StripeWebhookService
         return DB::transaction(function () use ($event, $object, $ledger): bool {
             if (in_array($event->type, ['payment_method.attached', 'setup_intent.succeeded'], true)) {
                 $paymentMethod = $this->paymentMethodObject($event, $object);
-                if ($paymentMethod !== null) {
-                    $method = $this->paymentMethods->attach($paymentMethod, (string) $event->id);
-                    $workspaceId = $method?->workspace_id;
-                    $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
+                if ($paymentMethod === null) {
+                    throw new \DomainException('The Stripe event does not identify a payment method.');
                 }
+                $method = $this->paymentMethods->attach($paymentMethod, (string) $event->id);
+                if ($method === null) {
+                    throw new \DomainException('The Stripe payment method does not identify its customer.');
+                }
+                $workspaceId = $method->workspace_id;
+                $ledger->workspace_id = $workspaceId > 0 ? $workspaceId : null;
             } elseif ($event->type === 'payment_method.detached') {
                 $providerId = is_string($object['id'] ?? null) ? $object['id'] : '';
-                if ($providerId !== '') {
-                    $workspaceId = $this->paymentMethods->detach($providerId, (string) $event->id);
-                    $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
+                if ($providerId === '') {
+                    throw new \DomainException('The Stripe event does not identify a detached payment method.');
                 }
+                $workspaceId = $this->paymentMethods->detach($providerId, (string) $event->id);
+                $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
             } elseif ($event->type === 'customer.updated') {
                 $customerId = is_string($object['id'] ?? null) ? $object['id'] : '';
                 $settings = is_array($object['invoice_settings'] ?? null) ? $object['invoice_settings'] : [];
@@ -88,10 +93,11 @@ final class StripeWebhookService
                 $defaultId = is_string($default) && $default !== ''
                     ? $default
                     : (is_array($default) && is_string($default['id'] ?? null) ? $default['id'] : null);
-                if ($customerId !== '') {
-                    $workspaceId = $this->paymentMethods->changeDefault($customerId, $defaultId, (string) $event->id);
-                    $ledger->workspace_id = $workspaceId > 0 ? $workspaceId : null;
+                if ($customerId === '') {
+                    throw new \DomainException('The Stripe event does not identify an updated customer.');
                 }
+                $workspaceId = $this->paymentMethods->changeDefault($customerId, $defaultId, (string) $event->id);
+                $ledger->workspace_id = $workspaceId > 0 ? $workspaceId : null;
             } else {
                 $this->handleInvoiceEvent($event, $object, $ledger);
             }

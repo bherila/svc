@@ -103,7 +103,7 @@ class ClientActivityRecorderTest extends TestCase
                 $company,
                 'invoice.updated',
                 $invoice,
-                ['provider_payload' => ['client_secret' => 'synthetic-secret-that-must-not-persist']],
+                ['provider_payload' => ['api_key' => 'synthetic-secret-that-must-not-persist']],
             );
             $this->fail('Sensitive payload material should have been rejected.');
         } catch (DomainException) {

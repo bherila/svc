@@ -133,7 +133,7 @@ final class ClientActivityRecorder
     {
         $inspect = function (array $values) use (&$inspect): void {
             foreach ($values as $key => $value) {
-                if (is_string($key) && preg_match('/(?:password|secret|token|credential|raw_payload|provider_payload|provider_response|document_content|client_secret)/i', $key) === 1) {
+                if (is_string($key) && preg_match('/(?:password|secret|token|credential|authorization|cookie|api[_-]?key|private[_-]?key|raw(?:_|$)|provider_(?:payload|response)|document(?:_|$)|attachment(?:_|$)|file_(?:content|contents)|client_secret)/i', $key) === 1) {
                     throw new DomainException('Sensitive or raw content cannot be stored in client activity.');
                 }
                 if (is_array($value)) {
