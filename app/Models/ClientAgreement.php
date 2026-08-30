@@ -166,6 +166,25 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
     }
 
     /**
+     * Unused hours the predecessor carried in as of the agreement's start.
+     *
+     * This accessor is the whole of #134. `InvoiceLedgerBuilder` had read
+     * `initial_rollover_hours` since the port, the column has always been
+     * `initial_rollover_minutes`, and with no accessor to bridge them the read
+     * returned null on every agreement. A null coerced to a plausible `0.0`, so
+     * the seed month it guarded was simply never built and nothing failed.
+     *
+     * Defined here rather than converted at the call site so it reads like the
+     * three sibling terms above and below it. The absent one was the only
+     * `_hours` read in the application without an accessor, which is what made
+     * it invisible.
+     */
+    public function getInitialRolloverHoursAttribute(): float
+    {
+        return ((int) ($this->initial_rollover_minutes ?? 0)) / 60;
+    }
+
+    /**
      * Retainer for one whole billing cycle, when the agreement overrides it.
      *
      * The engine prefers this over the monthly figure times the cycle length.
