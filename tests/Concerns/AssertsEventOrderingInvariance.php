@@ -5,6 +5,8 @@ namespace Tests\Concerns;
 use App\Services\ExternalImport\Fingerprint;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 
 /**
  * Replays every permutation of a scenario's input events against a
@@ -96,6 +98,7 @@ trait AssertsEventOrderingInvariance
             }
         }
 
+        $baselineSignature = null;
         if ($stateSignature !== null) {
             $distinct = array_unique($signatures);
             $this->assertCount(
@@ -104,13 +107,18 @@ trait AssertsEventOrderingInvariance
                 "The scenario claims order independence, but these orderings of the same events disagree on the terminal state:\n"
                 .json_encode($signatures, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
             );
+            $baselineSignature = array_values($signatures)[0];
         }
 
         // Duplicate-delivery variants: redeliver one event from the canonical
         // (as-given) ordering a second time - once adjacent to its first
         // delivery, once separated from it - and confirm the repeat writes
         // nothing. This is the idempotency invariant: replaying an
-        // already-applied event must change nothing.
+        // already-applied event must change nothing. Where the scenario also
+        // claims order independence, a duplicate must converge on exactly the
+        // same signature the permutations agreed on too - a duplicate that
+        // mutates state the fingerprint tables do not cover would otherwise
+        // slip past unnoticed.
         $canonical = $events;
         foreach (array_keys($canonical) as $index) {
             foreach (['adjacent', 'separated'] as $mode) {
@@ -119,6 +127,14 @@ trait AssertsEventOrderingInvariance
                 $this->deliverSequenceWithDuplicateCheck($sequence, $duplicatePosition, $mode, $deliver, $fingerprintTables);
                 $assertLegalState();
                 $this->eventOrderingOrderingsRun++;
+
+                if ($stateSignature !== null) {
+                    $this->assertSame(
+                        $baselineSignature,
+                        $stateSignature(),
+                        "A {$mode} duplicate delivery of event #{$index} left the terminal state signature different from the ordering baseline ({$baselineSignature}); replay must be a no-op there too.",
+                    );
+                }
             }
         }
 
@@ -133,11 +149,7 @@ trait AssertsEventOrderingInvariance
             'The permutation harness captured zero table fingerprints; the scenario is vacuous.',
         );
 
-        if ($stateSignature === null) {
-            return null;
-        }
-
-        return array_values($signatures)[0] ?? null;
+        return $baselineSignature;
     }
 
     /**
@@ -153,8 +165,16 @@ trait AssertsEventOrderingInvariance
     {
         $fingerprint = [];
         foreach ($tables as $table) {
-            $rows = DB::table($table)->get()->map(static fn (object $row): array => (array) $row)->all();
-            $fingerprint[$table] = Fingerprint::rows($rows);
+            // Sorted here, not in SQL: the query has no natural ordering
+            // guarantee, so two calls returning the same rows in a different
+            // iteration order must still hash identically. Per-row hashes are
+            // sorted (not the raw rows) so the combining step needs no key.
+            $rowHashes = DB::table($table)->get()
+                ->map(static fn (object $row): string => Fingerprint::row((array) $row))
+                ->sort()
+                ->values()
+                ->all();
+            $fingerprint[$table] = hash('sha256', implode('', $rowHashes));
         }
         $this->eventOrderingFingerprintsCaptured++;
 
@@ -274,8 +294,12 @@ trait AssertsEventOrderingInvariance
         }
 
         // More orderings exist than the cap allows: sample deterministically
-        // from the recorded seed so a failure reproduces exactly.
-        mt_srand($seed);
+        // from the recorded seed so a failure reproduces exactly. A locally
+        // seeded engine (rather than mt_srand()/shuffle()) never touches the
+        // process-wide RNG state, so this cannot leak into - or depend on -
+        // whatever else in the suite calls mt_rand()/shuffle() before or
+        // after it runs.
+        $randomizer = new Randomizer(new Mt19937($seed));
         $orderings = [];
 
         $orderings['sample #0 identity (seed='.$seed.')'] = $events;
@@ -287,8 +311,7 @@ trait AssertsEventOrderingInvariance
         $maxAttempts = $permutationCap * 20;
         while (count($orderings) < $permutationCap && $attempts < $maxAttempts) {
             $attempts++;
-            $shuffled = $indices;
-            shuffle($shuffled);
+            $shuffled = array_values($randomizer->shuffleArray($indices));
             $key = implode(',', $shuffled);
             if (isset($seen[$key])) {
                 continue;

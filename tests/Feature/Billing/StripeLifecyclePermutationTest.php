@@ -7,6 +7,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\ExternalImport\Fingerprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -33,9 +34,17 @@ use Tests\TestCase;
  *    the arrival order should not matter, every order actually agrees.
  *
  * Each scenario keeps its own workspace/company fixed and only resets the
- * mutable rows between orderings (see resetLedgerAndDomainState()), since
- * client_stripe_events.stripe_event_id and the payment/method provider ids
- * are globally unique and get reused, unchanged, run after run.
+ * mutable rows it owns between orderings (see resetPaymentScenario() /
+ * resetMethodScenario()), scoped to that workspace or to the scenario's own
+ * event/provider ids, since client_stripe_events.stripe_event_id and the
+ * payment/method provider ids are globally unique and get reused, unchanged,
+ * run after run.
+ *
+ * A second, untouched workspace is seeded once in setUp() and its rows'
+ * fingerprint is asserted unchanged after every ordering
+ * (assertForeignWorkspaceUntouched()): webhook processing for one tenant
+ * must never read or write another's rows, and an unscoped reset() between
+ * orderings would silently make that unverifiable by wiping the evidence.
  */
 class StripeLifecyclePermutationTest extends TestCase
 {
@@ -46,9 +55,21 @@ class StripeLifecyclePermutationTest extends TestCase
 
     private const LEGAL_METHOD_STATES = ['unknown', 'attached', 'detached'];
 
+    /** Tables the foreign-workspace isolation fixture touches, scoped by workspace_id. */
+    private const FOREIGN_FINGERPRINT_TABLES = [
+        'client_invoices', 'client_invoice_lines', 'client_invoice_payments',
+        'client_company_activity', 'client_stripe_customers',
+        'client_stripe_payment_methods', 'stripe_payment_method_states', 'client_stripe_events',
+    ];
+
     private Workspace $workspace;
 
     private ClientCompany $company;
+
+    private Workspace $foreignWorkspace;
+
+    /** @var array<string, string> */
+    private array $foreignWorkspaceBaselineFingerprint;
 
     protected function setUp(): void
     {
@@ -63,6 +84,72 @@ class StripeLifecyclePermutationTest extends TestCase
         $this->company = ClientCompany::query()->create([
             'workspace_id' => $this->workspace->id, 'name' => 'Stripe Permutation Client', 'slug' => 'stripe-permutation-client',
         ]);
+
+        $this->seedForeignWorkspace();
+        $this->foreignWorkspaceBaselineFingerprint = $this->foreignWorkspaceFingerprint();
+    }
+
+    /**
+     * A second tenant with its own invoice, payment, payment method and
+     * activity history - one non-empty row in every table any scenario
+     * below fingerprints - created once and never touched again by any
+     * scenario's reset() or webhook delivery.
+     */
+    private function seedForeignWorkspace(): void
+    {
+        $owner = User::factory()->create(['email' => 'stripe-permutation-foreign-owner@synthetic.test']);
+        $this->foreignWorkspace = Workspace::query()->create(['name' => 'Stripe Permutation Foreign', 'slug' => 'stripe-permutation-foreign']);
+        $this->foreignWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->foreignWorkspace->id, 'name' => 'Stripe Permutation Foreign Client', 'slug' => 'stripe-permutation-foreign-client',
+        ]);
+
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($this->foreignWorkspace, $foreignCompany, [
+            'invoice_number' => 'INV-PERMUTATION-FOREIGN', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $this->foreignWorkspace);
+        $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'succeeded',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_foreign_baseline',
+        ], $this->foreignWorkspace);
+
+        ClientStripeCustomer::query()->create([
+            'workspace_id' => $this->foreignWorkspace->id,
+            'client_company_id' => $foreignCompany->id,
+            'stripe_customer_id' => 'cus_foreign_baseline',
+        ]);
+        $attach = $this->attachEvent('evt_foreign_baseline_attach', 'pm_foreign_baseline', 'cus_foreign_baseline', 100);
+        $this->deliver($attach)->assertOk();
+        $this->assertDatabaseHas('client_stripe_payment_methods', [
+            'workspace_id' => $this->foreignWorkspace->id,
+            'stripe_payment_method_id' => 'pm_foreign_baseline',
+        ]);
+    }
+
+    /** @return array<string, string> */
+    private function foreignWorkspaceFingerprint(): array
+    {
+        $fingerprint = [];
+        foreach (self::FOREIGN_FINGERPRINT_TABLES as $table) {
+            $rowHashes = DB::table($table)->where('workspace_id', $this->foreignWorkspace->id)->get()
+                ->map(static fn (object $row): string => Fingerprint::row((array) $row))
+                ->sort()
+                ->values()
+                ->all();
+            $fingerprint[$table] = hash('sha256', implode('', $rowHashes));
+        }
+
+        return $fingerprint;
+    }
+
+    private function assertForeignWorkspaceUntouched(): void
+    {
+        $this->assertSame(
+            $this->foreignWorkspaceBaselineFingerprint,
+            $this->foreignWorkspaceFingerprint(),
+            'Webhook processing for one workspace must never read or write another workspace\'s rows.',
+        );
     }
 
     /**
@@ -92,9 +179,10 @@ class StripeLifecyclePermutationTest extends TestCase
             ['label' => 'failed', 'ts' => 200, 'poison' => false, 'payload' => $failed],
         ];
 
+        $eventIds = ['evt_perm_a_processing', 'evt_perm_a_poison', 'evt_perm_a_failed'];
         $signature = $this->assertEventOrderingInvariance(
             events: $events,
-            reset: fn () => $this->resetPaymentScenario($paymentId, 'pending'),
+            reset: fn () => $this->resetPaymentScenario($paymentId, 'pending', $eventIds),
             deliver: fn (array $event) => $this->deliver($event['payload']),
             assertLegalState: function () use ($paymentId): void {
                 $this->assertContains($this->paymentStatus($paymentId), self::LEGAL_PAYMENT_STATUSES);
@@ -102,6 +190,7 @@ class StripeLifecyclePermutationTest extends TestCase
                     'stripe_event_id' => 'evt_perm_a_poison',
                     'status' => 'failed',
                 ]);
+                $this->assertForeignWorkspaceUntouched();
             },
             fingerprintTables: ['client_invoice_payments', 'client_invoices', 'client_company_activity'],
             mustNotWrite: function (array $event, array $deliveredSoFar): bool {
@@ -136,11 +225,15 @@ class StripeLifecyclePermutationTest extends TestCase
             ['ts' => 300, 'payload' => $this->paymentEvent('evt_perm_b_canceled', 'payment_intent.canceled', $paymentId, 300)],
         ];
 
+        $eventIds = ['evt_perm_b_processing', 'evt_perm_b_failed', 'evt_perm_b_canceled'];
         $signature = $this->assertEventOrderingInvariance(
             events: $events,
-            reset: fn () => $this->resetPaymentScenario($paymentId, 'pending'),
+            reset: fn () => $this->resetPaymentScenario($paymentId, 'pending', $eventIds),
             deliver: fn (array $event) => $this->deliver($event['payload']),
-            assertLegalState: fn () => $this->assertContains($this->paymentStatus($paymentId), self::LEGAL_PAYMENT_STATUSES),
+            assertLegalState: function () use ($paymentId): void {
+                $this->assertContains($this->paymentStatus($paymentId), self::LEGAL_PAYMENT_STATUSES);
+                $this->assertForeignWorkspaceUntouched();
+            },
             fingerprintTables: ['client_invoice_payments', 'client_invoices', 'client_company_activity'],
             mustNotWrite: fn (array $event, array $deliveredSoFar): bool => $event['ts'] <= $this->maxTs($deliveredSoFar),
             stateSignature: fn () => $this->paymentSignature($paymentId),
@@ -165,11 +258,15 @@ class StripeLifecyclePermutationTest extends TestCase
         $refund400 = ['ts' => 200, 'always_refused' => false, 'payload' => $this->refundEvent('evt_perm_c_refund_400', $chargeId, $paymentId, 400, 200)];
         $refund700 = ['ts' => 300, 'always_refused' => false, 'payload' => $this->refundEvent('evt_perm_c_refund_700', $chargeId, $paymentId, 700, 300)];
 
+        $eventIds = ['evt_perm_c_failed', 'evt_perm_c_refund_400', 'evt_perm_c_refund_700'];
         $signature = $this->assertEventOrderingInvariance(
             events: [$failed, $refund400, $refund700],
-            reset: fn () => $this->resetPaymentScenario($paymentId, 'succeeded'),
+            reset: fn () => $this->resetPaymentScenario($paymentId, 'succeeded', $eventIds),
             deliver: fn (array $event) => $this->deliver($event['payload']),
-            assertLegalState: fn () => $this->assertContains($this->paymentStatus($paymentId), self::LEGAL_PAYMENT_STATUSES),
+            assertLegalState: function () use ($paymentId): void {
+                $this->assertContains($this->paymentStatus($paymentId), self::LEGAL_PAYMENT_STATUSES);
+                $this->assertForeignWorkspaceUntouched();
+            },
             fingerprintTables: ['client_invoice_payments', 'client_invoices', 'client_company_activity'],
             mustNotWrite: function (array $event, array $deliveredSoFar): bool {
                 if ($event['always_refused']) {
@@ -209,11 +306,15 @@ class StripeLifecyclePermutationTest extends TestCase
             ['ts' => 300, 'payload' => $this->detachEvent('evt_perm_d_detach', $providerId, 300)],
         ];
 
+        $eventIds = ['evt_perm_d_attach_1', 'evt_perm_d_attach_2', 'evt_perm_d_detach'];
         $signature = $this->assertEventOrderingInvariance(
             events: $events,
-            reset: fn () => $this->resetMethodScenario($providerId, $customerId),
+            reset: fn () => $this->resetMethodScenario($providerId, $customerId, $eventIds),
             deliver: fn (array $event) => $this->deliver($event['payload']),
-            assertLegalState: fn () => $this->assertContains($this->methodRoutingState($providerId), self::LEGAL_METHOD_STATES),
+            assertLegalState: function () use ($providerId): void {
+                $this->assertContains($this->methodRoutingState($providerId), self::LEGAL_METHOD_STATES);
+                $this->assertForeignWorkspaceUntouched();
+            },
             fingerprintTables: ['stripe_payment_method_states', 'client_stripe_payment_methods', 'client_company_activity'],
             mustNotWrite: fn (array $event, array $deliveredSoFar): bool => $event['ts'] <= $this->maxTs($deliveredSoFar),
             stateSignature: fn () => $this->methodRoutingSignature($providerId),
@@ -337,14 +438,23 @@ class StripeLifecyclePermutationTest extends TestCase
      * scenario's fixed workspace/company. Event ids and provider payment
      * identifiers are reused unchanged across orderings, so the ledger and
      * payment tables must be empty before each one starts.
+     *
+     * Every delete is scoped to this scenario: tenant-owned tables by
+     * $this->workspace->id, and client_stripe_events (which is not
+     * workspace-scoped until an event resolves to a tenant - a refused
+     * event's ledger row never does) by the scenario's own event ids. Never
+     * an unqualified delete, so the foreign-workspace isolation fixture
+     * seeded in setUp() survives every reset() untouched.
+     *
+     * @param  list<string>  $eventIds
      */
-    private function resetPaymentScenario(string $paymentId, string $initialStatus): void
+    private function resetPaymentScenario(string $paymentId, string $initialStatus, array $eventIds): void
     {
-        DB::table('client_company_activity')->delete();
-        DB::table('client_stripe_events')->delete();
-        DB::table('client_invoice_payments')->delete();
-        DB::table('client_invoice_lines')->delete();
-        DB::table('client_invoices')->delete();
+        DB::table('client_company_activity')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('client_stripe_events')->whereIn('stripe_event_id', $eventIds)->delete();
+        DB::table('client_invoice_payments')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('client_invoice_lines')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('client_invoices')->where('workspace_id', $this->workspace->id)->delete();
 
         $service = app(InvoiceLifecycleService::class);
         $invoice = $service->createDraft($this->workspace, $this->company, [
@@ -357,13 +467,14 @@ class StripeLifecyclePermutationTest extends TestCase
         ], $this->workspace);
     }
 
-    private function resetMethodScenario(string $providerId, string $customerId): void
+    /** @param  list<string>  $eventIds */
+    private function resetMethodScenario(string $providerId, string $customerId, array $eventIds): void
     {
-        DB::table('client_company_activity')->delete();
-        DB::table('client_stripe_events')->delete();
-        DB::table('stripe_payment_method_states')->delete();
-        DB::table('client_stripe_payment_methods')->delete();
-        DB::table('client_stripe_customers')->delete();
+        DB::table('client_company_activity')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('client_stripe_events')->whereIn('stripe_event_id', $eventIds)->delete();
+        DB::table('stripe_payment_method_states')->where('provider_id_hash', hash('sha256', $providerId))->delete();
+        DB::table('client_stripe_payment_methods')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('client_stripe_customers')->where('workspace_id', $this->workspace->id)->delete();
 
         ClientStripeCustomer::query()->create([
             'workspace_id' => $this->workspace->id,
