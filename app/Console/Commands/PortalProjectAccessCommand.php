@@ -45,7 +45,11 @@ final class PortalProjectAccessCommand extends Command
             return self::FAILURE;
         }
 
+        // Scoped on the workspace as well as the company: this command grants
+        // and revokes portal access, so a membership migrated in before #113's
+        // composite key and now naming another tenant must not be reachable.
         $membership = ClientCompanyMembership::query()
+            ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('user_id', $user->id)
             ->first();

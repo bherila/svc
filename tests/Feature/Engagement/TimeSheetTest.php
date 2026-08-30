@@ -21,12 +21,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class TimeSheetTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -1039,21 +1041,25 @@ class TimeSheetTest extends TestCase
 
     /**
      * A task is serialized on the strength of the project it names, and
-     * nothing else - it passes no access check of its own. The schema carries
-     * independent foreign keys rather than composite workspace/parent ones, so
-     * a row owned elsewhere that points at a visible project satisfies the
-     * join.
+     * nothing else - it passes no access check of its own, so a row owned
+     * elsewhere that points at a visible project satisfies the join.
+     *
+     * The schema now refuses to store such a row: `ct_ws_project_fk` ties
+     * (workspace_id, client_project_id) to the project's own workspace. This
+     * test pins the application-layer guard as defense in depth, for rows a
+     * database migrated from before that key can still hold - so the fixture
+     * is seeded with enforcement suspended and asserted with it back on.
      */
     public function test_a_task_owned_by_another_workspace_is_not_serialized(): void
     {
         $foreign = $this->foreignWorkspace();
 
-        ClientTask::query()->create([
+        $this->writingLegacyCrossTenantRows(fn () => ClientTask::query()->create([
             'workspace_id' => $foreign['workspace']->id,
             'client_project_id' => $this->project->id,
             'title' => 'Foreign Task Title',
             'status' => 'open',
-        ]);
+        ]));
         ClientTask::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_project_id' => $this->project->id,
@@ -1082,12 +1088,14 @@ class TimeSheetTest extends TestCase
     public function test_a_task_from_another_workspace_or_project_is_not_shown_on_a_row(): void
     {
         $foreign = $this->foreignWorkspace();
-        $foreignTask = ClientTask::query()->create([
+        // Refused by ct_ws_project_fk since #113; seeded with enforcement
+        // suspended so the row-level guard stays the subject of the test.
+        $foreignTask = $this->writingLegacyCrossTenantRows(fn () => ClientTask::query()->create([
             'workspace_id' => $foreign['workspace']->id,
             'client_project_id' => $this->project->id,
             'title' => 'Foreign Row Task',
             'status' => 'open',
-        ]);
+        ]));
 
         $sibling = $this->otherProject();
         $siblingTask = ClientTask::query()->create([
@@ -1117,33 +1125,40 @@ class TimeSheetTest extends TestCase
     /**
      * The invoice badge is a link into another tenant's billing if only the
      * line is scoped: the number and status serialized onto the row come from
-     * the invoice the line names, and the schema does not require the two to
-     * share an owner.
+     * the invoice the line names.
+     *
+     * The schema now refuses both halves of that arrangement - ci_ws_company_fk
+     * on the invoice and cil_ws_invoice_fk on the line. This test pins the
+     * application-layer guard as defense in depth, for rows a database migrated
+     * from before those keys can still hold.
      */
     public function test_an_invoice_owned_by_another_workspace_is_not_linked(): void
     {
         $foreign = $this->foreignWorkspace();
-        $foreignInvoice = ClientInvoice::query()->create([
-            'workspace_id' => $foreign['workspace']->id,
-            'client_company_id' => $this->company->id,
-            'invoice_number' => 'FOREIGN-INVOICE-4242',
-            'status' => 'issued',
-            'currency' => 'USD',
-            'subtotal_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-        ]);
-        $line = ClientInvoiceLine::query()->create([
-            'workspace_id' => $this->workspace->id,
-            'client_invoice_id' => $foreignInvoice->id,
-            'type' => 'time',
-            'description' => 'Synthetic line',
-            'quantity' => '1',
-            'unit_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-            'sort_order' => 1,
-        ]);
+        $line = $this->writingLegacyCrossTenantRows(function () use ($foreign): ClientInvoiceLine {
+            $foreignInvoice = ClientInvoice::query()->create([
+                'workspace_id' => $foreign['workspace']->id,
+                'client_company_id' => $this->company->id,
+                'invoice_number' => 'FOREIGN-INVOICE-4242',
+                'status' => 'issued',
+                'currency' => 'USD',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+
+            return ClientInvoiceLine::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_invoice_id' => $foreignInvoice->id,
+                'type' => 'time',
+                'description' => 'Synthetic line',
+                'quantity' => '1',
+                'unit_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'sort_order' => 1,
+            ]);
+        });
 
         $entry = $this->entry(['worked_on' => '2026-07-04']);
         $entry->invoiceLines()->attach($line->id, ['workspace_id' => $this->workspace->id]);
@@ -1169,30 +1184,37 @@ class TimeSheetTest extends TestCase
     public function test_another_workspaces_invoice_line_cannot_freeze_this_entry(): void
     {
         $foreign = $this->foreignWorkspace();
-        $foreignInvoice = ClientInvoice::query()->create([
-            'workspace_id' => $foreign['workspace']->id,
-            'client_company_id' => $this->company->id,
-            'invoice_number' => 'FOREIGN-FREEZE-1',
-            'status' => 'issued',
-            'currency' => 'USD',
-            'subtotal_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-        ]);
-        $foreignLine = ClientInvoiceLine::query()->create([
-            'workspace_id' => $foreign['workspace']->id,
-            'client_invoice_id' => $foreignInvoice->id,
-            'type' => 'time',
-            'description' => 'Foreign line',
-            'quantity' => '1',
-            'unit_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-            'sort_order' => 1,
-        ]);
+        $foreignLine = $this->writingLegacyCrossTenantRows(function () use ($foreign): ClientInvoiceLine {
+            $foreignInvoice = ClientInvoice::query()->create([
+                'workspace_id' => $foreign['workspace']->id,
+                'client_company_id' => $this->company->id,
+                'invoice_number' => 'FOREIGN-FREEZE-1',
+                'status' => 'issued',
+                'currency' => 'USD',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+
+            return ClientInvoiceLine::query()->create([
+                'workspace_id' => $foreign['workspace']->id,
+                'client_invoice_id' => $foreignInvoice->id,
+                'type' => 'time',
+                'description' => 'Foreign line',
+                'quantity' => '1',
+                'unit_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'sort_order' => 1,
+            ]);
+        });
 
         $entry = $this->entry(['minutes' => 60]);
-        $entry->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]);
+        // The pivot names this workspace's entry under the foreign one, which
+        // cilte_ws_time_entry_fk refuses; suspended for the same reason.
+        $this->writingLegacyCrossTenantRows(
+            fn () => $entry->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]),
+        );
 
         $this->actingAs($this->manager)
             ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
@@ -1437,10 +1459,14 @@ class TimeSheetTest extends TestCase
     }
 
     /**
-     * The pivot carries its own `workspace_id`, and the schema does not
-     * require it to agree with the line's. A foreign association must not
+     * The pivot carries its own `workspace_id`. A foreign association must not
      * freeze this tenant's entry, and the freeze must agree with the badge -
      * refusing every write while showing no invoice explains nothing.
+     *
+     * Since #113 the pivot's workspace has to agree with both the line's and
+     * the entry's - cilte_ws_line_fk and cilte_ws_time_entry_fk, the latter on
+     * a column that carried no foreign key at all before. This test pins the
+     * application-layer guard as defense in depth.
      */
     public function test_a_foreign_pivot_row_cannot_freeze_this_entry(): void
     {
@@ -1469,7 +1495,9 @@ class TimeSheetTest extends TestCase
 
         $entry = $this->entry(['minutes' => 60]);
         // The line is this workspace's; only the association is not.
-        $entry->invoiceLines()->attach($line->id, ['workspace_id' => $foreign['workspace']->id]);
+        $this->writingLegacyCrossTenantRows(
+            fn () => $entry->invoiceLines()->attach($line->id, ['workspace_id' => $foreign['workspace']->id]),
+        );
 
         $this->actingAs($this->manager)
             ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
@@ -1482,10 +1510,17 @@ class TimeSheetTest extends TestCase
     }
 
     /**
-     * The ledger gathers a company's work by `client_company_id` alone, and
-     * `client_project_id` is an independent key - so an entry naming this
-     * company while pointing at another company's project is excluded from
-     * the rows and counted in the total above them.
+     * The ledger gathers a company's work by `client_company_id` alone, so an
+     * entry naming this company while pointing at another company's project is
+     * excluded from the rows and counted in the total above them.
+     *
+     * Since #113 cte_ws_project_fk refuses this fixture, whose project belongs
+     * to another workspace. It would not refuse the same muddle inside one
+     * workspace - an entry naming this company and a sibling company's project
+     * - because the composite keys tie a child to its workspace, not to its
+     * company. The guard below is the only thing that catches that, so this
+     * test still earns its place; the fixture is seeded with enforcement
+     * suspended.
      */
     public function test_capacity_is_withheld_when_an_entry_names_a_project_of_another_company(): void
     {
@@ -1511,7 +1546,7 @@ class TimeSheetTest extends TestCase
 
         // This entry is this company's as far as the ledger is concerned, and
         // its hours are another company's work.
-        ClientTimeEntry::query()->create([
+        $this->writingLegacyCrossTenantRows(fn () => ClientTimeEntry::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
             'client_project_id' => $foreign['project']->id,
@@ -1520,7 +1555,7 @@ class TimeSheetTest extends TestCase
             'minutes' => 300,
             'description' => 'Hours from somewhere else',
             'status' => 'approved',
-        ]);
+        ]));
 
         $this->actingAs($this->manager)->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
@@ -1547,7 +1582,9 @@ class TimeSheetTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
 
         $foreign = $this->foreignWorkspace();
-        ClientTimeEntry::query()->create([
+        // Refused by cte_ws_company_fk since #113; the capacity guard is what
+        // is under test, so the fixture is seeded with enforcement suspended.
+        $this->writingLegacyCrossTenantRows(fn () => ClientTimeEntry::query()->create([
             'workspace_id' => $foreign['workspace']->id,
             'client_company_id' => $this->company->id,
             'client_project_id' => $foreign['project']->id,
@@ -1556,7 +1593,7 @@ class TimeSheetTest extends TestCase
             'minutes' => 300,
             'description' => 'Company work stored under another tenant',
             'status' => 'approved',
-        ]);
+        ]));
 
         $this->actingAs($this->manager)->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
@@ -1582,27 +1619,33 @@ class TimeSheetTest extends TestCase
             'starts_on' => '2026-07-01',
         ]);
 
-        $foreignInvoice = ClientInvoice::query()->create([
-            'workspace_id' => $foreign['workspace']->id,
-            'client_company_id' => $this->company->id,
-            'invoice_number' => 'FOREIGN-DEFER-1',
-            'status' => 'issued',
-            'currency' => 'USD',
-            'subtotal_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-        ]);
-        $foreignLine = ClientInvoiceLine::query()->create([
-            'workspace_id' => $foreign['workspace']->id,
-            'client_invoice_id' => $foreignInvoice->id,
-            'type' => 'time',
-            'description' => 'Foreign line',
-            'quantity' => '1',
-            'unit_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-            'sort_order' => 1,
-        ]);
+        // Refused by ci_ws_company_fk since #113; the ledger's own scoping is
+        // what is under test, so the fixture is seeded with enforcement
+        // suspended and asserted with it back on.
+        $foreignLine = $this->writingLegacyCrossTenantRows(function () use ($foreign): ClientInvoiceLine {
+            $foreignInvoice = ClientInvoice::query()->create([
+                'workspace_id' => $foreign['workspace']->id,
+                'client_company_id' => $this->company->id,
+                'invoice_number' => 'FOREIGN-DEFER-1',
+                'status' => 'issued',
+                'currency' => 'USD',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+
+            return ClientInvoiceLine::query()->create([
+                'workspace_id' => $foreign['workspace']->id,
+                'client_invoice_id' => $foreignInvoice->id,
+                'type' => 'time',
+                'description' => 'Foreign line',
+                'quantity' => '1',
+                'unit_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'sort_order' => 1,
+            ]);
+        });
 
         $deferred = $this->entry([
             'worked_on' => '2026-07-04',
@@ -1610,7 +1653,9 @@ class TimeSheetTest extends TestCase
             'status' => 'approved',
             'is_deferred' => true,
         ]);
-        $deferred->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]);
+        $this->writingLegacyCrossTenantRows(
+            fn () => $deferred->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]),
+        );
 
         $this->travelTo('2026-07-20');
 
@@ -1893,6 +1938,10 @@ class TimeSheetTest extends TestCase
      * this workspace pointing at another's project was authorised against
      * that other workspace. Someone who manages there and merely views here
      * could approve this workspace's time and stamp its rate.
+     *
+     * cte_ws_project_fk now refuses to store that entry. This test pins the
+     * authorisation guard as defense in depth, for rows a database migrated
+     * from before that key can still hold.
      */
     public function test_approval_cannot_borrow_a_role_from_another_workspaces_project(): void
     {
@@ -1910,7 +1959,9 @@ class TimeSheetTest extends TestCase
         ]);
         $foreign['workspace']->memberships()->create(['user_id' => $outsider->id, 'role' => 'admin']);
 
-        $entry = $this->entry(['client_project_id' => $foreign['project']->id]);
+        $entry = $this->writingLegacyCrossTenantRows(
+            fn () => $this->entry(['client_project_id' => $foreign['project']->id]),
+        );
 
         $this->actingAs($outsider)
             ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
@@ -2061,6 +2112,10 @@ class TimeSheetTest extends TestCase
      * Both can name a company belonging to another workspace, and then the
      * ownership walk leaves this tenant at the last link rather than the
      * first.
+     *
+     * cp_ws_company_fk and cte_ws_company_fk now refuse both of those rows.
+     * This test pins the ownership walk as defense in depth, for rows a
+     * database migrated from before those keys can still hold.
      */
     public function test_a_write_refuses_a_company_owned_by_another_workspace(): void
     {
@@ -2070,18 +2125,21 @@ class TimeSheetTest extends TestCase
             'name' => 'Company Of Another Tenant',
             'slug' => 'company-of-another-tenant',
         ]);
-        // This workspace's project, naming that workspace's company.
-        $project = ClientProject::query()->create([
-            'workspace_id' => $this->workspace->id,
-            'client_company_id' => $foreignCompany->id,
-            'name' => 'Muddled Project',
-            'status' => 'active',
-        ]);
-        $entry = $this->entry([
-            'client_company_id' => $foreignCompany->id,
-            'client_project_id' => $project->id,
-            'minutes' => 60,
-        ]);
+        $entry = $this->writingLegacyCrossTenantRows(function () use ($foreignCompany): ClientTimeEntry {
+            // This workspace's project, naming that workspace's company.
+            $project = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $foreignCompany->id,
+                'name' => 'Muddled Project',
+                'status' => 'active',
+            ]);
+
+            return $this->entry([
+                'client_company_id' => $foreignCompany->id,
+                'client_project_id' => $project->id,
+                'minutes' => 60,
+            ]);
+        });
 
         $this->actingAs($this->manager)
             ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [

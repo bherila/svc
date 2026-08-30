@@ -18,11 +18,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 final class DraftInvoiceTimeRegenerationTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -649,13 +651,16 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'total_amount' => 900,
             'sort_order' => 0,
         ]);
-        DB::table('client_invoice_line_time_entries')->insert([
+        // A pivot naming this workspace's entry under another tenant. Unstorable
+        // since #113 - the pivot had no key on client_time_entry_id at all before
+        // then - so enforcement is suspended to reproduce a pre-migration row.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_line_time_entries')->insert([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_line_id' => $foreignLine->id,
             'client_time_entry_id' => $entry->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
 
         app(TimeEntryMutationService::class)->update(
             $this->workspace,
@@ -707,13 +712,14 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'currency' => 'USD',
             'billing_rate_amount' => 12000,
         ]);
-        DB::table('client_invoice_line_time_entries')->insert([
+        // Unstorable since #113; see the note on the pivot above.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_line_time_entries')->insert([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_line_id' => $line->id,
             'client_time_entry_id' => $foreignEntry->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
 
         try {
             app(TimeEntryMutationService::class)->update(
@@ -746,7 +752,9 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             [$entry->public_id],
         );
         $otherWorkspace = Workspace::query()->create(['name' => 'Foreign ad hoc line', 'slug' => 'foreign-ad-hoc-line']);
-        $foreignLine = $invoice->lines()->create([
+        // A line on this workspace's invoice claiming another tenant. Unstorable
+        // since #113; the regeneration guard is what is under test.
+        $foreignLine = $this->writingLegacyCrossTenantRows(fn () => $invoice->lines()->create([
             'workspace_id' => $otherWorkspace->id,
             'type' => 'adjustment',
             'description' => 'Foreign adjustment',
@@ -755,7 +763,7 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'tax_amount' => 0,
             'total_amount' => 50000,
             'sort_order' => 99,
-        ]);
+        ]));
         $originalTotal = (int) $invoice->total_amount;
 
         try {
@@ -808,13 +816,14 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'currency' => 'USD',
             'billing_rate_amount' => 12000,
         ]);
-        DB::table('client_invoice_line_time_entries')->insert([
+        // Unstorable since #113; see the note on the pivot above.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_line_time_entries')->insert([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_line_id' => $line->id,
             'client_time_entry_id' => $foreignEntry->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
 
         try {
             app(TimeEntryMutationService::class)->update(
@@ -871,13 +880,14 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             'total_amount' => 100,
             'sort_order' => 1,
         ]);
-        DB::table('client_invoice_line_time_entries')->insert([
+        // Unstorable since #113; see the note on the pivot above.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_line_time_entries')->insert([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_line_id' => $foreignLine->id,
             'client_time_entry_id' => $entry->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
 
         try {
             app(TimeEntryMutationService::class)->update(
