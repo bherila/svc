@@ -15,6 +15,7 @@ use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Passport;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -25,6 +26,7 @@ use Tests\TestCase;
 final class PortalProjectScopingTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -238,6 +240,111 @@ final class PortalProjectScopingTest extends TestCase
             array_map(static fn (array $row): string => $row['id'], $entries),
             "The read API returned another project's time",
         );
+    }
+
+    /**
+     * A membership whose own workspace is another tenant's grants nothing.
+     *
+     * `client_company_memberships` became tenant-owned in #113, and the composite
+     * key makes this row unstorable - but a database migrated from before it can
+     * hold one, and these reads are what would consume it. Every one of them
+     * matched on company and user alone, so the row was honoured on its company
+     * link while its stated owner was somewhere else entirely.
+     *
+     * The company is this workspace's throughout; only the membership disagrees.
+     */
+    public function test_a_membership_owned_by_another_workspace_grants_no_portal_access(): void
+    {
+        $foreign = Workspace::query()->create(['name' => 'Foreign portal', 'slug' => 'foreign-portal']);
+        $user = User::factory()->create();
+
+        $membership = $this->writingLegacyCrossTenantRows(function () use ($foreign, $user): ClientCompanyMembership {
+            $membership = ClientCompanyMembership::query()->create([
+                'client_company_id' => $this->company->id,
+                'user_id' => $user->id,
+                'role' => 'client',
+                'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+            ]);
+
+            $membership->forceFill(['workspace_id' => $foreign->id])->save();
+
+            return $membership;
+        });
+
+        $this->assertSame($foreign->id, $membership->fresh()?->workspace_id);
+
+        // visibleProjectIds(): a company-scoped membership returns null, meaning
+        // unrestricted. Read on the company alone, this foreign row would say so.
+        $this->assertSame([], app(PortalAccess::class)->visibleProjectIds($this->company, $user));
+        $this->assertFalse(app(PortalAccess::class)->canViewProject($user, $this->theirs));
+
+        // constrainProjectQuery(): the unrestricted-membership subquery.
+        $this->assertSame([], $this->constrainedProjectNames($user));
+    }
+
+    /**
+     * The narrowed branch of `constrainProjectQuery()` joins the grant to its
+     * membership, and that join was on the key alone.
+     */
+    public function test_a_grant_held_by_a_foreign_membership_does_not_widen_a_project_query(): void
+    {
+        $foreign = Workspace::query()->create(['name' => 'Foreign grant', 'slug' => 'foreign-grant']);
+        $user = User::factory()->create();
+
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $user): void {
+            $membership = ClientCompanyMembership::query()->create([
+                'client_company_id' => $this->company->id,
+                'user_id' => $user->id,
+                'role' => 'client',
+                'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS,
+            ]);
+            $membership->forceFill(['workspace_id' => $foreign->id])->save();
+
+            DB::table('client_portal_project_access')->insert([
+                'workspace_id' => $foreign->id,
+                'client_company_membership_id' => $membership->id,
+                'client_project_id' => $this->theirs->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->assertSame([], $this->constrainedProjectNames($user));
+    }
+
+    /**
+     * The CLI grants and revokes portal access, so it must not find that row
+     * either - it would report on, and rewrite, another tenant's membership.
+     */
+    public function test_the_portal_access_command_refuses_a_membership_from_another_workspace(): void
+    {
+        $foreign = Workspace::query()->create(['name' => 'Foreign cli', 'slug' => 'foreign-cli']);
+        $user = User::factory()->create();
+
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $user): void {
+            $membership = ClientCompanyMembership::query()->create([
+                'client_company_id' => $this->company->id,
+                'user_id' => $user->id,
+                'role' => 'client',
+                'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+            ]);
+            $membership->forceFill(['workspace_id' => $foreign->id])->save();
+        });
+
+        $this->artisan('svc:portal:project-access', [
+            'company' => $this->company->public_id,
+            'email' => $user->email,
+            '--show' => true,
+        ])->assertExitCode(1);
+    }
+
+    /** @return list<string> */
+    private function constrainedProjectNames(User $user): array
+    {
+        return app(PortalAccess::class)
+            ->constrainProjectQuery(ClientProject::query(), $user)
+            ->pluck('name')
+            ->all();
     }
 
     private function project(string $name): ClientProject
