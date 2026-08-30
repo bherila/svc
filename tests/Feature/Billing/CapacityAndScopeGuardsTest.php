@@ -118,6 +118,83 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * `service_period_end <= $end` is false for a null rather than unknown, so
+     * an invoice whose period could not be placed left the sum silently. The
+     * overage it had already charged was then invisible to the next period's
+     * balance, which billed the same hours a second time.
+     *
+     * Pinned against a placed invoice still outside the window, so it cannot
+     * pass by the window having stopped filtering at all - the failure mode a
+     * bare `orWhereNull` in the wrong place would produce.
+     */
+    public function test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed(): void
+    {
+        $agreement = $this->agreement();
+
+        $unplaceable = $this->invoice($agreement);
+        $unplaceable->forceFill([
+            'status' => 'issued', 'hours_billed_at_rate' => '5', 'service_period_end' => '2024-01-31',
+        ])->save();
+
+        $later = $this->invoice($agreement);
+        $later->forceFill([
+            'status' => 'issued', 'hours_billed_at_rate' => '9', 'service_period_end' => '2024-06-30',
+        ])->save();
+
+        $this->assertSame(5.0, $this->billedOverages($agreement, '2024-02-29'), 'The window has an end');
+
+        $unplaceable->forceFill(['service_period_end' => null])->save();
+
+        $this->assertSame(
+            5.0,
+            $this->billedOverages($agreement, '2024-02-29'),
+            'An unplaceable period reads as inside the window, not outside it',
+        );
+        // Asked past the later invoice rather than on its own period end: the
+        // stored value carries a midnight time component, so `<=` against a
+        // bare date excludes an invoice ending exactly on it. That is a second
+        // defect on this same line, tracked separately - pinning it here would
+        // make this test fail for a reason it is not about.
+        $this->assertSame(
+            14.0,
+            $this->billedOverages($agreement, '2024-07-31'),
+            'And it is counted once, not once per period it could belong to',
+        );
+    }
+
+    /**
+     * The null case is a widening of the date window and nothing else. Every
+     * other condition on the sum still has to hold, which is what stops the
+     * repair for one fail-open read from opening three more.
+     */
+    public function test_an_unplaceable_period_does_not_excuse_the_rest_of_the_window(): void
+    {
+        $agreement = $this->agreement();
+        $other = $this->agreement();
+
+        $uncharged = $this->invoice($agreement);
+        $uncharged->forceFill([
+            'status' => 'draft', 'hours_billed_at_rate' => '5', 'service_period_end' => null,
+        ])->save();
+
+        $elsewhere = $this->invoice($other);
+        $elsewhere->forceFill([
+            'status' => 'issued', 'hours_billed_at_rate' => '7', 'service_period_end' => null,
+        ])->save();
+
+        $this->assertSame(
+            0.0,
+            $this->billedOverages($agreement, '2024-02-29'),
+            'A missing period does not make a draft charged, nor another agreement this one',
+        );
+
+        $uncharged->forceFill(['status' => 'issued'])->save();
+
+        $this->assertSame(5.0, $this->billedOverages($agreement, '2024-02-29'), 'Its own charged hours do count');
+        $this->assertSame(7.0, $this->billedOverages($other, '2024-02-29'), 'Each against its own agreement');
+    }
+
+    /**
      * `full_period` says what happens to the *first* cycle. Applied to any
      * partial month it charges a whole fee for a termination month whose
      * capacity is already prorated - the client pays for a month and gets part
@@ -675,6 +752,102 @@ final class CapacityAndScopeGuardsTest extends TestCase
                 ->unbilled()
                 ->sum('minutes'),
             'Every minute is available to the cadence invoice again',
+        );
+    }
+
+    /**
+     * The interim path keeps its own already-billed sum, bounded by
+     * `service_period_end < period start` - false for a null, so a charged
+     * interim invoice whose period was lost would leave the subtraction and
+     * its hours would be billed a second time. The same fail-closed widening
+     * as `totalBilledOveragesThrough`: a null period reads as already billed.
+     */
+    public function test_a_charged_interim_invoice_with_no_service_period_still_reduces_the_next_interim(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        // 30h in January and 20h in February against a 10h/month retainer.
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-02-10', 1200);
+
+        $first = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $first);
+        $this->assertSame(20.0, (float) $first->hours_billed_at_rate, "January's excess over its retainer");
+        $first->forceFill(['status' => 'issued', 'service_period_end' => null])->save();
+
+        // A charged interim later in the same cycle - an import can land one
+        // out of order. Cumulative excess through February does not include
+        // March, so this must stay outside February's subtraction: the null
+        // case widens the window, it does not remove it.
+        $outOfOrder = $this->invoice($agreement);
+        $outOfOrder->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'service_period_start' => '2024-03-01',
+            'service_period_end' => '2024-03-10',
+        ])->save();
+
+        $second = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $second);
+        $this->assertSame(
+            10.0,
+            (float) $second->hours_billed_at_rate,
+            "Only February's new excess: the unplaceable interim already charged January's",
+        );
+    }
+
+    /**
+     * The widening is grouped inside the date window and nothing else. An
+     * unplaceable *draft* has charged nobody, so it must not suppress the
+     * interim that would actually bill the work - the leak an ungrouped
+     * `orWhereNull` would open.
+     */
+    public function test_an_unplaceable_interim_draft_does_not_suppress_interim_billing(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-02-10', 1200);
+
+        $draft = $this->invoice($agreement);
+        $draft->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'draft',
+            'hours_billed_at_rate' => '20',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+            'service_period_end' => null,
+        ])->save();
+
+        $interim = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(
+            ClientInvoice::class,
+            $interim,
+            'A draft with no period has still charged nobody, so the overage is still owed',
+        );
+        $this->assertSame(
+            20.0,
+            (float) $interim->hours_billed_at_rate,
+            "All of February's billable work is still owed, not the remainder after the draft",
         );
     }
 

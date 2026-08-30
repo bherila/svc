@@ -78,3 +78,20 @@ php artisan svc:billing:audit-opening-rollover --format=json   # machine-readabl
 Three conditions have to hold together, and each alone overstates the population: the agreement carries an initial rollover, it takes the legacy monthly branch (an agreement with period retainer terms returns before the seed and never reaches it), and it has a rollover policy (with none, the seeded capacity expires in the month it is granted and no invoice sees it).
 
 It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
+
+## Audit Unplaceable Invoices
+
+Read-only. Counts invoices with no `service_period_end`, and how much billed overage they carry.
+
+```bash
+php artisan svc:billing:audit-unplaceable-invoices                 # counts
+php artisan svc:billing:audit-unplaceable-invoices --format=json   # machine-readable
+```
+
+The column is nullable and stays that way (#73): an invoice can be created by hand without a service period, and the external importer passes the source value through unchanged. Everything downstream, though, decides which period an invoice belongs to by comparing that column, and SQL comparison answers false for a null rather than unknown — so an unplaceable invoice is silently treated as outside whatever window is being asked about.
+
+`ClientInvoicingService::totalBilledOveragesThrough()` is where that costs money, and its read is now fail-closed: a null period counts as *inside* the window, so overage already charged can no longer be charged a second time (#135). The interim generator's parallel already-billed sum (`InterimOverageGenerator`) carries the same guard. This command exists because that guard places an invoice by fallback rather than by a date anyone entered. Run it after an import and after any bulk invoice edit, and give the rows it names a real period.
+
+Four conditions have to hold together, and each alone overstates: the invoice has no service period, it is charged (a draft has charged nobody), it names an agreement that exists in its own workspace (the sum filters on both keys, and the agreement column is unconstrained lineage that can dangle or cross tenants), and it carries nonzero overage hours (zero contributes nothing whichever side of the window it lands on, while negative hours move the sum too, so the hours at stake are reported as a magnitude).
+
+It reports counts and aggregate hours only — never a row, an id, an invoice number, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It always exits zero; it is a prompt to correct rows, not a gate.
