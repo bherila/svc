@@ -13,10 +13,12 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\MoneyService;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Billing\RetainerCalculator;
 use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1157,6 +1159,52 @@ final class ReplayInvoicesTest extends TestCase
             $actual,
             $anchors,
         ), 'A post-termination cycle with no retainer due cannot contain a retainer line.');
+
+        $terminatedActual = $actual;
+        $monthStarts = array_map(
+            static fn (int $month): Carbon => Carbon::create(2026, $month, 1)->startOfDay(),
+            range(7, 12),
+        );
+        $calculator = new RetainerCalculator;
+        $terminatedHours = array_sum(array_map(
+            static fn (Carbon $monthStart): float => $calculator->retainerHoursForMonth(
+                $agreement,
+                $monthStart,
+                $monthStart->copy()->endOfMonth()->startOfDay(),
+            ),
+            $monthStarts,
+        ));
+        $terminatedCycle = new BillingCycle(
+            start: Carbon::parse('2026-07-01'),
+            end: Carbon::parse('2026-12-31'),
+            isProrated: false,
+            monthCount: 6,
+            monthStarts: $monthStarts,
+        );
+        $terminatedFee = (int) round($calculator->cycleRetainerFee($agreement, $terminatedCycle, [
+            'retainer_multiplier' => $terminatedHours / $agreement->monthly_retainer_hours,
+        ]) * 100);
+        $terminatedRetainer = $retainerLine('2026-07-01');
+        $terminatedRetainer['unit_amount'] = $terminatedFee;
+        $terminatedRetainer['total_amount'] = $terminatedFee;
+        $terminatedRetainer['hours'] = $terminatedHours;
+        $terminatedActual[array_keys($terminatedActual)[1]]['subtotal_amount'] = $terminatedFee;
+        $terminatedActual[array_keys($terminatedActual)[1]]['total_amount'] = $terminatedFee;
+        $terminatedActual[array_keys($terminatedActual)[1]]['lines'] = [$terminatedRetainer];
+        $terminatedActual[$finalKey] = [
+            'invoice_kind' => 'cadence_period',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+            'lines' => [],
+        ];
+        $this->assertCount(3, $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $terminatedActual,
+            $anchors,
+        ), 'A complete terminated chain ends at the successor of the cycle containing termination, not the replay anchor.');
         $agreement->update(['ends_on' => null]);
 
         ClientAgreement::query()->create([

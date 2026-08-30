@@ -608,8 +608,6 @@ final class ReplayContractCorrectionClassifier
                     $lines,
                 ));
                 if ($row['kind'] !== InvoiceKind::CadencePeriod->value
-                    || ReplaySnapshotValue::integer($row['snapshot']['total_amount'] ?? null) <= 0
-                    || $lines === []
                     || ReplaySnapshotValue::text($row['snapshot']['currency'] ?? null) !== (string) $agreement->currency
                     || $lineTotal !== ReplaySnapshotValue::integer($row['snapshot']['total_amount'] ?? null)
                     || $lineTax !== ReplaySnapshotValue::integer($row['snapshot']['tax_amount'] ?? null)
@@ -682,17 +680,22 @@ final class ReplayContractCorrectionClassifier
             // A contiguous prefix is not necessarily the complete output the
             // pinned replay should have generated. The generator bills one
             // cycle in advance, so the last accepted cycle must be exactly the
-            // successor of the cycle containing the per-company replay anchor.
-            // This exact boundary is also what makes a terminated agreement
-            // safe to prove: termination changes where generation stops, but it
-            // cannot turn a plausible prefix into the complete anchored chain.
+            // successor of the cycle containing the effective generation day.
+            // A terminated agreement uses its end date when it predates the
+            // replay anchor; active agreements use the anchor itself.
             // Command anchors are end-of-day timestamps. Billing cycles are
             // inclusive date ranges ending at start-of-day, so passing 23:59:59
             // makes the resolver see the next cycle. Normalize the proof to the
             // same calendar day before asking which cycle contains it.
             $anchorDay = Carbon::instance($anchor)->copy()->startOfDay();
-            $anchorCycle = $this->billingCycleResolver->cycleContaining($agreement, $anchorDay);
-            $expectedLastStart = $anchorCycle->end->copy()->addDay()->startOfDay();
+            $terminationDay = $agreement->ends_on === null
+                ? null
+                : Carbon::instance($agreement->ends_on)->startOfDay();
+            $generationDay = $terminationDay instanceof CarbonInterface && $terminationDay->lt($anchorDay)
+                ? $terminationDay
+                : $anchorDay;
+            $generationCycle = $this->billingCycleResolver->cycleContaining($agreement, $generationDay);
+            $expectedLastStart = $generationCycle->end->copy()->addDay()->startOfDay();
             $expectedLastEnd = $expectedLastStart->copy()
                 ->addMonths($agreement->effectiveBillingCadence()->monthsInCycle())
                 ->subDay()

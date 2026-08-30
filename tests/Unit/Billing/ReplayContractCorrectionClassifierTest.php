@@ -252,6 +252,69 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         ));
     }
 
+    public function test_opening_capacity_chain_consumes_unchanged_draws_before_later_corrections(): void
+    {
+        [$beforeCorrection, $afterCorrection] = $this->allocationSnapshots();
+        $row = static function (array $snapshot, string $month): array {
+            $start = CarbonImmutable::parse($month.'-01');
+            $snapshot['service_period_start'] = $start->toDateString();
+            $snapshot['service_period_end'] = $start->endOfMonth()->toDateString();
+
+            return $snapshot;
+        };
+
+        $unchanged = $beforeCorrection;
+        $unchanged['lines'] = [
+            $unchanged['lines'][0],
+            $this->line('prior_month_retainer', 0, 0, '0.0000', 500, 'earlier-draw'),
+        ];
+        $unchanged['subtotal_amount'] = 150000;
+        $unchanged['total_amount'] = 150000;
+
+        $beforeCorrection['lines'][1] = $this->line(
+            'additional_hours',
+            200000,
+            20000,
+            '10.0000',
+            600,
+            'hourly',
+        );
+        $beforeCorrection['lines'] = array_slice($beforeCorrection['lines'], 0, 2);
+        $beforeCorrection['subtotal_amount'] = 350000;
+        $beforeCorrection['total_amount'] = 350000;
+        $afterCorrection['lines'] = [
+            $afterCorrection['lines'][0],
+            $this->line('prior_month_retainer', 0, 0, '0.0000', 600, 'new-draw'),
+        ];
+        $afterCorrection['subtotal_amount'] = 150000;
+        $afterCorrection['total_amount'] = 150000;
+
+        $earlierKey = '5|7|cadence_period|2025-12-01..2025-12-31@2025-12-01..2025-12-31';
+        $laterKey = '5|7|cadence_period|2026-01-01..2026-01-31@2026-01-01..2026-01-31';
+        $command = new ReplayInvoicesCommand;
+        (new ReflectionProperty(ReplayInvoicesCommand::class, 'openingCapacityContexts'))
+            ->setValue($command, [7 => $this->openingCapacityContext()]);
+        $prove = new ReflectionMethod(ReplayInvoicesCommand::class, 'proveOpeningCapacityChain');
+
+        $this->assertSame([], $prove->invoke(
+            $command,
+            [
+                $earlierKey => $row($unchanged, '2025-12'),
+                $laterKey => $row($beforeCorrection, '2026-01'),
+            ],
+            [
+                $earlierKey => $row($unchanged, '2025-12'),
+                $laterKey => $row($afterCorrection, '2026-01'),
+            ],
+        ));
+
+        $this->assertSame([$laterKey], array_keys($prove->invoke(
+            $command,
+            [$laterKey => $row($beforeCorrection, '2026-01')],
+            [$laterKey => $row($afterCorrection, '2026-01')],
+        )), 'The later 600-minute correction is valid when the seed has not already been drawn.');
+    }
+
     public function test_opening_capacity_proof_rejects_every_unaccounted_change(): void
     {
         $context = $this->openingCapacityContext();

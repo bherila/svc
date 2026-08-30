@@ -74,6 +74,33 @@ final readonly class ReplayInvoiceSnapshot
         ));
     }
 
+    /**
+     * Total source-backed capacity drawn by this generated invoice.
+     *
+     * The replay-only opening lot is the oldest rollover lot, so every valid
+     * generated draw consumes it before newer capacity. Returning null for an
+     * ambiguous line makes the chain proof fail closed without another query.
+     */
+    public function sourceBackedCapacityDrawMinutes(int $agreementId): ?int
+    {
+        $minutes = 0;
+        foreach ($this->linesOfType('prior_month_retainer') as $line) {
+            $lineMinutes = $line->hoursMinutes();
+            if ($lineMinutes === null
+                || $lineMinutes < 0
+                || $line->sourceMinutes !== $lineMinutes
+                || $line->agreementId !== (string) $agreementId
+                || $line->unitAmount !== 0
+                || $line->taxAmount !== 0
+                || $line->totalAmount !== 0) {
+                return null;
+            }
+            $minutes += $lineMinutes;
+        }
+
+        return $minutes;
+    }
+
     /** @return array<string, int> */
     public function contractLineMultisetOfType(string $type): array
     {

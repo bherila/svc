@@ -1009,17 +1009,28 @@ final class ReplayInvoicesCommand extends Command
                 if ($remainingMinutes <= 0 || ! $context->covers($row['before']->servicePeriodStart)) {
                     continue;
                 }
+
+                // The seeded month is the oldest rollover lot. Consume it from
+                // every generated capacity draw in chronological order, even
+                // when that row is otherwise unchanged. Only subtracting the
+                // newly moved minutes lets a shared earlier draw spend the same
+                // lot once and a later correction spend it again.
+                $drawMinutes = $row['after']->sourceBackedCapacityDrawMinutes($context->agreementId);
+                if ($drawMinutes === null) {
+                    // An ambiguous generated balance line cannot preserve any
+                    // capacity for a later monetary waiver.
+                    break;
+                }
                 $proof = $classifier->historyOmittedOpeningCapacity(
                     $context->forRemainingMinutes($remainingMinutes),
                     $row['before'],
                     $row['after'],
                 );
-                if (! $proof instanceof ReplayOpeningCapacityProof) {
-                    continue;
+                if ($proof instanceof ReplayOpeningCapacityProof) {
+                    $proofs[$row['key']] = $proof;
                 }
 
-                $proofs[$row['key']] = $proof;
-                $remainingMinutes -= $proof->movedMinutes;
+                $remainingMinutes -= min($remainingMinutes, $drawMinutes);
             }
         }
 
