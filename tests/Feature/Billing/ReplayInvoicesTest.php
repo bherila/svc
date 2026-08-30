@@ -991,6 +991,10 @@ final class ReplayInvoicesTest extends TestCase
             'total_amount' => 150000,
             'tax_amount' => 0,
             'agreement_id' => $agreementId,
+            'recurring_item_id' => '',
+            'project_id' => '',
+            'claimed_by' => '',
+            'source_minutes' => 0,
             'line_date' => $cycleStart,
         ];
         $expected = [
@@ -1097,6 +1101,22 @@ final class ReplayInvoicesTest extends TestCase
             $duplicateRetainer,
             $anchors,
         ), 'A second retainer line cannot be waived even when both lines use the configured price.');
+
+        foreach ([
+            'project_id' => '99',
+            'recurring_item_id' => '99',
+            'claimed_by' => 'synthetic-claim',
+            'source_minutes' => 1,
+        ] as $field => $value) {
+            $misattachedRetainer = $actual;
+            $misattachedRetainer[$finalKey]['lines'][0][$field] = $value;
+            $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+                $this->workspace,
+                $expected,
+                $misattachedRetainer,
+                $anchors,
+            ), "A cadence retainer with {$field} attached cannot be waived.");
+        }
 
         $unsupportedCapacity = $actual;
         $unsupportedCapacity[$finalKey]['lines'][] = [

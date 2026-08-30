@@ -448,6 +448,7 @@ final class ReplayInvoicesCommand extends Command
             $seed = $this->historySeeds[(int) $agreementId] ?? null;
             if (! $seed instanceof ReplayHistorySeed
                 || $kind !== InvoiceKind::CadencePeriod->value
+                || ! InvoiceStatus::hasChargedValue($snapshot['status'] ?? null)
                 || (string) ($snapshot['service_period_start'] ?? '') !== $seed->seedStart->toDateString()) {
                 continue;
             }

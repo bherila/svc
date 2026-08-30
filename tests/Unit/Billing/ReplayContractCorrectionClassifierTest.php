@@ -18,6 +18,29 @@ use ReflectionProperty;
 
 final class ReplayContractCorrectionClassifierTest extends TestCase
 {
+    public function test_exact_minute_rounding_requires_both_source_allocations(): void
+    {
+        $line = $this->line('additional_hours', 14999, 10000, '1.5', 90, 'rounding');
+        $before = [
+            'currency' => 'USD', 'subtotal_amount' => 14999, 'tax_amount' => 0, 'total_amount' => 14999,
+            'lines' => [$line],
+        ];
+        $line['total_amount'] = 15000;
+        $after = [
+            'currency' => 'USD', 'subtotal_amount' => 15000, 'tax_amount' => 0, 'total_amount' => 15000,
+            'lines' => [$line],
+        ];
+        $classifier = new ReplayContractCorrectionClassifier;
+
+        $this->assertTrue($classifier->exactMinuteArithmetic($before, $after));
+
+        $before['lines'][0]['source_minutes']--;
+        $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
+        $before['lines'][0]['source_minutes']++;
+        $after['lines'][0]['source_minutes']--;
+        $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
+    }
+
     public function test_opening_capacity_omission_is_proved_without_a_database(): void
     {
         $context = $this->openingCapacityContext();
@@ -380,6 +403,26 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             ]);
             $this->assertNull(ReplayOpeningCapacityContext::fromOpeningInvoice($seed, $snapshot), $name);
         }
+
+        $command = new ReplayInvoicesCommand;
+        (new ReflectionProperty(ReplayInvoicesCommand::class, 'historySeeds'))->setValue($command, [7 => $seed]);
+        $openingContexts = new ReflectionMethod(ReplayInvoicesCommand::class, 'openingCapacityContexts');
+        $key = '5|7|cadence_period|2025-12-01..2025-12-31@2025-12-01..2025-12-31';
+        $opening = [
+            'status' => 'draft',
+            'currency' => 'USD',
+            'service_period_start' => '2025-12-01',
+            'subtotal_amount' => 150000,
+            'tax_amount' => 0,
+            'total_amount' => 150000,
+            'lines' => [$validLine],
+        ];
+
+        $this->assertSame([], $openingContexts->invoke($command, [$key => $opening]));
+        $opening['status'] = 'void';
+        $this->assertSame([], $openingContexts->invoke($command, [$key => $opening]));
+        $opening['status'] = 'issued';
+        $this->assertArrayHasKey(7, $openingContexts->invoke($command, [$key => $opening]));
     }
 
     public function test_history_seed_accepts_only_a_contiguous_one_way_convention_change(): void

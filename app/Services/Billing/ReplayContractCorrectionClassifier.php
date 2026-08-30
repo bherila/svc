@@ -157,7 +157,9 @@ final class ReplayContractCorrectionClassifier
                 $canonicalQuantity = self::decimalString(HoursQuantity::decimal((float) $hours));
                 if ((int) ($generated['total_amount'] ?? 0) !== $exact
                     || (string) ($generated['quantity'] ?? '') !== $canonicalQuantity
-                    || (string) ($historical['quantity'] ?? '') !== $canonicalQuantity) {
+                    || (string) ($historical['quantity'] ?? '') !== $canonicalQuantity
+                    || ReplaySnapshotValue::integer($historical['source_minutes'] ?? null) !== $minutes
+                    || ReplaySnapshotValue::integer($generated['source_minutes'] ?? null) !== $minutes) {
                     return false;
                 }
 
@@ -773,7 +775,12 @@ final class ReplayContractCorrectionClassifier
                 || $retainer->taxAmount !== 0
                 || self::decimalString($retainer->quantity) !== '1'
                 || round($retainer->hours ?? 0.0, 4) !== round($expectedHours, 4)
-                || $retainer->lineDate !== $cycleStart->toDateString()) {
+                || $retainer->lineDate !== $cycleStart->toDateString()
+                || $retainer->agreementId !== (string) $agreement->id
+                || $retainer->recurringItemId !== ''
+                || $retainer->projectId !== ''
+                || $retainer->claimedBy !== ''
+                || $retainer->sourceMinutes !== 0) {
                 return false;
             }
         }
