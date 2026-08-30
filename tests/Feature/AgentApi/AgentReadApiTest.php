@@ -15,10 +15,12 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Passport\Passport;
+use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
 
 class AgentReadApiTest extends TestCase
 {
+    use AssertsSurfaceIsolation;
     use RefreshDatabase;
 
     public function test_contributor_reads_only_assigned_project_and_own_time_without_financial_fields(): void
@@ -108,6 +110,75 @@ class AgentReadApiTest extends TestCase
             ->assertJsonPath('data.0.id', $visible->public_id)
             ->assertJsonPath('data.0.description', null)
             ->assertJsonMissing(['Internal text must stay private']);
+    }
+
+    public function test_nothing_invisible_reaches_the_contributor_time_listing(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $colleague = User::factory()->create(['name' => 'Colleague Worker Name']);
+        $this->workspaceMember($workspace, $contributor, 'member');
+        $this->workspaceMember($workspace, $colleague, 'member');
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->time($workspace, $company, $project, $contributor, 'Own synthetic work');
+        $this->time($workspace, $company, $project, $colleague, 'Colleague private work');
+
+        $foreignWorker = User::factory()->create(['name' => 'Foreign Tenant Worker']);
+        $foreign = Workspace::query()->create(['name' => 'Foreign Tenant', 'slug' => 'foreign-tenant']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreign->id, 'name' => 'Foreign Tenant Client', 'slug' => 'foreign-tenant-client']);
+        $foreignProject = ClientProject::query()->create(['workspace_id' => $foreign->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Foreign Tenant Project']);
+        $this->workspaceMember($foreign, $foreignWorker, 'member');
+        $this->time($foreign, $foreignCompany, $foreignProject, $foreignWorker, 'Foreign tenant work');
+
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_READ]);
+
+        $response = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk();
+
+        $this->assertJsonPayloadOmits($response, [
+            'Colleague private work',
+            'Colleague Worker Name',
+            'Foreign tenant work',
+            'Foreign Tenant Worker',
+            'Foreign Tenant Project',
+            'billing_rate_amount',
+            'subcontractor_cost_amount',
+        ], 'Own synthetic work');
+    }
+
+    public function test_the_time_listing_names_only_columns_that_exist(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+        $this->time($workspace, $company, $project, $owner, 'Synthetic listing work');
+
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_READ]);
+
+        $this->assertQueriesNameOnlyRealIdentifiers(
+            fn () => $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk(),
+        );
+    }
+
+    public function test_the_time_listing_does_not_query_once_per_entry(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->time($workspace, $company, $project, $owner, 'Synthetic row work');
+        }
+
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_READ]);
+
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk(),
+            function () use ($workspace, $company, $project, $owner): void {
+                for ($i = 0; $i < 17; $i++) {
+                    $this->time($workspace, $company, $project, $owner, 'Synthetic row work');
+                }
+            },
+        );
     }
 
     /** @return array{Workspace, ClientCompany, ClientProject} */
