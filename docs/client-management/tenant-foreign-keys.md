@@ -38,6 +38,27 @@ errno 1553 the moment a foreign key depends on it. The same goes for the
 single-column foreign keys these sit beside: none of them was dropped, and
 dropping one is a separate change with the MariaDB job as its judge.
 
+### The child side needs an index too, and InnoDB will make one if you don't
+
+InnoDB will not accept a foreign key it has no index to serve, so where nothing
+on the child has `(workspace_id, column)` as its leftmost prefix it **creates one
+itself, named after the constraint** — and dropping the constraint does not drop
+that index. A `down()` that only drops keys therefore leaves them behind and the
+schema does not return to what it was.
+
+Ten of the twenty-five needed one, so `2026_08_31_000200` creates those
+explicitly before adding the keys and drops them after removing the keys. Doing
+it that way rather than hunting the implicit names afterwards means InnoDB
+creates nothing, `up()` and `down()` name the same objects, and the index is a
+reviewable part of the schema instead of a side effect. The other fifteen are
+already covered by an existing index and get nothing new.
+
+SQLite creates no such index, so this whole class of drift is invisible on that
+lane — a structural diff there looks perfect either way.
+`CompositeForeignKeyRollbackTest` therefore runs a real migrate, rollback and
+re-migrate against whichever engine the suite is pointed at, in a throwaway
+database of its own.
+
 ## Adding a tenant-owned table
 
 1. Give it `workspace_id`, NOT NULL, with its own key to `workspaces`.
@@ -136,19 +157,52 @@ raises errno 1052 and SQLite raises its own error. Four call sites in
 `AgentAccess` and `InvoiceController` were qualified to
 `client_companies.workspace_id`.
 
+**A table becoming tenant-owned makes its existing reads a gap.** Every read of
+`client_company_memberships` matched on company and user alone, which was
+reasonable while the table had no workspace of its own and is a hole once it
+does: a row migrated in before the composite key is honoured on its company link
+while its stated owner is another tenant. `PortalAccess::visibleProjectIds()`,
+both raw membership subqueries in `PortalAccess::constrainProjectQuery()`, and
+`PortalProjectAccessCommand::handle()` now carry the workspace predicate, with an
+isolation case each in `PortalProjectScopingTest`. When a table gains
+`workspace_id`, grep for every query against it in the same change.
+
 ## Running the audit before migrating
 
 ```bash
 php artisan svc:schema:audit-tenant-fks            # counts, exits non-zero on any
 php artisan svc:schema:audit-tenant-fks --format=json
+php artisan svc:schema:audit-tenant-fks --allow-pending   # pre-migration look only
 ```
 
 It prints counts and schema identifiers only — never a row, an id, a name, or a
 workspace — so it is safe to run against a database of client and billing records
 and to paste the output into an issue. A non-zero result is a migration that will
-abort partway through, not a report to read later. A reference the schema cannot
-answer yet reports `pending` rather than passing, because a check that cannot
-distinguish "passed" from "did not run" has to fail.
+abort partway through, not a report to read later.
+
+**A reference the schema cannot answer yet reports `pending` and fails the run.**
+Run before `2026_08_31_000000`, `client_company_memberships` has no
+`workspace_id`, so two references cannot be inspected — and a clean exit there
+would tell a deployment that a schema nobody finished checking is safe to
+migrate. `--allow-pending` exists for the one legitimate case, looking at a
+pre-migration database to see what the rest of the schema holds; it is never
+right in a deployment gate, and it still fails on a real violation.
+
+### What counts as a violation
+
+Three shapes, and the third is easy to miss.
+
+1. **The parent is in a different workspace.**
+2. **The parent is absent** — except on a lineage column, where the named row is
+   allowed to be deleted. Counting that would leave the audit permanently red
+   after a deletion this page explicitly permits, and a gate that cannot be
+   cleared is a gate that gets waved through. For those four columns the audit
+   asks whether an *existing* parent is in the wrong workspace instead.
+3. **The parent is populated while the child's own `workspace_id` is null.**
+   `stripe_payment_method_states` may legitimately hold an unresolved event with
+   every tenant column null. It may not name a company while claiming no
+   workspace: that is a row whose ownership nothing can decide, and since these
+   references carry no composite key, the audit is their only detector.
 
 ## Testing against a row that can no longer be written
 

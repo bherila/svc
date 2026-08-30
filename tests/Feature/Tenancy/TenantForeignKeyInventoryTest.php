@@ -150,6 +150,14 @@ final class TenantForeignKeyInventoryTest extends TestCase
      * found by convention instead: `client_time_entry_id` names
      * `client_time_entries`.
      *
+     * A self-referential column counts too. `split_from_time_entry_id` points at
+     * `client_time_entries` from `client_time_entries`, and a lineage root in
+     * another workspace is exactly as wrong as any other cross-tenant parent.
+     * Skipping self-references would let the next one reach production without a
+     * key or an audited exemption, and this one is only listed because it was
+     * written out by hand. Only `workspace_id` is excluded, since that is the
+     * tenant column itself rather than a reference to a tenant-owned row.
+     *
      * @param  list<string>  $tenantTables
      * @return array<string, string>
      */
@@ -165,7 +173,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
             $parent = strtolower((string) $foreignKey['foreign_table']);
             $column = strtolower((string) $foreignKey['columns'][0]);
 
-            if ($parent === $table || ! in_array($parent, $tenantTables, true)) {
+            if ($column === 'workspace_id' || ! in_array($parent, $tenantTables, true)) {
                 continue;
             }
 
@@ -179,7 +187,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
 
             $parent = Str::plural(Str::beforeLast($column, '_id'));
 
-            if ($parent === $table || ! in_array($parent, $tenantTables, true)) {
+            if (! in_array($parent, $tenantTables, true)) {
                 continue;
             }
 

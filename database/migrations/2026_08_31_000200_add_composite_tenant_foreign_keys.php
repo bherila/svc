@@ -128,8 +128,59 @@ return new class extends Migration
         ],
     ];
 
+    /**
+     * child table => [child column, index name] for the keys with no covering index.
+     *
+     * InnoDB will not accept a foreign key it cannot serve, so where no existing
+     * index has `(workspace_id, column)` as its leftmost prefix it creates one
+     * itself, named after the constraint. **Dropping the constraint does not drop
+     * that index**, so a rollback that only drops keys leaves the implicit
+     * indexes behind and the schema does not return to what it was.
+     *
+     * Creating them explicitly is the fix rather than hunting the implicit names
+     * afterwards: InnoDB then has an index already and creates nothing, up() and
+     * down() name the same objects, and the index becomes a reviewable part of
+     * the schema instead of a side effect.
+     *
+     * SQLite creates no such index and is happy either way, which is why this
+     * whole class of drift is invisible on that lane. `CompositeForeignKeyRollbackTest`
+     * runs a real migrate/rollback comparison on whichever engine it is given.
+     *
+     * The other fifteen references are already covered - by
+     * `cca_workspace_company_created_idx`, `cari_workspace_agreement_idx`,
+     * `billing_schedule_agreement_unique`, `invoice_time_entry_once`,
+     * `cip_workspace_invoice_status_idx` and their peers - and get nothing new.
+     *
+     * @var array<string, list<array{0: string, 1: string}>>
+     */
+    private const COVERING_INDEXES = [
+        'client_company_memberships' => [['client_company_id', 'ccm_ws_company_idx']],
+        'client_projects' => [['client_company_id', 'cp_ws_company_idx']],
+        'client_billing_schedules' => [['client_company_id', 'cbs_ws_company_idx']],
+        'client_tasks' => [['client_project_id', 'ct_ws_project_idx']],
+        'client_project_memberships' => [['client_project_id', 'cpm_ws_project_idx']],
+        'client_portal_project_access' => [['client_company_membership_id', 'cppa_ws_membership_idx']],
+        'client_time_entries' => [
+            ['client_company_id', 'cte_ws_company_idx'],
+            ['client_project_id', 'cte_ws_project_idx'],
+        ],
+        'client_invoice_line_time_entries' => [['client_invoice_line_id', 'cilte_ws_line_idx']],
+        'client_stripe_payment_methods' => [['client_stripe_customer_id', 'cspm_ws_customer_idx']],
+    ];
+
     public function up(): void
     {
+        // Indexes first: InnoDB only creates one of its own when it finds none it
+        // can use, so having them in place is what stops the implicit index that
+        // a rollback could not then remove.
+        foreach (self::COVERING_INDEXES as $child => $indexes) {
+            Schema::table($child, function (Blueprint $table) use ($indexes): void {
+                foreach ($indexes as [$column, $name]) {
+                    $table->index(['workspace_id', $column], $name);
+                }
+            });
+        }
+
         foreach (self::REFERENCES as $child => $references) {
             Schema::table($child, function (Blueprint $table) use ($references): void {
                 foreach ($references as [$column, $parent, $name, $onDelete]) {
@@ -160,6 +211,16 @@ return new class extends Migration
             Schema::table($child, function (Blueprint $table) use ($references, $byName): void {
                 foreach (array_reverse($references) as [$column, , $name]) {
                     $table->dropForeign($byName ? $name : ['workspace_id', $column]);
+                }
+            });
+        }
+
+        // Only after the keys are gone: InnoDB refuses to drop an index a foreign
+        // key still depends on, with errno 1553.
+        foreach (array_reverse(self::COVERING_INDEXES, true) as $child => $indexes) {
+            Schema::table($child, function (Blueprint $table) use ($indexes): void {
+                foreach (array_reverse($indexes) as [, $name]) {
+                    $table->dropIndex($name);
                 }
             });
         }
