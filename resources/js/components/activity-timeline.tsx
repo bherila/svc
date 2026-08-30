@@ -32,6 +32,7 @@ const actionTitles: Record<string, string> = {
     'invoice.marked_paid': 'Invoice marked paid',
     'invoice.payment_received': 'Payment received',
     'invoice.payment_failed': 'Payment failed',
+    'invoice.payment_canceled': 'Payment canceled',
     'invoice.payment_disputed': 'Payment disputed',
     'invoice.payment_refunded': 'Payment refunded',
     'payment_method.added': 'Payment method added',
@@ -50,6 +51,7 @@ const meaningfulActions = new Set([
     'invoice.marked_paid',
     'invoice.payment_received',
     'invoice.payment_failed',
+    'invoice.payment_canceled',
     'invoice.payment_disputed',
     'invoice.payment_refunded',
     'payment_method.added',
@@ -60,6 +62,7 @@ const meaningfulActions = new Set([
 const redActions = new Set([
     'invoice.voided',
     'invoice.payment_failed',
+    'invoice.payment_canceled',
     'invoice.payment_disputed',
     'payment_method.removed',
 ]);

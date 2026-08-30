@@ -49,7 +49,16 @@ final class ClientActivityRecorder
             throw new DomainException('Activity actions must contain at most 120 characters.');
         }
         $this->assertSafePayload($payload);
-
+        // The database stores JSON, not PHP's distinction between `1` and
+        // `1.0`. Compare the same round-tripped representation that is written
+        // so a semantically exact retry cannot conflict only because the JSON
+        // decoder normalised a whole-valued float to an integer.
+        $payload = json_decode(
+            json_encode($payload, JSON_THROW_ON_ERROR),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
         $actorWasExplicit = $actor !== null;
         $authenticated = request()->user() ?? Auth::user() ?? Auth::guard('api')->user();
         if ($actor === null && $authenticated instanceof AgentPrincipal) {

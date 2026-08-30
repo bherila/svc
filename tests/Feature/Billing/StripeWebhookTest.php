@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -172,6 +173,34 @@ class StripeWebhookTest extends TestCase
         ]);
     }
 
+    public function test_canceled_payment_intent_is_terminal_against_older_processing_delivery(): void
+    {
+        [, $workspace, $company] = $this->tenant('canceled-terminal');
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-CANCELED-TERMINAL', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $payment = $service->applyPayment($invoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_canceled_terminal',
+        ], $workspace);
+
+        $canceled = $this->eventPayload('evt_canceled_terminal', 'payment_intent.canceled', [
+            'id' => 'pi_canceled_terminal',
+        ], 200);
+        $processing = $this->eventPayload('evt_older_processing', 'payment_intent.processing', [
+            'id' => 'pi_canceled_terminal',
+        ], 100);
+        $this->webhookPost($canceled, $this->signature($canceled))->assertOk();
+        $this->webhookPost($processing, $this->signature($processing))->assertOk();
+
+        $this->assertSame('canceled', $payment->fresh()->status);
+        $this->assertSame('issued', $invoice->fresh()->status);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_canceled')->count());
+        $this->assertSame('void', $service->void($invoice->fresh(), $workspace)->status);
+    }
+
     public function test_payment_method_webhooks_sync_safe_metadata_and_native_lifecycle_events(): void
     {
         [, $workspace, $company] = $this->tenant('methods');
@@ -187,7 +216,7 @@ class StripeWebhookTest extends TestCase
             'card' => ['brand' => 'visa', 'last4' => '4242', 'exp_month' => 12, 'exp_year' => 2032],
             'metadata' => ['raw_provider_note' => 'must not enter activity'],
         ];
-        $attached = $this->eventPayload('evt_method_attached', 'payment_method.attached', $methodObject);
+        $attached = $this->eventPayload('evt_method_attached', 'payment_method.attached', $methodObject, 100);
 
         $this->webhookPost($attached, $this->signature($attached))->assertOk();
         $this->webhookPost($attached, $this->signature($attached))->assertOk()->assertJsonPath('duplicate', true);
@@ -202,14 +231,14 @@ class StripeWebhookTest extends TestCase
         $defaultChanged = $this->eventPayload('evt_method_default', 'customer.updated', [
             'id' => 'cus_synthetic_activity',
             'invoice_settings' => ['default_payment_method' => 'pm_synthetic_activity'],
-        ]);
+        ], 150);
         $this->webhookPost($defaultChanged, $this->signature($defaultChanged))->assertOk();
         $this->assertTrue($method->fresh()->is_default);
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'payment_method.default_changed')->count());
 
         $detached = $this->eventPayload('evt_method_detached', 'payment_method.detached', [
             'id' => 'pm_synthetic_activity',
-        ]);
+        ], 200);
         $this->webhookPost($detached, $this->signature($detached))->assertOk();
         $this->assertSoftDeleted('client_stripe_payment_methods', ['id' => $method->id]);
         $removed = ClientCompanyActivity::query()->where('action', 'payment_method.removed')->sole();
@@ -217,11 +246,112 @@ class StripeWebhookTest extends TestCase
         $this->assertSame($workspace->id, $removed->workspace_id);
         $this->assertSame($company->id, $removed->client_company_id);
 
-        $reattached = $this->eventPayload('evt_method_reattached', 'payment_method.attached', $methodObject);
+        $reattached = $this->eventPayload('evt_method_reattached', 'payment_method.attached', $methodObject, 300);
         $this->webhookPost($reattached, $this->signature($reattached))->assertOk();
         $restored = ClientStripePaymentMethod::query()->sole();
         $this->assertSame($method->public_id, $restored->public_id);
         $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'payment_method.added')->count());
+    }
+
+    public function test_detach_tombstone_blocks_an_older_attach_event(): void
+    {
+        [, $workspace, $company] = $this->tenant('method-tombstone');
+        ClientStripeCustomer::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'stripe_customer_id' => 'cus_method_tombstone',
+        ]);
+        $detached = $this->eventPayload('evt_detach_first', 'payment_method.detached', [
+            'id' => 'pm_out_of_order',
+        ], 200);
+        $olderAttach = $this->eventPayload('evt_attach_late', 'payment_method.attached', [
+            'id' => 'pm_out_of_order',
+            'customer' => 'cus_method_tombstone',
+            'type' => 'card',
+            'card' => ['brand' => 'visa', 'last4' => '4242'],
+        ], 100);
+
+        $this->webhookPost($detached, $this->signature($detached))->assertOk();
+        $this->webhookPost($olderAttach, $this->signature($olderAttach))->assertOk();
+
+        $this->assertDatabaseCount('client_stripe_payment_methods', 0);
+        $this->assertDatabaseHas('stripe_payment_method_states', [
+            'provider_id_hash' => hash('sha256', 'pm_out_of_order'),
+            'workspace_id' => null,
+            'state' => 'detached',
+            'provider_created_at' => 200,
+        ]);
+        $this->assertDatabaseHas('client_stripe_events', [
+            'stripe_event_id' => 'evt_attach_late',
+            'status' => 'processed',
+            'workspace_id' => null,
+        ]);
+    }
+
+    public function test_detach_uses_the_adapter_route_to_scope_the_tenant_read(): void
+    {
+        [, $firstWorkspace, $firstCompany] = $this->tenant('detach-route-first');
+        [, $secondWorkspace, $secondCompany] = $this->tenant('detach-route-second');
+        $firstCustomer = ClientStripeCustomer::query()->create([
+            'workspace_id' => $firstWorkspace->id,
+            'client_company_id' => $firstCompany->id,
+            'stripe_customer_id' => 'cus_detach_route_first',
+        ]);
+        $secondCustomer = ClientStripeCustomer::query()->create([
+            'workspace_id' => $secondWorkspace->id,
+            'client_company_id' => $secondCompany->id,
+            'stripe_customer_id' => 'cus_detach_route_second',
+        ]);
+        $attached = $this->eventPayload('evt_detach_route_attach', 'payment_method.attached', [
+            'id' => 'pm_detach_route',
+            'customer' => 'cus_detach_route_first',
+            'type' => 'card',
+            'card' => ['brand' => 'visa', 'last4' => '4242'],
+        ], 100);
+        $this->webhookPost($attached, $this->signature($attached))->assertOk();
+        $method = ClientStripePaymentMethod::query()->sole();
+
+        // A corrupt/hostile router record must fail closed: the tenant-scoped
+        // read under the resolved second owner cannot load the first owner's row.
+        DB::table('stripe_payment_method_states')
+            ->where('provider_id_hash', hash('sha256', 'pm_detach_route'))
+            ->update([
+                'workspace_id' => $secondWorkspace->id,
+                'client_company_id' => $secondCompany->id,
+                'client_stripe_customer_id' => $secondCustomer->id,
+            ]);
+        $detached = $this->eventPayload('evt_detach_route_detach', 'payment_method.detached', [
+            'id' => 'pm_detach_route',
+        ], 200);
+        $this->webhookPost($detached, $this->signature($detached))->assertOk();
+
+        $this->assertDatabaseHas('client_stripe_payment_methods', [
+            'id' => $method->id,
+            'workspace_id' => $firstWorkspace->id,
+            'client_stripe_customer_id' => $firstCustomer->id,
+            'deleted_at' => null,
+        ]);
+        $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'payment_method.removed')->count());
+    }
+
+    public function test_unmapped_customer_events_are_acknowledged_as_permanently_irrelevant(): void
+    {
+        $attached = $this->eventPayload('evt_unmapped_attached', 'payment_method.attached', [
+            'id' => 'pm_unmapped',
+            'customer' => 'cus_unmapped',
+            'type' => 'card',
+            'card' => ['brand' => 'visa', 'last4' => '4242'],
+        ], 100);
+        $updated = $this->eventPayload('evt_unmapped_customer', 'customer.updated', [
+            'id' => 'cus_unmapped',
+            'invoice_settings' => ['default_payment_method' => 'pm_unmapped'],
+        ], 110);
+
+        $this->webhookPost($attached, $this->signature($attached))->assertOk();
+        $this->webhookPost($updated, $this->signature($updated))->assertOk();
+
+        $this->assertDatabaseCount('client_stripe_payment_methods', 0);
+        $this->assertSame(2, DB::table('client_stripe_events')->where('status', 'processed')->whereNull('workspace_id')->count());
     }
 
     public function test_payment_method_provider_ids_cannot_be_rebound_across_tenants(): void
@@ -341,14 +471,19 @@ class StripeWebhookTest extends TestCase
     }
 
     /** @param array<string, mixed> $object */
-    private function eventPayload(string $eventId, string $type, array $object): string
+    private function eventPayload(string $eventId, string $type, array $object, ?int $created = null): string
     {
-        return json_encode([
+        $event = [
             'id' => $eventId,
             'object' => 'event',
             'type' => $type,
             'data' => ['object' => $object],
-        ], JSON_THROW_ON_ERROR);
+        ];
+        if ($created !== null) {
+            $event['created'] = $created;
+        }
+
+        return json_encode($event, JSON_THROW_ON_ERROR);
     }
 
     private function signature(string $payload): string

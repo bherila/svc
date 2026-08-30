@@ -363,7 +363,7 @@ final class InvoiceLifecycleService
 
     public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
     {
-        if (! in_array($status, ['pending', 'succeeded', 'failed', 'refunded', 'disputed'], true)) {
+        if (! in_array($status, ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled'], true)) {
             throw new DomainException('Unsupported payment status.');
         }
 
@@ -404,6 +404,7 @@ final class InvoiceLifecycleService
             $action = match ($status) {
                 'succeeded' => 'invoice.payment_received',
                 'failed' => 'invoice.payment_failed',
+                'canceled' => 'invoice.payment_canceled',
                 'disputed' => 'invoice.payment_disputed',
                 'refunded' => 'invoice.payment_refunded',
                 default => null,

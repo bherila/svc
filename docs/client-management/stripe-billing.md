@@ -37,7 +37,7 @@ sequenceDiagram
     App-->>Portal: Latest invoice/payment status
 ```
 
-`client_invoice_payments` remains the invoice payment ledger. Stripe-specific tables store customer IDs, saved method metadata, PaymentIntent activity, and webhook idempotency records.
+`client_invoice_payments` remains the invoice payment ledger. Stripe-specific tables store customer IDs, saved method metadata, PaymentIntent activity, and webhook idempotency records. `stripe_payment_method_states` is the adapter-owned routing index for payment-method webhooks: it stores a one-way provider-ID hash, the resolved tenant IDs when known, and the newest attach/detach occurrence. It contains no card data or provider payload.
 
 ## Client Portal
 
@@ -62,15 +62,15 @@ Subscribe the Stripe webhook endpoint to these event types:
 - `payment_intent.succeeded`: creates or restores a `ClientInvoicePayment`, then marks the invoice paid when the ledger covers the total.
 - `payment_intent.processing`: records pending ACH/card state without marking the invoice paid.
 - `payment_intent.payment_failed`: records `failure_reason` and logs `invoice.payment_failed`.
-- `payment_intent.canceled`: records canceled state and logs `invoice.payment_failed`.
+- `payment_intent.canceled`: records a distinct terminal canceled state and logs `invoice.payment_canceled`; an older processing/failure delivery cannot make it pending again.
 - `charge.refunded`: soft-deletes the original payment for full refunds; inserts a negative `stripe_refund` ledger row for partial refunds, then refreshes invoice paid/issued status from the ledger balance.
 - `charge.dispute.created`: soft-deletes the Stripe payment row and reopens the invoice.
 - `charge.dispute.closed`: restores the payment when the dispute is won; keeps it disputed when lost.
 - `payment_method.attached`: syncs saved method metadata for the Stripe customer.
-- `payment_method.detached`: soft-deletes the saved method locally.
+- `payment_method.detached`: soft-deletes the saved method locally after resolving its tenant through the adapter index. An out-of-order detach creates a tombstone, so an older attach cannot resurrect an unusable method.
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.
 
-Duplicate events are ignored using the unique `client_invoice_stripe_events.stripe_event_id` record. Permanent app-side mismatches, such as a PaymentIntent referencing a deleted invoice, are recorded and acknowledged so Stripe does not retry indefinitely. Transient exceptions still return an error so Stripe retries.
+Duplicate events are ignored using the unique `client_stripe_events.stripe_event_id` record. Events for Stripe customers that have no SVC mapping are acknowledged as permanently irrelevant; there is no webhook path that can create that ownership mapping. A known customer whose referenced default method has not arrived yet remains transient and is retried. Deterministic domain mismatches are recorded as failed and acknowledged on exact replay.
 
 ## Stripe CLI Quickstart
 
@@ -93,7 +93,7 @@ For invoice-specific tests, create the PaymentIntent through the portal so metad
 
 ## Replay Guidance
 
-Webhook bodies are deliberately not stored. `client_invoice_stripe_events` retains the Stripe event ID, type, object ID, payload hash, status, and a bounded error summary. To replay an event safely:
+Webhook bodies are deliberately not stored. `client_stripe_events` retains the Stripe event ID, type, object ID, payload hash, status, and a bounded error summary. To replay an event safely:
 
 1. Confirm the event row is still `received`, or investigate a `failed` row before deciding that reprocessing is intentional.
 2. Resend the original event from the Stripe Dashboard or CLI; do not reconstruct it from database material because the raw body is not retained.

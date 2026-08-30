@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 final class StripePaymentMethodService
@@ -16,7 +17,7 @@ final class StripePaymentMethodService
     public function __construct(private readonly ClientActivityRecorder $activities) {}
 
     /** @param array<string, mixed> $object */
-    public function attach(array $object, string $occurrence): ?ClientStripePaymentMethod
+    public function attach(array $object, string $occurrence, int $providerCreatedAt): ?ClientStripePaymentMethod
     {
         $providerId = $this->string($object['id'] ?? null);
         $providerCustomerId = $this->string($object['customer'] ?? null);
@@ -24,7 +25,18 @@ final class StripePaymentMethodService
             return null;
         }
 
-        [$workspace, $company, $customer] = $this->tenant($providerCustomerId);
+        $state = $this->lockState($providerId);
+        if ($this->eventIsOlder($state, $providerCreatedAt, 'attached')) {
+            return null;
+        }
+
+        $tenant = $this->tenant($providerCustomerId);
+        if ($tenant === null) {
+            $this->updateState($state->id, 'attached', $providerCreatedAt, $occurrence);
+
+            return null;
+        }
+        [$workspace, $company, $customer] = $tenant;
         $existing = ClientStripePaymentMethod::query()
             ->withTrashed()
             ->where('workspace_id', $workspace->id)
@@ -57,6 +69,16 @@ final class StripePaymentMethodService
             throw new DomainException('A Stripe payment method cannot cross client or workspace scope.');
         }
 
+        $this->updateState(
+            $state->id,
+            'attached',
+            $providerCreatedAt,
+            $occurrence,
+            $workspace->id,
+            $company->id,
+            $customer->id,
+        );
+
         if ($wasAdded) {
             $this->activities->record($workspace, $company, 'payment_method.added', $method, [
                 'type' => $method->type,
@@ -70,33 +92,74 @@ final class StripePaymentMethodService
         return $method;
     }
 
-    public function detach(string $providerId, string $occurrence): ?int
+    public function detach(string $providerId, string $occurrence, int $providerCreatedAt): ?int
     {
-        $method = ClientStripePaymentMethod::query()
-            ->where('stripe_payment_method_id', $providerId)
-            ->lockForUpdate()
-            ->first();
-        if ($method === null) {
+        $state = $this->lockState($providerId);
+        if ($this->eventIsOlder($state, $providerCreatedAt, 'detached')) {
+            return $state->workspaceId;
+        }
+
+        $workspaceId = $state->workspaceId;
+        $companyId = $state->companyId;
+        $customerId = $state->customerId;
+        if ($workspaceId === null || $companyId === null || $customerId === null) {
+            $this->updateState($state->id, 'detached', $providerCreatedAt, $occurrence);
+
             return null;
         }
 
-        [$workspace, $company] = $this->tenantForMethod($method);
-        if ($method->is_default) {
-            $method->forceFill(['is_default' => false])->save();
-        }
-        $this->activities->record($workspace, $company, 'payment_method.removed', $method, [
-            'type' => $method->type,
-            'brand' => $method->brand,
-            'last4' => $method->last4,
-        ], occurrence: $occurrence);
-        $method->delete();
+        $workspace = Workspace::query()->find($workspaceId);
+        $company = $workspace instanceof Workspace
+            ? ClientCompany::query()->where('workspace_id', $workspace->id)->find($companyId)
+            : null;
+        $customerMatches = $workspace instanceof Workspace && $company instanceof ClientCompany
+            && ClientStripeCustomer::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id)
+                ->whereKey($customerId)
+                ->exists();
+        $method = $workspace instanceof Workspace && $company instanceof ClientCompany && $customerMatches
+            ? ClientStripePaymentMethod::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id)
+                ->where('client_stripe_customer_id', $customerId)
+                ->where('stripe_payment_method_id', $providerId)
+                ->lockForUpdate()
+                ->first()
+            : null;
 
-        return $workspace->id;
+        if ($method instanceof ClientStripePaymentMethod) {
+            if ($method->is_default) {
+                $method->forceFill(['is_default' => false])->save();
+            }
+            $this->activities->record($workspace, $company, 'payment_method.removed', $method, [
+                'type' => $method->type,
+                'brand' => $method->brand,
+                'last4' => $method->last4,
+            ], occurrence: $occurrence);
+            $method->delete();
+        }
+
+        $this->updateState(
+            $state->id,
+            'detached',
+            $providerCreatedAt,
+            $occurrence,
+            $workspaceId,
+            $companyId,
+            $customerId,
+        );
+
+        return $workspaceId;
     }
 
-    public function changeDefault(string $providerCustomerId, ?string $providerMethodId, string $occurrence): int
+    public function changeDefault(string $providerCustomerId, ?string $providerMethodId, string $occurrence): ?int
     {
-        [$workspace, $company, $customer] = $this->tenant($providerCustomerId);
+        $tenant = $this->tenant($providerCustomerId);
+        if ($tenant === null) {
+            return null;
+        }
+        [$workspace, $company, $customer] = $tenant;
         $methods = ClientStripePaymentMethod::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
@@ -138,15 +201,15 @@ final class StripePaymentMethodService
         return $workspace->id;
     }
 
-    /** @return array{Workspace, ClientCompany, ClientStripeCustomer} */
-    private function tenant(string $providerCustomerId): array
+    /** @return array{Workspace, ClientCompany, ClientStripeCustomer}|null */
+    private function tenant(string $providerCustomerId): ?array
     {
         $customer = ClientStripeCustomer::query()
             ->where('stripe_customer_id', $providerCustomerId)
             ->lockForUpdate()
             ->first();
         if (! $customer instanceof ClientStripeCustomer) {
-            throw new RuntimeException('The Stripe customer has not been synchronized yet.');
+            return null;
         }
         $workspace = Workspace::query()->findOrFail($customer->workspace_id);
         $company = ClientCompany::query()
@@ -156,23 +219,58 @@ final class StripePaymentMethodService
         return [$workspace, $company, $customer];
     }
 
-    /** @return array{Workspace, ClientCompany} */
-    private function tenantForMethod(ClientStripePaymentMethod $method): array
+    private function lockState(string $providerId): StripePaymentMethodState
     {
-        $workspace = Workspace::query()->findOrFail($method->workspace_id);
-        $company = ClientCompany::query()
-            ->where('workspace_id', $workspace->id)
-            ->findOrFail($method->client_company_id);
-        $customerMatches = ClientStripeCustomer::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $company->id)
-            ->whereKey($method->client_stripe_customer_id)
-            ->exists();
-        if (! $customerMatches) {
-            throw new DomainException('A Stripe payment method cannot cross client or workspace scope.');
+        $providerHash = hash('sha256', $providerId);
+        $now = now();
+        DB::table('stripe_payment_method_states')->insertOrIgnore([
+            'provider_id_hash' => $providerHash,
+            'state' => 'unknown',
+            'provider_created_at' => 0,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        return StripePaymentMethodState::fromDatabaseRow(
+            DB::table('stripe_payment_method_states')
+                ->where('provider_id_hash', $providerHash)
+                ->lockForUpdate()
+                ->first(),
+        );
+    }
+
+    private function eventIsOlder(StripePaymentMethodState $state, int $providerCreatedAt, string $incomingState): bool
+    {
+        if ($state->providerCreatedAt > $providerCreatedAt) {
+            return true;
         }
 
-        return [$workspace, $company];
+        // Stripe timestamps have one-second precision. If attach and detach
+        // collide in that second, detached is the fail-closed result: Stripe
+        // documents detached methods as no longer chargeable.
+        return $state->providerCreatedAt === $providerCreatedAt
+            && $state->state === 'detached'
+            && $incomingState === 'attached';
+    }
+
+    private function updateState(
+        int $id,
+        string $state,
+        int $providerCreatedAt,
+        string $eventId,
+        ?int $workspaceId = null,
+        ?int $companyId = null,
+        ?int $customerId = null,
+    ): void {
+        DB::table('stripe_payment_method_states')->where('id', $id)->update([
+            'workspace_id' => $workspaceId,
+            'client_company_id' => $companyId,
+            'client_stripe_customer_id' => $customerId,
+            'state' => $state,
+            'provider_created_at' => max(0, $providerCreatedAt),
+            'stripe_event_id' => $eventId,
+            'updated_at' => now(),
+        ]);
     }
 
     private function string(mixed $value): ?string

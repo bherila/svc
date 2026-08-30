@@ -92,6 +92,33 @@ class ClientActivityRecorderTest extends TestCase
         $recorder->record($workspace, $company, 'invoice.updated', $localInvoice, actor: $outsider);
     }
 
+    public function test_exact_retry_uses_the_json_normalized_payload_shape(): void
+    {
+        [, $workspace, $company] = $this->tenant('json-normalized');
+        $invoice = $this->invoice($workspace, $company, 'ACT-JSON');
+        $recorder = app(ClientActivityRecorder::class);
+
+        $first = $recorder->record(
+            $workspace,
+            $company,
+            'invoice.updated',
+            $invoice,
+            ['hours' => 1.0, 'rate' => 1.25],
+            occurrence: 'json-number-retry',
+        );
+        $retry = $recorder->record(
+            $workspace,
+            $company,
+            'invoice.updated',
+            $invoice,
+            ['hours' => 1.0, 'rate' => 1.25],
+            occurrence: 'json-number-retry',
+        );
+
+        $this->assertSame($first->id, $retry->id);
+        $this->assertSame(['hours' => 1, 'rate' => 1.25], $first->fresh()->payload);
+    }
+
     public function test_raw_or_sensitive_payload_material_is_refused(): void
     {
         [, $workspace, $company] = $this->tenant('safe-payload');

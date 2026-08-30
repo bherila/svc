@@ -741,7 +741,7 @@ Stores audit/activity log entries for a company.
 - `id`: Primary key
 - `client_company_id`: Foreign key to `client_companies`
 - `actor_user_id`: Nullable foreign key to `users`
-- `action`: Action key such as `agreement.transitioned`, `invoice.generated`, `invoice.issued`, `invoice.marked_paid`, `invoice.voided`, `invoice.payment_received`, `invoice.payment_failed`, `invoice.payment_disputed`, `invoice.payment_refunded`, `payment_method.added`, `payment_method.removed`, or `payment_method.default_changed`
+- `action`: Action key such as `agreement.transitioned`, `invoice.generated`, `invoice.issued`, `invoice.marked_paid`, `invoice.voided`, `invoice.payment_received`, `invoice.payment_failed`, `invoice.payment_canceled`, `invoice.payment_disputed`, `invoice.payment_refunded`, `payment_method.added`, `payment_method.removed`, or `payment_method.default_changed`
 - `subject_type`: Stable native subject kind, or the imported predecessor class name for preserved rows
 - `subject_public_id`: Public UUID of a native agreement, invoice, payment, or saved payment method
 - `external_subject_id`: Nullable predecessor numeric reference retained only for imported history
