@@ -18,13 +18,14 @@ use App\Support\AgentApi\ProjectRole;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
 
 class TimeSheetTest extends TestCase
 {
+    use AssertsSurfaceIsolation;
     use RefreshDatabase;
 
     private Workspace $workspace;
@@ -2433,27 +2434,19 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($member)
+        $response = $this->actingAs($member)
             ->get("/workspaces/{$this->workspace->public_id}/time")
-            ->assertOk()
-            ->assertInertia(function (Assert $page): void {
-                $payload = (string) json_encode($page->toArray());
+            ->assertOk();
 
-                foreach ([
-                    'Project They Cannot See',
-                    'Hidden Worker Name',
-                    'Hidden Task Title',
-                    'Hidden Work Description',
-                    'Hidden Client Description',
-                    'HIDDEN-INVOICE-9001',
-                    'Hidden Agreement Title',
-                ] as $secret) {
-                    $this->assertStringNotContainsString($secret, $payload);
-                }
-
-                // And the sheet is not empty for the wrong reason.
-                $this->assertStringContainsString('Visible Work Description', $payload);
-            });
+        $this->assertInertiaPayloadOmits($response, [
+            'Project They Cannot See',
+            'Hidden Worker Name',
+            'Hidden Task Title',
+            'Hidden Work Description',
+            'Hidden Client Description',
+            'HIDDEN-INVOICE-9001',
+            'Hidden Agreement Title',
+        ], 'Visible Work Description');
     }
 
     /**
@@ -2473,16 +2466,15 @@ class TimeSheetTest extends TestCase
             $this->entry(['worked_on' => '2026-07-04']);
         }
 
-        $few = $this->queriesRenderingTheSheet();
-
-        for ($i = 0; $i < 27; $i++) {
-            $this->entry(['worked_on' => '2026-07-05']);
-        }
-
-        $this->assertSame(
-            $few,
-            $this->queriesRenderingTheSheet(),
-            'The sheet issued more queries for more entries, which is an N+1.',
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->actingAs($this->manager)
+                ->get("/workspaces/{$this->workspace->public_id}/time")
+                ->assertOk(),
+            function (): void {
+                for ($i = 0; $i < 27; $i++) {
+                    $this->entry(['worked_on' => '2026-07-05']);
+                }
+            },
         );
     }
 
@@ -2515,77 +2507,17 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $known = [];
-
-        foreach (Schema::getTableListing() as $table) {
-            // The listing qualifies names with their schema (`main.workspaces`
-            // on SQLite); the grammar quotes the bare name.
-            $bare = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
-            $known[strtolower($bare)] = true;
-
-            foreach (Schema::getColumnListing($bare) as $column) {
-                $known[strtolower($column)] = true;
-            }
-        }
-
-        /** @var list<string> $statements */
-        $statements = [];
-        DB::listen(function (QueryExecuted $query) use (&$statements): void {
-            $statements[] = $query->sql;
-        });
-
-        $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
-            ->assertOk();
-
-        $this->assertNotEmpty($statements, 'No queries were captured, so this asserted nothing.');
-
-        $checked = 0;
-
-        foreach ($statements as $statement) {
-            $allowed = $known;
-            // Either grammar's quoting. Reading only SQLite's would make this
-            // assert nothing on the engine that catches the bug outright.
-            preg_match_all('/\bas\s+[`"]([^`"]+)[`"]/i', $statement, $aliases);
-
-            foreach ($aliases[1] as $alias) {
-                $allowed[strtolower($alias)] = true;
-            }
-
-            preg_match_all('/[`"]([^`"]+)[`"]/', $statement, $identifiers);
-
-            foreach ($identifiers[1] as $identifier) {
-                $checked++;
-                $this->assertArrayHasKey(
-                    strtolower($identifier),
-                    $allowed,
-                    "`{$identifier}` is not a column, table or alias, so this predicate is silently a string on SQLite: {$statement}",
-                );
-            }
-        }
-
-        $this->assertGreaterThan(0, $checked, 'No identifiers were read, so this asserted nothing.');
+        $this->assertQueriesNameOnlyRealIdentifiers(
+            fn () => $this->actingAs($this->manager)
+                ->get("/workspaces/{$this->workspace->public_id}/time")
+                ->assertOk(),
+        );
     }
 
     /** Identifier quoting differs by engine; the assertions here must not. */
     private static function unquote(string $sql): string
     {
         return str_replace(['`', '"'], '', $sql);
-    }
-
-    private function queriesRenderingTheSheet(): int
-    {
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-
-        $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
-            ->assertOk();
-
-        $count = count(DB::getQueryLog());
-        DB::disableQueryLog();
-
-        return $count;
     }
 
     /**

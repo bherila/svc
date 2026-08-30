@@ -8,15 +8,18 @@ use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
 
 class ClientPortalOperationsTest extends TestCase
 {
+    use AssertsSurfaceIsolation;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -142,6 +145,223 @@ class ClientPortalOperationsTest extends TestCase
         $this->assertSame('accepted', $proposal->fresh()->status);
         $this->assertSame('Synthetic Portal Signer', $proposal->fresh()->acceptance_signer_name);
         $this->assertSame(1, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->count());
+    }
+
+    public function test_nothing_invisible_reaches_the_portal_payload(): void
+    {
+        [, $clientUser, , $workspace, $company, $otherCompany] = $this->tenant();
+
+        $visibleProject = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Visible synthetic project',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+        ]);
+        ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $visibleProject->id,
+            'title' => 'Visible synthetic task',
+            'status' => 'open',
+            'is_visible_to_client' => true,
+        ]);
+        ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $visibleProject->id,
+            'title' => 'Internal Only Task Title',
+            'status' => 'open',
+            'is_visible_to_client' => false,
+        ]);
+        $internalProject = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Internal Project Name',
+            'status' => 'active',
+            'is_visible_to_client' => false,
+        ]);
+        ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $internalProject->id,
+            'title' => 'Internal Task Title',
+            'status' => 'open',
+            'is_visible_to_client' => true,
+        ]);
+
+        $this->proposal($workspace, $company, 'Visible sent proposal', 'sent', true);
+        $this->proposal($workspace, $company, 'Hidden Draft Proposal Title', 'draft', true);
+        $this->proposal($workspace, $company, 'Internal Proposal Title', 'sent', false);
+        $this->proposal($workspace, $otherCompany, 'Other Company Proposal Title', 'sent', true);
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Internal Agreement Title',
+            'status' => 'active',
+            'is_visible_to_client' => false,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'title' => 'Other Company Agreement Title',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+        ]);
+
+        $this->invoice($workspace, $company, 'INV-VIS-1', 'issued', true);
+        $this->invoice($workspace, $company, 'INV-HIDDEN-1', 'issued', false);
+        $this->invoice($workspace, $company, 'INV-DRAFT-1', 'draft', true);
+        $this->invoice($workspace, $otherCompany, 'INV-OTHER-1', 'paid', true);
+
+        $worker = User::factory()->create(['name' => 'Internal Worker Name']);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $visibleProject->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 60,
+            'description' => 'Internal Note Never Shown',
+            'client_visible_description' => 'Client Facing Summary',
+            'is_visible_to_client' => true,
+            'status' => 'approved',
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $visibleProject->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-08-21',
+            'minutes' => 60,
+            'description' => 'Hidden Time Description',
+            'is_visible_to_client' => false,
+            'status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($clientUser)
+            ->get("/portal/{$company->public_id}")
+            ->assertOk();
+
+        $this->assertInertiaPayloadOmits($response, [
+            'Internal Project Name',
+            'Internal Task Title',
+            'Internal Only Task Title',
+            'Hidden Draft Proposal Title',
+            'Internal Proposal Title',
+            'Other Company Proposal Title',
+            'Internal Agreement Title',
+            'Other Company Agreement Title',
+            'INV-HIDDEN-1',
+            'INV-DRAFT-1',
+            'INV-OTHER-1',
+            'Internal Note Never Shown',
+            'Hidden Time Description',
+            'billing_rate_amount',
+        ], 'Visible sent proposal');
+    }
+
+    public function test_the_portal_names_only_columns_that_exist(): void
+    {
+        [, $clientUser, , $workspace, $company] = $this->tenant();
+
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Visible synthetic project',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+        ]);
+        ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => 'Visible synthetic task',
+            'status' => 'open',
+            'is_visible_to_client' => true,
+        ]);
+        $this->proposal($workspace, $company, 'Visible sent proposal', 'sent', true);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Visible synthetic agreement',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+        ]);
+        $this->invoice($workspace, $company, 'INV-IDENT-1', 'issued', true);
+        $worker = User::factory()->create();
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 60,
+            'description' => 'Synthetic internal note',
+            'client_visible_description' => 'Synthetic client summary',
+            'is_visible_to_client' => true,
+            'status' => 'approved',
+        ]);
+
+        $this->assertQueriesNameOnlyRealIdentifiers(
+            fn () => $this->actingAs($clientUser)
+                ->get("/portal/{$company->public_id}")
+                ->assertOk(),
+        );
+    }
+
+    public function test_the_portal_does_not_query_once_per_row(): void
+    {
+        [, $clientUser, , $workspace, $company] = $this->tenant();
+
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Visible synthetic project',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+        ]);
+        $worker = User::factory()->create();
+
+        $sequence = 0;
+        $addRows = function (int $count) use ($workspace, $company, $project, $worker, &$sequence): void {
+            for ($i = 0; $i < $count; $i++) {
+                $sequence++;
+                ClientTask::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_project_id' => $project->id,
+                    'title' => "Visible synthetic task {$sequence}",
+                    'status' => 'open',
+                    'is_visible_to_client' => true,
+                ]);
+                $this->proposal($workspace, $company, "Visible sent proposal {$sequence}", 'sent', true);
+                $this->invoice($workspace, $company, "INV-ROWS-{$sequence}", 'issued', true);
+                ClientTimeEntry::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id,
+                    'client_project_id' => $project->id,
+                    'user_id' => $worker->id,
+                    'worked_on' => '2026-08-20',
+                    'minutes' => 30,
+                    'description' => "Synthetic internal note {$sequence}",
+                    'client_visible_description' => "Synthetic client summary {$sequence}",
+                    'is_visible_to_client' => true,
+                    'status' => 'approved',
+                ]);
+            }
+        };
+
+        $addRows(2);
+
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->actingAs($clientUser)
+                ->get("/portal/{$company->public_id}")
+                ->assertOk(),
+            fn () => $addRows(8),
+        );
     }
 
     /** @return array{0: User, 1: User, 2: User, 3: Workspace, 4: ClientCompany, 5: ClientCompany} */
