@@ -13,6 +13,7 @@ use App\Services\Billing\Balances\MonthSummary;
 use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\ReplayHistoryBasis;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use DomainException;
@@ -58,6 +59,34 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(2.0, $ledger[0]->hoursWorked);
         $this->assertSame(10.0, $ledger[0]->retainerHours);
         $this->assertSame(8.0, $ledger[0]->closing->unusedHours);
+    }
+
+    public function test_replay_history_basis_opens_a_native_period_ledger_without_changing_the_agreement(): void
+    {
+        $company = $this->company();
+        $project = $this->project($company);
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'billing_cadence' => 'quarterly',
+            'monthly_retainer_hours' => 10,
+            'retainer_hours' => 30,
+        ]);
+        $this->entry($company, $project, [
+            'date_worked' => '2025-12-15',
+            'minutes_worked' => 600,
+        ]);
+
+        $basis = new ReplayHistoryBasis;
+        $basis->seed($agreement, Carbon::parse('2025-12-01'));
+        $ledger = (new InvoiceLedgerBuilder(replayHistoryBasis: $basis))->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $ledger[0]->yearMonth);
+        $this->assertSame(10.0, $ledger[0]->hoursWorked);
+        $this->assertSame('2026-01-01', $agreement->fresh()->starts_on?->toDateString());
     }
 
     public function test_the_ledger_refuses_time_whose_project_belongs_to_another_company(): void

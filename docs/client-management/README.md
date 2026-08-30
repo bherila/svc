@@ -219,7 +219,16 @@ Three commands run against production data. Two of them cannot write at all;
 the third writes only when told to, and only if every check passes.
 
 - `svc:billing:replay` regenerates history and classifies every divergence.
-  Always-rollback, and tested to be.
+  Where recorded invoice history begins before its agreement's stored start,
+  the replay uses the historical service period as its comparison identity,
+  clock, and retainer-ledger opening basis. That aligns the predecessor's
+  period-equals-cycle label with the current engine's next-cycle label without
+  changing the agreement date. A monetary or structural difference passes only
+  when a narrow rule proves the current contract requires it: whole-minute
+  arithmetic, a recurring item's exact opening incidence, or a complete
+  configured cadence that predecessor history omitted altogether. An isolated
+  extra cycle and a later missing recurring incidence still fail. The whole
+  command is always-rollback, and tested to be.
 - `svc:billing:rehearse-generation` answers the operational question directly —
   would running generation change anything a client has already been charged
   for? It fingerprints every column and every line of every settled invoice

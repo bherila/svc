@@ -13,12 +13,17 @@ use Carbon\Carbon;
 
 class InvoiceLedgerBuilder
 {
+    private readonly ReplayHistoryBasis $replayHistoryBasis;
+
     public function __construct(
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RetainerCalculator $retainerCalculator = new RetainerCalculator,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
-    ) {}
+        ?ReplayHistoryBasis $replayHistoryBasis = null,
+    ) {
+        $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
+    }
 
     /**
      * Build the monthly ledger for one agreement through a given date.
@@ -31,7 +36,10 @@ class InvoiceLedgerBuilder
         Carbon $through,
         bool $billExcessImmediately = false,
     ): array {
-        $activeDate = Carbon::parse($agreement->active_date)->startOfDay();
+        $activeDate = $this->replayHistoryBasis->startFor(
+            $agreement,
+            Carbon::parse($agreement->active_date),
+        );
         $terminationDate = $agreement->termination_date
             ? Carbon::parse($agreement->termination_date)->startOfDay()
             : null;
@@ -71,8 +79,15 @@ class InvoiceLedgerBuilder
                 $hoursByDate[$dateKey] = ($hoursByDate[$dateKey] ?? 0.0) + ((float) $entry->minutes_worked / 60);
             }
 
+            // BillingCycleResolver correctly uses the stored agreement start
+            // everywhere else. Replay is the one exception: its ledger must
+            // contain a historical opening cycle without changing which
+            // cycles ordinary generation may sell or mutating the model row.
+            $ledgerAgreement = clone $agreement;
+            $ledgerAgreement->setAttribute('starts_on', $activeDate->toDateString());
+
             return $this->buildPeriodRetainerLedgerThrough(
-                $agreement,
+                $ledgerAgreement,
                 $ledgerEnd,
                 $hoursByDate,
                 $billExcessImmediately,

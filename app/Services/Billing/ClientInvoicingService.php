@@ -105,7 +105,10 @@ final class ClientInvoicingService
 
     private readonly ClientActivityRecorder $activities;
 
+    private readonly ReplayHistoryBasis $replayHistoryBasis;
+
     public function __construct(
+        ?ReplayHistoryBasis $replayHistoryBasis = null,
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RecurringItemBiller $recurringItemBiller = new RecurringItemBiller,
@@ -123,6 +126,7 @@ final class ClientInvoicingService
         ?ClientActivityRecorder $activities = null,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {
+        $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
         // rather than defaulted in the signature - a second RolloverCalculator
         // would not be wrong, but it would make the object graph a lie.
@@ -131,6 +135,7 @@ final class ClientInvoicingService
             $this->rolloverCalculator,
             $this->billingCycleResolver,
             $this->retainerCalculator,
+            replayHistoryBasis: $this->replayHistoryBasis,
         );
         $this->activities = $activities ?? app(ClientActivityRecorder::class);
         $this->interimOverageGenerator = $interimOverageGenerator ?? new InterimOverageGenerator(
@@ -1394,7 +1399,9 @@ final class ClientInvoicingService
         Carbon $retainerMonthStart,
         ?string $terminationMonthKey,
     ): array {
-        $agreementStart = $this->agreementStart($agreement)->copy()->startOfMonth();
+        $agreementStart = $this->replayHistoryBasis
+            ->startFor($agreement, $this->agreementStart($agreement))
+            ->startOfMonth();
 
         $earliestEntryDate = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
