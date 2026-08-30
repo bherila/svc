@@ -43,10 +43,28 @@ return new class extends Migration
 
     public function up(): void
     {
+        $mirroring = Schema::getConnection()->getDriverName() !== 'sqlite';
+
         foreach (self::PARENTS as $parent) {
             Schema::table($parent, function (Blueprint $table) use ($parent): void {
                 $table->unique(['workspace_id', 'id'], $parent.'_workspace_id_id_unique');
             });
+
+            // Adding that unique index gives InnoDB a better index for the table's
+            // own `workspace_id` key, and it silently drops the implicit one it had
+            // made. `down()` puts that index back so the unique one can be removed
+            // at all (see below), which means a re-applied migration would find it
+            // still there and keep it - and migrate, rollback, migrate would not
+            // land on the schema the first migrate produced.
+            //
+            // So the same removal is done explicitly here. On a database InnoDB has
+            // already tidied this is a no-op; after a rollback it is what makes the
+            // two directions mirror each other exactly.
+            if ($mirroring && $this->hasImplicitWorkspaceIndex($parent)) {
+                Schema::table($parent, function (Blueprint $table) use ($parent): void {
+                    $table->dropIndex($parent.'_workspace_id_foreign');
+                });
+            }
         }
     }
 
@@ -105,6 +123,22 @@ return new class extends Migration
             if (($columns[0] ?? null) === 'workspace_id') {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the single-column index InnoDB names after the workspace key is present.
+     */
+    private function hasImplicitWorkspaceIndex(string $parent): bool
+    {
+        foreach (Schema::getIndexes($parent) as $index) {
+            if ($index['name'] !== $parent.'_workspace_id_foreign') {
+                continue;
+            }
+
+            return array_map(strtolower(...), $index['columns']) === ['workspace_id'];
         }
 
         return false;
