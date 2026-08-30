@@ -171,6 +171,39 @@ final class DeferredBillingAllocatorTest extends TestCase
         $this->assertSame([$included->id], $outstanding->modelKeys());
     }
 
+    public function test_ordinary_allocation_draws_only_the_project_scoped_to_the_agreement(): void
+    {
+        $included = $this->deferred(60, '2026-03-01');
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Other allocation project',
+        ]);
+        $excluded = $this->deferred(60, '2026-03-02');
+        $excluded->update(['client_project_id' => $otherProject->id]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Scoped allocation agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+
+        $result = app(DeferredBillingAllocator::class)->allocate(
+            $this->company,
+            Carbon::parse('2026-03-31'),
+            10.0,
+            $agreement,
+        );
+
+        $this->assertSame([$included->id], array_map(
+            static fn ($candidate): int => $candidate->id(),
+            $result->billed,
+        ));
+    }
+
     public function test_allocation_refuses_deferred_time_owned_by_another_companys_project(): void
     {
         $this->deferredAgainstAnotherCompany();

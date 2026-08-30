@@ -32,7 +32,7 @@ export type TimeEntry = {
     is_billable: boolean;
     is_deferred: boolean;
     is_visible_to_client: boolean;
-    subcontractor_billing_mode: 'flat_hourly' | 'retainer' | 'direct' | null;
+    subcontractor_billing_mode?: 'flat_hourly' | 'retainer' | 'direct' | null;
     status: string;
     project: { id: string; name: string };
     task: { id: string; title: string } | null;

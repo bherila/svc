@@ -22,9 +22,19 @@ return new class extends Migration
 
         // A cost amount was the old schema's only flat-hourly signal. Preserve
         // that meaning before application code starts selecting by mode.
-        DB::table('client_time_entries')
+        $workspaceIds = DB::table('client_time_entries')
             ->whereNotNull('subcontractor_cost_amount')
-            ->update(['subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly->value]);
+            ->select('workspace_id')
+            ->distinct()
+            ->orderBy('workspace_id')
+            ->pluck('workspace_id');
+
+        foreach ($workspaceIds as $workspaceId) {
+            DB::table('client_time_entries')
+                ->where('workspace_id', $workspaceId)
+                ->whereNotNull('subcontractor_cost_amount')
+                ->update(['subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly->value]);
+        }
     }
 
     public function down(): void

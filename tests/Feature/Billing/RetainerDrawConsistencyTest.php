@@ -193,7 +193,7 @@ final class RetainerDrawConsistencyTest extends TestCase
     {
         $offenders = [];
 
-        foreach (['ClientInvoicingService', 'InterimOverageGenerator', 'InvoiceLedgerBuilder'] as $service) {
+        foreach (['ClientInvoicingService', 'DeferredBillingAllocator', 'InterimOverageGenerator', 'InvoiceLedgerBuilder'] as $service) {
             $relative = "app/Services/Billing/{$service}.php";
             $contents = file_get_contents(base_path($relative));
             if ($contents === false) {
@@ -233,7 +233,7 @@ final class RetainerDrawConsistencyTest extends TestCase
     {
         $offenders = [];
 
-        foreach (['ClientInvoicingService', 'InterimOverageGenerator', 'InvoiceLedgerBuilder'] as $service) {
+        foreach (['ClientInvoicingService', 'DeferredBillingAllocator', 'InterimOverageGenerator', 'InvoiceLedgerBuilder'] as $service) {
             $relative = "app/Services/Billing/{$service}.php";
             $contents = file_get_contents(base_path($relative));
             if ($contents === false) {
@@ -262,6 +262,32 @@ final class RetainerDrawConsistencyTest extends TestCase
             'Add ->forAgreementScope($agreement); a project-scoped agreement must not draw on another project.',
             implode("\n", $offenders),
         ));
+    }
+
+    public function test_the_legacy_mode_backfill_updates_one_workspace_at_a_time(): void
+    {
+        $relative = 'database/migrations/2026_08_29_000000_add_subcontractor_billing_mode_to_time_entries.php';
+        $contents = file_get_contents(base_path($relative));
+        if ($contents === false) {
+            $this->fail("Could not read {$relative}");
+        }
+
+        $this->assertStringContainsString("->select('workspace_id')", $contents);
+        $this->assertStringContainsString("->where('workspace_id', \$workspaceId)", $contents);
+    }
+
+    public function test_deferred_allocation_receives_the_agreement_scope_from_generation(): void
+    {
+        $relative = 'app/Services/Billing/ClientInvoicingService.php';
+        $contents = file_get_contents(base_path($relative));
+        if ($contents === false) {
+            $this->fail("Could not read {$relative}");
+        }
+
+        $this->assertStringContainsString(
+            'allocate($company, $periodEnd, $remainingCapacity, $agreement)',
+            $contents,
+        );
     }
 
     private function project(string $name): ClientProject

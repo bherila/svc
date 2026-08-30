@@ -14,6 +14,7 @@ use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
@@ -243,6 +244,26 @@ final class TimeEntryMutationService
 
         $hasAmount = array_key_exists('billing_rate_amount', $item);
         $hasCurrency = array_key_exists('currency', $item);
+        $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
+        $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
+        if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
+            throw new DomainException('The time entry has an unsupported subcontractor billing mode.');
+        }
+        if ($entry->subcontractor_cost_amount !== null && $mode !== SubcontractorBillingMode::FlatHourly) {
+            throw new DomainException('Only flat-hourly subcontractor time may carry a subcontractor rate.');
+        }
+
+        if ($mode === SubcontractorBillingMode::FlatHourly || $mode === SubcontractorBillingMode::Direct) {
+            if ($hasAmount || $hasCurrency) {
+                throw new DomainException('A flat-hourly or direct subcontractor entry does not use an ordinary billing-rate override.');
+            }
+            if ($mode === SubcontractorBillingMode::FlatHourly
+                && ($entry->subcontractor_cost_amount === null || trim((string) $entry->subcontractor_cost_currency) === '')) {
+                throw new DomainException('Flat-hourly subcontractor time requires a snapshotted amount and currency.');
+            }
+
+            return ['amount' => null, 'currency' => $entry->currency, 'source' => null];
+        }
         if ($hasAmount && $hasCurrency) {
             return [
                 'amount' => MoneyService::nonNegativeInteger($item['billing_rate_amount'], 'billing_rate_amount'),

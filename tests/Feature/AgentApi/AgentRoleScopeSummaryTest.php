@@ -143,6 +143,18 @@ final class AgentRoleScopeSummaryTest extends TestCase
         $this->time($workspace, $company, $project, $owner, 30, 'Ready', ['status' => 'approved', 'billing_rate_amount' => 10000]);
         $this->time($workspace, $company, $project, $owner, 40, 'Deferred', ['status' => 'approved', 'is_deferred' => true, 'billing_rate_amount' => 10000]);
         $this->time($workspace, $company, $project, $owner, 50, 'Nonbillable', ['status' => 'approved', 'is_billable' => false]);
+        $this->time($workspace, $company, $project, $owner, 20, 'Flat subcontractor', [
+            'status' => 'approved',
+            'billing_rate_amount' => 10000,
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 8000,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $this->time($workspace, $company, $project, $owner, 70, 'Direct subcontractor', [
+            'status' => 'approved',
+            'billing_rate_amount' => 10000,
+            'subcontractor_billing_mode' => 'direct',
+        ]);
         $allocated = $this->time($workspace, $company, $project, $owner, 60, 'Allocated', ['status' => 'approved', 'billing_rate_amount' => 10000]);
 
         $draftUsd = $this->invoice($workspace, $company, 'D-USD', 'draft', 'USD', 100, 100);
@@ -172,7 +184,7 @@ final class AgentRoleScopeSummaryTest extends TestCase
         $this->assertSame(1, $summary['active_projects']);
         $this->assertSame([
             'draft_minutes' => 15,
-            'approved_billable_unallocated_minutes' => 30,
+            'approved_billable_unallocated_minutes' => 50,
             'allocated_to_draft_minutes' => 60,
         ], $summary['time']);
         $this->assertSame(2, $summary['invoices']['draft_count']);

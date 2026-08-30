@@ -1217,7 +1217,7 @@ final class ClientInvoicingService
             return;
         }
 
-        $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity);
+        $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity, $agreement);
         if ($result->hasBilled()) {
             $this->invoiceLineComposer->addDeferredRetainerLine($invoice, $agreement, $result, $periodEnd, $sortOrder);
         }

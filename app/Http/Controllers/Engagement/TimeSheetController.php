@@ -680,7 +680,9 @@ class TimeSheetController extends Controller
             'is_billable' => $entry->is_billable,
             'is_deferred' => $entry->is_deferred,
             'is_visible_to_client' => $entry->is_visible_to_client,
-            'subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value,
+            ...($isManager ? [
+                'subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value,
+            ] : []),
             'status' => $entry->status,
             'project' => [
                 'id' => $project->public_id,

@@ -41,8 +41,9 @@ class DeferredBillingAllocator
         ClientCompany $company,
         Carbon $upTo,
         float $remainingCapacityHours,
+        ?ClientAgreement $agreement = null,
     ): DeferredAllocationResult {
-        $candidates = $this->loadCandidates($company, $upTo);
+        $candidates = $this->loadCandidates($company, $upTo, $agreement);
         if ($candidates->isEmpty()) {
             return DeferredAllocationResult::empty();
         }
@@ -114,20 +115,31 @@ class DeferredBillingAllocator
      *
      * @return Collection<int, DeferredEntryCandidate>
      */
-    protected function loadCandidates(ClientCompany $company, Carbon $upTo): Collection
-    {
-        $query = ClientTimeEntry::query()
+    protected function loadCandidates(
+        ClientCompany $company,
+        Carbon $upTo,
+        ?ClientAgreement $agreement = null,
+    ): Collection {
+        $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
             ->where('is_deferred', true)
-            ->retainerBillable()
             ->whereDoesntHave('invoiceLines')
-            ->where('worked_on', '<=', $upTo)
+            ->where('worked_on', '<=', $upTo);
+
+        // Validate before narrowing to this agreement, so a malformed project
+        // chain cannot disappear behind either the mode or project predicate.
+        $this->projectChainGuard->assertProjectChainsAgree($company, $companyEntries);
+
+        $query = (clone $companyEntries)
+            ->retainerBillable()
+            ->when(
+                $agreement instanceof ClientAgreement,
+                fn ($scoped) => $scoped->forAgreementScope($agreement),
+            )
             ->orderBy('worked_on', 'asc')
             ->orderBy('id', 'asc');
-
-        $this->projectChainGuard->assertProjectChainsAgree($company, $query);
 
         return $query->get()
             ->map(fn (ClientTimeEntry $entry) => DeferredEntryCandidate::fromEntry($entry));
