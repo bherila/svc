@@ -90,11 +90,17 @@ trait AssertsSurfaceIsolation
     {
         $few = $this->queriesDuring($render);
 
+        $this->assertGreaterThan(0, $few, 'The first render issued no queries, so this asserted nothing.');
+
         $addRows();
+
+        $many = $this->queriesDuring($render);
+
+        $this->assertGreaterThan(0, $many, 'The second render issued no queries, so this asserted nothing.');
 
         $this->assertSame(
             $few,
-            $this->queriesDuring($render),
+            $many,
             'The surface issued more queries for more rows, which is an N+1.',
         );
     }
@@ -102,15 +108,43 @@ trait AssertsSurfaceIsolation
     /** @param callable(): void $act */
     protected function queriesDuring(callable $act): int
     {
-        DB::flushQueryLog();
-        DB::enableQueryLog();
+        $connection = DB::connection();
+        $wasLogging = $connection->logging();
+        $connection->flushQueryLog();
+        $connection->enableQueryLog();
 
-        $act();
+        try {
+            $act();
 
-        $count = count(DB::getQueryLog());
-        DB::disableQueryLog();
+            return count($connection->getQueryLog());
+        } finally {
+            if (! $wasLogging) {
+                $connection->disableQueryLog();
+            }
+        }
+    }
 
-        return $count;
+    /**
+     * @return array<string, array<string, true>>
+     */
+    private function columnsByTable(): array
+    {
+        $columnsByTable = [];
+
+        foreach (Schema::getTableListing() as $table) {
+            // The listing qualifies names with their schema (`main.workspaces`
+            // on SQLite); the grammar quotes the bare name.
+            $bare = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
+            $columns = [];
+
+            foreach (Schema::getColumnListing($bare) as $column) {
+                $columns[strtolower($column)] = true;
+            }
+
+            $columnsByTable[strtolower($bare)] = $columns;
+        }
+
+        return $columnsByTable;
     }
 
     /**
@@ -128,18 +162,7 @@ trait AssertsSurfaceIsolation
      */
     protected function assertQueriesNameOnlyRealIdentifiers(callable $act): void
     {
-        $known = [];
-
-        foreach (Schema::getTableListing() as $table) {
-            // The listing qualifies names with their schema (`main.workspaces`
-            // on SQLite); the grammar quotes the bare name.
-            $bare = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
-            $known[strtolower($bare)] = true;
-
-            foreach (Schema::getColumnListing($bare) as $column) {
-                $known[strtolower($column)] = true;
-            }
-        }
+        $columnsByTable = $this->columnsByTable();
 
         /** @var list<string> $statements */
         $statements = [];
@@ -154,7 +177,7 @@ trait AssertsSurfaceIsolation
         $checked = 0;
 
         foreach ($statements as $statement) {
-            $allowed = $known;
+            $allowed = [];
             // Either grammar's quoting — reading only SQLite's would make this
             // assert nothing on the engine that catches the bug outright — and
             // aliases declared bare (`... AS row_rank`), which the grammar
@@ -168,6 +191,15 @@ trait AssertsSurfaceIsolation
             }
 
             preg_match_all('/[`"]([^`"]+)[`"]/', $statement, $identifiers);
+
+            foreach ($identifiers[1] as $identifier) {
+                $normalized = strtolower($identifier);
+
+                if (isset($columnsByTable[$normalized])) {
+                    $allowed[$normalized] = true;
+                    $allowed += $columnsByTable[$normalized];
+                }
+            }
 
             foreach ($identifiers[1] as $identifier) {
                 $checked++;
