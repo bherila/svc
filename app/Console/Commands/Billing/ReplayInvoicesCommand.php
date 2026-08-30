@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Billing\ReplayRecurringItemIncidenceRepository;
 use App\Support\Billing\CorrectionFacts;
 use App\Support\Billing\DeliberateCorrections;
 use App\Support\Billing\InvoiceKind;
@@ -20,6 +21,7 @@ use App\Support\Billing\ReplayHistorySeed;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
+use App\Support\Billing\ReplayRecurringItemIncidence;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -148,6 +150,9 @@ final class ReplayInvoicesCommand extends Command
     /** @var array<string, ReplayOpeningCapacityProof> */
     private array $openingCapacityProofs = [];
 
+    /** @var array<string, list<ReplayRecurringItemIncidence>> */
+    private array $recurringItemIncidences = [];
+
     public function handle(): int
     {
         $this->digestKey = bin2hex(random_bytes(32));
@@ -155,6 +160,7 @@ final class ReplayInvoicesCommand extends Command
         $this->historySeeds = [];
         $this->openingCapacityContexts = [];
         $this->openingCapacityProofs = [];
+        $this->recurringItemIncidences = [];
         $historyBasis = app(ReplayHistoryBasis::class);
         $historyBasis->reset();
 
@@ -393,6 +399,14 @@ final class ReplayInvoicesCommand extends Command
             }
 
             $cycles = array_values(collect($attempts)
+                // A void attempt cancels the identity it superseded. Filtering
+                // before selecting the winner would resurrect the older live
+                // attempt and let a cycle that never happened seed replay.
+                ->filter(static fn (ClientInvoice $invoice): bool => in_array(
+                    (string) $invoice->status,
+                    InvoiceStatus::live(),
+                    true,
+                ))
                 ->sortBy('service_period_start')
                 ->map(static fn (ClientInvoice $invoice): ReplayHistoricalCycle => new ReplayHistoricalCycle(
                     invoiceKind: $invoice->invoiceKindValue(),
@@ -877,6 +891,8 @@ final class ReplayInvoicesCommand extends Command
     private function compare(Workspace $workspace, array $expected, array $actual, array $anchors): array
     {
         $comparisons = [];
+        $this->recurringItemIncidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($workspace, $actual);
         $cadenceHistoryGapKeys = app(ReplayContractCorrectionClassifier::class)
             ->contractCadenceHistoryGapKeys($workspace, $expected, $actual, $anchors);
         $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
@@ -1139,7 +1155,12 @@ final class ReplayInvoicesCommand extends Command
                 ->exactMinuteArithmetic($before, $after),
             'opening_recurring_item_incidence' => $key !== null
                 && app(ReplayContractCorrectionClassifier::class)
-                    ->openingRecurringItemIncidence($workspace, $key, $before, $after),
+                    ->openingRecurringItemIncidence(
+                        $key,
+                        $before,
+                        $after,
+                        $this->recurringItemIncidences[$key] ?? [],
+                    ),
             'history_omitted_opening_capacity' => $openingCapacityProof instanceof ReplayOpeningCapacityProof,
             'opening_capacity_also_corrects_minute_rounding' => $openingCapacityAlsoCorrectsRounding,
             'hour_notes' => $this->hourNotes($this->hourFields($before), $this->hourFields($after)),
@@ -1411,10 +1432,11 @@ final class ReplayInvoicesCommand extends Command
             (string) $line['recurring_item_id'],
             (string) $line['claimed_by'],
             (string) $line['description_hash'],
+            (int) $line['source_minutes'],
         ]);
 
         $describe = static fn (array $line): string => sprintf(
-            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s',
+            '%s unit %d qty %s tax %d total %d project %s agreement %s on %s item %s claim %s desc %s source %d min',
             (string) $line['type'],
             (int) $line['unit_amount'],
             (string) $line['quantity'],
@@ -1426,6 +1448,7 @@ final class ReplayInvoicesCommand extends Command
             ((string) $line['recurring_item_id']) === '' ? 'none' : (string) $line['recurring_item_id'],
             ((string) $line['claimed_by']) === '' ? 'none' : substr((string) $line['claimed_by'], 0, 8),
             (string) $line['description_hash'],
+            (int) $line['source_minutes'],
         );
 
         /** @var array<string, string> $described */
@@ -1827,25 +1850,53 @@ final class ReplayInvoicesCommand extends Command
             return $comparison;
         }
 
+        /** @var list<string> $changedTypes */
+        $changedTypes = array_values(array_unique((array) (
+            $comparison['attribution_changed_types'] ?? $comparison['changed_types'] ?? []
+        )));
+        /** @var list<string> $changedFields */
+        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
+
         if (($comparison['exact_minute_arithmetic'] ?? false) === true) {
-            $comparison['explained_by'] = [[
+            $comparison['explained_by'] = self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['additional_hours'],
+                ['subtotal'],
+            ) ? [[
                 'key' => 'hourly_lines_use_exact_minutes',
                 'summary' => 'Hourly totals use whole minutes; the source\'s decimal-hour arithmetic rounded differently.',
-            ]];
+            ]] : null;
 
             return $comparison;
         }
 
         if (($comparison['opening_recurring_item_incidence'] ?? false) === true) {
-            $comparison['explained_by'] = [[
+            $comparison['explained_by'] = self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['recurring_item'],
+                ['subtotal'],
+            ) ? [[
                 'key' => 'recurring_item_bills_on_configured_start',
                 'summary' => 'An active recurring item bills its first incidence on its configured start date inside the sold cycle.',
-            ]];
+            ]] : null;
 
             return $comparison;
         }
 
         if (($comparison['history_omitted_opening_capacity'] ?? false) === true) {
+            if (! self::correctionScopeIsComplete(
+                $changedTypes,
+                $changedFields,
+                ['additional_hours', 'prior_month_retainer'],
+                ['subtotal'],
+            )) {
+                $comparison['explained_by'] = null;
+
+                return $comparison;
+            }
+
             $comparison['explained_by'] = [[
                 'key' => 'historical_replay_start_omitted_capacity',
                 'summary' => 'History charged the replay-only opening retainer but omitted that capacity from its later allocation.',
@@ -1876,13 +1927,6 @@ final class ReplayInvoicesCommand extends Command
         // pairing in words - and every lowercase first word used to be read as
         // a changed line type. One stray token makes confinedTo() reject every
         // correction, so only real line types are taken.
-        /** @var list<string> $changedTypes */
-        $changedTypes = array_values(array_unique((array) (
-            $comparison['attribution_changed_types'] ?? $comparison['changed_types'] ?? []
-        )));
-        /** @var list<string> $changedFields */
-        $changedFields = array_values(array_unique((array) ($comparison['changed_fields'] ?? [])));
-
         $comparison['explained_by'] = DeliberateCorrections::explaining(
             $changedTypes,
             $changedFields,
@@ -1890,6 +1934,24 @@ final class ReplayInvoicesCommand extends Command
         );
 
         return $comparison;
+    }
+
+    /**
+     * @param  list<string>  $changedTypes
+     * @param  list<string>  $changedFields
+     * @param  list<string>  $allowedTypes
+     * @param  list<string>  $allowedFields
+     */
+    private static function correctionScopeIsComplete(
+        array $changedTypes,
+        array $changedFields,
+        array $allowedTypes,
+        array $allowedFields,
+    ): bool {
+        return $changedTypes !== []
+            && $changedFields !== []
+            && array_diff($changedTypes, $allowedTypes) === []
+            && array_diff($changedFields, $allowedFields) === [];
     }
 
     /**

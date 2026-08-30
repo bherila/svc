@@ -13,6 +13,7 @@ use App\Support\Billing\ReplayInvoiceLineSnapshot;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
+use App\Support\Billing\ReplayRecurringItemIncidence;
 use App\Support\Billing\ReplaySnapshotValue;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -75,6 +76,7 @@ final class ReplayContractCorrectionClassifier
                     (string) ($line['recurring_item_id'] ?? ''),
                     (string) ($line['claimed_by'] ?? ''),
                     (string) ($line['identity_hash'] ?? ''),
+                    ReplaySnapshotValue::integer($line['source_minutes'] ?? null),
                 ]);
                 $signatures[$signature] = ($signatures[$signature] ?? 0) + 1;
             }
@@ -191,11 +193,18 @@ final class ReplayContractCorrectionClassifier
      *
      * @param  array<string, mixed>  $before
      * @param  array<string, mixed>  $after
+     * @param  list<ReplayRecurringItemIncidence>  $incidences
      */
-    public function openingRecurringItemIncidence(Workspace $workspace, string $key, array $before, array $after): bool
-    {
-        [$companyId, $agreementId, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');
-        if ($agreementId === '' || $agreementId === 'none' || $kind !== InvoiceKind::CadencePeriod->value
+    public function openingRecurringItemIncidence(
+        string $key,
+        array $before,
+        array $after,
+        array $incidences,
+    ): bool {
+        [$companyId, $agreementId, $kind] = array_pad(explode('|', $key, 4), 4, '');
+        if (! ctype_digit($companyId)
+            || ! ctype_digit($agreementId)
+            || $kind !== InvoiceKind::CadencePeriod->value
             || ($before['currency'] ?? null) !== ($after['currency'] ?? null)
             || ReplaySnapshotValue::integer($before['tax_amount'] ?? null)
                 !== ReplaySnapshotValue::integer($after['tax_amount'] ?? null)) {
@@ -214,6 +223,7 @@ final class ReplayContractCorrectionClassifier
             (string) ($line['recurring_item_id'] ?? ''),
             (string) ($line['claimed_by'] ?? ''),
             (string) ($line['description_hash'] ?? ''),
+            ReplaySnapshotValue::integer($line['source_minutes'] ?? null),
         ]);
 
         $tally = static function (array $lines) use ($signatureOf): array {
@@ -253,76 +263,38 @@ final class ReplayContractCorrectionClassifier
         $line = $added[0];
         if (($line['type'] ?? null) !== 'recurring_item'
             || ($line['recurring_item_id'] ?? '') === ''
-            || ($line['line_date'] ?? '') === '') {
+            || ($line['line_date'] ?? '') === ''
+            || ! array_key_exists('source_minutes', $line)
+            || ReplaySnapshotValue::integer($line['source_minutes'] ?? null) !== 0) {
             return false;
         }
 
-        $cycleStartText = ReplaySnapshotValue::text($after['cycle_start'] ?? null);
-        $cycleEndText = ReplaySnapshotValue::text($after['cycle_end'] ?? null);
-        if ($cycleStartText === '' || $cycleEndText === '' || $cycleStartText === '?' || $cycleEndText === '?') {
+        $matchingIncidences = array_values(array_filter(
+            $incidences,
+            static fn (ReplayRecurringItemIncidence $incidence): bool => $incidence->companyId === (int) $companyId
+                && $incidence->agreementId === (int) $agreementId
+                && (string) $incidence->itemId === (string) $line['recurring_item_id']
+                && $incidence->lineDate === (string) $line['line_date'],
+        ));
+        if (count($matchingIncidences) !== 1) {
             return false;
         }
 
-        $company = ClientCompany::query()
-            ->whereKey((int) $companyId)
-            ->where('workspace_id', $workspace->id)
-            ->first();
-        if (! $company instanceof ClientCompany) {
-            return false;
-        }
-        $agreement = ClientAgreement::query()
-            ->whereKey((int) $agreementId)
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->first();
-        if (! $agreement instanceof ClientAgreement) {
-            return false;
-        }
-
-        $item = $agreement->recurringItems()
-            ->whereKey((int) $line['recurring_item_id'])
-            ->where('workspace_id', $workspace->id)
-            ->where('is_active', true)
-            ->first();
-        if ($item === null || (bool) $item->is_taxable
-            || (string) $item->currency !== ReplaySnapshotValue::text($after['currency'] ?? null)) {
-            return false;
-        }
-
-        $lineDate = Carbon::parse((string) $line['line_date'])->startOfDay();
-        $cycleStart = Carbon::parse($cycleStartText)->startOfDay();
-        $cycleEnd = Carbon::parse($cycleEndText)->startOfDay();
-        $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on ?? $cycleStart)->startOfDay();
-        if (! $lineDate->isSameDay($itemStart)
-            || $lineDate->lt($cycleStart)
-            || $lineDate->gt($cycleEnd)) {
-            return false;
-        }
-
-        $agreement->setRelation(
-            'recurringItems',
-            $agreement->recurringItems()->where('workspace_id', $workspace->id)->get(),
-        );
-        $biller = new RecurringItemBiller;
-        $incidence = collect($biller->linesForCycle($agreement, $cycleStart, $cycleEnd))
-            ->first(fn (array $candidate): bool => (int) $candidate['item']->id === (int) $item->id
-                && $candidate['line_date']->isSameDay($lineDate));
-        if (! is_array($incidence)) {
-            return false;
-        }
-
-        $expectedLine = $biller->buildLine($incidence);
-        if ((int) ($line['unit_amount'] ?? 0) !== (int) $expectedLine->unit_amount
-            || (int) ($line['tax_amount'] ?? 0) !== (int) $expectedLine->tax_amount
-            || (int) ($line['total_amount'] ?? 0) !== (int) $expectedLine->total_amount
-            || (string) ($line['quantity'] ?? '') !== self::decimalString($expectedLine->quantity)
-            || (string) ($line['agreement_id'] ?? '') !== (string) $agreement->id
+        $incidence = $matchingIncidences[0];
+        if ($incidence->taxable
+            || ! $incidence->opensItem
+            || $incidence->currency !== ReplaySnapshotValue::text($after['currency'] ?? null)
+            || (int) ($line['unit_amount'] ?? 0) !== $incidence->unitAmount
+            || (int) ($line['tax_amount'] ?? 0) !== $incidence->taxAmount
+            || (int) ($line['total_amount'] ?? 0) !== $incidence->totalAmount
+            || self::decimalString($line['quantity'] ?? null) !== self::decimalString($incidence->quantity)
+            || (string) ($line['agreement_id'] ?? '') !== (string) $incidence->agreementId
             || (string) ($line['project_id'] ?? '') !== ''
             || (string) ($line['claimed_by'] ?? '') !== '') {
             return false;
         }
 
-        $delta = (int) $expectedLine->total_amount;
+        $delta = $incidence->totalAmount;
 
         return ReplaySnapshotValue::integer($after['subtotal_amount'] ?? null)
                 - ReplaySnapshotValue::integer($before['subtotal_amount'] ?? null) === $delta

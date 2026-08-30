@@ -11,6 +11,7 @@ use App\Support\Billing\ReplayHistorySeed;
 use App\Support\Billing\ReplayInvoiceSnapshot;
 use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
+use App\Support\Billing\ReplayRecurringItemIncidence;
 use Carbon\CarbonImmutable;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -39,6 +40,84 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $before['lines'][0]['source_minutes']++;
         $after['lines'][0]['source_minutes']--;
         $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
+
+        $after['lines'][0]['source_minutes']++;
+        $recurring = $this->line('recurring_item', 4200, 4200, '1', 0, 'recurring');
+        $recurring['recurring_item_id'] = '8';
+        $before['lines'][] = $recurring;
+        $after['lines'][] = [...$recurring, 'source_minutes' => 15];
+        $before['subtotal_amount'] += 4200;
+        $before['total_amount'] += 4200;
+        $after['subtotal_amount'] += 4200;
+        $after['total_amount'] += 4200;
+        $this->assertFalse($classifier->exactMinuteArithmetic($before, $after));
+    }
+
+    public function test_direct_correction_proofs_cannot_waive_an_unaccounted_cycle_defect(): void
+    {
+        $attribute = new ReflectionMethod(ReplayInvoicesCommand::class, 'attribute');
+        $cases = [
+            ['exact_minute_arithmetic', ['additional_hours']],
+            ['opening_recurring_item_incidence', ['recurring_item']],
+            ['history_omitted_opening_capacity', ['additional_hours', 'prior_month_retainer']],
+        ];
+
+        foreach ($cases as [$proof, $types]) {
+            $comparison = $attribute->invoke(new ReplayInvoicesCommand, [
+                'verdict' => 'money_differs',
+                $proof => true,
+                'attribution_changed_types' => $types,
+                'changed_fields' => ['subtotal', 'cycle'],
+            ]);
+
+            $this->assertNull($comparison['explained_by'], $proof);
+        }
+    }
+
+    public function test_opening_recurring_incidence_is_proved_from_an_immutable_context(): void
+    {
+        $before = [
+            'currency' => 'USD', 'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            'lines' => [],
+        ];
+        $line = [
+            ...$this->line('recurring_item', 4200, 4200, '1.0000', 0, 'opening-item'),
+            'line_date' => '2026-01-10',
+            'recurring_item_id' => '8',
+        ];
+        $after = [
+            'currency' => 'USD', 'subtotal_amount' => 4200, 'tax_amount' => 0, 'total_amount' => 4200,
+            'lines' => [$line],
+        ];
+        $context = new ReplayRecurringItemIncidence(
+            companyId: 5,
+            agreementId: 7,
+            itemId: 8,
+            currency: 'USD',
+            taxable: false,
+            opensItem: true,
+            lineDate: '2026-01-10',
+            unitAmount: 4200,
+            quantity: '1',
+            taxAmount: 0,
+            totalAmount: 4200,
+        );
+        $classifier = new ReplayContractCorrectionClassifier;
+
+        $this->assertTrue($classifier->openingRecurringItemIncidence(
+            '5|7|cadence_period|2026-01-01..2026-01-31@2025-12-01..2025-12-31',
+            $before,
+            $after,
+            [$context],
+        ));
+
+        $after['lines'][0]['source_minutes'] = 15;
+        $this->assertFalse($classifier->openingRecurringItemIncidence(
+            '5|7|cadence_period|2026-01-01..2026-01-31@2025-12-01..2025-12-31',
+            $before,
+            $after,
+            [$context],
+        ));
     }
 
     public function test_opening_capacity_omission_is_proved_without_a_database(): void
@@ -152,6 +231,8 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             'verdict' => 'money_differs',
             'history_omitted_opening_capacity' => true,
             'opening_capacity_also_corrects_minute_rounding' => true,
+            'attribution_changed_types' => ['additional_hours', 'prior_month_retainer'],
+            'changed_fields' => ['subtotal'],
             // The exact reallocation changes quantity and price together. Its
             // complete proof must run before the generic repricing refusal.
             'line_repriced' => true,

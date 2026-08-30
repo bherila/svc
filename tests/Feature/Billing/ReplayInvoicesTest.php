@@ -18,6 +18,7 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\MoneyService;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Billing\ReplayRecurringItemIncidenceRepository;
 use App\Services\Billing\RetainerCalculator;
 use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
@@ -405,6 +406,52 @@ final class ReplayInvoicesTest extends TestCase
         $seeded = $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company]));
 
         $this->assertSame(['2025-12-01'], $seeded);
+    }
+
+    public function test_a_void_latest_attempt_cannot_resurrect_an_older_replay_seed(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Cancelled historical cycle',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+            'retainer_amount' => 150000,
+            'billing_cadence' => 'monthly',
+        ]);
+        foreach (['issued', 'void'] as $status) {
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => 'CANCELLED-SEED-'.strtoupper($status),
+                'currency' => 'USD',
+                'status' => $status,
+                'invoice_kind' => 'cadence_period',
+                'cycle_start' => '2025-12-01',
+                'cycle_end' => '2025-12-31',
+                'service_period_start' => '2025-12-01',
+                'service_period_end' => '2025-12-31',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+            ]);
+        }
+
+        $basis = app(ReplayHistoryBasis::class);
+        $basis->reset();
+        $method = new ReflectionMethod(ReplayInvoicesCommand::class, 'prepareReplayOnlyHistoryBasis');
+
+        $this->assertSame(
+            [],
+            $method->invoke(app(ReplayInvoicesCommand::class), $this->workspace, collect([$this->company])),
+        );
+        $this->assertSame(
+            '2026-01-01',
+            $basis->startFor($agreement, Carbon::parse('2026-01-01'))->toDateString(),
+        );
     }
 
     public function test_history_seed_uses_effective_period_retainer_terms(): void
@@ -1301,14 +1348,18 @@ final class ReplayInvoicesTest extends TestCase
                 'recurring_item_id' => (string) $foreignItem->id,
                 'claimed_by' => '',
                 'description_hash' => 'foreign-proof',
+                'source_minutes' => 0,
             ]],
         ];
 
+        $incidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($this->workspace, [$key => $after]);
+        $this->assertSame([], $incidences);
         $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
-            $this->workspace,
             $key,
             $before,
             $after,
+            $incidences[$key] ?? [],
         ));
     }
 
@@ -1373,6 +1424,7 @@ final class ReplayInvoicesTest extends TestCase
                 'recurring_item_id' => (string) $foreignItem->id,
                 'claimed_by' => '',
                 'description_hash' => 'foreign-chain',
+                'source_minutes' => 0,
             ]],
         ];
 
@@ -1382,11 +1434,13 @@ final class ReplayInvoicesTest extends TestCase
                 $queries[] = $query->sql;
             }
         });
+        $incidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($this->workspace, [$key => $after]);
         $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
-            $this->workspace,
             $key,
             $before,
             $after,
+            $incidences[$key] ?? [],
         ));
         $this->assertCount(1, $queries);
         $this->assertStringContainsString('workspace_id', $queries[0]);
@@ -1406,16 +1460,116 @@ final class ReplayInvoicesTest extends TestCase
         ]);
         $after['lines'][0]['recurring_item_id'] = (string) $localItem->id;
         $queries = [];
+        $incidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($this->workspace, [$key => $after]);
         $this->assertTrue((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
-            $this->workspace,
             $key,
             $before,
             $after,
+            $incidences[$key] ?? [],
         ));
-        $this->assertCount(2, $queries);
+        $this->assertCount(1, $queries);
         foreach ($queries as $query) {
             $this->assertStringContainsString('workspace_id', $query);
         }
+
+        $after['lines'][0]['source_minutes'] = 15;
+        $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
+            $key,
+            $before,
+            $after,
+            $incidences[$key] ?? [],
+        ));
+    }
+
+    public function test_recurring_item_proof_contexts_use_two_queries_for_many_agreements(): void
+    {
+        $snapshots = [];
+        foreach (range(1, 3) as $ordinal) {
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'title' => 'Bounded recurring proof '.$ordinal,
+                'status' => 'active',
+                'currency' => 'USD',
+                'starts_on' => '2026-01-01',
+                'retainer_minutes' => 600,
+                'retainer_amount' => 150000,
+                'billing_cadence' => 'monthly',
+            ]);
+            ClientAgreementRecurringItem::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_agreement_id' => $agreement->id,
+                'description' => 'Synthetic bounded service '.$ordinal,
+                'cadence' => 'one_time',
+                'anchor_month' => 1,
+                'anchor_day' => 1,
+                'effective_on' => '2026-01-01',
+                'quantity' => '1.000',
+                'amount' => 4200,
+                'currency' => 'USD',
+                'is_active' => true,
+            ]);
+            $key = implode('|', [
+                $this->company->id,
+                $agreement->id,
+                'cadence_period',
+                '2026-01-01..2026-01-31@2025-12-01..2025-12-31',
+            ]);
+            $snapshots[$key] = [
+                'cycle_start' => '2026-01-01',
+                'cycle_end' => '2026-01-31',
+            ];
+        }
+
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+        $incidences = app(ReplayRecurringItemIncidenceRepository::class)
+            ->forSnapshots($this->workspace, $snapshots);
+
+        $this->assertCount(2, $queries, implode("\n", $queries));
+        $this->assertCount(3, $incidences);
+        foreach ($incidences as $key => $proofs) {
+            $this->assertCount(1, $proofs);
+            $proof = $proofs[0];
+            $before = [
+                'currency' => 'USD',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'lines' => [],
+            ];
+            $after = [
+                ...$snapshots[$key],
+                'currency' => 'USD',
+                'subtotal_amount' => $proof->totalAmount,
+                'tax_amount' => 0,
+                'total_amount' => $proof->totalAmount,
+                'lines' => [[
+                    'type' => 'recurring_item',
+                    'unit_amount' => $proof->unitAmount,
+                    'quantity' => $proof->quantity,
+                    'tax_amount' => $proof->taxAmount,
+                    'total_amount' => $proof->totalAmount,
+                    'project_id' => '',
+                    'agreement_id' => (string) $proof->agreementId,
+                    'line_date' => $proof->lineDate,
+                    'recurring_item_id' => (string) $proof->itemId,
+                    'claimed_by' => '',
+                    'description_hash' => 'synthetic-bounded-proof',
+                    'source_minutes' => 0,
+                ]],
+            ];
+            $this->assertTrue((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
+                $key,
+                $before,
+                $after,
+                $proofs,
+            ));
+        }
+        $this->assertCount(2, $queries, 'Classification must remain database-free.');
     }
 
     /**
