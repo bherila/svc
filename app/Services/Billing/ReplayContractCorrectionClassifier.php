@@ -434,11 +434,17 @@ final class ReplayContractCorrectionClassifier
         $afterHourlySourceMinutes = $afterHourly instanceof ReplayInvoiceLineSnapshot
             ? $afterHourly->sourceMinutes
             : 0;
+        $beforeHourlyAgreementRateMinutes = $beforeHourly->agreementRateSourceMinutes;
+        $afterHourlyAgreementRateMinutes = $afterHourly instanceof ReplayInvoiceLineSnapshot
+            ? $afterHourly->agreementRateSourceMinutes
+            : 0;
         if ($movedMinutes <= 0
             || ($maximumMinutes !== null && $movedMinutes > $maximumMinutes)
             || $afterPriorMinutes - $beforePriorMinutes !== $movedMinutes
             || $beforeHourlySourceMinutes === null
             || $afterHourlySourceMinutes === null
+            || $beforeHourlyAgreementRateMinutes !== $beforeHourlySourceMinutes
+            || $afterHourlyAgreementRateMinutes !== $afterHourlySourceMinutes
             || $beforeHourlySourceMinutes < 0
             || $afterHourlySourceMinutes < 0
             || $beforeHourlySourceMinutes > $beforeHourlyMinutes
@@ -786,6 +792,7 @@ final class ReplayContractCorrectionClassifier
                 || round($retainer->hours ?? 0.0, 4) !== round($expectedHours, 4)
                 || $retainer->lineDate !== $cycleStart->toDateString()
                 || $retainer->agreementId !== (string) $agreement->id
+                || ! $retainer->canonicalCadenceDescription
                 || $retainer->recurringItemId !== ''
                 || $retainer->projectId !== ''
                 || $retainer->claimedBy !== ''
@@ -892,7 +899,9 @@ final class ReplayContractCorrectionClassifier
     {
         foreach ($lines as $line) {
             $minutes = $line->hoursMinutes();
-            if ($minutes === null || $line->sourceMinutes !== $minutes) {
+            if ($minutes === null
+                || $line->sourceMinutes !== $minutes
+                || $line->agreementRateSourceMinutes !== $minutes) {
                 return false;
             }
         }

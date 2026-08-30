@@ -142,9 +142,9 @@ final class ReplayInvoicesTest extends TestCase
             'cycle_end' => '2026-02-28',
             'service_period_start' => '2026-01-01',
             'service_period_end' => '2026-01-31',
-            'subtotal_amount' => 20000,
+            'subtotal_amount' => 170000,
             'tax_amount' => 0,
-            'total_amount' => 20000,
+            'total_amount' => 170000,
         ]);
         $line = ClientInvoiceLine::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -159,6 +159,20 @@ final class ReplayInvoicesTest extends TestCase
             'tax_amount' => 0,
             'total_amount' => 20000,
             'sort_order' => 1,
+        ]);
+        $retainer = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'type' => 'retainer',
+            'description' => 'Monthly Retainer (10:00 hours) - Feb 1, 2026 through Feb 28, 2026',
+            'quantity' => '1.0000',
+            'hours' => '10.0000',
+            'line_date' => '2026-02-01',
+            'unit_amount' => 150000,
+            'tax_amount' => 0,
+            'total_amount' => 150000,
+            'sort_order' => 2,
         ]);
         $entry = ClientTimeEntry::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -198,6 +212,30 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame(60, $validSnapshotLine['source_minutes']);
         $this->assertSame(60, $validSnapshotLine['source_agreement_rate_minutes']);
         $this->assertCount(6, $queries, implode("\n", $queries));
+
+        $capturedRetainer = function () use ($snapshot): array {
+            /** @var array<string, array<string, mixed>> $rows */
+            $rows = $snapshot->invoke(
+                app(ReplayInvoicesCommand::class),
+                $this->workspace,
+                collect([$this->company]),
+            );
+            /** @var list<array<string, mixed>> $lines */
+            $lines = array_values($rows)[0]['lines'];
+            /** @var array<string, mixed> $captured */
+            $captured = collect($lines)->firstWhere('type', 'retainer');
+
+            return $captured;
+        };
+        $this->assertTrue($capturedRetainer()['canonical_cadence_description']);
+        foreach ([
+            'Quarterly Retainer (10:00 hours) - Feb 1, 2026 through Feb 28, 2026',
+            'Monthly Retainer (9:00 hours) - Feb 1, 2026 through Feb 28, 2026',
+            'Monthly Retainer (10:00 hours) - Feb 1, 2026 through Mar 1, 2026',
+        ] as $wrongDescription) {
+            $retainer->update(['description' => $wrongDescription]);
+            $this->assertFalse($capturedRetainer()['canonical_cadence_description']);
+        }
 
         $otherCompany = ClientCompany::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -1275,6 +1313,7 @@ final class ReplayInvoicesTest extends TestCase
             'recurring_item_id' => '',
             'project_id' => '',
             'claimed_by' => '',
+            'canonical_cadence_description' => true,
             'source_minutes' => 0,
             'source_agreement_rate_minutes' => 0,
             'line_date' => $cycleStart,
@@ -1340,6 +1379,15 @@ final class ReplayInvoicesTest extends TestCase
             $anchors,
         ));
         $this->assertCount(2, $queries, implode("\n", $queries));
+
+        $wrongRetainerDescription = $actual;
+        $wrongRetainerDescription[$finalKey]['lines'][0]['canonical_cadence_description'] = false;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $this->workspace,
+            $expected,
+            $wrongRetainerDescription,
+            $anchors,
+        ), 'A cadence chain with noncanonical client-facing retainer text cannot be waived.');
 
         $mispriced = $actual;
         $mispriced[$finalKey]['lines'][0]['unit_amount'] = 149999;

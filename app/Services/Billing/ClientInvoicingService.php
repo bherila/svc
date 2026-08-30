@@ -21,6 +21,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
+use App\Support\Billing\RetainerLineDescription;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -1322,12 +1323,11 @@ final class ClientInvoicingService
             'workspace_id' => $invoice->workspace_id,
             'client_invoice_id' => $invoice->id,
             'client_agreement_id' => $agreement->id,
-            'description' => sprintf(
-                '%s Retainer (%s hours) - %s through %s',
-                BillingCadenceLabel::for($agreement->effectiveBillingCadence()),
-                HoursQuantity::format($retainerHours),
-                $cycleStart->format('M j, Y'),
-                $cycleEnd->format('M j, Y'),
+            'description' => RetainerLineDescription::for(
+                $agreement->effectiveBillingCadence(),
+                $retainerHours,
+                $cycleStart,
+                $cycleEnd,
             ),
             'quantity' => '1',
             'unit_amount' => $feeAmount,

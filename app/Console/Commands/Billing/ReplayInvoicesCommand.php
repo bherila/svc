@@ -5,6 +5,7 @@ namespace App\Console\Commands\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
@@ -25,6 +26,7 @@ use App\Support\Billing\ReplayOpeningCapacityContext;
 use App\Support\Billing\ReplayOpeningCapacityProof;
 use App\Support\Billing\ReplayRecurringItemIncidence;
 use App\Support\Billing\ReplaySnapshotValue;
+use App\Support\Billing\RetainerLineDescription;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -543,8 +545,9 @@ final class ReplayInvoicesCommand extends Command
             ->pluck('public_id', 'client_invoice_line_id');
 
         foreach ($invoices as $invoice) {
-            $sourceScope = $this->sourceScopeForInvoice($workspace, $invoice);
-            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
+            $snapshotAgreement = $this->agreementForSnapshot($workspace, $invoice);
+            $sourceScope = $this->sourceScopeForInvoice($workspace, $invoice, $snapshotAgreement);
+            /** @var list<array{type: string, total_amount: int, unit_amount: int, tax_amount: int, quantity: string, line_date: string, recurring_item_id: string, project_id: string, agreement_id: string, claimed_by: string, description_hash: string, canonical_cadence_description: bool, identity_hash: string, hours: float|null, source_minutes: int, source_agreement_rate_minutes: int}> $lines */
             $lines = [];
             foreach ($invoice->lines as $line) {
                 $lineDate = $line->line_date === null ? '' : substr((string) $line->line_date, 0, 10);
@@ -586,6 +589,15 @@ final class ReplayInvoicesCommand extends Command
                     // lines that differ only in wording still compare as
                     // different without a guess being verifiable off the host.
                     'description_hash' => substr(hash_hmac('sha256', (string) $line->description, $this->digestKey), 0, 12),
+                    // Exact formatter parity is retained as a boolean, never as
+                    // client-facing prose. Cadence-gap proof can therefore
+                    // reject a wrong deterministic label without publishing
+                    // text or needing the per-run digest key.
+                    'canonical_cadence_description' => $this->hasCanonicalCadenceDescription(
+                        $invoice,
+                        $line,
+                        $snapshotAgreement,
+                    ),
                     // The same description with every number taken out. The
                     // composer writes amounts into its wording - hours and rate
                     // for deferred termination work, applied time for a
@@ -686,8 +698,8 @@ final class ReplayInvoicesCommand extends Command
         return $rows;
     }
 
-    /** Build the database-free source boundary from bounded eager-loaded facts. */
-    private function sourceScopeForInvoice(Workspace $workspace, ClientInvoice $invoice): ?ReplayInvoiceSourceScope
+    /** Resolve a tenant- and company-consistent agreement without another query. */
+    private function agreementForSnapshot(Workspace $workspace, ClientInvoice $invoice): ?ClientAgreement
     {
         if (! $invoice->relationLoaded('agreement')) {
             return null;
@@ -696,7 +708,20 @@ final class ReplayInvoicesCommand extends Command
         $agreement = $invoice->getRelation('agreement');
         if (! $agreement instanceof ClientAgreement
             || (int) $agreement->workspace_id !== (int) $workspace->id
-            || (int) $agreement->client_company_id !== (int) $invoice->client_company_id
+            || (int) $agreement->client_company_id !== (int) $invoice->client_company_id) {
+            return null;
+        }
+
+        return $agreement;
+    }
+
+    /** Build the database-free source boundary from bounded eager-loaded facts. */
+    private function sourceScopeForInvoice(
+        Workspace $workspace,
+        ClientInvoice $invoice,
+        ?ClientAgreement $agreement,
+    ): ?ReplayInvoiceSourceScope {
+        if (! $agreement instanceof ClientAgreement
             || $invoice->service_period_start === null
             || $invoice->service_period_end === null) {
             return null;
@@ -710,6 +735,30 @@ final class ReplayInvoicesCommand extends Command
                 : (int) $agreement->client_project_id,
             servicePeriodStart: CarbonImmutable::instance($invoice->service_period_start)->startOfDay(),
             servicePeriodEnd: CarbonImmutable::instance($invoice->service_period_end)->startOfDay(),
+        );
+    }
+
+    private function hasCanonicalCadenceDescription(
+        ClientInvoice $invoice,
+        ClientInvoiceLine $line,
+        ?ClientAgreement $agreement,
+    ): bool {
+        if (! $agreement instanceof ClientAgreement
+            || (string) $line->type !== 'retainer'
+            || $line->hours === null
+            || $invoice->cycle_start === null
+            || $invoice->cycle_end === null) {
+            return false;
+        }
+
+        return hash_equals(
+            RetainerLineDescription::for(
+                $agreement->effectiveBillingCadence(),
+                (float) $line->hours,
+                $invoice->cycle_start,
+                $invoice->cycle_end,
+            ),
+            (string) $line->description,
         );
     }
 

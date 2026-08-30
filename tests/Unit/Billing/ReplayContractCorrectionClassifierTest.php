@@ -181,7 +181,9 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         // The priced overage contains an unchanged ledger deficit in addition
         // to time-entry-backed work. Only the 120 source-backed minutes move.
         $before['lines'][1]['source_minutes'] = 240;
+        $before['lines'][1]['source_agreement_rate_minutes'] = 240;
         $after['lines'][1]['source_minutes'] = 120;
+        $after['lines'][1]['source_agreement_rate_minutes'] = 120;
 
         $proof = (new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
             $this->openingCapacityContext(),
@@ -484,6 +486,16 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
 
                 return [$before, $after];
             },
+            'historical overage agreement-rate eligibility' => static function (array $before, array $after): array {
+                $before['lines'][1]['source_agreement_rate_minutes']--;
+
+                return [$before, $after];
+            },
+            'generated overage agreement-rate eligibility' => static function (array $before, array $after): array {
+                $after['lines'][1]['source_agreement_rate_minutes']--;
+
+                return [$before, $after];
+            },
             'historical capacity source allocation' => static function (array $before, array $after): array {
                 $before['lines'][2]['source_minutes']--;
 
@@ -496,6 +508,11 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             },
             'capacity agreement-rate eligibility' => static function (array $before, array $after): array {
                 $after['lines'][2]['source_agreement_rate_minutes']--;
+
+                return [$before, $after];
+            },
+            'historical capacity agreement-rate eligibility' => static function (array $before, array $after): array {
+                $before['lines'][2]['source_agreement_rate_minutes']--;
 
                 return [$before, $after];
             },
