@@ -774,6 +774,7 @@ final class ReplayInvoicesTest extends TestCase
             'description_hash' => $identity.'-description',
             'identity_hash' => $identity,
             'hours' => $hours,
+            'source_minutes' => $type === 'retainer' ? 0 : (int) round($hours * 60),
         ];
         $retainer = $line('retainer', 150000, 150000, 1, 'retainer');
         $before = [

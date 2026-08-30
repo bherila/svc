@@ -86,6 +86,7 @@ final readonly class ReplayInvoiceLineSnapshot
             $this->quantity,
             $this->descriptionHash,
             $this->hours === null ? 'null' : (string) $this->hours,
+            $this->sourceMinutes === null ? 'null' : (string) $this->sourceMinutes,
         ]);
     }
 
@@ -104,6 +105,7 @@ final readonly class ReplayInvoiceLineSnapshot
             $this->agreementId,
             $this->claimedBy,
             $this->hours === null ? 'null' : (string) $this->hours,
+            $this->sourceMinutes === null ? 'null' : (string) $this->sourceMinutes,
         ]);
     }
 

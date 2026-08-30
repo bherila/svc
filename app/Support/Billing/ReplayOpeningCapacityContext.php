@@ -29,8 +29,17 @@ final readonly class ReplayOpeningCapacityContext
         $matchingFees = array_filter(
             $openingInvoice->linesOfType('retainer'),
             static fn (ReplayInvoiceLineSnapshot $line): bool => $line->agreementId === (string) $seed->agreementId
+                && $line->unitAmount === $seed->retainerAmount
                 && $line->taxAmount === 0
-                && $line->totalAmount === $seed->retainerAmount,
+                && $line->totalAmount === $seed->retainerAmount
+                && is_numeric($line->quantity)
+                && (float) $line->quantity === 1.0
+                && $line->hoursMinutes() === $seed->retainerMinutes
+                && $line->lineDate === $seed->agreementStart->toDateString()
+                && $line->recurringItemId === ''
+                && $line->projectId === ''
+                && $line->claimedBy === ''
+                && $line->sourceMinutes === 0,
         );
         if (count($matchingFees) !== 1) {
             return null;

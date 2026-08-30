@@ -137,7 +137,9 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         [$before, $after] = $this->allocationSnapshots();
         array_splice($after['lines'], 1, 1);
         $after['lines'][1]['hours'] = 3.5;
+        $after['lines'][1]['source_minutes'] = 210;
         $after['lines'][2]['hours'] = 3.5;
+        $after['lines'][2]['source_minutes'] = 210;
         $after['subtotal_amount'] = 150000;
         $after['total_amount'] = 150000;
 
@@ -255,6 +257,26 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
 
                 return [$before, $after];
             },
+            'historical overage source allocation' => static function (array $before, array $after): array {
+                $before['lines'][1]['source_minutes']--;
+
+                return [$before, $after];
+            },
+            'generated overage source allocation' => static function (array $before, array $after): array {
+                $after['lines'][1]['source_minutes']--;
+
+                return [$before, $after];
+            },
+            'historical capacity source allocation' => static function (array $before, array $after): array {
+                $before['lines'][2]['source_minutes']--;
+
+                return [$before, $after];
+            },
+            'generated capacity source allocation' => static function (array $before, array $after): array {
+                $after['lines'][2]['source_minutes']--;
+
+                return [$before, $after];
+            },
         ];
 
         foreach ($mutations as $name => $mutate) {
@@ -291,6 +313,47 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             'lines' => [$this->line('retainer', 149999, 149999, '1.0000', 60, 'wrong-fee')],
         ]);
         $this->assertNull(ReplayOpeningCapacityContext::fromOpeningInvoice($seed, $wrongFee));
+
+        $validLine = $this->line('retainer', 150000, 150000, '1.0000', 600, 'retainer-fee');
+        $validLine['line_date'] = '2026-01-01';
+        $invalidContracts = [
+            'unit amount' => static function (array $line): array {
+                $line['unit_amount']--;
+
+                return $line;
+            },
+            'quantity' => static function (array $line): array {
+                $line['quantity'] = '2.0000';
+
+                return $line;
+            },
+            'hours' => static function (array $line): array {
+                $line['hours'] = 9.0;
+
+                return $line;
+            },
+            'line date' => static function (array $line): array {
+                $line['line_date'] = '2026-01-02';
+
+                return $line;
+            },
+            'source allocation' => static function (array $line): array {
+                $line['source_minutes'] = 1;
+
+                return $line;
+            },
+        ];
+        foreach ($invalidContracts as $name => $mutate) {
+            $line = $mutate($validLine);
+            $snapshot = ReplayInvoiceSnapshot::fromArray([
+                'currency' => 'USD',
+                'subtotal_amount' => 150000,
+                'tax_amount' => 0,
+                'total_amount' => 150000,
+                'lines' => [$line],
+            ]);
+            $this->assertNull(ReplayOpeningCapacityContext::fromOpeningInvoice($seed, $snapshot), $name);
+        }
     }
 
     public function test_history_seed_accepts_only_a_contiguous_one_way_convention_change(): void
@@ -350,7 +413,10 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
                 'subtotal_amount' => 150000,
                 'tax_amount' => 0,
                 'total_amount' => 150000,
-                'lines' => [$this->line('retainer', 150000, 150000, '1.0000', 60, 'retainer-fee')],
+                'lines' => [array_replace(
+                    $this->line('retainer', 150000, 150000, '1.0000', 600, 'retainer-fee'),
+                    ['line_date' => '2026-01-01'],
+                )],
             ]),
         );
         $this->assertInstanceOf(ReplayOpeningCapacityContext::class, $context);
@@ -418,6 +484,7 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             'description_hash' => $identity.'-description',
             'identity_hash' => $identity,
             'hours' => $minutes / 60,
+            'source_minutes' => $type === 'retainer' ? 0 : $minutes,
         ];
     }
 

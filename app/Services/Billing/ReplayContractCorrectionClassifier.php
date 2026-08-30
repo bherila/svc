@@ -435,7 +435,12 @@ final class ReplayContractCorrectionClassifier
         if ($beforeHourlyMinutes === null
             || $afterHourlyMinutes === null
             || $beforePriorMinutes === null
-            || $afterPriorMinutes === null) {
+            || $afterPriorMinutes === null
+            || $beforeHourly->sourceMinutes !== $beforeHourlyMinutes
+            || ($afterHourly instanceof ReplayInvoiceLineSnapshot
+                && $afterHourly->sourceMinutes !== $afterHourlyMinutes)
+            || ! self::allLinesBackedBySourceMinutes($historicalPrior)
+            || ! self::allLinesBackedBySourceMinutes($generatedPrior)) {
             return null;
         }
 
@@ -858,6 +863,19 @@ final class ReplayContractCorrectionClassifier
         }
 
         return $total;
+    }
+
+    /** @param list<ReplayInvoiceLineSnapshot> $lines */
+    private static function allLinesBackedBySourceMinutes(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            $minutes = $line->hoursMinutes();
+            if ($minutes === null || $line->sourceMinutes !== $minutes) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
