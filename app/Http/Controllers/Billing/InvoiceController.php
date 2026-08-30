@@ -10,6 +10,7 @@ use App\Http\Requests\Billing\StorePaymentRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
+use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -27,14 +28,19 @@ use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly AgentAccess $agentAccess,
+    ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse|View
     {
         $this->authorizeWorkspaceView($request, $workspace);
         $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany');
         if (! $workspace->memberships()->where('user_id', $request->user()->id)->exists()) {
-            $companyIds = $request->user()->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->pluck('client_companies.id');
+            // Through AgentAccess so the membership's own workspace is checked too,
+            // rather than restating half the condition here.
+            $companyIds = $this->agentAccess->portalCompanyIdsIn($request->user(), $workspace);
             $query->whereIn('client_company_id', $companyIds)
                 ->where('is_visible_to_client', true)
                 ->whereIn('status', ['issued', 'partially_paid', 'paid']);
@@ -157,7 +163,7 @@ class InvoiceController extends Controller
         if (Gate::forUser($request->user())->allows('view', $workspace)) {
             return;
         }
-        abort_unless($request->user()->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists(), 403);
+        abort_unless($this->agentAccess->isWorkspaceClient($request->user(), $workspace), 403);
     }
 
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void

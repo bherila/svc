@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\PortalAccess;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -336,6 +337,73 @@ final class PortalProjectScopingTest extends TestCase
             'email' => $user->email,
             '--show' => true,
         ])->assertExitCode(1);
+    }
+
+    /**
+     * The workspace-level authorization reads had the same gap, from the other side.
+     *
+     * `AgentAccess` and the invoice index filtered on the *company's* workspace,
+     * which a membership claiming another tenant satisfies as long as the company
+     * it names is here. Both halves are now one definition -
+     * `AgentAccess::portalCompanyIdsIn()` - and the Agent API, the invoice list
+     * and the invoice authorization all route through it.
+     */
+    public function test_a_membership_owned_by_another_workspace_authorizes_nothing(): void
+    {
+        $foreign = Workspace::query()->create(['name' => 'Foreign agent', 'slug' => 'foreign-agent']);
+        $user = User::factory()->create();
+
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $user): void {
+            $membership = ClientCompanyMembership::query()->create([
+                'client_company_id' => $this->company->id,
+                'user_id' => $user->id,
+                'role' => 'client',
+                'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+            ]);
+            $membership->forceFill(['workspace_id' => $foreign->id])->save();
+        });
+
+        $access = app(AgentAccess::class);
+
+        $this->assertSame([], $access->portalCompanyIdsIn($user, $this->workspace));
+        $this->assertFalse($access->isWorkspaceClient($user, $this->workspace));
+        $this->assertFalse($access->canViewWorkspace($user, $this->workspace));
+    }
+
+    /**
+     * And the mirror: a membership of this workspace naming a company elsewhere.
+     */
+    public function test_a_membership_naming_a_company_elsewhere_authorizes_nothing(): void
+    {
+        $foreign = Workspace::query()->create(['name' => 'Elsewhere agent', 'slug' => 'elsewhere-agent']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreign->id, 'name' => 'Elsewhere Agent Client', 'slug' => 'elsewhere-agent-client',
+        ]);
+        $user = User::factory()->create();
+
+        $this->writingLegacyCrossTenantRows(function () use ($foreignCompany, $user): void {
+            $membership = ClientCompanyMembership::query()->create([
+                'client_company_id' => $foreignCompany->id,
+                'user_id' => $user->id,
+                'role' => 'client',
+                'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+            ]);
+            $membership->forceFill(['workspace_id' => $this->workspace->id])->save();
+        });
+
+        $access = app(AgentAccess::class);
+
+        $this->assertSame([], $access->portalCompanyIdsIn($user, $this->workspace));
+        $this->assertFalse($access->canViewWorkspace($user, $this->workspace));
+    }
+
+    public function test_a_consistent_membership_still_authorizes_its_own_workspace(): void
+    {
+        $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
+        $access = app(AgentAccess::class);
+
+        $this->assertSame([$this->company->id], $access->portalCompanyIdsIn($user, $this->workspace));
+        $this->assertTrue($access->canViewWorkspace($user, $this->workspace));
     }
 
     /** @return list<string> */

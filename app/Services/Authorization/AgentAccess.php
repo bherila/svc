@@ -17,15 +17,43 @@ final class AgentAccess
     public function __construct(private readonly ProjectAccess $projects) {}
 
     /**
-     * The column is qualified because `client_company_memberships` now carries a
-     * `workspace_id` of its own, so the join has two. An unqualified name is
-     * errno 1052 on MariaDB and an error on SQLite - loud either way, but only
-     * once the query runs.
+     * The client companies this user is a portal member of *in this workspace*.
+     *
+     * One definition, because three callers used to ask this question and answer
+     * it locally - and every one of them answered it with half the condition.
+     *
+     * Both halves are needed. `client_companies.workspace_id` alone lets a
+     * membership row whose own `workspace_id` is another tenant's grant access
+     * here on the strength of the company it names;
+     * `client_company_memberships.workspace_id` alone lets a membership of this
+     * tenant reach a company that belongs elsewhere. The composite key added in
+     * #113 makes both rows unstorable, which is exactly why the reads that would
+     * consume a row migrated in before it are the second line of defence.
+     *
+     * The company column is also qualified because the pivot now carries a
+     * `workspace_id` too, so an unqualified name is ambiguous - errno 1052 on
+     * MariaDB, and an error on SQLite.
+     *
+     * Returns ids rather than the relation so a caller cannot widen the query it
+     * was handed and quietly answer a different question.
+     *
+     * @return list<int>
      */
+    public function portalCompanyIdsIn(User|AgentPrincipal $user, Workspace $workspace): array
+    {
+        $ids = $user->clientCompanies()
+            ->where('client_companies.workspace_id', $workspace->id)
+            ->wherePivot('workspace_id', $workspace->id)
+            ->pluck('client_companies.id')
+            ->all();
+
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $ids));
+    }
+
     public function canViewWorkspace(User|AgentPrincipal $user, Workspace $workspace): bool
     {
         return $this->projects->workspaceRole($user, $workspace) !== null
-            || $user->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists();
+            || $this->isWorkspaceClient($user, $workspace);
     }
 
     public function isWorkspaceManager(User|AgentPrincipal $user, Workspace $workspace): bool
@@ -76,7 +104,7 @@ final class AgentAccess
 
     public function isWorkspaceClient(User|AgentPrincipal $user, Workspace $workspace): bool
     {
-        return $user->clientCompanies()->where('client_companies.workspace_id', $workspace->id)->exists();
+        return $this->portalCompanyIdsIn($user, $workspace) !== [];
     }
 
     public function isCompanyMember(User|AgentPrincipal $user, ClientCompany $company): bool

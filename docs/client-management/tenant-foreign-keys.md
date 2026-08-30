@@ -167,6 +167,16 @@ both raw membership subqueries in `PortalAccess::constrainProjectQuery()`, and
 isolation case each in `PortalProjectScopingTest`. When a table gains
 `workspace_id`, grep for every query against it in the same change.
 
+**And the pivot's workspace is not the company's.** The workspace-level
+authorization reads had the same gap from the other side: they filtered on
+`client_companies.workspace_id`, which a membership claiming another tenant
+satisfies as long as the company it names is here. Both halves are now one
+definition — `AgentAccess::portalCompanyIdsIn()` — which the Agent API, the
+invoice list and the invoice authorization all route through. It returns ids
+rather than a relation so a caller cannot widen the query it was handed and
+quietly answer a different question, which is how three call sites came to hold
+half the condition each.
+
 ## Running the audit before migrating
 
 ```bash
@@ -179,6 +189,16 @@ It prints counts and schema identifiers only — never a row, an id, a name, or 
 workspace — so it is safe to run against a database of client and billing records
 and to paste the output into an issue. A non-zero result is a migration that will
 abort partway through, not a report to read later.
+
+**The same count runs inside `2026_08_31_000200` before it touches anything.** A
+gate that lives only in a deployment script is a gate somebody can deploy around,
+and the cost of being wrong is specific: MariaDB commits each DDL statement on
+its own, so a violating row discovered at the twentieth key leaves the first
+nineteen applied and no transaction to roll back. The migration counts first and
+refuses, reporting counts only because the message ends up in a deployment log,
+and it reads its own literal key list rather than the inventory so what it checks
+cannot drift from what it then does. Running the command first is still the right
+habit — it tells you before the deploy window rather than during it.
 
 **A reference the schema cannot answer yet reports `pending` and fails the run.**
 Run before `2026_08_31_000000`, `client_company_memberships` has no

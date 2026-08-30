@@ -25,14 +25,28 @@ trait UsesAProbeDatabase
 
     private ?string $probeConnection = null;
 
+    /** Whether the probe is a file to unlink or a schema to drop. */
+    private bool $probeIsFile = false;
+
     protected function bootProbeDatabase(string $connection): void
     {
         $default = (array) config('database.connections.'.config('database.default'));
         $this->probeConnection = $connection;
 
         if (($default['driver'] ?? null) === 'sqlite') {
-            $this->probeDatabase = tempnam(sys_get_temp_dir(), 'svc-probe-').'.sqlite';
-            touch($this->probeDatabase);
+            // The file tempnam() creates is the one that gets used, rather than a
+            // suffixed sibling: appending an extension would leave the original
+            // zero-byte file behind on every run, since only the suffixed path is
+            // ever unlinked. SQLite does not care what a database file is called.
+            $file = tempnam(sys_get_temp_dir(), 'svc-probe-');
+
+            if ($file === false) {
+                $this->fail('Could not create a temporary database for the probe connection.');
+            }
+
+            $this->probeDatabase = $file;
+            $this->probeIsFile = true;
+
             config(['database.connections.'.$connection => [
                 'driver' => 'sqlite',
                 'database' => $this->probeDatabase,
@@ -44,6 +58,7 @@ trait UsesAProbeDatabase
         }
 
         $this->probeDatabase = 'svc_probe_'.Str::lower(Str::random(12));
+        $this->probeIsFile = false;
         DB::statement('create database `'.$this->probeDatabase.'`');
         config(['database.connections.'.$connection => ['database' => $this->probeDatabase] + $default]);
     }
@@ -56,7 +71,11 @@ trait UsesAProbeDatabase
 
         DB::purge($this->probeConnection);
 
-        if (str_ends_with($this->probeDatabase, '.sqlite')) {
+        // Recorded rather than inferred from the path: tempnam() can return a
+        // resolved path that does not start with sys_get_temp_dir() - on macOS
+        // /private/var/... against /var/... - and guessing wrong here would send a
+        // `drop database` to SQLite.
+        if ($this->probeIsFile) {
             @unlink($this->probeDatabase);
         } else {
             DB::statement('drop database if exists `'.$this->probeDatabase.'`');

@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -32,11 +34,18 @@ use Illuminate\Support\Facades\Schema;
  * by `svc:schema:audit-tenant-fks`, and are explained in
  * `docs/client-management/tenant-foreign-keys.md`.
  *
- * ## Before running this against real data
+ * ## The preflight is inside this migration, not beside it
  *
- * `php artisan svc:schema:audit-tenant-fks` counts the rows each key below would
- * refuse. It prints counts only and exits non-zero if there are any. A non-zero
- * result is a migration that will abort partway through, not a report to file.
+ * `php artisan svc:schema:audit-tenant-fks` reports the same thing ahead of time
+ * and should still be run first. But a gate that lives in a deployment script is
+ * a gate somebody can deploy around, and the cost of being wrong here is
+ * specific: **MariaDB commits each DDL statement implicitly**, so a violating row
+ * discovered at the twentieth key leaves the first nineteen applied and the
+ * schema half migrated, with no transaction to roll back.
+ *
+ * So `up()` counts first and refuses before touching anything. It reports counts
+ * only - never a row, an id, or a workspace - because the message ends up in a
+ * deployment log.
  */
 return new class extends Migration
 {
@@ -170,6 +179,8 @@ return new class extends Migration
 
     public function up(): void
     {
+        $this->refuseCrossTenantRows();
+
         // Indexes first: InnoDB only creates one of its own when it finds none it
         // can use, so having them in place is what stops the implicit index that
         // a rollback could not then remove.
@@ -195,6 +206,47 @@ return new class extends Migration
                     }
                 }
             });
+        }
+    }
+
+    /**
+     * Refuse before any DDL if a key below would reject a row that already exists.
+     *
+     * Counts only. The keys are the ones this file adds, read from its own literal
+     * list rather than from `TenantReferenceInventory`, so what this migration
+     * checks can never drift from what it then does.
+     */
+    private function refuseCrossTenantRows(): void
+    {
+        $offenders = [];
+        $total = 0;
+
+        foreach (self::REFERENCES as $child => $references) {
+            foreach ($references as [$column, $parent]) {
+                $count = DB::table($child)
+                    ->whereNotNull($child.'.'.$column)
+                    ->whereNotNull($child.'.workspace_id')
+                    ->whereNotExists(function (QueryBuilder $query) use ($child, $column, $parent): void {
+                        $query->selectRaw('1')
+                            ->from($parent.' as tenant_parent')
+                            ->whereColumn('tenant_parent.id', $child.'.'.$column)
+                            ->whereColumn('tenant_parent.workspace_id', $child.'.workspace_id');
+                    })
+                    ->count();
+
+                if ($count > 0) {
+                    $offenders[] = $child.'.'.$column.' -> '.$parent.': '.$count;
+                    $total += $count;
+                }
+            }
+        }
+
+        if ($offenders !== []) {
+            throw new RuntimeException(
+                "Refusing to add composite tenant foreign keys: {$total} row(s) name a parent in another workspace, or none at all. "
+                .'MariaDB commits each statement of this migration on its own, so applying it now would leave the schema half migrated. '
+                .'Resolve these first (counts only): '.implode('; ', $offenders)
+            );
         }
     }
 

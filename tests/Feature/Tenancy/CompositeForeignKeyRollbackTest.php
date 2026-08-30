@@ -3,9 +3,12 @@
 namespace Tests\Feature\Tenancy;
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\Concerns\UsesAProbeDatabase;
 use Tests\TestCase;
+use Throwable;
 
 /**
  * `down()` has to put the schema back, on the engine that ships.
@@ -94,6 +97,60 @@ final class CompositeForeignKeyRollbackTest extends TestCase
     }
 
     /**
+     * The migration refuses a violating database before it changes anything.
+     *
+     * `svc:schema:audit-tenant-fks` says the same thing earlier, but a gate that
+     * lives in a deployment script is a gate somebody can deploy around, and the
+     * cost here is specific: MariaDB commits each DDL statement on its own, so a
+     * row discovered at the twentieth key leaves the first nineteen applied and
+     * no transaction to roll back.
+     *
+     * Only `000200` is rolled back, since that is the migration the preflight
+     * belongs to: `000000` and `000100` add a column and indexes and carry no
+     * cross-tenant risk of their own. The row is written, `000200` is re-applied,
+     * and it must throw having changed nothing.
+     */
+    public function test_the_migration_refuses_a_violating_database_before_touching_it(): void
+    {
+        $this->bootProbeDatabase(self::CONNECTION);
+
+        $this->migrate();
+        $this->rollback(1);
+        $before = $this->fingerprint();
+
+        $connection = DB::connection(self::CONNECTION);
+        $home = $connection->table('workspaces')->insertGetId([
+            'public_id' => (string) Str::uuid(), 'name' => 'Home', 'slug' => 'home',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $foreign = $connection->table('workspaces')->insertGetId([
+            'public_id' => (string) Str::uuid(), 'name' => 'Foreign', 'slug' => 'foreign',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $foreignCompany = $connection->table('client_companies')->insertGetId([
+            'public_id' => (string) Str::uuid(), 'workspace_id' => $foreign, 'name' => 'Foreign Client',
+            'slug' => 'foreign-client', 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $connection->table('client_projects')->insert([
+            'public_id' => (string) Str::uuid(), 'workspace_id' => $home, 'client_company_id' => $foreignCompany,
+            'name' => 'Smuggled project', 'status' => 'active', 'is_visible_to_client' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        try {
+            $this->migrate();
+            $this->fail('The migration must refuse a database holding a row its keys would reject.');
+        } catch (Throwable $exception) {
+            $this->assertStringContainsString('Refusing to add composite tenant foreign keys', $exception->getMessage());
+            // Counts only: the message reaches a deployment log.
+            $this->assertStringNotContainsString('Smuggled project', $exception->getMessage());
+            $this->assertStringNotContainsString('Foreign Client', $exception->getMessage());
+        }
+
+        $this->assertSame($before, $this->fingerprint(), 'The refused migration changed the schema anyway.');
+    }
+
+    /**
      * Everything the schema says about itself, as comparable strings.
      *
      * @return array{columns: list<string>, indexes: list<string>, foreign_keys: list<string>}
@@ -177,8 +234,8 @@ final class CompositeForeignKeyRollbackTest extends TestCase
         Artisan::call('migrate', ['--database' => self::CONNECTION, '--force' => true]);
     }
 
-    private function rollback(): void
+    private function rollback(int $step = 3): void
     {
-        Artisan::call('migrate:rollback', ['--database' => self::CONNECTION, '--step' => 3, '--force' => true]);
+        Artisan::call('migrate:rollback', ['--database' => self::CONNECTION, '--step' => $step, '--force' => true]);
     }
 }
