@@ -138,6 +138,61 @@ jobs:
       - name: Run the test suite against MariaDB
         run: php artisan test
 
+  mutation:
+    name: Diff-scoped mutation tests
+    if: ${{ github.event_name == 'pull_request' }}
+    continue-on-error: true
+    timeout-minutes: 12
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect mutation-tested changes
+        id: mutation_scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          diff_status=0
+          git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            app/Services/Billing/ \
+            app/Services/ExternalImport/ \
+            app/Support/Billing/ || diff_status=$?
+          if [ "$diff_status" -eq 0 ]; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          elif [ "$diff_status" -eq 1 ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            exit "$diff_status"
+          fi
+
+      - name: Setup PHP with coverage
+        if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: pcov
+
+      - name: Authorize private MCP bridge dependency
+        if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      - name: Install Composer dependencies
+        if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        run: composer install --no-interaction
+
+      - name: Run mutations on changed lines
+        if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        run: composer test:mutation-diff
+
   deploy:
     name: Deploy empty alpha to web1
     needs: [ci, mariadb]
