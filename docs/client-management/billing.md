@@ -75,6 +75,53 @@ and dropped at the end of that month, so it is not reported as expiring again.
 
 For non-monthly agreements, rollover is still calculated month-by-month. The cadence-period invoice summarizes the cycle, but it does not replace the monthly ledger used by `RolloverCalculator`.
 
+#### Opening Rollover
+
+`initial_rollover_minutes` is the unused capacity an agreement brought with it —
+the balance the predecessor had already accrued as of the day the agreement
+starts here. It exists because an agreement migrated mid-life did not begin its
+life with an empty pool, and nothing else in the schema can say so.
+
+It is granted as a **carrier month**: one month of retainer with no work in it,
+placed immediately before the agreement's recorded start, which
+`RolloverCalculator` then carries forward like any other unused remainder.
+
+Three consequences follow from that definition, and each is a decision rather
+than an accident:
+
+- **It expires on the agreement's own `rollover_months` policy.** An agreement
+  that carries nothing forward carries this forward neither, so an opening
+  rollover on a `rollover_months = 0` agreement is granted and lost in the same
+  month and no invoice ever sees it. Adding the hours to the start month
+  directly would be simpler and was rejected for this reason: the remainder
+  would outlive every other unused hour on the same agreement.
+- **It reaches the monthly ledger only.** An agreement with period retainer
+  terms (`period_retainer_minutes`) is built by
+  `buildPeriodRetainerLedgerThrough`, which returns before the grant is applied.
+  Such an agreement never receives an opening rollover however large the column.
+- **It anchors to the recorded start, not the ledger's.** When a replay history
+  basis has moved the ledger's opening back a period, the carry-in still belongs
+  where the predecessor recorded it. The grant lands against the recorded start
+  rather than a period earlier — which would grant capacity before the history
+  the basis exists to reproduce — and where the basis already occupies the
+  carrier month, the hours join that month rather than duplicating it.
+
+No agreement in the migrated source carries a non-zero opening rollover: nine
+agreements, all zero, with the source and the imported destination agreeing. The
+tests are the only exercise this has ever had, and the anchoring rule above is
+settled by what the column means rather than by any history it can be checked
+against. `svc:billing:audit-opening-rollover` recounts that population on
+demand; see [CLI › Audit Opening Rollover](cli.md#audit-opening-rollover).
+
+> Until #134 this was documented nowhere and implemented incorrectly.
+> `InvoiceLedgerBuilder` read `initial_rollover_hours` where the column is
+> `initial_rollover_minutes`, and with no accessor bridging them the read
+> returned null on every agreement — coerced to a plausible `0.0`, so the
+> carrier month was never built and no test failed. A missing month of zero
+> worked hours leaves every total unchanged, which is why the assertion that
+> now guards it is that the month is *present* rather than that some sum is
+> right.
+
 ### Minimum Availability Rule (Catch-up Billing)
 To ensure the client always has capacity for new work, the system enforces a minimum availability of **1 hour** at the start of a billing period.
 

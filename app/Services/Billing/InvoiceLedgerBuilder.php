@@ -93,15 +93,6 @@ class InvoiceLedgerBuilder
             ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
 
         $months = [];
-        $initialRolloverHours = (float) ($agreement->initial_rollover_hours ?? 0);
-        if ($initialRolloverHours > 0) {
-            $months[] = [
-                'year_month' => $activeDate->copy()->startOfMonth()->subMonth()->format('Y-m'),
-                'retainer_hours' => round($initialRolloverHours, 4),
-                'hours_worked' => 0.0,
-                'reset_rollover' => false,
-            ];
-        }
 
         $cursor = $activeDate->copy()->startOfMonth();
         while ($cursor->lte($ledgerEnd)) {
@@ -119,11 +110,91 @@ class InvoiceLedgerBuilder
             $cursor->addMonth()->startOfMonth();
         }
 
+        if ($months !== []) {
+            $months = $this->withOpeningRollover($agreement, $activeDate, $months);
+        }
+
         return $this->rolloverCalculator->calculateMultipleMonths(
             $months,
             (int) $agreement->rollover_months,
             $billExcessImmediately,
         );
+    }
+
+    /**
+     * Grant the agreement's opening rollover as capacity that reaches its
+     * first recorded month.
+     *
+     * The mechanism is a month of retainer with no work in it, placed
+     * immediately before the agreement's recorded start, which
+     * `RolloverCalculator` then carries forward. Adding the hours to the start
+     * month directly would be simpler and is deliberately not what happens:
+     * the carrier month makes the grant expire on the agreement's own
+     * `rollover_months` policy, so an agreement that carries nothing forward
+     * carries this forward neither. Granted in the start month, its remainder
+     * would live one month longer than any other unused hour.
+     *
+     * The anchor is the agreement's **recorded** start, not the ledger's. When
+     * a replay history basis has moved the ledger's opening back a period, the
+     * carry-in still belongs where the predecessor recorded it, so the capacity
+     * lands against the recorded start rather than a period earlier - which
+     * would grant it before the history the basis exists to reproduce. Where
+     * the basis already occupies the carrier month, the hours are added to that
+     * month rather than duplicating its key.
+     *
+     * No agreement in the migrated source carries a non-zero initial rollover
+     * (nine agreements, all zero, source and destination agreeing), so the
+     * anchor choice is settled by what the column means rather than by any
+     * history it can be checked against. The tests are the only exercise this
+     * has.
+     *
+     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>  $months
+     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>
+     */
+    private function withOpeningRollover(ClientAgreement $agreement, Carbon $activeDate, array $months): array
+    {
+        $initialRolloverHours = $agreement->initial_rollover_hours;
+
+        if ($initialRolloverHours <= 0) {
+            return $months;
+        }
+
+        $recordedStart = $agreement->active_date === null
+            ? $activeDate->copy()
+            : Carbon::parse($agreement->active_date);
+
+        $carrierKey = $recordedStart->startOfMonth()->subMonth()->format('Y-m');
+
+        foreach ($months as $index => $month) {
+            if ($month['year_month'] === $carrierKey) {
+                $months[$index]['retainer_hours'] = round(
+                    $month['retainer_hours'] + $initialRolloverHours,
+                    4,
+                );
+
+                return $months;
+            }
+        }
+
+        // A ledger that ends before the carrier month has not reached the
+        // recorded start at all, so there is no opening to grant. Prepending
+        // regardless would put a later month at the front of a list the
+        // rollover calculator reads in order.
+        //
+        // Non-emptiness is the caller's to establish, and it does so by type
+        // rather than by a branch in here that no input could reach.
+        if ($carrierKey > $months[array_key_last($months)]['year_month']) {
+            return $months;
+        }
+
+        array_unshift($months, [
+            'year_month' => $carrierKey,
+            'retainer_hours' => round($initialRolloverHours, 4),
+            'hours_worked' => 0.0,
+            'reset_rollover' => false,
+        ]);
+
+        return $months;
     }
 
     /**
