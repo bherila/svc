@@ -82,6 +82,7 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         ];
         $line = [
             ...$this->line('recurring_item', 4200, 4200, '1.0000', 0, 'opening-item'),
+            'hours' => null,
             'line_date' => '2026-01-10',
             'recurring_item_id' => '8',
         ];
