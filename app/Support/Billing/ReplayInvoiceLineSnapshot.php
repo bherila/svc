@@ -71,6 +71,24 @@ final readonly class ReplayInvoiceLineSnapshot
         return self::wholeMinutes((float) $this->quantity);
     }
 
+    /** Whole minutes used by createHourlyLine() to price decimal hours. */
+    public function roundedHoursMinutes(): ?int
+    {
+        if ($this->hours === null || $this->hours <= 0) {
+            return null;
+        }
+
+        return (int) round($this->hours * 60);
+    }
+
+    /** createHourlyLine() stores the same four-decimal hours in both fields. */
+    public function quantityMatchesHours(): bool
+    {
+        return $this->hours !== null
+            && is_numeric($this->quantity)
+            && round((float) $this->quantity, 4) === round($this->hours, 4);
+    }
+
     public function allocationIdentity(): string
     {
         return implode('|', [

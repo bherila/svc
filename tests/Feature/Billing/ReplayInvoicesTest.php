@@ -840,7 +840,7 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertCount(2, $queries, implode("\n", $queries));
     }
 
-    public function test_seeded_as_of_ignores_a_later_ad_hoc_service_period(): void
+    public function test_seeded_as_of_ignores_later_ad_hoc_and_void_service_periods(): void
     {
         $agreement = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -865,6 +865,22 @@ final class ReplayInvoicesTest extends TestCase
             'cycle_end' => '2025-12-31',
             'service_period_start' => '2025-12-01',
             'service_period_end' => '2025-12-31',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'VOID-LATER-LEGACY-SERVICE',
+            'currency' => 'USD',
+            'status' => 'void',
+            'invoice_kind' => null,
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => '2028-01-01',
+            'service_period_end' => '2028-01-31',
             'subtotal_amount' => 0,
             'tax_amount' => 0,
             'total_amount' => 0,
@@ -1250,9 +1266,23 @@ final class ReplayInvoicesTest extends TestCase
             'retainer_amount' => 25000,
             'period_retainer_minutes' => 120,
             'period_retainer_amount' => 25000,
+            'catch_up_threshold_minutes' => 60,
             'hourly_rate_amount' => 15000,
             'billing_cadence' => 'monthly',
             'rollover_months' => 0,
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-01-20',
+            'minutes' => 180,
+            'description' => 'Synthetic minimum-availability work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
         ]);
         $this->adHocHistory('ADHOC-MID-MONTH-1', '2026-03-01', '2024-01-01', '2024-01-31');
         $this->adHocHistory('ADHOC-MID-MONTH-2', '2026-04-01', '2024-02-01', '2024-02-29');
@@ -1280,6 +1310,17 @@ final class ReplayInvoicesTest extends TestCase
 
             $this->assertSame(0, $exit, (string) json_encode($detail['comparisons']));
             $this->assertCount(4, $explained);
+            $bufferedJanuary = collect($explained)->first(
+                static fn (array $comparison): bool => str_contains(
+                    (string) ($comparison['key'] ?? ''),
+                    '2026-02-01..2026-02-28@2026-01-01..2026-01-31',
+                ),
+            );
+            $this->assertSame(
+                38500,
+                $bufferedJanuary['money_delta'] ?? null,
+                'The February invoice must include the source-free minimum-availability charge.',
+            );
         } finally {
             if (is_file($report)) {
                 unlink($report);
@@ -1558,6 +1599,16 @@ final class ReplayInvoicesTest extends TestCase
             $anchors,
         ), 'Agreement-rate cadence cannot be proved from flat-hourly or direct source work.');
 
+        $sourceFreeNonMonthlyOverage = $eligibleOverage;
+        $sourceFreeNonMonthlyOverage[$finalKey]['lines'][1]['source_minutes'] = 0;
+        $sourceFreeNonMonthlyOverage[$finalKey]['lines'][1]['source_agreement_rate_minutes'] = 0;
+        $this->assertSame([], $classifier->contractCadenceHistoryGapKeys(
+            $cadenceAgreements,
+            $expected,
+            $sourceFreeNonMonthlyOverage,
+            $anchors,
+        ), 'Only the monthly minimum-availability contract permits source-free overage minutes.');
+
         $monthEndFutureAgreement = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
@@ -1819,6 +1870,27 @@ final class ReplayInvoicesTest extends TestCase
 
         $this->assertTrue($proof->invoke(...$arguments));
 
+        $arguments[6][1]['source_minutes'] = 0;
+        $arguments[6][1]['source_agreement_rate_minutes'] = 0;
+        $this->assertTrue(
+            $proof->invoke(...$arguments),
+            'The configured one-hour minimum-availability buffer may be source-free.',
+        );
+
+        $arguments[6][1]['hours'] = 1.0167;
+        $arguments[6][1]['quantity'] = '1.0167';
+        $arguments[6][1]['total_amount'] = 15250;
+        $this->assertFalse(
+            $proof->invoke(...$arguments),
+            'Source-free catch-up cannot exceed the configured minimum-availability threshold.',
+        );
+
+        $arguments[6][1]['hours'] = 1.0;
+        $arguments[6][1]['quantity'] = '1';
+        $arguments[6][1]['total_amount'] = 15000;
+        $arguments[6][1]['source_minutes'] = 60;
+        $arguments[6][1]['source_agreement_rate_minutes'] = 60;
+
         $arguments[6][1]['line_date'] = '2026-01-15';
         $this->assertFalse(
             $proof->invoke(...$arguments),
@@ -2017,6 +2089,15 @@ final class ReplayInvoicesTest extends TestCase
         foreach ($queries as $query) {
             $this->assertStringContainsString('workspace_id', $query);
         }
+
+        $after['lines'][0]['hours'] = 1.0;
+        $this->assertFalse((new ReplayContractCorrectionClassifier)->openingRecurringItemIncidence(
+            $key,
+            $before,
+            $after,
+            $incidences[$key] ?? [],
+        ));
+        unset($after['lines'][0]['hours']);
 
         $after['lines'][0]['source_minutes'] = 15;
         $after['lines'][0]['source_agreement_rate_minutes'] = 15;

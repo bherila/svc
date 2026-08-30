@@ -862,6 +862,7 @@ final class ReplayInvoicesCommand extends Command
 
         $scope = fn (): Builder => ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
+            ->whereIn('status', InvoiceStatus::live())
             ->when($company !== null, fn (Builder $q): Builder => $q->where('client_company_id', $company->id));
 
         // Two plain aggregates rather than GREATEST, which MySQL has and SQLite
@@ -882,7 +883,7 @@ final class ReplayInvoicesCommand extends Command
                 ->whereIn('client_agreement_id', array_keys($this->historyBasisAgreementIds))
                 ->where(function (Builder $q): void {
                     $q->whereNull('invoice_kind')
-                        ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+                        ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
                 })
                 ->max('service_period_end');
             if ($newestHistoryPeriodEnd !== null) {

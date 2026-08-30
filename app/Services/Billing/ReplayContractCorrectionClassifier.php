@@ -269,6 +269,7 @@ final class ReplayContractCorrectionClassifier
         if (($line['type'] ?? null) !== 'recurring_item'
             || ($line['recurring_item_id'] ?? '') === ''
             || ($line['line_date'] ?? '') === ''
+            || ($line['hours'] ?? null) !== null
             || ! array_key_exists('source_minutes', $line)
             || ReplaySnapshotValue::integer($line['source_minutes'] ?? null) !== 0
             || ! array_key_exists('source_agreement_rate_minutes', $line)
@@ -794,15 +795,22 @@ final class ReplayContractCorrectionClassifier
             // subcontractor rates, and any future line type need their own
             // source-backed proof; until then replay fails closed.
             if ($line->type === InvoiceLineType::AdditionalHours->value) {
-                $minutes = $line->hoursMinutes();
+                $minutes = $line->roundedHoursMinutes();
+                $sourceMinutes = $line->sourceMinutes;
                 $expectedLineDate = $agreement->cadence === BillingCadence::Monthly
                     ? $periodStart->toDateString()
                     : $periodEnd->toDateString();
+                $maximumSourceFreeMinutes = $agreement->cadence === BillingCadence::Monthly
+                    ? $agreement->catchUpThresholdMinutes
+                    : 0;
                 if ($minutes === null
                     || $minutes <= 0
-                    || $line->quantityMinutes() !== $minutes
-                    || $line->sourceMinutes !== $minutes
-                    || $line->agreementRateSourceMinutes !== $minutes
+                    || ! $line->quantityMatchesHours()
+                    || $sourceMinutes === null
+                    || $sourceMinutes < 0
+                    || $sourceMinutes > $minutes
+                    || $line->agreementRateSourceMinutes !== $sourceMinutes
+                    || $minutes - $sourceMinutes > $maximumSourceFreeMinutes
                     || $line->agreementId !== (string) $agreement->agreementId
                     || ! $line->hasNoAuxiliaryOwnership()
                     || ! $line->canonicalCadenceOverageDescription

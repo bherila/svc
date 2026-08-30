@@ -52,6 +52,7 @@ final class ReplayCadenceAgreementRepository
                 periodHoursOverride: $agreement->periodRetainerHoursOverride(),
                 periodFeeOverride: $agreement->periodRetainerFeeOverride(),
                 hourlyRateAmount: (int) ($agreement->hourly_rate_amount ?? 0),
+                catchUpThresholdMinutes: (int) round($agreement->catch_up_threshold_hours * 60),
             );
         }
 
