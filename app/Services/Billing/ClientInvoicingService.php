@@ -1586,6 +1586,11 @@ final class ClientInvoicingService
      */
     private function totalBilledOveragesThrough(ClientAgreement $agreement, Carbon $periodEnd): float
     {
+        // The cast is required by the strict analysis lane - the sum is
+        // statically float|int|string - and is invisible to every test, because
+        // the declared return type coerces the same value without it. It is
+        // named as an equivalent mutant in infection.diff.json5 rather than
+        // tested around.
         return (float) ClientInvoice::query()
             ->where('workspace_id', $agreement->workspace_id)
             ->where('client_agreement_id', $agreement->id)

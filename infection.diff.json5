@@ -16,6 +16,20 @@
     timeoutsAsEscaped: true,
     mutators: {
         "@default": true,
+        // A `(float)` that satisfies a declared `float` return type in a file
+        // without strict_types is equivalent by construction: the return type
+        // coerces the same value with or without it, so no test can tell the
+        // mutant from the original. The strict analysis lane requires the cast
+        // (an Eloquent sum is statically float|int|string) and forbids removing
+        // it, so the mutant is unkillable rather than under-tested.
+        //
+        // Named per method, not blanket-disabled. A `(float)` in an untyped
+        // context is load-bearing and should still be mutated.
+        CastFloat: {
+            ignore: [
+                "App\\Services\\Billing\\ClientInvoicingService::totalBilledOveragesThrough",
+            ],
+        },
     },
     // Under Infection's generated coverage config, PHPUnit 12's isolated child
     // loses its CodeCoverage object. This test does not cover configured source.
