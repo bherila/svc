@@ -1194,8 +1194,9 @@ final class ClientInvoicingService
      *
      * Deferred entries are never split and never trigger catch-up billing - the
      * client agreed to have them held, not to be charged for holding them. On a
-     * post-termination invoice everything outstanding is force-billed instead,
-     * so no deferred work is left permanently unbilled.
+     * post-termination invoice every invoiceable entry is collected instead:
+     * ordinary and retainer work uses the agreement rate, flat-hourly keeps its
+     * snapshot, and direct work remains the subcontractor's responsibility.
      */
     private function applyDeferredWork(
         ClientCompany $company,
@@ -1207,7 +1208,7 @@ final class ClientInvoicingService
         int &$sortOrder,
     ): void {
         if ($isPostTermination) {
-            $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd);
+            $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd, $agreement);
             if ($deferredToBill->isNotEmpty()) {
                 $this->invoiceLineComposer->addDeferredTerminationLine($invoice, $agreement, $deferredToBill, $sortOrder);
             }
@@ -1216,7 +1217,7 @@ final class ClientInvoicingService
             return;
         }
 
-        $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity);
+        $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity, $agreement);
         if ($result->hasBilled()) {
             $this->invoiceLineComposer->addDeferredRetainerLine($invoice, $agreement, $result, $periodEnd, $sortOrder);
         }

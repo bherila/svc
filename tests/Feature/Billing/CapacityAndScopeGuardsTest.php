@@ -207,7 +207,7 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $agreement = $this->agreement($mine);
 
         $entry = $this->entry($theirs, '2024-02-10', 120);
-        $entry->forceFill(['subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+        $entry->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
 
         $invoice = $this->invoice($agreement);
         $sort = 1;
@@ -236,9 +236,9 @@ final class CapacityAndScopeGuardsTest extends TestCase
         // Same number, different currencies, same worker and project. The USD
         // one sorts first, so it is the sample the refusal would inspect.
         $this->entry($project, '2024-02-10', 60)
-            ->forceFill(['subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+            ->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
         $this->entry($project, '2024-02-11', 60)
-            ->forceFill(['subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'EUR'])->save();
+            ->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'EUR'])->save();
 
         $invoice = $this->invoice($agreement);
         $sort = 1;
@@ -253,6 +253,91 @@ final class CapacityAndScopeGuardsTest extends TestCase
             Carbon::parse('2024-02-29'),
             $sort,
         );
+    }
+
+    public function test_flat_hourly_time_without_a_complete_snapshot_is_refused(): void
+    {
+        $project = $this->project('Missing terms');
+        $agreement = $this->agreement($project);
+        $this->entry($project, '2024-02-10', 60)
+            ->forceFill(['subcontractor_billing_mode' => 'flat_hourly'])->save();
+
+        $invoice = $this->invoice($agreement);
+        $sort = 1;
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('requires a snapshotted amount and currency');
+
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+    }
+
+    public function test_direct_subcontractor_time_never_reaches_the_flat_hourly_composer(): void
+    {
+        $project = $this->project('Direct billing');
+        $agreement = $this->agreement($project);
+        $direct = $this->entry($project, '2024-02-10', 60);
+        $direct->forceFill(['subcontractor_billing_mode' => 'direct'])->save();
+
+        $invoice = $this->invoice($agreement);
+        $sort = 1;
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+
+        $this->assertSame(0, $invoice->lines()->where('type', 'subcontractor')->count());
+        $this->assertFalse($direct->invoiceLines()->exists());
+    }
+
+    public function test_another_tenants_malformed_flat_hourly_snapshot_cannot_block_ours(): void
+    {
+        $project = $this->project('Tenant boundary');
+        $agreement = $this->agreement($project);
+        $otherWorkspace = Workspace::query()->create(['name' => 'Foreign modes', 'slug' => 'foreign-modes']);
+
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2024-02-09',
+            'minutes' => 60,
+            'description' => 'Malformed foreign snapshot',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+            'subcontractor_billing_mode' => 'flat_hourly',
+        ]);
+        $local = $this->entry($project, '2024-02-10', 60);
+        $local->forceFill([
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 5000,
+            'subcontractor_cost_currency' => 'USD',
+        ])->save();
+
+        $invoice = $this->invoice($agreement);
+        $sort = 1;
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+
+        $line = $invoice->lines()->where('type', 'subcontractor')->sole();
+        $this->assertSame(5000, $line->total_amount);
+        $this->assertTrue($line->timeEntries()->whereKey($local->id)->exists());
     }
 
     /**

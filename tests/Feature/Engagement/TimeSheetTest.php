@@ -545,6 +545,7 @@ class TimeSheetTest extends TestCase
             'worked_on' => '2026-07-04',
             'description' => 'Theirs to see',
             'user_id' => $member->id,
+            'subcontractor_billing_mode' => 'direct',
         ]);
         ClientTimeEntry::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -566,7 +567,8 @@ class TimeSheetTest extends TestCase
                 ->has('companies.0.projects', 1)
                 ->where('companies.0.projects.0.name', 'Synthetic Project')
                 ->has('months.0.entries', 1)
-                ->where('months.0.entries.0.id', $mine->public_id));
+                ->where('months.0.entries.0.id', $mine->public_id)
+                ->missing('months.0.entries.0.subcontractor_billing_mode'));
     }
 
     /**
@@ -1634,6 +1636,8 @@ class TimeSheetTest extends TestCase
             'worked_on' => '2026-07-05',
             'minutes' => 120,
             'subcontractor_cost_amount' => 5000,
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_currency' => 'USD',
         ]);
 
         $this->travelTo('2026-07-20');
@@ -1643,6 +1647,7 @@ class TimeSheetTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.capacity.0.pending_minutes', 60)
+                ->where('months.0.entries.0.subcontractor_billing_mode', 'flat_hourly')
                 ->where('months.0.total_minutes', 180));
     }
 

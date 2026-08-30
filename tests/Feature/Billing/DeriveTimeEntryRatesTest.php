@@ -10,6 +10,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Billing\SubcontractorBillingMode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -140,6 +141,34 @@ final class DeriveTimeEntryRatesTest extends TestCase
         $this->artisan('svc:billing:derive-time-rates', ['--workspace' => $other->public_id])->assertSuccessful();
 
         $this->assertNull($mine->refresh()->billing_rate_amount);
+    }
+
+    public function test_it_derives_only_consultant_and_retainer_mode_rates(): void
+    {
+        $this->agreement(37500, '2026-01-01', null);
+        $retainer = $this->entry('2026-03-14');
+        $retainer->update(['subcontractor_billing_mode' => SubcontractorBillingMode::Retainer]);
+        $flat = $this->entry('2026-03-15');
+        $flat->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_amount' => 8000,
+            'subcontractor_cost_currency' => 'EUR',
+            'currency' => 'EUR',
+        ]);
+        $direct = $this->entry('2026-03-16');
+        $direct->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Direct,
+            'currency' => 'CAD',
+        ]);
+
+        $this->artisan('svc:billing:derive-time-rates', ['--workspace' => $this->workspace->public_id])
+            ->assertSuccessful();
+
+        $this->assertSame(37500, $retainer->refresh()->billing_rate_amount);
+        $this->assertNull($flat->refresh()->billing_rate_amount);
+        $this->assertSame('EUR', $flat->currency);
+        $this->assertNull($direct->refresh()->billing_rate_amount);
+        $this->assertSame('CAD', $direct->currency);
     }
 
     public function test_it_resolves_an_agreement_that_has_since_ended(): void

@@ -66,8 +66,11 @@ already caused a defect.
 - **A task's invoice line** — still a column, because a deliverable cannot be
   split. This asymmetry is why voiding an invoice had to release two different
   things, and originally released only one.
-- **`subcontractor_billing_mode`** — gone. The presence of
-  `subcontractor_cost_amount` is the flat-hourly signal in this schema.
+- **`subcontractor_billing_mode`** — restored as the immutable per-entry
+  snapshot. Existing rows whose old flat-hourly signal was a non-null
+  `subcontractor_cost_amount` are labelled during migration. `retainer` draws
+  on the agreement pool, `flat_hourly` bills separately, and `direct` is never
+  selected for invoicing.
 - **Currency** — recurring items and time entries carry their own. The
   predecessor was effectively single-currency, so ported code copies amounts
   without checking, which relabels rather than converts.

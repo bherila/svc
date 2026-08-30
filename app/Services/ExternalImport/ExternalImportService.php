@@ -9,6 +9,7 @@ use App\Models\ExternalImportRun;
 use App\Models\Workspace;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\PeriodLabel;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -693,7 +694,7 @@ final class ExternalImportService
             ],
             'project' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'name' => $row['name'] ?? 'External project', 'description' => $row['description'] ?? null, 'status' => 'active', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false)],
             'task' => $attributes + ['client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['name'] ?? $row['title'] ?? 'External task', 'description' => $row['description'] ?? null, 'status' => self::sourceTimestamp($row['completed_at'] ?? null) !== null ? 'completed' : 'open', 'is_visible_to_client' => ! (bool) ($row['is_hidden_from_clients'] ?? false), 'completed_at' => self::sourceTimestamp($row['completed_at'] ?? null), 'milestone_price_amount' => ((float) ($row['milestone_price'] ?? 0)) > 0.0 ? self::minorUnits($row['milestone_price']) : null],
-            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => self::sourceDate($row['date_worked'] ?? null), 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'job_type' => $row['job_type'] ?? null, 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'subcontractor_cost_amount' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null), 'subcontractor_cost_currency' => self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null) === null ? null : self::sourceCurrency($row['currency'] ?? null), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft', 'approved_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['approved_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'approved_at' => self::sourceTimestamp($row['approved_at'] ?? null)],
+            'time_entry' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'client_task_id' => $this->internalId($destinationName, 'client_tasks', $task), 'user_id' => $this->internalId($destinationName, 'users', $user), 'worked_on' => self::sourceDate($row['date_worked'] ?? null), 'minutes' => (int) ($row['minutes_worked'] ?? 0), 'description' => $row['name'] ?? '', 'job_type' => $row['job_type'] ?? null, 'is_billable' => (bool) ($row['is_billable'] ?? true), 'is_deferred' => (bool) ($row['is_deferred_billing'] ?? false), 'billing_rate_amount' => null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'status' => ($row['approval_status'] ?? 'approved') === 'approved' ? 'approved' : 'draft', 'approved_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['approved_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'approved_at' => self::sourceTimestamp($row['approved_at'] ?? null)] + self::sourceSubcontractorAttributes($row),
             'proposal' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => $this->internalId($destinationName, 'client_projects', $project), 'title' => $row['title'] ?? 'External proposal', 'summary' => $row['body_markdown'] ?? null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'valid_until' => $row['expires_at'] ?? null, 'status' => $this->proposalStatus($row['status'] ?? 'draft'), 'accepted_at' => self::sourceTimestamp($row['accepted_at'] ?? null), 'accepted_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['accepted_by_user_id'] ?? ''), $ledgerItems, $queryCache)), 'acceptance_signer_name' => $row['accept_signature_name'] ?? null, 'acceptance_signer_title' => $row['accept_signature_title'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'sent_at' => self::sourceTimestamp($row['sent_at'] ?? null)],
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'External proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
             'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'External agreement', 'status' => self::sourceDate($row['termination_date'] ?? null) !== null ? 'terminated' : (self::sourceDate($row['active_date'] ?? null) !== null ? 'active' : 'draft'), 'starts_on' => self::sourceDate($row['active_date'] ?? null), 'ends_on' => self::sourceDate($row['termination_date'] ?? null), 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => self::sourceTimestamp($row['active_date'] ?? null), 'signed_at' => self::sourceTimestamp($row['client_company_signed_date'] ?? null), 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => self::sourceTimestamp($row['termination_date'] ?? null), 'catch_up_threshold_minutes' => self::minutesFromDecimal($row['catch_up_threshold_hours'] ?? null), 'period_retainer_minutes' => self::minutesFromDecimal($row['retainer_hours'] ?? null), 'period_retainer_amount' => self::nullableMinorUnits($row['retainer_fee'] ?? null), 'rollover_months' => isset($row['rollover_months']) ? (int) $row['rollover_months'] : null, 'initial_rollover_minutes' => self::minutesFromDecimal($row['initial_rollover_hours'] ?? null), 'bill_overage_interim' => isset($row['bill_overage_interim']) ? (bool) $row['bill_overage_interim'] : null, 'first_cycle_proration' => $row['first_cycle_proration'] ?? null, 'agreement_link' => $row['agreement_link'] ?? null],
@@ -2190,6 +2191,43 @@ final class ExternalImportService
         }
 
         return self::minorUnits($value);
+    }
+
+    /**
+     * Carry the predecessor's per-entry billing snapshot without inferring a
+     * billable shape from incomplete terms. Older rows used the rate itself as
+     * the flat-hourly signal, which is the compatibility case retained here.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array{subcontractor_billing_mode:string|null, subcontractor_cost_amount:int|null, subcontractor_cost_currency:string|null}
+     */
+    private static function sourceSubcontractorAttributes(array $row): array
+    {
+        $rawMode = strtolower(trim((string) ($row['subcontractor_billing_mode'] ?? '')));
+        $cost = self::nullableMinorUnits($row['subcontractor_hourly_rate'] ?? null);
+
+        if ($rawMode === '') {
+            $mode = $cost === null ? null : SubcontractorBillingMode::FlatHourly;
+        } else {
+            $mode = SubcontractorBillingMode::tryFrom($rawMode);
+            if (! $mode instanceof SubcontractorBillingMode) {
+                throw new \UnexpectedValueException('The source time entry has an unsupported subcontractor billing mode.');
+            }
+        }
+
+        if ($mode === SubcontractorBillingMode::FlatHourly && $cost === null) {
+            throw new \UnexpectedValueException('Flat-hourly source time requires a snapshotted rate.');
+        }
+
+        if ($mode !== null && $mode !== SubcontractorBillingMode::FlatHourly && $cost !== null) {
+            throw new \UnexpectedValueException('Only flat-hourly source time may carry a subcontractor rate.');
+        }
+
+        return [
+            'subcontractor_billing_mode' => $mode?->value,
+            'subcontractor_cost_amount' => $cost,
+            'subcontractor_cost_currency' => $cost === null ? null : self::sourceCurrency($row['currency'] ?? null),
+        ];
     }
 
     /**

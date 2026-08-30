@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\DeferredBillingAllocator;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -128,6 +130,78 @@ final class DeferredBillingAllocatorTest extends TestCase
             ->collectForTermination($this->company, Carbon::parse('2026-03-31'));
 
         $this->assertCount(2, $outstanding);
+    }
+
+    public function test_termination_excludes_direct_subcontractor_work(): void
+    {
+        $direct = $this->deferred(60, '2026-03-01');
+        $direct->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Direct,
+        ]);
+
+        $outstanding = app(DeferredBillingAllocator::class)
+            ->collectForTermination($this->company, Carbon::parse('2026-03-31'));
+
+        $this->assertTrue($outstanding->isEmpty());
+    }
+
+    public function test_termination_collects_only_the_project_scoped_to_the_agreement(): void
+    {
+        $included = $this->deferred(60, '2026-03-01');
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Other project',
+        ]);
+        $excluded = $this->deferred(60, '2026-03-02');
+        $excluded->update(['client_project_id' => $otherProject->id]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Project agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+
+        $outstanding = app(DeferredBillingAllocator::class)
+            ->collectForTermination($this->company, Carbon::parse('2026-03-31'), $agreement);
+
+        $this->assertSame([$included->id], $outstanding->modelKeys());
+    }
+
+    public function test_ordinary_allocation_draws_only_the_project_scoped_to_the_agreement(): void
+    {
+        $included = $this->deferred(60, '2026-03-01');
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Other allocation project',
+        ]);
+        $excluded = $this->deferred(60, '2026-03-02');
+        $excluded->update(['client_project_id' => $otherProject->id]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Scoped allocation agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+
+        $result = app(DeferredBillingAllocator::class)->allocate(
+            $this->company,
+            Carbon::parse('2026-03-31'),
+            10.0,
+            $agreement,
+        );
+
+        $this->assertSame([$included->id], array_map(
+            static fn ($candidate): int => $candidate->id(),
+            $result->billed,
+        ));
     }
 
     public function test_allocation_refuses_deferred_time_owned_by_another_companys_project(): void

@@ -73,10 +73,9 @@ final class AgentReadController extends Controller
             $data['time'] = [
                 'draft_minutes' => (int) (clone $time)->where('status', 'draft')->sum('minutes'),
                 'approved_billable_unallocated_minutes' => (int) (clone $time)
-                    ->where('status', 'approved')
+                    ->pricedForInvoicing()
                     ->where('is_billable', true)
                     ->where('is_deferred', false)
-                    ->whereNotNull('billing_rate_amount')
                     ->whereDoesntHave('invoiceLines')
                     ->sum('minutes'),
                 'allocated_to_draft_minutes' => (int) (clone $time)

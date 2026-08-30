@@ -167,6 +167,7 @@ class TimeEntrySplitter
                 // vanishing from the overflow, or an approval losing its author.
                 'billing_rate_source' => $entry->billing_rate_source,
                 'client_visible_description' => $entry->client_visible_description,
+                'subcontractor_billing_mode' => $entry->subcontractor_billing_mode,
                 'subcontractor_cost_amount' => $entry->subcontractor_cost_amount,
                 'subcontractor_cost_currency' => $entry->subcontractor_cost_currency,
                 'subcontractor_cost_metadata' => $entry->subcontractor_cost_metadata,

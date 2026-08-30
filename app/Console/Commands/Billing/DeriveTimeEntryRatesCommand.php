@@ -41,7 +41,7 @@ final class DeriveTimeEntryRatesCommand extends Command
         $query = ClientTimeEntry::query()
             ->whereNull('billing_rate_amount')
             ->where('is_billable', true)
-            ->where('status', 'approved')
+            ->retainerBillable()
             ->whereDoesntHave('invoiceLines');
 
         if (! $this->option('include-deferred')) {

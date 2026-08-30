@@ -138,7 +138,10 @@ final class AllocationService
             $entry->client_project_id ?? 'null',
             $entry->client_task_id ?? 'null',
             $entry->user_id ?? 'null',
+            $entry->subcontractor_billing_mode->value ?? 'null',
             $entry->subcontractor_cost_amount ?? 'null',
+            $entry->subcontractor_cost_currency ?? 'null',
+            json_encode($entry->subcontractor_cost_metadata, JSON_THROW_ON_ERROR),
         ]);
 
         $first = $signature($group->first());

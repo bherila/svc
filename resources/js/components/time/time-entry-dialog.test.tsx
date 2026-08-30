@@ -39,6 +39,7 @@ const timeEntry: TimeEntry = {
     is_billable: true,
     is_deferred: false,
     is_visible_to_client: false,
+    subcontractor_billing_mode: null,
     status: 'draft',
     project: { id: 'project-1', name: 'Main project' },
     task: { id: 'task-1', title: 'Existing task' },

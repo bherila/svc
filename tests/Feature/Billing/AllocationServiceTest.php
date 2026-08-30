@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\TimeEntrySplitter;
+use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -67,6 +68,44 @@ final class AllocationServiceTest extends TestCase
 
         $this->assertSame(1, $this->entryCount());
         $this->assertSame(180, (int) ClientTimeEntry::query()->firstOrFail()->minutes);
+    }
+
+    public function test_a_subcontractor_billing_snapshot_survives_split_and_recombination(): void
+    {
+        $entry = $this->entry(180);
+        $entry->forceFill([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_amount' => 7500,
+            'subcontractor_cost_currency' => 'USD',
+            'subcontractor_cost_metadata' => ['source' => 'synthetic-assignment'],
+        ])->save();
+
+        $parts = app(TimeEntrySplitter::class)->splitEntry($entry, 120);
+
+        foreach ($parts as $part) {
+            $this->assertSame(SubcontractorBillingMode::FlatHourly, $part->subcontractor_billing_mode);
+            $this->assertSame(7500, $part->subcontractor_cost_amount);
+            $this->assertSame('USD', $part->subcontractor_cost_currency);
+            $this->assertSame(['source' => 'synthetic-assignment'], $part->subcontractor_cost_metadata);
+        }
+
+        $this->assertSame(1, $this->recombine());
+        $survivor = ClientTimeEntry::query()->sole();
+        $this->assertSame(SubcontractorBillingMode::FlatHourly, $survivor->subcontractor_billing_mode);
+        $this->assertSame(7500, $survivor->subcontractor_cost_amount);
+        $this->assertSame('USD', $survivor->subcontractor_cost_currency);
+        $this->assertSame(['source' => 'synthetic-assignment'], $survivor->subcontractor_cost_metadata);
+    }
+
+    public function test_fragments_with_different_subcontractor_modes_do_not_recombine(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+        $parts['overflow']->forceFill([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Direct,
+        ])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
     }
 
     public function test_entries_that_merely_look_alike_are_never_merged(): void

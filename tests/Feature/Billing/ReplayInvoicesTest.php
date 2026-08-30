@@ -461,6 +461,7 @@ final class ReplayInvoicesTest extends TestCase
                 'is_deferred' => false,
                 'status' => 'approved',
                 'currency' => 'USD',
+                'subcontractor_billing_mode' => 'flat_hourly',
                 'subcontractor_cost_amount' => $rate,
                 'subcontractor_cost_currency' => 'USD',
             ]);
@@ -526,6 +527,7 @@ final class ReplayInvoicesTest extends TestCase
                 'is_deferred' => false,
                 'status' => 'approved',
                 'currency' => 'USD',
+                'subcontractor_billing_mode' => 'flat_hourly',
                 'subcontractor_cost_amount' => $rate,
                 'subcontractor_cost_currency' => 'USD',
             ]);
@@ -743,6 +745,7 @@ final class ReplayInvoicesTest extends TestCase
                 'is_deferred' => false,
                 'status' => 'approved',
                 'currency' => 'USD',
+                'subcontractor_billing_mode' => 'flat_hourly',
                 'subcontractor_cost_amount' => $rate,
                 'subcontractor_cost_currency' => 'USD',
             ]);
@@ -1245,6 +1248,7 @@ final class ReplayInvoicesTest extends TestCase
                 'is_deferred' => false,
                 'status' => 'approved',
                 'currency' => 'USD',
+                'subcontractor_billing_mode' => 'flat_hourly',
                 'subcontractor_cost_amount' => $rate,
                 'subcontractor_cost_currency' => 'USD',
             ]);
@@ -1339,6 +1343,7 @@ final class ReplayInvoicesTest extends TestCase
                 'is_deferred' => false,
                 'status' => 'approved',
                 'currency' => 'USD',
+                'subcontractor_billing_mode' => 'flat_hourly',
                 'subcontractor_cost_amount' => $rate,
                 'subcontractor_cost_currency' => 'USD',
             ]);

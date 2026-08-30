@@ -41,7 +41,30 @@ class AgentReadApiTest extends TestCase
             ->assertNotFound();
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own->public_id)
-            ->assertJsonMissingPath('data.0.billing_rate_amount');
+            ->assertJsonMissingPath('data.0.billing_rate_amount')
+            ->assertJsonMissingPath('data.0.subcontractor_billing_mode')
+            ->assertJsonMissingPath('data.0.subcontractor_cost_amount')
+            ->assertJsonMissingPath('data.0.subcontractor_cost_currency');
+    }
+
+    public function test_workspace_manager_can_read_subcontractor_billing_snapshots(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+        $entry = $this->time($workspace, $company, $project, $owner, 'Flat subcontractor work', [
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 8000,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $entry->public_id)
+            ->assertJsonPath('data.0.subcontractor_billing_mode', 'flat_hourly')
+            ->assertJsonPath('data.0.subcontractor_cost_amount', 8000)
+            ->assertJsonPath('data.0.subcontractor_cost_currency', 'USD');
     }
 
     public function test_client_reads_only_visible_issued_invoices_and_client_visible_approved_time(): void

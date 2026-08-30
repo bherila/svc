@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\SubcontractorBillingMode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Passport;
@@ -152,6 +153,40 @@ final class AgentTimeBillingWorkflowTest extends TestCase
         $this->assertDatabaseHas('client_time_entries', ['id' => $nonbillable->id, 'status' => 'approved', 'billing_rate_amount' => null]);
     }
 
+    public function test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $flat = $this->time($owner, $workspace, $company, $project, true);
+        $flat->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_amount' => 8000,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $direct = $this->time($owner, $workspace, $company, $project, true);
+        $direct->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::Direct,
+        ]);
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_APPROVE]);
+
+        $this->withHeader('Idempotency-Key', 'approve-mode-snapshots')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve",
+            ['entries' => [
+                ['id' => $flat->public_id, 'expected_version' => AgentApiVersion::for($flat)],
+                ['id' => $direct->public_id, 'expected_version' => AgentApiVersion::for($direct)],
+            ]],
+        )->assertOk();
+
+        foreach ([$flat, $direct] as $entry) {
+            $this->assertDatabaseHas('client_time_entries', [
+                'id' => $entry->id,
+                'status' => 'approved',
+                'billing_rate_amount' => null,
+                'billing_rate_source' => null,
+            ]);
+        }
+    }
+
     public function test_contributor_cannot_supply_authoritative_rate_or_cost_fields(): void
     {
         config(['agent_api.writes_enabled' => true]);
@@ -175,6 +210,8 @@ final class AgentTimeBillingWorkflowTest extends TestCase
                 'description' => 'Attempted rate injection',
                 'billing_rate_amount' => 1,
                 'subcontractor_cost_amount' => 1,
+                'subcontractor_billing_mode' => 'flat_hourly',
+                'subcontractor_cost_currency' => 'USD',
             ]]],
         )->assertUnprocessable();
         $this->assertDatabaseCount('client_time_entries', 0);
