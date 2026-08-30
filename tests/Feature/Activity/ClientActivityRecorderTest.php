@@ -10,7 +10,10 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\InvoiceLifecycleService;
 use DomainException;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
@@ -117,6 +120,62 @@ class ClientActivityRecorderTest extends TestCase
 
         $this->assertSame($first->id, $retry->id);
         $this->assertSame(['hours' => 1, 'rate' => 1.25], $first->fresh()->payload);
+    }
+
+    public function test_an_unauthenticated_recorder_does_not_probe_an_unselected_api_guard(): void
+    {
+        [, $workspace, $company] = $this->tenant('unselected-api-guard');
+        $invoice = $this->invoice($workspace, $company, 'ACT-NO-API-PROBE');
+
+        Auth::extend('throwing-test-guard', static fn () => new class implements Guard
+        {
+            public function check(): bool
+            {
+                return false;
+            }
+
+            public function guest(): bool
+            {
+                return true;
+            }
+
+            public function user(): ?Authenticatable
+            {
+                throw new RuntimeException('An unselected authentication guard was resolved.');
+            }
+
+            public function id(): int|string|null
+            {
+                return null;
+            }
+
+            public function validate(array $credentials = []): bool
+            {
+                return false;
+            }
+
+            public function hasUser(): bool
+            {
+                return false;
+            }
+
+            public function setUser(Authenticatable $user): static
+            {
+                return $this;
+            }
+        });
+        config()->set('auth.guards.api', ['driver' => 'throwing-test-guard']);
+        Auth::forgetGuards();
+
+        $activity = app(ClientActivityRecorder::class)->record(
+            $workspace,
+            $company,
+            'invoice.updated',
+            $invoice,
+            occurrence: 'without-selected-api-guard',
+        );
+
+        $this->assertNull($activity->actor_user_id);
     }
 
     public function test_raw_or_sensitive_payload_material_is_refused(): void

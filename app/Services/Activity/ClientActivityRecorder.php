@@ -63,7 +63,13 @@ final class ClientActivityRecorder
             JSON_THROW_ON_ERROR,
         );
         $actorWasExplicit = $actor !== null;
-        $authenticated = request()->user() ?? Auth::user() ?? Auth::guard('api')->user();
+        // The request resolver already selects the route's guard (`api` for an
+        // agent request, `web` for the browser). Probing Passport explicitly
+        // when neither resolver has a user makes an unrelated guard part of
+        // every console workflow too. Invoice replay exposed the consequence:
+        // merely resolving that guard changed a console generation run before
+        // any activity row was inserted.
+        $authenticated = request()->user() ?? Auth::user();
         if ($actor === null && $authenticated instanceof AgentPrincipal) {
             $actor = User::query()->find($authenticated->id);
         }
