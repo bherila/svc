@@ -109,6 +109,20 @@ describe('time sheet controls', () => {
         },
     );
 
+    it('does not label a row when the financial mode snapshot is omitted', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    timeEntry: entry({
+                        subcontractor_billing_mode: undefined,
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.queryByText(/Subcontractor ·/)).not.toBeInTheDocument();
+    });
+
     it('keeps bulk approval single-flight until the request finishes', async () => {
         const user = userEvent.setup();
         render(<TimeSheet {...props()} />);

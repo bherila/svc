@@ -237,6 +237,39 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Invoiceable work whose applicable immutable price snapshot is complete.
+     * Consultant and retainer modes need the client billing rate; flat-hourly
+     * needs its subcontractor cost pair. Direct and malformed combinations
+     * remain excluded by this and {@see scopeBillableForInvoicing()}.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopePricedForInvoicing(Builder $query): Builder
+    {
+        return $query->billableForInvoicing()->where(
+            fn (Builder $priced): Builder => $priced
+                ->where(
+                    fn (Builder $ordinary): Builder => $ordinary
+                        ->whereNull('subcontractor_cost_amount')
+                        ->whereNotNull('billing_rate_amount')
+                        ->where(
+                            fn (Builder $mode): Builder => $mode
+                                ->whereNull('subcontractor_billing_mode')
+                                ->orWhere('subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value),
+                        ),
+                )
+                ->orWhere(
+                    fn (Builder $flat): Builder => $flat
+                        ->where('subcontractor_billing_mode', SubcontractorBillingMode::FlatHourly->value)
+                        ->whereNotNull('subcontractor_cost_amount')
+                        ->whereNotNull('subcontractor_cost_currency')
+                        ->where('subcontractor_cost_currency', '!=', ''),
+                ),
+        );
+    }
+
+    /**
      * Approved work billed additively at its snapshotted subcontractor rate.
      *
      * @param  Builder<self>  $query

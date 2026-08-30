@@ -145,7 +145,6 @@ final class AgentRoleScopeSummaryTest extends TestCase
         $this->time($workspace, $company, $project, $owner, 50, 'Nonbillable', ['status' => 'approved', 'is_billable' => false]);
         $this->time($workspace, $company, $project, $owner, 20, 'Flat subcontractor', [
             'status' => 'approved',
-            'billing_rate_amount' => 10000,
             'subcontractor_billing_mode' => 'flat_hourly',
             'subcontractor_cost_amount' => 8000,
             'subcontractor_cost_currency' => 'USD',
