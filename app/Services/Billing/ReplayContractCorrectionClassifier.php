@@ -436,18 +436,30 @@ final class ReplayContractCorrectionClassifier
             || $afterHourlyMinutes === null
             || $beforePriorMinutes === null
             || $afterPriorMinutes === null
-            || $beforeHourly->sourceMinutes !== $beforeHourlyMinutes
-            || ($afterHourly instanceof ReplayInvoiceLineSnapshot
-                && $afterHourly->sourceMinutes !== $afterHourlyMinutes)
             || ! self::allLinesBackedBySourceMinutes($historicalPrior)
             || ! self::allLinesBackedBySourceMinutes($generatedPrior)) {
             return null;
         }
 
         $movedMinutes = $beforeHourlyMinutes - $afterHourlyMinutes;
+        $beforeHourlySourceMinutes = $beforeHourly->sourceMinutes;
+        $afterHourlySourceMinutes = $afterHourly instanceof ReplayInvoiceLineSnapshot
+            ? $afterHourly->sourceMinutes
+            : 0;
         if ($movedMinutes <= 0
             || ($maximumMinutes !== null && $movedMinutes > $maximumMinutes)
-            || $afterPriorMinutes - $beforePriorMinutes !== $movedMinutes) {
+            || $afterPriorMinutes - $beforePriorMinutes !== $movedMinutes
+            || $beforeHourlySourceMinutes === null
+            || $afterHourlySourceMinutes === null
+            || $beforeHourlySourceMinutes < 0
+            || $afterHourlySourceMinutes < 0
+            || $beforeHourlySourceMinutes > $beforeHourlyMinutes
+            || $afterHourlySourceMinutes > $afterHourlyMinutes
+            // An overage can include a carried ledger deficit that has no
+            // direct time-entry pivot. That unchanged deficit is not what this
+            // correction claims to explain: the exact decrease in source-backed
+            // work must be the exact number of minutes moved into capacity.
+            || $beforeHourlySourceMinutes - $afterHourlySourceMinutes !== $movedMinutes) {
             return null;
         }
 

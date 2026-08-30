@@ -62,6 +62,32 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         ));
     }
 
+    public function test_capacity_reallocation_proves_moved_sources_without_claiming_a_carried_deficit(): void
+    {
+        [$before, $after] = $this->allocationSnapshots();
+
+        // The priced overage contains an unchanged ledger deficit in addition
+        // to time-entry-backed work. Only the 120 source-backed minutes move.
+        $before['lines'][1]['source_minutes'] = 240;
+        $after['lines'][1]['source_minutes'] = 120;
+
+        $proof = (new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
+            $this->openingCapacityContext(),
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        );
+
+        $this->assertInstanceOf(ReplayOpeningCapacityProof::class, $proof);
+        $this->assertSame(120, $proof->movedMinutes);
+
+        $after['lines'][1]['source_minutes']--;
+        $this->assertNull((new ReplayContractCorrectionClassifier)->historyOmittedOpeningCapacity(
+            $this->openingCapacityContext(),
+            ReplayInvoiceSnapshot::fromArray($before),
+            ReplayInvoiceSnapshot::fromArray($after),
+        ));
+    }
+
     public function test_proved_same_rate_reallocation_can_reach_capacity_attribution(): void
     {
         $command = new ReplayInvoicesCommand;
