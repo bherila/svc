@@ -145,7 +145,11 @@ jobs:
     name: Diff-scoped mutation tests
     if: ${{ github.event_name == 'pull_request' }}
     continue-on-error: true
-    timeout-minutes: 12
+    # Typical diffs should remain near the ten-minute target. This is only the
+    # hard failsafe for unusually broad money-path changes: #125 generated
+    # 1,407 mutants and was cancelled by the former 12-minute cap before
+    # Infection could report a result.
+    timeout-minutes: 45
     runs-on: ubuntu-24.04-arm
 
     steps:
