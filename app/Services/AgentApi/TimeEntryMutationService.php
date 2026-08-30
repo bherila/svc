@@ -15,6 +15,7 @@ use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
@@ -26,6 +27,7 @@ final class TimeEntryMutationService
         private readonly ProjectAccess $access,
         private readonly AgreementBillingRateResolver $rates,
         private readonly DraftInvoiceTimeRegenerator $draftInvoices,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -107,7 +109,7 @@ final class TimeEntryMutationService
         $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $expectedVersion): null {
             $this->assertDraftEditable($workspace, $entry, $actor, $invoice);
             abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
-            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => now()]);
+            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => $this->clock->now($workspace)]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {
@@ -222,7 +224,7 @@ final class TimeEntryMutationService
                 $entry->forceFill([
                     'status' => 'approved',
                     'approved_by_user_id' => $actor->id,
-                    'approved_at' => now(),
+                    'approved_at' => $this->clock->now($workspace),
                     'billing_rate_amount' => $rate['amount'],
                     'billing_rate_source' => $rate['source'],
                     'currency' => $rate['currency'],

@@ -1,0 +1,722 @@
+# Level-9 debt in the money paths: this baseline may shrink, but it must never grow.
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Cannot call method forceFill\(\) on App\\Models\\ClientTimeEntry\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/AllocationService.php
+
+		-
+			message: '#^Cannot call method refresh\(\) on App\\Models\\ClientTimeEntry\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/AllocationService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: app/Services/Billing/AllocationService.php
+
+		-
+			message: '#^Parameter \#1 \$entry of closure expects App\\Models\\ClientTimeEntry, App\\Models\\ClientTimeEntry\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/AllocationService.php
+
+		-
+			message: '#^Parameter \#1 \$date of static method Carbon\\Carbon\:\:instance\(\) expects DateTimeInterface, Carbon\\CarbonImmutable\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/BillingCycleResolver.php
+
+		-
+			message: '#^Method App\\Services\\Billing\\BillingScheduleService\:\:normalizedTemplate\(\) should return list\<array\<string, mixed\>\> but returns list\<array\<mixed, mixed\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Billing/BillingScheduleService.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceLifecycleService\:\:createDraft\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/BillingScheduleService.php
+
+		-
+			message: '#^Parameter \#2 \$company of method App\\Services\\Billing\\InvoiceLifecycleService\:\:createDraft\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/BillingScheduleService.php
+
+		-
+			message: '#^Anonymous function should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
+			identifier: return.type
+			count: 2
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Cannot access property \$id on App\\Models\\ClientInvoice\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Cannot call method getKey\(\) on App\\Models\\ClientInvoice\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 3
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 5
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Parameter \#1 \$date of static method Carbon\\Carbon\:\:instance\(\) expects DateTimeInterface, Carbon\\CarbonImmutable\|null given\.$#'
+			identifier: argument.type
+			count: 3
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\AllocationService\:\:recombineUnlinkedFragments\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceNumberAllocator\:\:next\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/Billing/ClientInvoicingService.php
+
+		-
+			message: '#^Cannot call method format\(\) on Carbon\\CarbonImmutable\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/DeferredBillingAllocator.php
+
+		-
+			message: '#^Parameter \#1 \$agreement of method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\ClientTimeEntry\>\:\:forAgreementScope\(\) expects App\\Models\\ClientAgreement, App\\Models\\ClientAgreement\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/Billing/DeferredBillingAllocator.php
+
+		-
+			message: '#^Cannot access property \$id on App\\Models\\ClientInvoice\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$company of method App\\Services\\Billing\\InterimOverageGenerator\:\:recordInvoiceActivity\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\AllocationService\:\:recombineUnlinkedFragments\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceNumberAllocator\:\:next\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InterimOverageGenerator.php
+
+		-
+			message: '#^Method App\\Services\\Billing\\InvoiceEmailService\:\:queue\(\) should return App\\Models\\ClientInvoiceEmailDelivery but returns App\\Models\\ClientInvoiceEmailDelivery\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Billing/InvoiceEmailService.php
+
+		-
+			message: '#^Anonymous function should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
+			identifier: return.type
+			count: 3
+			path: app/Services/Billing/InvoiceFromTimeService.php
+
+		-
+			message: '#^Cannot access property \$line_sort_order on stdClass\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/Billing/InvoiceFromTimeService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: app/Services/Billing/InvoiceFromTimeService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 3
+			path: app/Services/Billing/InvoiceFromTimeService.php
+
+		-
+			message: '#^Parameter \#2 \$company of method App\\Services\\Billing\\InvoiceFromTimeService\:\:prepareLines\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InvoiceFromTimeService.php
+
+		-
+			message: '#^Binary operation "/" between mixed and 60 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: app/Services/Billing/InvoiceLedgerBuilder.php
+
+		-
+			message: '#^Cannot cast mixed to float\.$#'
+			identifier: cast.double
+			count: 3
+			path: app/Services/Billing/InvoiceLedgerBuilder.php
+
+		-
+			message: '#^Anonymous function should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
+			identifier: return.type
+			count: 4
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Anonymous function should return App\\Models\\ClientInvoicePayment but returns App\\Models\\ClientInvoicePayment\|null\.$#'
+			identifier: return.type
+			count: 3
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Method App\\Services\\Billing\\InvoiceLifecycleService\:\:refreshStatus\(\) should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Parameter \#1 \$invoice of method App\\Services\\Billing\\InvoiceLifecycleService\:\:lockInvoice\(\) expects App\\Models\\ClientInvoice, App\\Models\\ClientInvoice\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Parameter \#1 \$workspace of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
+			identifier: argument.type
+			count: 4
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Parameter \#2 \$company of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
+			identifier: argument.type
+			count: 6
+			path: app/Services/Billing/InvoiceLifecycleService.php
+
+		-
+			message: '#^Cannot access property \$name on App\\Models\\User\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/Billing/InvoiceLineComposer.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: app/Services/Billing/InvoiceLineComposer.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: app/Services/Billing/InvoiceLineComposer.php
+
+		-
+			message: '#^Parameter \#1 \$agreement of method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\ClientTimeEntry\>\:\:forAgreementScope\(\) expects App\\Models\\ClientAgreement, App\\Models\\ClientAgreement\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/InvoiceLineComposer.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: app/Services/Billing/OverpaymentCreditService.php
+
+		-
+			message: '#^Cannot call method startOfDay\(\) on Carbon\\Carbon\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/RecurringItemBiller.php
+
+		-
+			message: '#^Parameter \#1 \$date of static method Carbon\\Carbon\:\:instance\(\) expects DateTimeInterface, Carbon\\CarbonImmutable\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/RetainerCalculator.php
+
+		-
+			message: '#^Parameter \#1 \$retainerHours of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/RolloverCalculator.php
+
+		-
+			message: '#^Parameter \#2 \$hoursWorked of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/RolloverCalculator.php
+
+		-
+			message: '#^Parameter \#2 \$to of method App\\Services\\Billing\\RolloverCalculator\:\:monthsBetween\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: app/Services/Billing/RolloverCalculator.php
+
+		-
+			message: '#^Parameter \#7 \$yearMonth of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Billing/RolloverCalculator.php
+
+		-
+			message: '#^Possibly invalid array key type mixed\.$#'
+			identifier: offsetAccess.invalidOffset
+			count: 1
+			path: app/Services/Billing/RolloverCalculator.php
+
+		-
+			message: '#^Cannot access property \$public_id on App\\Models\\Workspace\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/Billing/StripePaymentIntentService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 3
+			path: app/Services/Billing/StripeWebhookService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 6
+			path: app/Services/Billing/StripeWebhookService.php
+
+		-
+			message: '#^Method App\\Services\\Billing\\StripeWebhookService\:\:paymentMethodObject\(\) should return array\<string, mixed\>\|null but returns array\<mixed, mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Billing/StripeWebhookService.php
+
+		-
+			message: '#^Cannot call method format\(\) on Carbon\\CarbonImmutable\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/Billing/TimeEntrySplitter.php
+
+		-
+			message: '#^Method App\\Services\\Billing\\TimeEntrySplitter\:\:splitEntry\(\) should return array\{primary\: App\\Models\\ClientTimeEntry, overflow\: App\\Models\\ClientTimeEntry\} but returns array\{primary\: App\\Models\\ClientTimeEntry\|null, overflow\: App\\Models\\ClientTimeEntry\}\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Billing/TimeEntrySplitter.php
+
+		-
+			message: '#^Cannot call method table\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Cannot call static method query\(\) on mixed\.$#'
+			identifier: staticMethod.nonObject
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 2
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Parameter \#1 \$stream of function feof expects resource, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Parameter \#1 \$stream of function fread expects resource, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Parameter \#1 \$stream of function fwrite expects resource, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Possibly invalid array key type mixed\.$#'
+			identifier: offsetAccess.invalidOffset
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Possibly invalid array key type string\|null\.$#'
+			identifier: offsetAccess.invalidOffset
+			count: 1
+			path: app/Services/ExternalImport/ExternalAttachmentImportService.php
+
+		-
+			message: '#^Anonymous function should return array but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Anonymous function should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Binary operation "\+" between mixed and 1 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 19
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Binary operation "\+\=" between \(float\|int\) and mixed results in an error\.$#'
+			identifier: assignOp.invalid
+			count: 3
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''deleted_at_source'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''milestone_link_claimed_by_two_tasks'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''milestone_link_destination_claims_another_line'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''milestone_link_outside_workspace'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''milestone_link_source_changed'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''milestone_link_taken_by_another_task'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''missing_invoice_time_link_parent'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''missing_milestone_invoice_link_parent'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''missing_source_key'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''required'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''row_transaction_failed'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''source_changed'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''source_column'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''source_table'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''time_link_destination_claims_another_line'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''time_link_outside_workspace'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset ''time_link_source_changed'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access offset string on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot access property \$public_id on App\\Models\\Workspace\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot cast mixed to float\.$#'
+			identifier: cast.double
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 16
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 32
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Cannot use \+\+ on mixed\.$#'
+			identifier: postInc.type
+			count: 20
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_unique expects an array of values castable to string, list\<mixed\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Parameter \#1 \$sourceTable of method App\\Services\\ExternalImport\\ExternalImportService\:\:resolveParentId\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Parameter \#1 \$status of method App\\Services\\ExternalImport\\ExternalImportService\:\:proposalStatus\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Parameter \#1 \$table of method Illuminate\\Database\\Connection\:\:table\(\) expects Closure\|Illuminate\\Contracts\\Database\\Query\\Expression\|Illuminate\\Database\\Query\\Builder\|string\|UnitEnum, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Parameter \#2 \$type of method App\\Services\\ExternalImport\\ExternalImportService\:\:attributes\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Possibly invalid array key type mixed\.$#'
+			identifier: offsetAccess.invalidOffset
+			count: 5
+			path: app/Services/ExternalImport/ExternalImportService.php
+
+		-
+			message: '#^Anonymous function should return array but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/ExternalImport/ExternalSourceInventory.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: app/Services/ExternalImport/ExternalSourceInventory.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 4
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_filter expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Parameter \#2 \$callback of function array_filter expects \(callable\(mixed\)\: bool\)\|null, Closure\(array\)\: bool given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Parameter \#3 \$table of static method App\\Services\\ExternalImport\\SourceRows\:\:for\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Part \$child \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: app/Services/ExternalImport/InventoryService.php
+
+		-
+			message: '#^Cannot cast mixed to float\.$#'
+			identifier: cast.double
+			count: 1
+			path: app/Services/ExternalImport/RestoreAgreementVerifier.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 4
+			path: app/Services/ExternalImport/RestoreAgreementVerifier.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 7
+			path: app/Services/ExternalImport/SourceGuard.php
+
+		-
+			message: '#^Parameter \#1 \$config of method App\\Services\\ExternalImport\\SourceGuard\:\:identity\(\) expects array\<string, mixed\>, array\<mixed, mixed\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ExternalImport/SourceGuard.php
+
+		-
+			message: '#^Part \$destinationName \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: app/Services/ExternalImport/SourceGuard.php
+
+		-
+			message: '#^Cannot access offset ''idempotent'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: app/Services/ExternalImport/SyntheticImportRehearsal.php
+
+		-
+			message: '#^Cannot access offset ''imported'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: app/Services/ExternalImport/SyntheticImportRehearsal.php
+
+		-
+			message: '#^Cannot access offset ''source_rows'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: app/Services/ExternalImport/SyntheticImportRehearsal.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 2
+			path: app/Services/ExternalImport/SyntheticImportRehearsal.php
+
+		-
+			message: '#^Cannot call method startOfDay\(\) on Carbon\\Carbon\|null\.$#'
+			identifier: method.nonObject
+			count: 3
+			path: app/Support/Billing/BillingCadence.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 3
+			path: app/Support/Billing/InvoiceStatus.php

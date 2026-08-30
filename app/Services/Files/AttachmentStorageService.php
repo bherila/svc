@@ -7,7 +7,7 @@ use App\Models\ClientAttachment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
-use Carbon\CarbonImmutable;
+use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
@@ -20,7 +20,10 @@ use Throwable;
 
 final class AttachmentStorageService
 {
-    public function __construct(private readonly WorkspaceAuthorization $workspaceAuthorization) {}
+    public function __construct(
+        private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
     private const MAX_BYTES = 52428800;
 
@@ -74,7 +77,7 @@ final class AttachmentStorageService
             $attachment->forceFill([
                 'staged_object_key' => null,
                 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
-                'available_at' => now(),
+                'available_at' => $this->clock->now($workspace),
             ])->save();
 
             return $attachment->fresh();
@@ -136,7 +139,7 @@ final class AttachmentStorageService
 
         $attachment->forceFill([
             'lifecycle_state' => ClientAttachment::STATE_DELETING,
-            'deleted_at' => now(),
+            'deleted_at' => $this->clock->now($attachment->workspace),
         ])->save();
 
         return $attachment->fresh();
@@ -177,8 +180,9 @@ final class AttachmentStorageService
             'hash_mismatches' => 0,
             'purged_rows' => 0,
         ];
-        $stagedCutoff = CarbonImmutable::now()->subMinutes($stagedAgeMinutes);
-        $retentionCutoff = CarbonImmutable::now()->subDays($retentionDays);
+        $now = $this->clock->now();
+        $stagedCutoff = $now->subMinutes($stagedAgeMinutes);
+        $retentionCutoff = $now->subDays($retentionDays);
 
         $knownStagedKeys = array_fill_keys(
             ClientAttachment::query()
@@ -202,7 +206,7 @@ final class AttachmentStorageService
                     $this->deleteIfPresent($disk, $attachment->object_key);
                     $attachment->forceFill([
                         'lifecycle_state' => ClientAttachment::STATE_DELETED,
-                        'deleted_at' => $attachment->deleted_at ?? now(),
+                        'deleted_at' => $attachment->deleted_at ?? $this->clock->now($attachment->workspace),
                     ])->save();
                 }
             });

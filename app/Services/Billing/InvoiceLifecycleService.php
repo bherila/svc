@@ -13,7 +13,7 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
-use Carbon\CarbonImmutable;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -24,6 +24,7 @@ final class InvoiceLifecycleService
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /**
@@ -139,7 +140,7 @@ final class InvoiceLifecycleService
             $this->releaseAllocations($locked);
             $locked->forceFill([
                 'status' => 'void',
-                'voided_at' => now(),
+                'voided_at' => $this->clock->now($workspace),
                 'void_reason' => $reason,
                 'balance_amount' => 0,
             ])->save();
@@ -165,7 +166,7 @@ final class InvoiceLifecycleService
                 throw new DomainException('Only draft invoices can be issued.');
             }
 
-            $issueDate = $locked->issue_date ?? CarbonImmutable::today();
+            $issueDate = $locked->issue_date ?? $this->clock->today($locked->workspace);
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
                 throw new DomainException('The due date cannot precede the issue date.');
             }
@@ -184,7 +185,7 @@ final class InvoiceLifecycleService
             $locked->forceFill([
                 'issue_date' => $issueDate,
                 'due_date' => $locked->due_date ?? $issueDate,
-                'issued_at' => now(),
+                'issued_at' => $this->clock->now($locked->workspace),
                 'status' => 'issued',
                 'is_visible_to_client' => true,
                 'balance_amount' => $locked->total_amount,
@@ -277,7 +278,7 @@ final class InvoiceLifecycleService
 
             $this->releaseAllocations($locked);
             $previousStatus = $locked->status;
-            $locked->forceFill(['status' => 'void', 'voided_at' => now(), 'void_reason' => $reason, 'balance_amount' => 0])->save();
+            $locked->forceFill(['status' => 'void', 'voided_at' => $this->clock->now($locked->workspace), 'void_reason' => $reason, 'balance_amount' => 0])->save();
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
@@ -340,7 +341,7 @@ final class InvoiceLifecycleService
                 'amount' => $amount,
                 'refunded_amount' => 0,
                 'currency' => $currency,
-                'received_on' => $data['received_on'] ?? now()->toDateString(),
+                'received_on' => $data['received_on'] ?? $this->clock->today($locked->workspace)->toDateString(),
                 'method' => $this->requiredString($data['method'] ?? null, 'method'),
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,

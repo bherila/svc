@@ -6,6 +6,7 @@ use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -19,6 +20,8 @@ use Throwable;
 
 final class AgentMutationExecutor
 {
+    public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+
     /**
      * @param  array<string, mixed>  $payload
      * @param  callable(): list<string>  $callback
@@ -53,7 +56,7 @@ final class AgentMutationExecutor
                 $receipt->forceFill([
                     'status' => 'completed',
                     'result_public_ids' => $ids,
-                    'completed_at' => now(),
+                    'completed_at' => $this->clock->now($workspace),
                 ])->save();
                 $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
 

@@ -12,6 +12,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -20,6 +21,8 @@ use Illuminate\Support\Str;
 
 final class ClientActivityRecorder
 {
+    public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+
     /**
      * Append one native activity event and return the existing row on an exact retry.
      *
@@ -81,7 +84,7 @@ final class ClientActivityRecorder
             $subjectPublicId,
             $occurrence ?? 'once',
         ]));
-        $now = now();
+        $now = $this->clock->now($workspace);
 
         $inserted = DB::table('client_company_activity')->insertOrIgnore([
             'public_id' => (string) Str::uuid(),
