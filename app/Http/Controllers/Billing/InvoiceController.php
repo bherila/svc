@@ -12,7 +12,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
-use App\Services\Authorization\ProjectAccess;
+use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -35,7 +35,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly AgentAccess $agentAccess,
-        private readonly ProjectAccess $projectAccess,
+        private readonly BillingRecordAccess $billingAccess,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse|InertiaResponse
@@ -70,11 +70,7 @@ class InvoiceController extends Controller
         $user = $request->user();
 
         if ($isMember && $user instanceof User) {
-            $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
-
-            if ($reachable !== null) {
-                $query->whereIn('client_company_id', $reachable);
-            }
+            $query = $this->billingAccess->constrainInvoices($query, $user, $workspace);
         }
 
         $invoices = $query->latest('id')->get();
@@ -252,16 +248,14 @@ class InvoiceController extends Controller
             // it (#157). Without this the list narrows and the direct routes do
             // not, so a scoped member reads any client's invoice - and its PDF,
             // which is the same disclosure with a filename - by pasting an id.
+            // Reaching the client is not reaching this invoice. A member
+            // granted one project of a client must not read an invoice for
+            // work on another - see `BillingRecordAccess` for why every
+            // attributed project has to be reachable rather than any.
             $user = $request->user();
 
             if ($user instanceof User) {
-                $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
-
-                abort_unless(
-                    $reachable === null
-                        || in_array((int) $invoice->client_company_id, $reachable, true),
-                    404,
-                );
+                abort_unless($this->billingAccess->canViewInvoice($user, $workspace, $invoice), 404);
             }
 
             return;

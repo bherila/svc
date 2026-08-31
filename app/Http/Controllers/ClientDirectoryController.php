@@ -13,6 +13,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
@@ -109,6 +110,7 @@ class ClientDirectoryController extends Controller
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -128,20 +130,24 @@ class ClientDirectoryController extends Controller
         // working on what.
         $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
-        $agreements = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('starts_on')
-            ->orderByDesc('id')
-            ->get();
+        // Reaching the client is not reaching its money. A member granted one
+        // project sees the agreements and invoices attributed to it, not the
+        // client's whole financial record - see `BillingRecordAccess`.
+        $agreements = $billing->constrainAgreements(
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('starts_on')->orderByDesc('id')->get();
 
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
-            ->limit(self::RECENT_INVOICES)
-            ->get();
+        $invoices = $billing->constrainInvoices(
+            ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('issue_date')->orderByDesc('id')->limit(self::RECENT_INVOICES)->get();
 
         // An agreement may be scoped to a single project, and it names that
         // project by an independent key. Resolving the name from the projects
@@ -193,6 +199,7 @@ class ClientDirectoryController extends Controller
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -205,12 +212,13 @@ class ClientDirectoryController extends Controller
         $viewable = $access->viewableProjectIds($user, $workspace);
         $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
-            ->get();
+        $invoices = $billing->constrainInvoices(
+            ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('issue_date')->orderByDesc('id')->get();
 
         return Inertia::render('clients/invoices', [
             'workspace' => ['id' => $workspace->public_id],
@@ -244,6 +252,7 @@ class ClientDirectoryController extends Controller
         ClientInvoice $clientInvoice,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -258,6 +267,8 @@ class ClientDirectoryController extends Controller
             (int) $clientInvoice->client_company_id === (int) $clientCompany->id,
             404,
         );
+
+        abort_unless($billing->canViewInvoice($user, $workspace, $clientInvoice), 404);
 
         $clientInvoice->load([
             'lines' => fn ($query) => $query
@@ -324,6 +335,7 @@ class ClientDirectoryController extends Controller
         ClientAgreement $clientAgreement,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -339,6 +351,8 @@ class ClientDirectoryController extends Controller
             (int) $clientAgreement->client_company_id === (int) $clientCompany->id,
             404,
         );
+
+        abort_unless($billing->canViewAgreement($user, $workspace, $clientAgreement), 404);
 
         $projectNames = $this->viewableProjectsOf($workspace, $clientCompany, $viewable)
             ->pluck('name', 'id');
@@ -411,6 +425,7 @@ class ClientDirectoryController extends Controller
         ClientProject $clientProject,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -443,13 +458,14 @@ class ClientDirectoryController extends Controller
             ->selectRaw('status, sum(minutes) as total_minutes, count(*) as entry_count')
             ->get();
 
-        $agreements = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('client_project_id', $clientProject->id)
-            ->orderByDesc('starts_on')
-            ->orderByDesc('id')
-            ->get();
+        $agreements = $billing->constrainAgreements(
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id)
+                ->where('client_project_id', $clientProject->id),
+            $user,
+            $workspace,
+        )->orderByDesc('starts_on')->orderByDesc('id')->get();
 
         $projectNames = collect([$clientProject->id => $clientProject->name]);
 
