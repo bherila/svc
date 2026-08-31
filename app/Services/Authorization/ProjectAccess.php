@@ -70,6 +70,40 @@ final class ProjectAccess
             ->all());
     }
 
+    /**
+     * The client companies this user reaches in this workspace, or null for all.
+     *
+     * Reachability runs through projects (#157), so this is the one place that
+     * turns "which projects" into "which clients". It exists because three
+     * surfaces needed the same answer - the directory, the company switcher and
+     * the workspace invoice list - and two copies of it is how the directory
+     * and the time sheet came to disagree in the first place.
+     *
+     * Null means an owner or admin, who reaches every client including one with
+     * no projects at all.
+     *
+     * @return list<int>|null
+     */
+    public function reachableCompanyIds(User|AgentPrincipal $user, Workspace $workspace): ?array
+    {
+        $projectIds = $this->viewableProjectIds($user, $workspace);
+
+        if ($projectIds === null) {
+            return null;
+        }
+
+        if ($projectIds === []) {
+            return [];
+        }
+
+        return array_values(array_unique(ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('id', $projectIds)
+            ->pluck('client_company_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all()));
+    }
+
     public function canView(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project) !== null;
