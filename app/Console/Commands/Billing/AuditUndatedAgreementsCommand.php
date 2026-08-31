@@ -69,7 +69,6 @@ final class AuditUndatedAgreementsCommand extends Command
         $this->newLine();
         $this->components->twoColumnDetail('Time entries one of them could price', (string) $counts->entriesWithAnUndatedCandidate);
         $this->components->twoColumnDetail('... with no dated agreement to outrank it', (string) $counts->entriesWithNoOtherCandidate);
-        $this->components->twoColumnDetail('... actually selected by the rate resolver', (string) $counts->entriesSelectedByAnUndatedAgreement);
         $this->components->twoColumnDetail('Invoice lines already billed against one', (string) $counts->billedLinesOnAnUndatedAgreement);
 
         $this->newLine();
@@ -84,11 +83,11 @@ final class AuditUndatedAgreementsCommand extends Command
 
         if ($counts->isLive()) {
             $this->components->warn(
-                $counts->entriesSelectedByAnUndatedAgreement.' time entry/entries are priced by an agreement with no start date, so the rate resolver treats it as in force while the timesheet gives it no capacity and the date-based selectors drop it. Backfill an explicit historical start date on the affected agreements before adopting the #147 contract.'
+                $counts->entriesWithNoOtherCandidate.' time entry/entries are priced by an agreement with no start date and nothing else eligible, so the rate resolver treats it as in force while the timesheet gives it no capacity and the date-based selectors drop it. Decide the contract in #147 before changing any of them; if these agreements mean "in force since always", backfill an explicit historical start date rather than keeping two meanings for the null.'
             );
         } else {
-            $this->components->info(
-                'No time entry is currently priced by an undated agreement. The candidate bounds remain visible as a cross-check, but the exact count asks the rate resolver which agreement wins.'
+            $this->components->warn(
+                'No entry is provably priced by an undated agreement, but '.$counts->entriesWithAnUndatedCandidate.' could be: a dated agreement is also eligible for each, and which one wins is decided by the resolver ordering rather than by anything asserted here. Read this as "not proven", not as "safe".'
             );
         }
 

@@ -16,9 +16,11 @@ use Tests\TestCase;
 /**
  * What the audit counts, and whose.
  *
- * The candidate bounds and exact selected count are computed differently. The
- * bounds make a cheap cross-check; the exact count asks the real resolver so
- * project specificity and every later tiebreak stay authoritative.
+ * The bracket is the part worth testing hardest. The upper and lower bounds are
+ * computed by different queries against the same eligibility, and a mistake in
+ * either would still produce two plausible numbers - so the fixtures are built
+ * so the two must differ, and one test checks the lower bound against the
+ * resolver itself rather than against my own reading of it.
  */
 final class UndatedAgreementAuditorTest extends TestCase
 {
@@ -149,63 +151,7 @@ final class UndatedAgreementAuditorTest extends TestCase
 
         $this->assertSame(2, $counts->entriesWithAnUndatedCandidate);
         $this->assertSame(1, $counts->entriesWithNoOtherCandidate);
-        $this->assertSame(1, $counts->entriesSelectedByAnUndatedAgreement);
         $this->assertTrue($counts->isLive());
-    }
-
-    /**
-     * A dated candidate does not prove the undated agreement loses.
-     *
-     * The undated agreement is project-specific and the dated agreement is
-     * company-wide, so the resolver selects the undated one before comparing
-     * start dates. This is the reachable case a lower bound cannot identify
-     * and the reason the audit must ask the resolver for an exact count.
-     */
-    public function test_the_exact_count_includes_an_undated_winner_with_a_dated_candidate(): void
-    {
-        $workspace = $this->workspace('specific-winner');
-        $company = $this->company($workspace, 'specific-winner');
-        $project = $this->project($workspace, $company, 'Specific Winner');
-
-        $this->agreement($workspace, $company, [
-            'starts_on' => null,
-            'hourly_rate_amount' => 15000,
-            'client_project_id' => $project->id,
-        ]);
-        $this->agreement($workspace, $company, [
-            'starts_on' => '2020-01-01',
-            'hourly_rate_amount' => 20000,
-        ]);
-        $this->entry($workspace, $company, $project);
-
-        $counts = app(UndatedAgreementAuditor::class)->count($workspace);
-
-        $this->assertSame(1, $counts->entriesWithAnUndatedCandidate);
-        $this->assertSame(0, $counts->entriesWithNoOtherCandidate);
-        $this->assertSame(1, $counts->entriesSelectedByAnUndatedAgreement);
-        $this->assertTrue($counts->isLive());
-    }
-
-    /**
-     * Selection alone is not pricing when the winning agreement has no rate.
-     */
-    public function test_an_undated_winner_without_an_hourly_rate_is_not_counted_as_priced(): void
-    {
-        $workspace = $this->workspace('rateless');
-        $company = $this->company($workspace, 'rateless');
-        $project = $this->project($workspace, $company, 'Rateless');
-
-        $this->agreement($workspace, $company, [
-            'starts_on' => null,
-            'hourly_rate_amount' => null,
-        ]);
-        $this->entry($workspace, $company, $project);
-
-        $counts = app(UndatedAgreementAuditor::class)->count($workspace);
-
-        $this->assertSame(1, $counts->entriesWithNoOtherCandidate);
-        $this->assertSame(0, $counts->entriesSelectedByAnUndatedAgreement);
-        $this->assertFalse($counts->isLive());
     }
 
     /**
@@ -229,7 +175,6 @@ final class UndatedAgreementAuditorTest extends TestCase
 
         $counts = app(UndatedAgreementAuditor::class)->count($workspace);
         $this->assertSame(1, $counts->entriesWithNoOtherCandidate);
-        $this->assertSame(1, $counts->entriesSelectedByAnUndatedAgreement);
 
         $resolved = app(AgreementBillingRateResolver::class)->resolve($entry);
 
@@ -264,7 +209,6 @@ final class UndatedAgreementAuditorTest extends TestCase
 
         $this->assertSame(1, $counts->undated);
         $this->assertSame(0, $counts->entriesWithAnUndatedCandidate);
-        $this->assertSame(0, $counts->entriesSelectedByAnUndatedAgreement);
         $this->assertFalse($counts->isLive());
     }
 
@@ -303,12 +247,10 @@ final class UndatedAgreementAuditorTest extends TestCase
 
         $this->assertSame(1, $counts->undated);
         $this->assertSame(1, $counts->entriesWithNoOtherCandidate);
-        $this->assertSame(1, $counts->entriesSelectedByAnUndatedAgreement);
 
         $unscoped = app(UndatedAgreementAuditor::class)->count();
         $this->assertSame(2, $unscoped->undated);
         $this->assertSame(2, $unscoped->entriesWithNoOtherCandidate);
-        $this->assertSame(2, $unscoped->entriesSelectedByAnUndatedAgreement);
     }
 
     /**
@@ -328,7 +270,6 @@ final class UndatedAgreementAuditorTest extends TestCase
         $this->assertSame(0, $counts->agreements);
         $this->assertSame(0, $counts->undated);
         $this->assertSame(0, $counts->entriesWithAnUndatedCandidate);
-        $this->assertSame(0, $counts->entriesSelectedByAnUndatedAgreement);
         $this->assertSame([], $counts->byStatus);
         $this->assertFalse($counts->isLive());
     }

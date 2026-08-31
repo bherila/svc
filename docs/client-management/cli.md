@@ -121,13 +121,17 @@ date-based selectors drop it on a bare `starts_on <= date`. So an agreement can
 stamp its hourly rate onto approved time while contributing no capacity and being
 invisible to billing selection.
 
-The entry figures include cheap candidate bounds and an exact count.
-`entries_with_an_undated_candidate` is the upper bound — every entry an undated
-agreement could price — and `entries_with_no_other_candidate` is the lower bound
-where nothing dated is eligible. `entries_selected_by_an_undated_agreement` asks
-the real rate resolver which agreement wins, so project specificity, status,
-start date, and every later tiebreak stay in one implementation. The bounds remain
-in the output as a cross-check around that exact count.
+**The entry figures are a bracket, not a number.** The resolver collects
+candidates and then *sorts* them, preferring a project-specific agreement over a
+company-wide one, so no query can say which one it picks. `entries_with_an_undated_candidate`
+is the upper bound — every entry an undated agreement could be selected for.
+`entries_with_no_other_candidate` is the lower bound — entries where nothing else
+is eligible, so the undated agreement is certainly the one chosen. Read them
+together; a single number in between would be wrong in one direction without
+saying which.
+
+A "not proven" result is **not** a clean bill of health, and the command says so
+in those words.
 
 **No fix is implied.** #147 proposes the contract *a null start date means the
 agreement is not yet in force*, which would make the resolver the wrong one — but

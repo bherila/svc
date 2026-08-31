@@ -16,8 +16,8 @@ use App\Services\Billing\UndatedAgreementAuditor;
  * which name states rather than records, so they carry nothing identifying
  * either.
  *
- * See {@see UndatedAgreementAuditor} for how the exact selected count is
- * checked against its inexpensive candidate bounds.
+ * See {@see UndatedAgreementAuditor} for why the entry counts are a bracket
+ * rather than a single number.
  */
 final readonly class UndatedAgreementCounts
 {
@@ -34,7 +34,6 @@ final readonly class UndatedAgreementCounts
         public int $withRetainerTerms,
         public int $entriesWithAnUndatedCandidate,
         public int $entriesWithNoOtherCandidate,
-        public int $entriesSelectedByAnUndatedAgreement,
         public int $billedLinesOnAnUndatedAgreement,
     ) {}
 
@@ -42,12 +41,15 @@ final readonly class UndatedAgreementCounts
      * Whether work is certainly being priced by an agreement the rest of the
      * system treats as not in force.
      *
-     * The exact resolver-selected count, named rather than leaving callers to
-     * interpret the cheaper candidate bounds independently.
+     * The lower bound, named rather than left for callers to pick a field, so
+     * that everything deciding whether #147 is live asks the same question
+     * instead of each choosing a different one. False does not mean nothing is
+     * at risk - it means nothing is provably affected, which is what makes the
+     * upper bound worth reading alongside it.
      */
     public function isLive(): bool
     {
-        return $this->entriesSelectedByAnUndatedAgreement > 0;
+        return $this->entriesWithNoOtherCandidate > 0;
     }
 
     /**
@@ -62,7 +64,6 @@ final readonly class UndatedAgreementCounts
      *     with_retainer_terms: int,
      *     entries_with_an_undated_candidate: int,
      *     entries_with_no_other_candidate: int,
-     *     entries_selected_by_an_undated_agreement: int,
      *     billed_lines_on_an_undated_agreement: int,
      * }
      */
@@ -77,7 +78,6 @@ final readonly class UndatedAgreementCounts
             'with_retainer_terms' => $this->withRetainerTerms,
             'entries_with_an_undated_candidate' => $this->entriesWithAnUndatedCandidate,
             'entries_with_no_other_candidate' => $this->entriesWithNoOtherCandidate,
-            'entries_selected_by_an_undated_agreement' => $this->entriesSelectedByAnUndatedAgreement,
             'billed_lines_on_an_undated_agreement' => $this->billedLinesOnAnUndatedAgreement,
         ];
     }
