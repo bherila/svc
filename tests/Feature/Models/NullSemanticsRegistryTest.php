@@ -2,6 +2,20 @@
 
 namespace Tests\Feature\Models;
 
+use App\Console\Commands\Billing\BackfillBillingLedgerCommand;
+use App\Console\Commands\Billing\ReplayInvoicesCommand;
+use App\Http\Controllers\Api\V1\AgentReadController;
+use App\Http\Controllers\Engagement\TimeSheetController;
+use App\Models\ClientTimeEntry;
+use App\Services\AgentApi\TimeEntryMutationService;
+use App\Services\Billing\AgreementBillingRateResolver;
+use App\Services\Billing\AllocationService;
+use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\DraftInvoiceTimeRegenerator;
+use App\Services\Billing\InterimOverageGenerator;
+use App\Services\Billing\InvoiceFromTimeService;
+use App\Services\Billing\InvoiceLineComposer;
+use App\Services\Engagement\ProposalWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -22,9 +36,10 @@ use Tests\Unit\Billing\InvoiceLedgerBuilderTest;
 use Tests\Unit\Billing\RetainerCalculatorTest;
 
 /**
- * Every nullable column on the billing tables must be registered with either
- * a citation of the test that covers its null branch, or an honest
- * PENDING-AUDIT marker.
+ * Every nullable column on the billing tables must be registered with either a
+ * citation of the test that covers its null branch, a named reader that
+ * branches on the null but is not yet pinned, or an honest PENDING-AUDIT
+ * marker.
  *
  * This exists because a null on these tables is not always "no value" - it is
  * sometimes a silently-selected branch. A null `invoice_kind` read as cadence
@@ -36,21 +51,47 @@ use Tests\Unit\Billing\RetainerCalculatorTest;
  * shipped because nothing forced anyone to say out loud what the null meant.
  *
  * An earlier attempt at this used a prose exemption list - reasons without
- * proof - and it certified two of the bugs above as intentional. That is
- * worse than no list at all, so this test accepts only two answers: a
- * citation this test can verify actually exists (`covered_by` + `method`,
- * checked by reflection), or `PENDING-AUDIT`, which admits the semantic audit
- * has not reached the column yet. Neither can be faked past this guard.
+ * proof - and it certified two of the bugs above as intentional. So every
+ * entry here has to name something this test can resolve by reflection, and
+ * nothing is accepted on the strength of its comment alone.
  *
- * This is the registry for #115, and the semantic audit has now been through
- * it once: every column whose null selects a behaviour carries a citation, and
- * the note above each says what the null means in one line - the citation, not
- * the note, is what this test checks. What is left PENDING-AUDIT is the set
- * nothing branches on: columns written and never read (`paid_on`,
- * `void_reason`, `agreement_link`, the invoice hour-balance columns), Eloquent
- * timestamps, and optional text. They cannot be cited because there is no null
- * branch to cover, and inventing one would be the prose exemption list again in
- * another costume. Retiring them is #73's `NOT NULL` question, not this one's.
+ * ## Why there are three states and not two
+ *
+ * The first version of this registry had two: a citation, or PENDING-AUDIT. An
+ * external review of #120 showed both were being read as stronger claims than
+ * they are, in opposite directions, and that the difference cost real coverage.
+ *
+ * A citation is checked by reflection, which can prove a test *exists* but not
+ * that it *isolates* the column. Several citations here pointed at tests whose
+ * fixture nulled two columns at once, or set the column incidentally: deleting
+ * the production guard for one of them left the cited test green, because a
+ * sibling null still failed it. `subcontractor_cost_amount` and
+ * `subcontractor_cost_currency` both cited a fixture that nulled the pair, and
+ * production refuses on `amount === null || currency === ''` - an OR, so
+ * neither half was ever isolated. Those citations are gone rather than
+ * annotated: a citation that proves nothing is worse than none, because it
+ * reads as settled.
+ *
+ * PENDING-AUDIT was the more dangerous of the two. It was documented as the set
+ * "nothing branches on", and it was read that way - but 17 of its 37 columns
+ * had live null-sensitive readers. `hours_billed_at_rate` sat in it while being
+ * the column whose null-drop from a `SUM` consumed #135, #139 and #142. A
+ * registry that under-claims exposure is worse than no registry, because it
+ * launders "we have not looked" into "we looked and it is fine".
+ *
+ * So PENDING-AUDIT now means only what it says: no reader is known. A column
+ * with a known reader and no test carries `reader_in` naming that reader, which
+ * is checked by reflection exactly as a citation is. It is a weaker claim than a
+ * citation and deliberately so - it asserts exposure, not coverage - and it
+ * turns 17 invisible holes into a worklist. Pinning them with isolating tests
+ * is tracked separately; this file's job is to stop the holes being invisible.
+ *
+ * ## What is still PENDING-AUDIT
+ *
+ * Eloquent timestamps, optional text, and lifecycle stamps with no branch on
+ * them. They cannot be cited because there is no null branch to cover, and
+ * inventing one would be the prose exemption list again in another costume.
+ * Retiring them is #73's `NOT NULL` question, not this one's.
  *
  * `client_agreements.initial_rollover_minutes` was pending for a different
  * reason - it had no reachable reader at all, because InvoiceLedgerBuilder
@@ -79,72 +120,143 @@ final class NullSemanticsRegistryTest extends TestCase
     ];
 
     /**
-     * The number of PENDING-AUDIT entries in the registry below. This may
-     * only decrease as the semantic audit resolves columns to either a
-     * citation or a NOT NULL migration - it must never change silently in
-     * either direction, so both an increase (a new nullable column landing
-     * unregistered) and a decrease (an audited column whose pin was not
-     * updated) fail this test.
+     * The most PENDING-AUDIT entries the registry may contain.
+     *
+     * A ceiling, not a pin. Resolving a column to a citation, to a named
+     * reader, or to a NOT NULL migration lowers the count and passes; adding a
+     * new unexamined nullable column raises it and fails until someone lowers
+     * the ceiling deliberately, which is a visible admission rather than a
+     * silent drift.
      */
-    private const PENDING_AUDIT_COUNT = 37;
+    private const PENDING_AUDIT_CEILING = 20;
+
+    /**
+     * The columns that must carry at least one citation, by name.
+     *
+     * A set, not a count, and that distinction is the whole ratchet. Counting
+     * cannot tell you *which* columns are covered, so any bound on a count -
+     * including a floor - is satisfied by a swap: demote one column's citation,
+     * promote another's, and the totals are unchanged while a specific
+     * regression ships. Naming the columns means a citation can be added
+     * anywhere for free, and removing one from a column listed here fails no
+     * matter what else improves.
+     *
+     * Adding a column to this list is how coverage ratchets up. Removing one
+     * is possible, but it is an edit someone has to make on purpose and defend
+     * in review, which is the point.
+     *
+     * @var list<string>
+     */
+    private const MUST_BE_COVERED = [
+        'client_invoices.client_agreement_id',
+        'client_invoices.client_billing_schedule_id',
+        'client_invoices.issue_date',
+        'client_invoices.due_date',
+        'client_invoices.service_period_end',
+        'client_invoices.invoice_kind',
+        'client_invoice_lines.client_project_id',
+        'client_invoice_lines.line_date',
+        'client_agreements.starts_on',
+        'client_agreements.hourly_rate_amount',
+        'client_agreements.retainer_amount',
+        'client_agreements.retainer_minutes',
+        'client_agreements.activated_at',
+        'client_agreements.signed_at',
+        'client_agreements.catch_up_threshold_minutes',
+        'client_agreements.period_retainer_minutes',
+        'client_agreements.period_retainer_amount',
+        'client_agreements.rollover_months',
+        'client_agreements.initial_rollover_minutes',
+        'client_agreements.bill_overage_interim',
+        'client_agreements.first_cycle_proration',
+        'client_time_entries.billing_rate_amount',
+        'client_time_entries.currency',
+        'client_time_entries.client_visible_description',
+        'client_time_entries.deleted_at',
+        'client_time_entries.billing_rate_source',
+        'client_time_entries.split_from_time_entry_id',
+        'client_time_entries.subcontractor_billing_mode',
+    ];
 
     /**
      * One entry per nullable column on the tables above.
      *
-     * Each value is either:
+     * Each value is one of:
      *   - `['covered_by' => SomeTest::class, 'method' => 'test_...']`, a
-     *     citation of an existing test that constructs this column's null
-     *     case and asserts what happens - verified below by reflection;
-     *   - a list of such citations, where the null is branched on in more than
-     *     one place and the branches mean different things; or
-     *   - the string `'PENDING-AUDIT'`, an honest marker that the semantic
-     *     audit has not yet reached this column.
+     *     citation of an existing test that constructs this column's null case
+     *     and asserts what happens;
+     *   - `['reader_in' => SomeClass::class, 'reads' => 'method']`, naming
+     *     production code that branches on this column's null where no test
+     *     pins the branch yet - exposure, not coverage;
+     *   - a list mixing the two, for a column whose null is read in more than
+     *     one place, where some branches are pinned and others are only known;
+     *   - the string `'PENDING-AUDIT'`, meaning no reader is known.
      *
      * A list rather than a second registry: one citation on a column with two
      * null branches is worse than none, because it reads as settled. That is
      * how `service_period_end` came to look audited while the branch that
      * decides whether overage is charged twice went uncovered until #135.
      *
-     * @var array<string, array<string, 'PENDING-AUDIT'|array{covered_by: class-string, method: string}|list<array{covered_by: class-string, method: string}>>>
+     * @var array<string, array<string, 'PENDING-AUDIT'|array{covered_by: class-string, method: string}|array{reader_in: class-string, reads: string}|list<array{covered_by: class-string, method: string}|array{reader_in: class-string, reads: string}>>>
      */
     private const REGISTRY = [
         'client_invoices' => [
-            // No agreement means no terms to reprice against, so regeneration
-            // refuses rather than rebuilding the invoice unscoped.
+            // For a *generated* draft, no agreement means no terms to reprice
+            // against and regeneration refuses. Not a global rule: an ad-hoc
+            // invoice legitimately has no agreement and regenerates from the
+            // rate snapshots on its own entries, because the regenerator routes
+            // on kind before it asks for an agreement.
             'client_agreement_id' => [
-                'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                'method' => 'test_a_generated_draft_without_an_agreement_fails_closed',
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_generated_draft_without_an_agreement_fails_closed',
+                ],
+                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
             ],
-            // No schedule means an operator typed this invoice, which is what
-            // makes it ad hoc and exempt from the cadence overlap guard.
+            // What the citation proves is narrower than it reads: it is the
+            // default `InvoiceLifecycleService::createDraft` picks when no kind
+            // is passed. It is not a contract that a null schedule means an
+            // operator typed the invoice - `ClientInvoicingService` creates
+            // cadence invoices without setting this column at all, so a future
+            // guard keying "ad hoc" off a null here would misclassify them.
             'client_billing_schedule_id' => [
-                'covered_by' => BillingWorkflowTest::class,
-                'method' => 'test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
+                ],
+                ['reader_in' => ClientInvoicingService::class, 'reads' => 'generateMonthlyInvoiceForWorkPeriod'],
             ],
             // Not issued yet: issuing stamps the workspace's calendar date.
             'issue_date' => [
                 'covered_by' => BillingWorkflowTest::class,
                 'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
             ],
-            // No stated term: issuing makes it due on the issue date. (A null
-            // also drops the invoice from the overdue query - see the report on
-            // AgentReadController, which nothing covers yet.)
+            // No stated term: issuing makes it due on the issue date. A null
+            // also drops the invoice out of the overdue query, which compares
+            // with `whereDate`, so an imported invoice with a balance and no due
+            // date is collectible but never overdue. Nothing pins that.
             'due_date' => [
-                'covered_by' => BillingWorkflowTest::class,
-                'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+                ],
+                ['reader_in' => AgentReadController::class, 'reads' => 'summary'],
             ],
-            // No recorded work period. With the cycle columns also null there is
-            // nothing left to say which period a cadence draft covers, so
-            // regeneration fails closed rather than guessing a range.
+            // Was cited against the cadence regeneration refusal, but that
+            // fixture nulls the cycle columns too and the refusal fires on
+            // either pair, so the citation never isolated this column. The null
+            // is also read during generation, where it initialises to the
+            // earliest dated work line.
             'service_period_start' => [
-                'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                'method' => 'test_a_cadence_draft_without_a_service_period_fails_closed',
+                'reader_in' => DraftInvoiceTimeRegenerator::class,
+                'reads' => 'regenerate',
             ],
-            // Two branches, and the second is the consequential one. A null also
-            // means "inside the billed-overage window": the sum of what an
-            // agreement has already been charged reads `<=` against this
-            // column, which is false for a null, so an unplaceable invoice
-            // dropped out of it and its overage was charged again (#135).
+            // Three branches. The regeneration refusal is pinned; the
+            // billed-overage window is pinned since #135, where a `<=` that
+            // answers false for a null dropped charged invoices out of the sum
+            // and their overage was billed twice. The interim generator carries
+            // a parallel already-billed sum with its own `orWhereNull`, added in
+            // the #139 fix-forward, and nothing pins that one.
             'service_period_end' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
@@ -154,6 +266,7 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
                 ],
+                ['reader_in' => InterimOverageGenerator::class, 'reads' => 'generateInterimOverageInvoice'],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -161,30 +274,54 @@ final class NullSemanticsRegistryTest extends TestCase
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
             'void_reason' => 'PENDING-AUDIT',
+            // The sold-cycle SQL guard is pinned. The model's `invoiceKindValue()`
+            // fallback is a second, unpinned reading of the same null: it decides
+            // whether regeneration takes the ad-hoc selected-time path or the
+            // generated cadence one.
             'invoice_kind' => [
-                'covered_by' => CapacityAndScopeGuardsTest::class,
-                'method' => 'test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
+                ],
+                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
             ],
-            // Predates the restored cycle columns: an interim draft with no
-            // cycle cannot be regenerated at all, and a cadence draft falls back
-            // to its service period.
+            // Cited against an interim refusal whose fixture nulls both columns,
+            // so neither guard was isolated - dropping one leaves the test
+            // failing through the other. The consequential reader is the cycle
+            // lookup, which matches on both and cannot see a row missing either
+            // (#141).
             'cycle_start' => [
-                'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                'method' => 'test_an_interim_draft_without_cycle_dates_fails_closed',
+                'reader_in' => InterimOverageGenerator::class,
+                'reads' => 'interimOverageHoursForCycle',
             ],
             'cycle_end' => [
-                'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                'method' => 'test_an_interim_draft_without_cycle_dates_fails_closed',
+                'reader_in' => InterimOverageGenerator::class,
+                'reads' => 'interimOverageHoursForCycle',
             ],
-            'paid_on' => 'PENDING-AUDIT',
-            'retainer_hours_included' => 'PENDING-AUDIT',
-            'hours_worked' => 'PENDING-AUDIT',
-            'rollover_hours_used' => 'PENDING-AUDIT',
-            'unused_hours_balance' => 'PENDING-AUDIT',
-            'negative_hours_balance' => 'PENDING-AUDIT',
-            'hours_billed_at_rate' => 'PENDING-AUDIT',
-            'starting_unused_hours' => 'PENDING-AUDIT',
-            'starting_negative_hours' => 'PENDING-AUDIT',
+            // The invoice hour-balance columns are restore-repair fields, not
+            // write-only ones. The backfill fills each only where the
+            // destination value is null, and repeats that as a `WHERE ... IS
+            // NULL` predicate at write time, so the null selects "the source may
+            // fill this hole" against "preserve the operator's correction".
+            'paid_on' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'retainer_hours_included' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'hours_worked' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'rollover_hours_used' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'unused_hours_balance' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'negative_hours_balance' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            // The one that proves why PENDING-AUDIT had to stop meaning "inert".
+            // This column was filed as something nothing branches on while being
+            // the column whose null-drop from a `SUM` is #135: three separate
+            // sums total the overage an agreement has already been charged, and
+            // SQL aggregation contributes nothing for a null, so a restored
+            // charged invoice with a null here reads as zero already billed and
+            // its hours are sold a second time.
+            'hours_billed_at_rate' => [
+                ['reader_in' => ClientInvoicingService::class, 'reads' => 'totalBilledOveragesThrough'],
+                ['reader_in' => InterimOverageGenerator::class, 'reads' => 'interimOverageHoursForCycle'],
+            ],
+            'starting_unused_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            'starting_negative_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
         ],
         'client_invoice_lines' => [
             'created_at' => 'PENDING-AUDIT',
@@ -203,45 +340,73 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => CapacityAndScopeGuardsTest::class,
                 'method' => 'test_an_undated_line_does_not_widen_the_service_period',
             ],
-            'hours' => 'PENDING-AUDIT',
-            'client_agreement_id' => 'PENDING-AUDIT',
-            'client_agreement_recurring_item_id' => 'PENDING-AUDIT',
+            // Replay reads all three when it builds a line's identity and its
+            // correction proofs: a null hours makes the minute conversion return
+            // null and the capacity draw unprovable, a null agreement normalises
+            // to an empty identity that fails the agreement-owned-line check,
+            // and a null recurring item is encoded as "no auxiliary owner" in
+            // the allocation signature. None is write-only.
+            'hours' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
+            'client_agreement_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
+            'client_agreement_recurring_item_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
         ],
         'client_agreements' => [
-            // Company-wide: the agreement covers every project's work rather
-            // than one project's, and loses to a project-specific agreement.
+            // Was cited against the generic derive-rate test, where setting this
+            // to the entry's own project leaves every assertion unchanged - so
+            // it proved neither that null means company-wide nor that a
+            // project-specific agreement outranks a company-wide one. The
+            // specificity ordering lives in the resolver and is unpinned.
             'client_project_id' => [
-                'covered_by' => DeriveTimeEntryRatesTest::class,
-                'method' => 'test_it_resolves_the_agreement_rate_and_stamps_the_source',
+                'reader_in' => AgreementBillingRateResolver::class,
+                'reads' => 'resolve',
             ],
-            'source_proposal_id' => 'PENDING-AUDIT',
-            // Not ready to be billed: an agreement with no start date anchors no
-            // cycle and reports no capacity.
+            // Proposal acceptance is idempotent only through this column: it
+            // asks the proposal's `agreements()` relationship whether one
+            // already exists, and a null makes the row invisible to that
+            // relationship, so accepting again creates a second active agreement
+            // and a second set of recurring items.
+            'source_proposal_id' => ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
+            // Three readers, and they do not agree with each other. The pinned
+            // one treats a null as "not ready" and reports no capacity. The rate
+            // resolver treats it as already in force (`whereNull OR <=`), and so
+            // does the active-agreement lookup. The timesheet capacity query
+            // uses `whereNotNull` and drops it. So an undated agreement can
+            // stamp its rate onto approved time while contributing no capacity -
+            // that disagreement is unresolved, not a settled meaning.
             'starts_on' => [
-                'covered_by' => TimeSheetTest::class,
-                'method' => 'test_an_agreement_with_no_start_date_reports_no_capacity',
+                [
+                    'covered_by' => TimeSheetTest::class,
+                    'method' => 'test_an_agreement_with_no_start_date_reports_no_capacity',
+                ],
+                ['reader_in' => AgreementBillingRateResolver::class, 'reads' => 'resolve'],
+                ['reader_in' => TimeSheetController::class, 'reads' => 'capacityByMonth'],
             ],
-            // Open-ended: nothing clips the retainer entitlement, and the
-            // agreement is still in force on any later work date.
-            'ends_on' => [
-                'covered_by' => DeriveTimeEntryRatesTest::class,
-                'method' => 'test_it_resolves_the_agreement_rate_and_stamps_the_source',
-            ],
+            // Also cited against the derive-rate test, where any date after the
+            // work date leaves every assertion unchanged - so the citation could
+            // not distinguish "null means open-ended" from "this field is
+            // unused". Demoted to the reader that actually clips on it.
+            'ends_on' => ['reader_in' => AgreementBillingRateResolver::class, 'reads' => 'resolve'],
             'agreement_text' => 'PENDING-AUDIT',
-            // Unpriced, which is not free: the rate lookup refuses rather than
-            // stamping a rate. (Every other reader coerces the null to 0 - see
-            // the report on InvoiceLineComposer, which nothing covers yet.)
+            // Unpriced, which is not free - in the rate lookup, which refuses
+            // rather than stamping a rate. Four other readers disagree and
+            // coerce the null to zero, which prices deferred termination work
+            // and interim overage at nothing rather than refusing it.
             'hourly_rate_amount' => [
-                'covered_by' => DeriveTimeEntryRatesTest::class,
-                'method' => 'test_an_agreement_with_no_rate_prices_nothing',
+                [
+                    'covered_by' => DeriveTimeEntryRatesTest::class,
+                    'method' => 'test_an_agreement_with_no_rate_prices_nothing',
+                ],
+                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
             ],
-            // No retainer price recorded, so no retainer fee is billed.
+            // No *monthly* retainer price, so the monthly branch bills no
+            // retainer fee. It does not mean no fee: an agreement with
+            // `period_retainer_amount` set still bills one on the period branch.
             'retainer_amount' => [
                 'covered_by' => RetainerCalculatorTest::class,
                 'method' => 'test_an_agreement_with_no_retainer_price_bills_no_retainer_fee',
             ],
-            // No recurring capacity: an hourly-only agreement gets no strip and
-            // grants no monthly pool.
+            // No *monthly* recurring capacity, on the same terms: an agreement
+            // with `period_retainer_minutes` set still grants a pool.
             'retainer_minutes' => [
                 'covered_by' => TimeSheetTest::class,
                 'method' => 'test_an_agreement_with_no_retainer_reports_no_capacity',
@@ -265,7 +430,11 @@ final class NullSemanticsRegistryTest extends TestCase
             'terminated_at' => 'PENDING-AUDIT',
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
-            // Unstated: one hour, capped at the retainer the agreement has.
+            // Unstated: one hour, capped by whatever retainer the agreement
+            // has. The citation exercises the default on an ordinary ten-hour
+            // retainer, which does not reach the cap - the zero-retainer case
+            // that does is covered elsewhere but not cited here, so the cap
+            // half of this note is unpinned.
             'catch_up_threshold_minutes' => [
                 'covered_by' => InvoicingExamplesTest::class,
                 'method' => 'test_an_unset_threshold_defaults_to_one_hour',
@@ -307,29 +476,56 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => CapacityAndScopeGuardsTest::class,
                 'method' => 'test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
             ],
-            'agreement_link' => 'PENDING-AUDIT',
+            'agreement_link' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
         ],
         'client_time_entries' => [
-            'client_task_id' => 'PENDING-AUDIT',
+            // Part of the fragment-recombination signature, where null is
+            // encoded distinctly from a task id and decides whether two
+            // fragments may merge. Treating it as inert would let fragments that
+            // differ only in task attribution recombine, and the survivor's
+            // values would silently replace the other's.
+            'client_task_id' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            // Null is permitted for flat-hourly and direct entries, which is
+            // what the citation covers. On ordinary billable time the same null
+            // blocks approval and makes the entry unselectable for an explicit
+            // invoice, and that branch is unpinned.
             'billing_rate_amount' => [
-                'covered_by' => AgentTimeBillingWorkflowTest::class,
-                'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+                [
+                    'covered_by' => AgentTimeBillingWorkflowTest::class,
+                    'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+                ],
+                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
             ],
+            // Approval repairs a missing currency on a draft, which is the
+            // pinned branch. It does not reach an entry that is already approved
+            // or invoiced: there, explicit invoicing requires the stored currency
+            // to equal the invoice's, and a null matches nothing, so a preserved
+            // rate with no currency is permanently uninvoiceable.
             'currency' => [
-                'covered_by' => TimeSheetTest::class,
-                'method' => 'test_approval_supplies_a_currency_an_older_entry_lacks',
+                [
+                    'covered_by' => TimeSheetTest::class,
+                    'method' => 'test_approval_supplies_a_currency_an_older_entry_lacks',
+                ],
+                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
             ],
             'approved_by_user_id' => 'PENDING-AUDIT',
             'approved_at' => 'PENDING-AUDIT',
+            // Both cited a fixture that nulls the pair, while production refuses
+            // on `amount === null || currency === ''`. Because that is an OR,
+            // deleting either half left the cited test green on the other's
+            // null, so neither column was ever isolated. Named readers until a
+            // test nulls one at a time.
             'subcontractor_cost_amount' => [
-                'covered_by' => CapacityAndScopeGuardsTest::class,
-                'method' => 'test_flat_hourly_time_without_a_complete_snapshot_is_refused',
+                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
             ],
             'subcontractor_cost_currency' => [
-                'covered_by' => CapacityAndScopeGuardsTest::class,
-                'method' => 'test_flat_hourly_time_without_a_complete_snapshot_is_refused',
+                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
             ],
-            'subcontractor_cost_metadata' => 'PENDING-AUDIT',
+            // Also part of the fragment signature, and json-encoded into it, so
+            // a null is distinguishable from a payload.
+            'subcontractor_cost_metadata' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
             // No client-safe text was written, and the internal description is
@@ -346,11 +542,20 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                 'method' => 'test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
             ],
+            // Irrelevant on flat and direct entries, which is what the citation
+            // covers. On ordinary time it is load-bearing in the other
+            // direction: the "preserve the explicit stored rate" branch fires
+            // only on `source === 'explicit'`, so a null sends a legacy draft
+            // back through agreement-rate resolution and a rate change silently
+            // replaces the stored one.
             'billing_rate_source' => [
-                'covered_by' => AgentTimeBillingWorkflowTest::class,
-                'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+                [
+                    'covered_by' => AgentTimeBillingWorkflowTest::class,
+                    'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+                ],
+                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
             ],
-            'job_type' => 'PENDING-AUDIT',
+            'job_type' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
             // Not a fragment of anything. Lineage is the only thing that makes
             // two rows one entry, so entries that merely look alike - same day,
             // person, project and description - are never merged.
@@ -359,11 +564,16 @@ final class NullSemanticsRegistryTest extends TestCase
                 'method' => 'test_entries_that_merely_look_alike_are_never_merged',
             ],
             // Consultant time, not "unknown": null draws on the retainer pool
-            // and is invoiceable at the client rate. A cost with no mode is
-            // excluded fail-closed instead.
+            // and is invoiceable at the client rate - the pinned branch. The
+            // retainer scope reaches that reading only for an entry with no
+            // subcontractor cost; a cost-bearing entry with no mode is excluded
+            // fail-closed by the same scope, and nothing pins that half.
             'subcontractor_billing_mode' => [
-                'covered_by' => RetainerDrawConsistencyTest::class,
-                'method' => 'test_each_subcontractor_mode_has_one_consistent_billing_path',
+                [
+                    'covered_by' => RetainerDrawConsistencyTest::class,
+                    'method' => 'test_each_subcontractor_mode_has_one_consistent_billing_path',
+                ],
+                ['reader_in' => ClientTimeEntry::class, 'reads' => 'scopeRetainerBillable'],
             ],
         ],
     ];
@@ -378,7 +588,7 @@ final class NullSemanticsRegistryTest extends TestCase
         $missing = [];
 
         foreach (self::TABLES as $table) {
-            $registered = array_keys(self::REGISTRY[$table] ?? []);
+            $registered = array_keys(self::REGISTRY[$table]);
             $gap = array_diff($this->nullableColumns($table), $registered);
 
             if ($gap !== []) {
@@ -388,8 +598,8 @@ final class NullSemanticsRegistryTest extends TestCase
 
         $this->assertSame([], $missing, sprintf(
             "These nullable columns have no entry in NullSemanticsRegistryTest::REGISTRY:\n\n%s\n\n".
-            "Add an entry citing the test that covers the null branch, or 'PENDING-AUDIT' if the ".
-            'semantic audit has not reached it yet.',
+            "Add an entry citing the test that covers the null branch, naming the reader that ".
+            "branches on it, or 'PENDING-AUDIT' if no reader is known.",
             implode("\n", $missing),
         ));
     }
@@ -406,7 +616,7 @@ final class NullSemanticsRegistryTest extends TestCase
         foreach (self::TABLES as $table) {
             $nullable = array_flip($this->nullableColumns($table));
 
-            foreach (array_keys(self::REGISTRY[$table] ?? []) as $column) {
+            foreach (array_keys(self::REGISTRY[$table]) as $column) {
                 if (! isset($nullable[$column])) {
                     $stale[] = sprintf('%s.%s', $table, $column);
                 }
@@ -421,10 +631,15 @@ final class NullSemanticsRegistryTest extends TestCase
     }
 
     /**
-     * A citation is only as good as the test it points at. Verify the class
-     * exists and the method exists on it, so a bogus citation - a renamed
-     * method, a typo, a test that was deleted - fails loudly instead of
-     * standing in for coverage that no longer exists.
+     * A citation is only as good as the test it points at, and a named reader
+     * only as good as the code it points at. Resolve both by reflection so a
+     * rename, a typo or a deletion fails loudly instead of standing in for
+     * something that no longer exists.
+     *
+     * A citation must additionally resolve to a *public test method on a test
+     * class*. A bare `hasMethod()` accepted `setUp`, data providers, protected
+     * helpers and inherited methods, which meant a citation could be pointed at
+     * a method that runs no assertions and still pass.
      */
     public function test_every_citation_names_a_real_test_method(): void
     {
@@ -436,66 +651,177 @@ final class NullSemanticsRegistryTest extends TestCase
                     continue;
                 }
 
-                // One citation or several: a column whose null is branched on
-                // in more than one place carries one entry per branch.
-                $citations = isset($entry['covered_by']) ? [$entry] : $entry;
+                // No runtime shape check here: REGISTRY is a literal constant,
+                // so the `@var` above it is what rejects a malformed entry, and
+                // the strict analysis lane rejects it before the suite runs.
+                // A defensive branch would be unreachable code that reads as a
+                // guard.
+                //
+                // One entry or several: a column whose null is branched on in
+                // more than one place carries one per branch.
+                $entries = isset($entry['covered_by']) || isset($entry['reader_in']) ? [$entry] : $entry;
 
-                if (! is_array($entry) || $citations === []) {
-                    $bad[] = sprintf("%s.%s: entry must be 'PENDING-AUDIT', a citation, or a non-empty list of citations", $table, $column);
-
-                    continue;
-                }
-
-                foreach ($citations as $citation) {
-                    if (! is_array($citation) || array_keys($citation) !== ['covered_by', 'method']) {
-                        $bad[] = sprintf("%s.%s: each citation must be ['covered_by' => ..., 'method' => ...]", $table, $column);
-
-                        continue;
-                    }
-
-                    $class = $citation['covered_by'];
-                    $method = $citation['method'];
-
-                    if (! class_exists($class)) {
-                        $bad[] = sprintf('%s.%s: cited class %s does not exist', $table, $column, $class);
-
-                        continue;
-                    }
-
-                    if (! (new ReflectionClass($class))->hasMethod($method)) {
-                        $bad[] = sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, $method);
-                    }
+                foreach ($entries as $one) {
+                    $bad = [...$bad, ...$this->problemsWith($table, (string) $column, $one)];
                 }
             }
         }
 
-        $this->assertSame([], $bad, "These registry citations do not resolve:\n\n".implode("\n", $bad));
+        $this->assertSame([], $bad, "These registry entries do not resolve:\n\n".implode("\n", $bad));
     }
 
     /**
-     * Pin the PENDING-AUDIT count so it cannot drift silently. A registry
-     * entry can move from PENDING-AUDIT to a citation (or to a NOT NULL
-     * migration that removes it) only by also updating this constant, which
-     * keeps the count an honest measure of how much audit work remains.
+     * The ratchet proper: no column named in MUST_BE_COVERED may lose its
+     * citation, and unexamined columns may not accumulate.
+     *
+     * The first version of this pinned the PENDING-AUDIT count to an equality
+     * and called it a ratchet. It was not one, and neither was the floor that
+     * replaced it: both bound totals, and a total survives a swap. Demoting one
+     * column's citation while promoting another's leaves every count identical
+     * and ships the regression. Only naming the columns closes that, which is
+     * why MUST_BE_COVERED is a list and not a number.
      */
-    public function test_pending_audit_count_is_pinned(): void
+    public function test_the_registry_may_only_get_stronger(): void
     {
-        $count = 0;
+        $uncovered = [];
+
+        foreach (self::MUST_BE_COVERED as $name) {
+            [$table, $column] = explode('.', $name, 2);
+            $entry = self::REGISTRY[$table][$column] ?? null;
+
+            if ($entry === null) {
+                $uncovered[] = sprintf('%s: named in MUST_BE_COVERED but absent from the registry', $name);
+
+                continue;
+            }
+
+            if (! $this->carriesACitation($entry)) {
+                $uncovered[] = sprintf('%s: lost its citation', $name);
+            }
+        }
+
+        $this->assertSame([], $uncovered, sprintf(
+            "These columns are required to carry a citation and no longer do:\n\n%s\n\n".
+            'Restore the citation, or remove the column from MUST_BE_COVERED deliberately and say why in review.',
+            implode("\n", $uncovered),
+        ));
+
+        $pending = 0;
 
         foreach (self::REGISTRY as $columns) {
             foreach ($columns as $entry) {
                 if ($entry === 'PENDING-AUDIT') {
-                    $count++;
+                    $pending++;
                 }
             }
         }
 
-        $this->assertSame(
-            self::PENDING_AUDIT_COUNT,
-            $count,
-            'The PENDING-AUDIT count changed without updating NullSemanticsRegistryTest::PENDING_AUDIT_COUNT. '.
-            'Update the constant to match (it may only decrease).',
+        $this->assertLessThanOrEqual(
+            self::PENDING_AUDIT_CEILING,
+            $pending,
+            "There are more PENDING-AUDIT entries than NullSemanticsRegistryTest::PENDING_AUDIT_CEILING allows.\n".
+            'Resolve the new column to a citation or a named reader, or raise the ceiling deliberately.',
         );
+    }
+
+    /**
+     * Does this entry carry at least one citation, as opposed to only named
+     * readers?
+     */
+    private function carriesACitation(mixed $entry): bool
+    {
+        if (! is_array($entry)) {
+            return false;
+        }
+
+        if (isset($entry['covered_by'])) {
+            return true;
+        }
+
+        if (isset($entry['reader_in'])) {
+            return false;
+        }
+
+        foreach ($entry as $one) {
+            if (is_array($one) && isset($one['covered_by'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return list<string>
+     */
+    private function problemsWith(string $table, string $column, array $entry): array
+    {
+        $keys = array_keys($entry);
+
+        if ($keys === ['covered_by', 'method']) {
+            return $this->problemsWithCitation($table, $column, $entry['covered_by'], $entry['method']);
+        }
+
+        if ($keys === ['reader_in', 'reads']) {
+            return $this->problemsWithReader($table, $column, $entry['reader_in'], $entry['reads']);
+        }
+
+        return [sprintf(
+            "%s.%s: each entry must be ['covered_by' => ..., 'method' => ...] or ['reader_in' => ..., 'reads' => ...]",
+            $table,
+            $column,
+        )];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function problemsWithCitation(string $table, string $column, mixed $class, mixed $method): array
+    {
+        if (! is_string($class) || ! class_exists($class)) {
+            return [sprintf('%s.%s: cited class %s does not exist', $table, $column, (string) $class)];
+        }
+
+        if (! is_subclass_of($class, TestCase::class)) {
+            return [sprintf('%s.%s: cited class %s is not a test case', $table, $column, $class)];
+        }
+
+        $reflection = new ReflectionClass($class);
+
+        if (! is_string($method) || ! $reflection->hasMethod($method)) {
+            return [sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, (string) $method)];
+        }
+
+        if (! str_starts_with($method, 'test_')) {
+            return [sprintf('%s.%s: cited method %s::%s is not a test method', $table, $column, $class, $method)];
+        }
+
+        // Declared on the cited class, not inherited: a citation that resolves
+        // to a base-class method names a test the cited class does not run.
+        $declaring = $reflection->getMethod($method);
+
+        if (! $declaring->isPublic() || $declaring->getDeclaringClass()->getName() !== $class) {
+            return [sprintf('%s.%s: cited method %s::%s is not a public test declared on that class', $table, $column, $class, $method)];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function problemsWithReader(string $table, string $column, mixed $class, mixed $method): array
+    {
+        if (! is_string($class) || ! class_exists($class)) {
+            return [sprintf('%s.%s: named reader class %s does not exist', $table, $column, (string) $class)];
+        }
+
+        if (! is_string($method) || ! (new ReflectionClass($class))->hasMethod($method)) {
+            return [sprintf('%s.%s: named reader %s::%s does not exist', $table, $column, $class, (string) $method)];
+        }
+
+        return [];
     }
 
     /**
