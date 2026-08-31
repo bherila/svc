@@ -598,7 +598,7 @@ final class NullSemanticsRegistryTest extends TestCase
 
         $this->assertSame([], $missing, sprintf(
             "These nullable columns have no entry in NullSemanticsRegistryTest::REGISTRY:\n\n%s\n\n".
-            "Add an entry citing the test that covers the null branch, naming the reader that ".
+            'Add an entry citing the test that covers the null branch, naming the reader that '.
             "branches on it, or 'PENDING-AUDIT' if no reader is known.",
             implode("\n", $missing),
         ));
