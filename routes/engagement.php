@@ -9,6 +9,13 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/time', TimeSheetController::class)
         ->name('svc.engagement.time-entries.index');
+
+    // The same sheet as a tab of one client. Named `clients.*` so it picks up
+    // the company switcher, and bound by route rather than query string:
+    // inside the client context the company is not a filter the page chooses,
+    // it is where the operator already is.
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/time', TimeSheetController::class)
+        ->name('clients.time');
     Route::post('/workspaces/{workspace}/projects/{clientProject}/time-entries', [TimeEntryController::class, 'store'])
         ->name('svc.engagement.time-entries.store');
     Route::patch('/workspaces/{workspace}/time-entries/{timeEntry}', [TimeEntryController::class, 'update'])

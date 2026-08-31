@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,12 +106,74 @@ class ClientContextTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('clientContext', null));
     }
 
+    /**
+     * The Time tab is the same sheet, bound to the company by route.
+     *
+     * Worth its own assertion because the sheet already had a company filter
+     * and falls back to the first company when the query string is missing or
+     * stale - so a route parameter that quietly did nothing would still render
+     * a plausible page, showing the wrong client's time under the right
+     * client's switcher.
+     */
+    public function test_the_time_tab_selects_the_company_named_in_the_route(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Tabbed', 'synthetic-tabbed', $manager);
+        // Both need a project: the sheet lists only companies with work the
+        // viewer can reach, and a company it cannot list is a company it cannot
+        // select. Alphabetically first is what it falls back to.
+        $fallback = $this->company($workspace, 'Aa Synthetic Fallback Client', 'aa-fallback-client');
+        $this->project($workspace, $fallback, 'Aa Synthetic Project');
+        $wanted = $this->company($workspace, 'Zz Synthetic Wanted Client', 'zz-wanted-client');
+        $this->project($workspace, $wanted, 'Zz Synthetic Project');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$wanted->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('time')
+                ->where('filters.company_id', $wanted->public_id)
+                ->where('clientContext.current_company_id', $wanted->public_id));
+    }
+
+    /**
+     * The workspace-wide sheet keeps working and shows no client chrome, so the
+     * tab is an additional way in rather than a replacement that strands
+     * anyone mid-migration.
+     */
+    public function test_the_workspace_wide_sheet_carries_no_client_context(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Wide', 'synthetic-wide', $manager);
+        $this->company($workspace, 'Synthetic Wide Client', 'synthetic-wide-client');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('time')
+                ->where('clientContext', null));
+    }
+
     private function workspace(string $name, string $slug, User $owner): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);
-        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'manager']);
+        // `admin`, not `manager`: only owner/admin resolve to a project role,
+        // and the time sheet lists a company only when the viewer can reach
+        // work inside it.
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'admin']);
 
         return $workspace;
+    }
+
+    private function project(Workspace $workspace, ClientCompany $company, string $name): ClientProject
+    {
+        return ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => $name,
+            'status' => 'active',
+        ]);
     }
 
     private function company(Workspace $workspace, string $name, string $slug): ClientCompany
