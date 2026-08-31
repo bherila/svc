@@ -428,9 +428,21 @@ class InvoiceLineComposer
     /**
      * Link all time entry fragments to their respective invoice lines, handling splits correctly.
      *
+     * The company is a parameter rather than something read off the fragments,
+     * because the fragments are where the doubt is. A fragment names the entry
+     * it came from, and `split_from_time_entry_id` is unconstrained lineage - a
+     * row migrated from before #113's composite keys can name an entry in
+     * another tenant, or in another client of this one. Resolving that id
+     * unscoped attaches that work to this invoice, and the caller is the only
+     * party that knows whose invoice it is.
+     *
+     * Both keys, not just the workspace: an entry belonging to a sibling client
+     * of the same tenant is as wrong on this invoice as one from another tenant,
+     * and only the first would be caught by a workspace check.
+     *
      * @param  array<int, array<int, TimeEntryFragment>>  $fragmentsToLines
      */
-    public function linkAllFragmentsToLines(array $fragmentsToLines, TimeEntrySplitter $splitter): void
+    public function linkAllFragmentsToLines(ClientCompany $company, array $fragmentsToLines, TimeEntrySplitter $splitter): void
     {
         $entrySplitPlan = [];
 
@@ -448,7 +460,16 @@ class InvoiceLineComposer
         }
 
         foreach ($entrySplitPlan as $entryId => $splits) {
-            $entry = ClientTimeEntry::find($entryId);
+            $entry = ClientTimeEntry::query()
+                ->where('workspace_id', $company->workspace_id)
+                ->where('client_company_id', $company->id)
+                ->find($entryId);
+
+            // Skipped rather than refused. A fragment naming an entry this
+            // workspace does not own is a lineage fault in migrated data, not
+            // something this invoice run can repair - and stopping the run
+            // would leave the invoice half-composed. `svc:billing:audit-tenant-foreign-keys`
+            // is where such rows are meant to surface.
             if (! $entry) {
                 continue;
             }

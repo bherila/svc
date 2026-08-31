@@ -304,7 +304,7 @@ final class InvoiceLineComposerTest extends TestCase
         $retainer = $this->line($invoice, 'prior_month_retainer', 0, 0);
         $overage = $this->line($invoice, 'additional_hours', 30000, 30000, 1);
 
-        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
             $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
             $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
         ], app(TimeEntrySplitter::class));
@@ -323,13 +323,88 @@ final class InvoiceLineComposerTest extends TestCase
         $this->assertSame($entry->id, $fragment->split_from_time_entry_id);
     }
 
+    /**
+     * A fragment naming another client's entry is not billed on this invoice.
+     *
+     * `split_from_time_entry_id` is unconstrained lineage - a row migrated from
+     * before #113's composite keys can name an entry belonging to someone else -
+     * and this resolved that id with `ClientTimeEntry::find()`, which reaches
+     * every workspace. Whatever row carried the id was attached to this invoice.
+     *
+     * Two entries, because the two halves fail differently and only one of them
+     * was ever going to be noticed:
+     *
+     * - The **foreign tenant's** entry is caught by the pivot's composite
+     *   foreign key. Unscoped, the insert raises rather than mis-attributing, so
+     *   #113 already contains that half - loudly, mid-invoice-run.
+     * - The **sibling client's** entry shares this workspace, so no foreign key
+     *   objects. Unscoped it is silently attached, and one client is invoiced
+     *   for work done for another client of the same firm. Verified by running
+     *   this test against the unscoped lookup with the foreign entry removed:
+     *   the line comes back holding one row instead of none.
+     *
+     * That second case is why the lookup names the company as well as the
+     * workspace. A workspace check alone reads as sufficient and is not.
+     */
+    public function test_a_fragment_naming_another_clients_entry_is_not_attached(): void
+    {
+        $invoice = $this->invoice();
+        $line = $this->line($invoice, 'additional_hours', 30000, 30000);
+
+        $sibling = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Sibling Client', 'slug' => 'sibling-client',
+        ]);
+        $siblingEntry = $this->entryFor($sibling, $this->workspace, "Another client's work");
+
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign', 'slug' => 'foreign-composer']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreignWorkspace->id, 'name' => 'Foreign Client', 'slug' => 'foreign-composer-client',
+        ]);
+        $foreignEntry = $this->entryFor($foreignCompany, $foreignWorkspace, "Another tenant's work");
+
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
+            $line->id => [
+                new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
+                new TimeEntryFragment($foreignEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
+            ],
+        ], app(TimeEntrySplitter::class));
+
+        $this->assertSame(0, $line->timeEntries()->count(), "Neither entry is this invoice's to bill");
+        $this->assertNull($siblingEntry->fresh()?->split_from_time_entry_id);
+        $this->assertNull($foreignEntry->fresh()?->split_from_time_entry_id);
+    }
+
+    /** An approved, billable entry belonging to someone other than the subject. */
+    private function entryFor(ClientCompany $company, Workspace $workspace, string $description): ClientTimeEntry
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => $description.' project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-03-14',
+            'minutes' => 60,
+            'description' => $description,
+            'is_billable' => true,
+            'is_deferred' => true,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+    }
+
     public function test_an_entry_covered_by_one_line_is_not_split(): void
     {
         $entry = $this->entry(60);
         $invoice = $this->invoice();
         $line = $this->line($invoice, 'additional_hours', 30000, 30000);
 
-        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
             $line->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
         ], app(TimeEntrySplitter::class));
 
