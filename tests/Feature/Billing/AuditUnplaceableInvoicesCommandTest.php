@@ -178,6 +178,173 @@ final class AuditUnplaceableInvoicesCommandTest extends TestCase
         $this->assertSame(0, $summary['affected']);
     }
 
+    // ── The cycle columns (#141) ─────────────────────────────────────────────
+
+    public function test_an_invoice_naming_both_cycle_dates_is_not_counted(): void
+    {
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => '2026-01-01',
+            'cycle_end' => '2026-01-31',
+        ]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(0, $summary['without_a_cycle']);
+        $this->assertSame(0, $summary['live_without_a_cycle']);
+        $this->assertSame(0, $summary['cycle_affected']);
+    }
+
+    public function test_a_half_named_cycle_is_as_unmatchable_as_no_cycle_at_all(): void
+    {
+        // `cycleInvoices()` matches on both columns, so either one missing is
+        // enough to make the row invisible to every caller. Counting only rows
+        // that are missing both would report a fraction of the population.
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => '2026-01-01',
+        ]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['without_a_cycle'], 'A start alone matches nothing');
+        $this->assertSame(1, $summary['cycle_affected']);
+    }
+
+    public function test_an_invoice_of_a_kind_no_cycle_lookup_reads_is_not_counted(): void
+    {
+        // The condition real data put here. Every cycle lookup filters by kind
+        // before it compares cycle dates, so an ad-hoc row is excluded before
+        // its columns are read and a null there cannot reach a sum or a guard.
+        // Counting it reported an exposed population where there was none.
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5', 'invoice_kind' => 'ad_hoc']);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['without_a_cycle'], 'It names no cycle');
+        $this->assertSame(0, $summary['of_a_kind_read_by_cycle'], 'But nothing looks it up by one');
+        $this->assertSame(0, $summary['live_without_a_cycle']);
+        $this->assertSame(0, $summary['cycle_affected']);
+    }
+
+    public function test_each_kind_matched_by_cycle_is_counted_on_its_own(): void
+    {
+        // Both kinds, separately. `cycleInvoices()` is called for interim
+        // overage and the resell guards match cadence periods, so dropping
+        // either from the rule would leave a whole class of exposed invoice
+        // unreported while the other kept the count non-zero and plausible.
+        // `terminal` is deliberately absent: no cycle lookup reads it.
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5', 'invoice_kind' => 'cadence_period']);
+
+        $this->assertSame(1, $this->summary()['of_a_kind_read_by_cycle'], 'A cadence period is matched by cycle');
+
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '3', 'invoice_kind' => 'interim_overage']);
+
+        $this->assertSame(2, $this->summary()['of_a_kind_read_by_cycle'], 'And so is an interim overage');
+
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '7', 'invoice_kind' => 'terminal']);
+
+        $this->assertSame(2, $this->summary()['of_a_kind_read_by_cycle'], 'A terminal invoice is not');
+    }
+
+    public function test_a_migrated_invoice_carrying_no_kind_is_counted(): void
+    {
+        // The one exception, and it is deliberate: the cadence resell guard
+        // reads a null kind on purpose, because a migrated invoice carries
+        // none. `ClientInvoicingService:620` says so in as many words - that
+        // exclusion was itself a defect once.
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5', 'invoice_kind' => null]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['of_a_kind_read_by_cycle'], 'A guard reads it');
+        $this->assertSame(1, $summary['cycle_affected']);
+    }
+
+    public function test_a_draft_with_no_cycle_evades_the_guards_without_moving_a_sum(): void
+    {
+        // The two counts answer different questions and a draft separates them:
+        // the duplicate guards read live statuses, so it is one of theirs, but
+        // it has charged nobody and so cannot be billed a second time.
+        $this->invoice(['status' => 'draft', 'hours_billed_at_rate' => '5']);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['live_without_a_cycle'], 'A guard cannot see it');
+        $this->assertSame(0, $summary['cycle_affected'], 'But no sum reads it either');
+        $this->assertSame(0.0, $summary['cycle_overage_hours_at_stake']);
+    }
+
+    public function test_a_void_invoice_with_no_cycle_is_counted_by_neither(): void
+    {
+        // Void is neither live nor charged. It cannot be resold and cannot be
+        // charged again, so reporting it would inflate both counts with rows
+        // that no code path reads.
+        $this->invoice(['status' => 'void', 'hours_billed_at_rate' => '5']);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['without_a_cycle'], 'The row exists');
+        $this->assertSame(0, $summary['live_without_a_cycle']);
+        $this->assertSame(0, $summary['cycle_affected']);
+    }
+
+    public function test_the_cycle_count_and_the_period_count_do_not_leak_into_each_other(): void
+    {
+        // The structural risk in reporting two funnels from one command is that
+        // one row satisfies both and is reported twice, or that a condition
+        // written for one silently narrows the other. A row with a real service
+        // period and no cycle belongs to the cycle funnel alone.
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'service_period_end' => '2026-01-31',
+        ]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(0, $summary['without_a_service_period'], 'Its period is placed');
+        $this->assertSame(0, $summary['affected']);
+        $this->assertSame(0.0, $summary['overage_hours_at_stake']);
+
+        $this->assertSame(1, $summary['cycle_affected'], 'Its cycle is not');
+        $this->assertSame(5.0, $summary['cycle_overage_hours_at_stake']);
+    }
+
+    public function test_a_cycleless_invoice_on_a_foreign_agreement_is_not_counted(): void
+    {
+        // The cycle funnel reads the same lineage as the period one, and gets
+        // the same treatment: the guards and sums filter agreement and
+        // workspace together, so a row naming neither is not one of theirs.
+        $elsewhere = Workspace::query()->create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $elsewhere->id, 'name' => 'Other Client', 'slug' => 'other-client',
+        ]);
+        $foreignAgreement = ClientAgreement::query()->create([
+            'workspace_id' => $elsewhere->id,
+            'client_company_id' => $foreignCompany->id,
+            'title' => 'Their retainer',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+        ]);
+
+        $this->invoice([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'client_agreement_id' => $foreignAgreement->id,
+        ]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['without_a_cycle'], 'The row has no cycle');
+        $this->assertSame(0, $summary['live_without_a_cycle'], 'But belongs to no guard');
+        $this->assertSame(0, $summary['cycle_affected']);
+    }
+
     public function test_the_report_names_no_workspace_company_agreement_or_invoice(): void
     {
         // The value of this command is that its output can be pasted into a
@@ -189,6 +356,7 @@ final class AuditUnplaceableInvoicesCommandTest extends TestCase
         $report = Artisan::output();
 
         $this->assertStringContainsString('Overage hours at stake', $report, 'The report ran');
+        $this->assertStringContainsString('Cycle overage hours at stake', $report, 'Both funnels printed');
 
         $secrets = [
             'Unplaceable Workspace', 'Unplaceable Client', 'Undated retainer',
