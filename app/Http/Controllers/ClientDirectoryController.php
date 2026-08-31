@@ -530,6 +530,10 @@ class ClientDirectoryController extends Controller
                 'description' => $project->description,
                 'status' => $project->status,
                 'is_visible_to_client' => (bool) $project->is_visible_to_client,
+                // The version this form is rendered from, sent back on save so
+                // the write can refuse a payload composed against values
+                // someone has since changed.
+                'lock_version' => (int) $project->lock_version,
             ])->values()->all(),
         ]);
     }
