@@ -160,6 +160,14 @@ final class AllocationServiceTest extends TestCase
             $parts['overflow']->forceFill(['billing_rate_amount' => 15000])->save();
         }
 
+        // The approval author has to be a real user. A literal id in the
+        // provider passes on SQLite and violates the foreign key on MariaDB,
+        // which is the divergence that lane exists to catch - and a provider
+        // is static, so the substitution belongs here.
+        if ($field === 'approved_by_user_id') {
+            $value = User::factory()->create()->id;
+        }
+
         $parts['overflow']->forceFill([$field => $value])->save();
 
         $this->assertSame(0, $this->recombine());
@@ -181,7 +189,9 @@ final class AllocationServiceTest extends TestCase
             // means a later workflow re-resolved it. The monetary amount can be
             // identical while those meanings cannot be folded together.
             'billing rate source' => ['billing_rate_source', 'agreement'],
-            'approval author' => ['approved_by_user_id', 1],
+            // The id is replaced by a real user in the test body; a literal
+            // here would violate the foreign key on MariaDB.
+            'approval author' => ['approved_by_user_id', 0],
             'approval timestamp' => ['approved_at', '2026-03-14 09:30:00'],
         ];
     }
