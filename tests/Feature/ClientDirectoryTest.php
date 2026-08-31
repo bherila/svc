@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -24,6 +25,7 @@ class ClientDirectoryTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_the_list_reports_projects_invoices_and_this_periods_retainer(): void
     {
@@ -120,23 +122,34 @@ class ClientDirectoryTest extends TestCase
             'status' => 'approved',
         ]);
         // This company, its own project - but another workspace's row.
+        //
+        // Refused by the composite tenant keys since #113, so it is seeded with
+        // enforcement suspended: the subject here is the *query's* project
+        // scoping, and a database migrated from before those keys can still
+        // hold rows shaped like this.
         $foreign = Workspace::query()->create(['name' => 'Foreign Chain', 'slug' => 'foreign-chain']);
-        $this->timeEntry($foreign, $company, $ownProject, [
+        $this->writingLegacyCrossTenantRows(fn () => $this->timeEntry($foreign, $company, $ownProject, [
             'worked_on' => $worked,
             'minutes' => 480,
             'status' => 'approved',
-        ]);
+        ]));
         // And the chain broken one link further out: a project owned by another
         // workspace that names this company, with a row of this workspace's own
         // pointing at it. The entry passes every filter keyed on the workspace
         // and the company; only a project set built inside this workspace
         // excludes it.
-        $foreignProject = $this->project($foreign, $company, 'Foreign Chain Project');
-        $this->timeEntry($workspace, $company, $foreignProject, [
-            'worked_on' => $worked,
-            'minutes' => 240,
-            'status' => 'approved',
-        ]);
+        // Both writes are refused now: the project because it names this
+        // company from another workspace, and the entry because it points at
+        // that project. They are seeded together, since either alone leaves the
+        // broken chain this test exists to describe half-built.
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $workspace, $company, $worked) {
+            $foreignProject = $this->project($foreign, $company, 'Foreign Chain Project');
+            $this->timeEntry($workspace, $company, $foreignProject, [
+                'worked_on' => $worked,
+                'minutes' => 240,
+                'status' => 'approved',
+            ]);
+        });
 
         $this->actingAs($manager)
             ->get("/workspaces/{$workspace->public_id}/clients")
@@ -424,21 +437,25 @@ class ClientDirectoryTest extends TestCase
         // The defect class this repo repeats: a row owned by another workspace
         // that names a company visible here. Keyed on the company alone, each
         // of these is counted or serialized on its parent's authority.
-        $strayProject = $this->project($foreign, $company, 'Stray Foreign Project Name');
-        $this->invoice($foreign, $company, 'STRAY-INV-9999', 'issued');
-        $this->invoice($foreign, $company, 'STRAY-INV-DRAFT', 'draft');
-        $this->agreement($foreign, $company, [
-            'title' => 'Stray Agreement Title',
-            'status' => 'active',
-            'billing_cadence' => 'monthly',
-            'starts_on' => '2026-01-01',
-            'retainer_minutes' => 9999,
-        ]);
-        $this->timeEntry($foreign, $company, $strayProject, [
-            'worked_on' => now()->startOfMonth()->toDateString(),
-            'minutes' => 999,
-            'status' => 'approved',
-        ]);
+        $strayProject = $this->writingLegacyCrossTenantRows(function () use ($foreign, $company) {
+            $project = $this->project($foreign, $company, 'Stray Foreign Project Name');
+            $this->invoice($foreign, $company, 'STRAY-INV-9999', 'issued');
+            $this->invoice($foreign, $company, 'STRAY-INV-DRAFT', 'draft');
+            $this->agreement($foreign, $company, [
+                'title' => 'Stray Agreement Title',
+                'status' => 'active',
+                'billing_cadence' => 'monthly',
+                'starts_on' => '2026-01-01',
+                'retainer_minutes' => 9999,
+            ]);
+            $this->timeEntry($foreign, $company, $project, [
+                'worked_on' => now()->startOfMonth()->toDateString(),
+                'minutes' => 999,
+                'status' => 'approved',
+            ]);
+
+            return $project;
+        });
 
         $response = $this->actingAs($manager)
             ->get("/workspaces/{$workspace->public_id}/clients")
@@ -492,14 +509,16 @@ class ClientDirectoryTest extends TestCase
         $this->invoice($workspace, $sibling, 'SIBLING-INV-4242', 'issued');
 
         $foreign = Workspace::query()->create(['name' => 'Foreign Detail Tenant', 'slug' => 'foreign-detail']);
-        $this->project($foreign, $company, 'Stray Detail Project Name');
-        $this->invoice($foreign, $company, 'STRAY-DETAIL-8888', 'issued');
-        $this->agreement($foreign, $company, [
-            'title' => 'Stray Detail Agreement Title',
-            'status' => 'active',
-            'billing_cadence' => 'monthly',
-            'starts_on' => '2026-01-01',
-        ]);
+        $this->writingLegacyCrossTenantRows(function () use ($foreign, $company) {
+            $this->project($foreign, $company, 'Stray Detail Project Name');
+            $this->invoice($foreign, $company, 'STRAY-DETAIL-8888', 'issued');
+            $this->agreement($foreign, $company, [
+                'title' => 'Stray Detail Agreement Title',
+                'status' => 'active',
+                'billing_cadence' => 'monthly',
+                'starts_on' => '2026-01-01',
+            ]);
+        });
 
         // An agreement scoped to a project of another company still names it by
         // an independent key. The name must not be resolved from that key.
