@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import type { FormEvent } from 'react';
+import { AppearanceSelector } from '@/components/appearance-selector';
 
 type Task = {
     id: string;
@@ -193,6 +194,7 @@ export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
                                     </div>
                                 </details>
                             )}
+                            <AppearanceSelector />
                             <Link
                                 href="/logout"
                                 method="post"

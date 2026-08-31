@@ -2,6 +2,7 @@ import { Head, Link, router, useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
+import { AppearanceSelector } from '@/components/appearance-selector';
 import { todayIn } from '@/lib/time';
 
 type TimeEntry = {
@@ -617,6 +618,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                             </h1>
                         </div>
                         <div className="flex items-center gap-4">
+                            <AppearanceSelector />
                             <Link
                                 href={`/workspaces/${workspace.id}/clients`}
                                 className="text-sm font-semibold text-cyan-700"

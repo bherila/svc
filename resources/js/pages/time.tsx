@@ -1,6 +1,7 @@
 import { Head, router } from '@inertiajs/react';
 import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { AppearanceSelector } from '@/components/appearance-selector';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
 import {
     AlertDialog,
@@ -308,6 +309,7 @@ export default function TimeSheet({
                         </div>
 
                         <div className="flex items-center gap-2">
+                            <AppearanceSelector />
                             {companies.length > 1 && (
                                 <Select
                                     value={company?.id ?? ''}
