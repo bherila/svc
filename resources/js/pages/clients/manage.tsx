@@ -175,7 +175,7 @@ function ProjectForm({
                 step later.
             */}
             {form.errors.lock_version ? (
-                <p role="alert" className="text-destructive text-sm">
+                <p role="alert" className="text-sm text-destructive">
                     {form.errors.lock_version}
                 </p>
             ) : null}
