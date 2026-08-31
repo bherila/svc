@@ -120,62 +120,134 @@ final class NullSemanticsRegistryTest extends TestCase
     ];
 
     /**
-     * The most PENDING-AUDIT entries the registry may contain.
+     * Every registered branch, by identity, that the registry may not lose.
      *
-     * A ceiling, not a pin. Resolving a column to a citation, to a named
-     * reader, or to a NOT NULL migration lowers the count and passes; adding a
-     * new unexamined nullable column raises it and fails until someone lowers
-     * the ceiling deliberately, which is a visible admission rather than a
-     * silent drift.
-     */
-    private const PENDING_AUDIT_CEILING = 20;
-
-    /**
-     * The columns that must carry at least one citation, by name.
+     * A superset check, and the third attempt at this ratchet. The first pinned
+     * the PENDING-AUDIT count to an equality; the second put a floor under the
+     * covered count. Both bound totals, and a total survives a swap. The third
+     * named the covered columns - better, but still too coarse, because "this
+     * column carries a citation" is satisfied by *any one* of its entries. A
+     * column registering four branches could be cut back to one and pass.
      *
-     * A set, not a count, and that distinction is the whole ratchet. Counting
-     * cannot tell you *which* columns are covered, so any bound on a count -
-     * including a floor - is satisfied by a swap: demote one column's citation,
-     * promote another's, and the totals are unchanged while a specific
-     * regression ships. Naming the columns means a citation can be added
-     * anywhere for free, and removing one from a column listed here fails no
-     * matter what else improves.
+     * So the unit here is the branch, not the column and not a number. Each
+     * line is one `table.column => Class::method` that must still be present.
+     * Adding a branch is free; removing one fails by name.
      *
-     * Adding a column to this list is how coverage ratchets up. Removing one
-     * is possible, but it is an edit someone has to make on purpose and defend
-     * in review, which is the point.
+     * Yes, this duplicates the registry. That is what a ratchet is: the
+     * duplication is the part that cannot be edited away by accident, and a
+     * deletion that would otherwise read as tidying has to be made twice and
+     * defended once.
      *
      * @var list<string>
      */
-    private const MUST_BE_COVERED = [
-        'client_invoices.client_agreement_id',
-        'client_invoices.client_billing_schedule_id',
-        'client_invoices.issue_date',
-        'client_invoices.due_date',
-        'client_invoices.service_period_end',
-        'client_invoices.invoice_kind',
-        'client_invoice_lines.client_project_id',
-        'client_invoice_lines.line_date',
-        'client_agreements.starts_on',
-        'client_agreements.hourly_rate_amount',
-        'client_agreements.retainer_amount',
-        'client_agreements.retainer_minutes',
-        'client_agreements.activated_at',
-        'client_agreements.signed_at',
-        'client_agreements.catch_up_threshold_minutes',
-        'client_agreements.period_retainer_minutes',
-        'client_agreements.period_retainer_amount',
-        'client_agreements.rollover_months',
-        'client_agreements.initial_rollover_minutes',
-        'client_agreements.bill_overage_interim',
-        'client_agreements.first_cycle_proration',
-        'client_time_entries.billing_rate_amount',
-        'client_time_entries.currency',
-        'client_time_entries.client_visible_description',
-        'client_time_entries.deleted_at',
-        'client_time_entries.billing_rate_source',
-        'client_time_entries.split_from_time_entry_id',
-        'client_time_entries.subcontractor_billing_mode',
+    private const REGISTERED_BRANCHES = [
+        'client_agreements.activated_at => EngagementWorkflowTest::test_only_an_unstamped_agreement_takes_an_activation_date',
+        'client_agreements.agreement_link => BackfillBillingLedgerCommand::applyRow',
+        'client_agreements.bill_overage_interim => CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
+        'client_agreements.catch_up_threshold_minutes => InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
+        'client_agreements.client_project_id => AgreementBillingRateResolver::resolve',
+        'client_agreements.ends_on => AgreementBillingRateResolver::resolve',
+        'client_agreements.first_cycle_proration => CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
+        'client_agreements.hourly_rate_amount => DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
+        'client_agreements.hourly_rate_amount => InvoiceLineComposer::addDeferredTerminationLine',
+        'client_agreements.initial_rollover_minutes => InvoiceLedgerBuilderTest::test_an_agreement_with_no_recorded_opening_rollover_grants_none',
+        'client_agreements.period_retainer_amount => RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
+        'client_agreements.period_retainer_minutes => RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
+        'client_agreements.retainer_amount => RetainerCalculatorTest::test_an_agreement_with_no_retainer_price_bills_no_retainer_fee',
+        'client_agreements.retainer_minutes => TimeSheetTest::test_an_agreement_with_no_retainer_reports_no_capacity',
+        'client_agreements.rollover_months => InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
+        'client_agreements.signed_at => EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
+        'client_agreements.source_proposal_id => ProposalWorkflow::accept',
+        'client_agreements.starts_on => AgreementBillingRateResolver::resolve',
+        'client_agreements.starts_on => TimeSheetController::capacityByMonth',
+        'client_agreements.starts_on => TimeSheetTest::test_an_agreement_with_no_start_date_reports_no_capacity',
+        'client_invoice_lines.client_agreement_id => ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_agreement_recurring_item_id => ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_project_id => InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
+        'client_invoice_lines.hours => ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.line_date => CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
+        'client_invoices.client_agreement_id => DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.client_billing_schedule_id => BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
+        'client_invoices.client_billing_schedule_id => ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod',
+        'client_invoices.cycle_end => InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.cycle_start => InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.due_date => AgentReadController::summary',
+        'client_invoices.due_date => BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.hours_billed_at_rate => ClientInvoicingService::totalBilledOveragesThrough',
+        'client_invoices.hours_billed_at_rate => InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.hours_worked => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.invoice_kind => CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
+        'client_invoices.invoice_kind => DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.issue_date => BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.negative_hours_balance => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.paid_on => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.retainer_hours_included => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.rollover_hours_used => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.service_period_end => CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
+        'client_invoices.service_period_end => DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_without_a_service_period_fails_closed',
+        'client_invoices.service_period_end => InterimOverageGenerator::generateInterimOverageInvoice',
+        'client_invoices.service_period_end => InvoiceLineComposer::addDeferredTerminationLine',
+        'client_invoices.service_period_start => DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.starting_negative_hours => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.starting_unused_hours => BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.unused_hours_balance => BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.billing_rate_amount => AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+        'client_time_entries.billing_rate_amount => InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.billing_rate_source => AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+        'client_time_entries.billing_rate_source => TimeEntryMutationService::approvalRate',
+        'client_time_entries.client_task_id => AllocationService::canMerge',
+        'client_time_entries.client_visible_description => AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
+        'client_time_entries.currency => InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.currency => TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
+        'client_time_entries.deleted_at => DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
+        'client_time_entries.job_type => BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.split_from_time_entry_id => AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
+        'client_time_entries.subcontractor_billing_mode => ClientTimeEntry::scopeRetainerBillable',
+        'client_time_entries.subcontractor_billing_mode => RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
+        'client_time_entries.subcontractor_cost_amount => InvoiceLineComposer::addFlatHourlySubcontractorEntries',
+        'client_time_entries.subcontractor_cost_amount => TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_cost_currency => InvoiceLineComposer::addFlatHourlySubcontractorEntries',
+        'client_time_entries.subcontractor_cost_currency => TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_cost_metadata => AllocationService::canMerge',
+    ];
+
+    /**
+     * The columns whose null has no known reader, by name.
+     *
+     * A named set rather than a ceiling, for the reason the ceiling failed: a
+     * bound leaves reusable slack. Once one pending column resolved, a new
+     * unexamined nullable column could take its place in the count and land
+     * without anyone deciding anything - which is exactly what the ceiling's
+     * own comment claimed was impossible.
+     *
+     * Leaving this set is free and is the direction of travel. Joining it is
+     * not: a column that appears here without being listed fails, so admitting
+     * "we have not looked at this one" stays a deliberate act.
+     *
+     * @var list<string>
+     */
+    private const PENDING_COLUMNS = [
+        'client_agreements.agreement_text',
+        'client_agreements.created_at',
+        'client_agreements.rollover_policy',
+        'client_agreements.signed_by_user_id',
+        'client_agreements.signer_name',
+        'client_agreements.signer_title',
+        'client_agreements.terminated_at',
+        'client_agreements.updated_at',
+        'client_invoice_lines.created_at',
+        'client_invoice_lines.updated_at',
+        'client_invoices.created_at',
+        'client_invoices.issued_at',
+        'client_invoices.notes',
+        'client_invoices.updated_at',
+        'client_invoices.void_reason',
+        'client_invoices.voided_at',
+        'client_time_entries.approved_at',
+        'client_time_entries.approved_by_user_id',
+        'client_time_entries.created_at',
+        'client_time_entries.updated_at',
     ];
 
     /**
@@ -667,12 +739,6 @@ final class NullSemanticsRegistryTest extends TestCase
                     continue;
                 }
 
-                // No runtime shape check here: REGISTRY is a literal constant,
-                // so the `@var` above it is what rejects a malformed entry, and
-                // the strict analysis lane rejects it before the suite runs.
-                // A defensive branch would be unreachable code that reads as a
-                // guard.
-                //
                 // One entry or several: a column whose null is branched on in
                 // more than one place carries one per branch.
                 $entries = isset($entry['covered_by']) || isset($entry['reader_in']) ? [$entry] : $entry;
@@ -687,13 +753,44 @@ final class NullSemanticsRegistryTest extends TestCase
                     // is the over-claim this registry exists to prevent - in
                     // miniature. Across columns a shared citation is often
                     // legitimate, so this is scoped to one column's list.
-                    $key = implode('::', $one);
+                    //
+                    // Lowercased because PHP resolves both class and method
+                    // names case-insensitively: `test_a_thing` and
+                    // `test_A_thing` reach the same method, so comparing the
+                    // strings as written would let one branch be spelled two
+                    // ways and counted twice.
+                    $key = strtolower(implode('::', $one));
 
                     if (isset($seen[$key])) {
                         $bad[] = sprintf('%s.%s: names %s twice; a list must be one entry per distinct branch', $table, $column, $key);
                     }
 
                     $seen[$key] = true;
+                }
+
+                // An entry must register at least one branch. `[]` is the way
+                // that fails: it satisfies neither `isset()` above, so it is
+                // taken for a list, the loop runs zero times, and the column
+                // keeps its key for both schema guards while every scrap of
+                // evidence for it is gone.
+                //
+                // Asked of the same helper the ratchet uses, rather than by
+                // comparing `$entry` or a counter against zero. Both of those
+                // are provably false against the current literal and read as
+                // dead code. This phrasing states the invariant the ratchet
+                // actually consumes - "this entry yields a branch" - and asks
+                // it of a `mixed` parameter, so it stays a real question.
+                //
+                // Worth stating why this is checked at runtime at all: it was
+                // briefly deleted on the strength of a PHPStan proof, and that
+                // proof does not hold in CI. `phpstan.neon` analyses app/,
+                // bootstrap/, config/, database/ and routes/ - `tests/` is not
+                // among them, and the analysis only ran here because the file
+                // was named on the command line, which overrides the configured
+                // paths. A guard enforced only by an argument nobody passes is
+                // not enforced.
+                if ($this->branchIdentities($entry) === []) {
+                    $bad[] = sprintf('%s.%s: registers no branch at all', $table, $column);
                 }
             }
         }
@@ -748,84 +845,98 @@ final class NullSemanticsRegistryTest extends TestCase
     }
 
     /**
-     * The ratchet proper: no column named in MUST_BE_COVERED may lose its
-     * citation, and unexamined columns may not accumulate.
+     * The ratchet proper: no registered branch may disappear, and no column may
+     * quietly join the unexamined set.
      *
-     * The first version of this pinned the PENDING-AUDIT count to an equality
-     * and called it a ratchet. It was not one, and neither was the floor that
-     * replaced it: both bound totals, and a total survives a swap. Demoting one
-     * column's citation while promoting another's leaves every count identical
-     * and ships the regression. Only naming the columns closes that, which is
-     * why MUST_BE_COVERED is a list and not a number.
+     * Three previous versions of this were defeatable, each in the same way -
+     * they bounded an aggregate, and an aggregate survives a trade. A pinned
+     * count fell to demote-one/promote-one. A floor under the covered count
+     * fell to the same. Naming the covered columns fell to cutting a column
+     * with four registered branches back to one, since it still "carried a
+     * citation". The lesson each time was the same and is finally applied
+     * here: ratchet on identity, never on a total.
      */
     public function test_the_registry_may_only_get_stronger(): void
     {
-        $uncovered = [];
+        $present = [];
 
-        foreach (self::MUST_BE_COVERED as $name) {
-            [$table, $column] = explode('.', $name, 2);
-            $entry = self::REGISTRY[$table][$column] ?? null;
-
-            if ($entry === null) {
-                $uncovered[] = sprintf('%s: named in MUST_BE_COVERED but absent from the registry', $name);
-
-                continue;
-            }
-
-            if (! $this->carriesACitation($entry)) {
-                $uncovered[] = sprintf('%s: lost its citation', $name);
-            }
-        }
-
-        $this->assertSame([], $uncovered, sprintf(
-            "These columns are required to carry a citation and no longer do:\n\n%s\n\n".
-            'Restore the citation, or remove the column from MUST_BE_COVERED deliberately and say why in review.',
-            implode("\n", $uncovered),
-        ));
-
-        $pending = 0;
-
-        foreach (self::REGISTRY as $columns) {
-            foreach ($columns as $entry) {
-                if ($entry === 'PENDING-AUDIT') {
-                    $pending++;
+        foreach (self::REGISTRY as $table => $columns) {
+            foreach ($columns as $column => $entry) {
+                foreach ($this->branchIdentities($entry) as $identity) {
+                    $present[strtolower(sprintf('%s.%s => %s', $table, $column, $identity))] = true;
                 }
             }
         }
 
-        $this->assertLessThanOrEqual(
-            self::PENDING_AUDIT_CEILING,
-            $pending,
-            "There are more PENDING-AUDIT entries than NullSemanticsRegistryTest::PENDING_AUDIT_CEILING allows.\n".
-            'Resolve the new column to a citation or a named reader, or raise the ceiling deliberately.',
-        );
-    }
+        $lost = [];
 
-    /**
-     * Does this entry carry at least one citation, as opposed to only named
-     * readers?
-     */
-    private function carriesACitation(mixed $entry): bool
-    {
-        if (! is_array($entry)) {
-            return false;
-        }
-
-        if (isset($entry['covered_by'])) {
-            return true;
-        }
-
-        if (isset($entry['reader_in'])) {
-            return false;
-        }
-
-        foreach ($entry as $one) {
-            if (is_array($one) && isset($one['covered_by'])) {
-                return true;
+        foreach (self::REGISTERED_BRANCHES as $branch) {
+            if (! isset($present[strtolower($branch)])) {
+                $lost[] = $branch;
             }
         }
 
-        return false;
+        $this->assertSame([], $lost, sprintf(
+            "These registered branches are gone from the registry:\n\n%s\n\n".
+            'Restore them, or remove them from REGISTERED_BRANCHES deliberately and say why in review. '.
+            'A branch is one place the null is read; losing one loses the evidence for it, '.
+            'whatever else the column still carries.',
+            implode("\n", $lost),
+        ));
+
+        $joined = [];
+
+        foreach (self::REGISTRY as $table => $columns) {
+            foreach ($columns as $column => $entry) {
+                if ($entry === 'PENDING-AUDIT' && ! in_array(sprintf('%s.%s', $table, $column), self::PENDING_COLUMNS, true)) {
+                    $joined[] = sprintf('%s.%s', $table, $column);
+                }
+            }
+        }
+
+        $this->assertSame([], $joined, sprintf(
+            "These columns became PENDING-AUDIT without being listed:\n\n%s\n\n".
+            'A count would have allowed this whenever earlier work had freed up slack. '.
+            'Add them to PENDING_COLUMNS deliberately, which is how "we have not looked at this one" stays a decision.',
+            implode("\n", $joined),
+        ));
+    }
+
+    /**
+     * The `Class::method` identity of every branch an entry registers.
+     *
+     * Short class names, matching REGISTERED_BRANCHES: the imports at the top
+     * of this file already bind them, and the fully-qualified form makes the
+     * pinned list unreadable without making it stricter.
+     *
+     * @return list<string>
+     */
+    private function branchIdentities(mixed $entry): array
+    {
+        if ($entry === 'PENDING-AUDIT' || ! is_array($entry) || $entry === []) {
+            return [];
+        }
+
+        $entries = isset($entry['covered_by']) || isset($entry['reader_in']) ? [$entry] : $entry;
+        $identities = [];
+
+        foreach ($entries as $one) {
+            if (! is_array($one)) {
+                continue;
+            }
+
+            $class = $one['covered_by'] ?? $one['reader_in'] ?? null;
+            $method = $one['method'] ?? $one['reads'] ?? null;
+
+            if (! is_string($class) || ! is_string($method)) {
+                continue;
+            }
+
+            $short = substr($class, (int) strrpos($class, '\\') + 1);
+            $identities[] = sprintf('%s::%s', $short, $method);
+        }
+
+        return $identities;
     }
 
     /**
@@ -865,6 +976,15 @@ final class NullSemanticsRegistryTest extends TestCase
         }
 
         $reflection = new ReflectionClass($class);
+
+        // An abstract class satisfies `is_subclass_of` and can declare a public
+        // `test_`-prefixed method that passes every check below, while PHPUnit
+        // can neither instantiate nor run it. Such a class can also live
+        // outside test discovery entirely, so the citation would name a test
+        // that never executes.
+        if ($reflection->isAbstract()) {
+            return [sprintf('%s.%s: cited class %s is abstract, so PHPUnit never runs it', $table, $column, $class)];
+        }
 
         if (! is_string($method) || ! $reflection->hasMethod($method)) {
             return [sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, (string) $method)];
