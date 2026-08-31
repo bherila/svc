@@ -588,6 +588,53 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
     }
 
     /**
+     * A cadence draft missing only its period *end* fails closed.
+     *
+     * The sibling above nulls both service-period columns, which cannot prove
+     * anything about either one: the refusal reads
+     * `service_period_start === null || service_period_end === null`, so with
+     * both null, deleting either half leaves the other still throwing. This
+     * gives the draft a real start and removes only the end, so the assertion
+     * depends on the end check and nothing else.
+     *
+     * The cycle columns stay null because a draft that names its cycle is
+     * regenerated from that instead and never reaches the period branch at all.
+     */
+    public function test_a_cadence_draft_with_no_period_end_fails_closed(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 120]);
+        $invoice = $this->generateJuly($agreement);
+        $originalMinutes = $entry->fresh()?->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill([
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => '2026-07-01',
+            'service_period_end' => null,
+        ])->save();
+        $entry->refresh();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry),
+                    'minutes' => 180,
+                ],
+            );
+            $this->fail('A cadence draft with no period end must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('no billing period to regenerate', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+    }
+
+    /**
      * A generated draft that names no agreement fails closed.
      *
      * Regeneration reprices the draft against its agreement's terms. A null

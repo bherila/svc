@@ -122,7 +122,7 @@ final class NullSemanticsRegistryTest extends TestCase
     /**
      * Every registered branch, by identity, that the registry may not lose.
      *
-     * A superset check, and the third attempt at this ratchet. The first pinned
+     * An exact set, and the fourth attempt at this ratchet. The first pinned
      * the PENDING-AUDIT count to an equality; the second put a floor under the
      * covered count. Both bound totals, and a total survives a swap. The third
      * named the covered columns - better, but still too coarse, because "this
@@ -203,7 +203,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.retainer_hours_included => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.rollover_hours_used => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
-        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_without_a_service_period_fails_closed',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
         'client_invoices.service_period_end => reader_in:App\Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice',
         'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
         'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
@@ -361,7 +361,7 @@ final class NullSemanticsRegistryTest extends TestCase
             'service_period_end' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                    'method' => 'test_a_cadence_draft_without_a_service_period_fails_closed',
+                    'method' => 'test_a_cadence_draft_with_no_period_end_fails_closed',
                 ],
                 [
                     'covered_by' => CapacityAndScopeGuardsTest::class,
@@ -888,20 +888,26 @@ final class NullSemanticsRegistryTest extends TestCase
             }
         }
 
-        $lost = [];
+        $listedBranches = array_map(strtolower(...), self::REGISTERED_BRANCHES);
+        $presentBranches = array_keys($present);
+        sort($listedBranches);
+        sort($presentBranches);
 
-        foreach (self::REGISTERED_BRANCHES as $branch) {
-            if (! isset($present[strtolower($branch)])) {
-                $lost[] = $branch;
-            }
-        }
-
-        $this->assertSame([], $lost, sprintf(
-            "These registered branches are gone from the registry:\n\n%s\n\n".
-            'Restore them, or remove them from REGISTERED_BRANCHES deliberately and say why in review. '.
-            'A branch is one place the null is read; losing one loses the evidence for it, '.
-            'whatever else the column still carries.',
-            implode("\n", $lost),
+        // Equality, not containment. A subset check protects only what is
+        // already listed, so a branch added to REGISTRY alone is unprotected
+        // from the moment it lands - and once that head merges, deleting it
+        // again passes too, because it never entered the pinned set. The
+        // registry could then weaken relative to the head before it while every
+        // guard stayed green. Requiring equality means an addition updates the
+        // ratchet in the same commit that makes it.
+        $this->assertSame($listedBranches, $presentBranches, sprintf(
+            "REGISTERED_BRANCHES no longer matches the registry.\n\n".
+            "Registered but not pinned: %s\nPinned but no longer registered: %s\n\n".
+            'A branch is one place the null is read. Add new ones to the constant in the commit that adds them, '.
+            'and remove a pin only deliberately - losing a branch loses the evidence for it, whatever else the '.
+            'column still carries.',
+            implode(', ', array_diff($presentBranches, $listedBranches)) ?: '(none)',
+            implode(', ', array_diff($listedBranches, $presentBranches)) ?: '(none)',
         ));
 
         $pending = [];
@@ -1039,14 +1045,25 @@ final class NullSemanticsRegistryTest extends TestCase
             return [sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, (string) $method)];
         }
 
-        if (! str_starts_with($method, 'test_')) {
-            return [sprintf('%s.%s: cited method %s::%s is not a test method', $table, $column, $class, $method)];
+        $declaring = $reflection->getMethod($method);
+
+        // The *declared* name, not the citation's spelling of it. Reflection
+        // resolves method names case-insensitively, so `hasMethod('test_x')`
+        // happily finds `Test_x` - while PHPUnit decides what is a test from
+        // the real, case-sensitive name and would not run it. Checking the
+        // citation string would accept a method PHPUnit ignores.
+        if (! str_starts_with($declaring->getName(), 'test_')) {
+            return [sprintf(
+                '%s.%s: cited method resolves to %s::%s, which PHPUnit does not treat as a test',
+                $table,
+                $column,
+                $class,
+                $declaring->getName(),
+            )];
         }
 
         // Declared on the cited class, not inherited: a citation that resolves
         // to a base-class method names a test the cited class does not run.
-        $declaring = $reflection->getMethod($method);
-
         if (! $declaring->isPublic() || $declaring->getDeclaringClass()->getName() !== $class) {
             return [sprintf('%s.%s: cited method %s::%s is not a public test declared on that class', $table, $column, $class, $method)];
         }
@@ -1076,16 +1093,38 @@ final class NullSemanticsRegistryTest extends TestCase
             return false;
         }
 
-        foreach ($config->xpath('//testsuites/testsuite/directory') ?: [] as $directory) {
-            $suffix = (string) ($directory['suffix'] ?? '') ?: 'Test.php';
-            $root = realpath(base_path((string) $directory));
+        $discovered = false;
 
-            if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR) && str_ends_with($real, $suffix)) {
-                return true;
+        foreach ($config->xpath('//testsuites/testsuite') ?: [] as $suite) {
+            // Exclusions first, and they lose the file for every suite rather
+            // than just this one - a path PHPUnit is told to skip is skipped,
+            // and accepting it here would fail open, which is the direction
+            // that matters.
+            foreach ($suite->exclude ?? [] as $excluded) {
+                $path = realpath(base_path((string) $excluded));
+
+                if ($path !== false && ($real === $path || str_starts_with($real, $path.DIRECTORY_SEPARATOR))) {
+                    return false;
+                }
+            }
+
+            foreach ($suite->directory ?? [] as $directory) {
+                $suffix = (string) ($directory['suffix'] ?? '') ?: 'Test.php';
+                $root = realpath(base_path((string) $directory));
+
+                if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR) && str_ends_with($real, $suffix)) {
+                    $discovered = true;
+                }
+            }
+
+            foreach ($suite->file ?? [] as $named) {
+                if (realpath(base_path((string) $named)) === $real) {
+                    $discovered = true;
+                }
             }
         }
 
-        return false;
+        return $discovered;
     }
 
     /**
