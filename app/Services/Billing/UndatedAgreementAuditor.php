@@ -91,8 +91,8 @@ final class UndatedAgreementAuditor
         // says which of the cycle readers touch it, and `one_time` is the
         // default rather than a statement, so a large bucket there is a sign the
         // cadence was never set rather than that it was chosen.
-        $byStatus = $this->grouped(clone $undated, 'status');
-        $byCadence = $this->grouped(clone $undated, 'billing_cadence');
+        $byStatus = $this->grouped(clone $undated, fn (ClientAgreement $a): string => $a->status);
+        $byCadence = $this->grouped(clone $undated, fn (ClientAgreement $a): string => $a->billing_cadence);
 
         // Two different blast radii, which is why #147 asks for the split. An
         // hourly-only agreement reaches the rate resolver and nothing else. One
@@ -141,20 +141,30 @@ final class UndatedAgreementAuditor
     }
 
     /**
+     * Tally the agreements by some string property of each.
+     *
+     * The property is read through a closure rather than named as a string and
+     * fetched with `getAttribute`. That returns `mixed`, and casting it to
+     * string is exactly what the strict analysis lane forbids for good reason:
+     * it would silently stringify whatever the column turned out to hold. A
+     * closure reading a declared property is checked instead of coerced.
+     *
+     * Both properties this is called with are NOT NULL - `status` has no
+     * default and `billing_cadence` defaults to `one_time` - so there is no
+     * absent case to fold in, and inventing a bucket for one would be a branch
+     * nothing can reach.
+     *
      * @param  Builder<ClientAgreement>  $agreements
+     * @param  callable(ClientAgreement): string  $key
      * @return array<string, int>
      */
-    private function grouped(Builder $agreements, string $column): array
+    private function grouped(Builder $agreements, callable $key): array
     {
         $counts = [];
 
-        // Both columns this is called with are NOT NULL - `status` has no
-        // default and `billing_cadence` defaults to `one_time` - so there is no
-        // absent case to fold in, and inventing a bucket for one would be a
-        // branch nothing can reach.
         foreach ($agreements->get() as $agreement) {
-            $key = (string) $agreement->getAttribute($column);
-            $counts[$key] = ($counts[$key] ?? 0) + 1;
+            $bucket = $key($agreement);
+            $counts[$bucket] = ($counts[$bucket] ?? 0) + 1;
         }
 
         ksort($counts);

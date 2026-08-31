@@ -17,11 +17,29 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * One docblock, and it comes before the attributes.
+ *
+ * A second block sat between the attributes and the class declaration carrying
+ * the `@property-read` lines below. PHP treats only the block immediately
+ * preceding the declaration - attributes included - as the docblock, so those
+ * annotations were silently ignored for the life of the file and every reader
+ * of an accessor was untyped. Same defect that was found on
+ * `ClientAgreementRecurringItem`; merged here rather than left as a second
+ * example of it.
+ *
+ * @property string $status
+ * @property string $billing_cadence
  * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $terminated_at
  * @property CarbonImmutable|null $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $signed_at
+ * @property-read float $monthly_retainer_hours
+ * @property-read float $monthly_retainer_fee
+ * @property-read float|null $retainer_hours
+ * @property-read float|null $retainer_fee
+ * @property-read CarbonImmutable|null $active_date
+ * @property-read CarbonImmutable|null $termination_date
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
@@ -34,14 +52,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'first_cycle_proration', 'agreement_link',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
-/**
- * @property-read float $monthly_retainer_hours
- * @property-read float $monthly_retainer_fee
- * @property-read float|null $retainer_hours
- * @property-read float|null $retainer_fee
- * @property-read CarbonImmutable|null $active_date
- * @property-read CarbonImmutable|null $termination_date
- */
 class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
