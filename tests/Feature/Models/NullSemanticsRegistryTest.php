@@ -176,6 +176,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.retainer_minutes => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_retainer_reports_no_capacity',
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
+        'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created',
         'client_agreements.source_proposal_id => reader_in:App\Services\Engagement\ProposalWorkflow::accept',
         'client_agreements.starts_on => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_start_date_reports_no_capacity',
         'client_agreements.starts_on => reader_in:App\Http\Controllers\Engagement\TimeSheetController::capacityByMonth',
@@ -482,7 +483,21 @@ final class NullSemanticsRegistryTest extends TestCase
             // already exists, and a null makes the row invisible to that
             // relationship, so accepting again creates a second active agreement
             // and a second set of recurring items (#148).
-            'source_proposal_id' => ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
+            //
+            // The covering test pins that as the behaviour rather than
+            // asserting it is prevented. #148 established the fix cannot live in
+            // `accept()` - the only evidence of the tie is the missing link, and
+            // guessing at it inside a write path trades a duplicate for a
+            // mis-attribution - so the population is sized by
+            // `svc:engagement:audit-unlinked-proposal-agreements` and the links
+            // repaired outside. Pinned so that changing it has to be deliberate.
+            'source_proposal_id' => [
+                [
+                    'covered_by' => EngagementWorkflowTest::class,
+                    'method' => 'test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created',
+                ],
+                ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
+            ],
             // Three readers, and they do not agree with each other. The pinned
             // one treats a null as "not ready" and reports no capacity. The rate
             // resolver treats it as already in force (`whereNull OR <=`), and so

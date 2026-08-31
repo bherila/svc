@@ -9,6 +9,7 @@ use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
@@ -297,6 +298,97 @@ class EngagementWorkflowTest extends TestCase
             'signer_name' => 'Recorded Offline Signer',
         ])->assertOk();
         $this->assertSame('accepted', $proposal->fresh()->status);
+    }
+
+    /**
+     * A null `source_proposal_id` hides an existing agreement from acceptance,
+     * and acceptance writes a second one.
+     *
+     * This pins a defect rather than a guarantee, deliberately. #148 established
+     * that the fix cannot live inside `accept()`: the only evidence tying an
+     * agreement to a proposal is the link that is missing, and matching by
+     * company, title or date inside a write path would trade a duplicate for a
+     * mis-attribution - a worse error, and one nobody would notice. So the
+     * repair is to restore the links, sized by
+     * `svc:engagement:audit-unlinked-proposal-agreements`, and until that lands
+     * this is what the code does.
+     *
+     * Written as an assertion so it fails the moment the behaviour changes. A
+     * defect that is understood and left in place should be a failing test's
+     * worth of noise to alter, not a silent surprise - and the registry entry
+     * for `client_agreements.source_proposal_id` names `accept()` as a live
+     * reader of the null, which #143 requires be pinned by something.
+     */
+    public function test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/proposals", [
+            'title' => 'Synthetic support plan',
+            'currency' => 'USD',
+            'is_visible_to_client' => true,
+            'items' => [[
+                'description' => 'Monthly support',
+                'quantity' => '1.000',
+                'unit_amount' => 10000,
+                'cadence' => 'monthly',
+                'sort_order' => 0,
+            ]],
+        ])->assertCreated();
+
+        $proposal = ClientProposal::query()->sole();
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
+            ->assertOk();
+
+        // The agreement this proposal really produced, with its link lost - the
+        // state the importer reaches when the source proposal does not resolve.
+        $existing = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic support plan',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+
+        // The audit names this proposal while it is still preventable. After
+        // acceptance it looks sound - the second agreement carries the link the
+        // first one lost - which is precisely why the warning has to be read
+        // before anyone accepts and not after.
+        $this->assertSame(
+            1,
+            app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
+        );
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Buyer'],
+        )->assertOk();
+
+        // Two agreements for one engagement, each with its own recurring item,
+        // so the client is billed twice every month.
+        $this->assertSame(2, ClientAgreement::query()->count());
+
+        $created = ClientAgreement::query()->whereKeyNot($existing->id)->sole();
+        $this->assertSame($proposal->id, $created->source_proposal_id);
+        $this->assertSame(1, $created->recurringItems()->count());
+        $this->assertSame(0, $existing->recurringItems()->count());
+
+        // The pre-existing agreement is untouched: the duplicate is additive,
+        // which is why nothing downstream reports a conflict.
+        $this->assertSame('active', $existing->fresh()->status);
+        $this->assertNull($existing->fresh()->source_proposal_id);
+
+        // And the proposal now looks sound to the audit, because the duplicate
+        // it created carries the link. The population shrinks by resolving
+        // itself into a second contract - the reason this cannot be measured
+        // after the fact.
+        $counts = app(UnlinkedProposalAgreementAuditor::class)->count($workspace);
+        $this->assertSame(0, $counts->withAnActiveUnlinkedAgreement);
+        $this->assertSame(0, $counts->acceptedWithoutALinkedAgreement);
     }
 
     private function clientFor(User $owner, ?User $clientUser = null): array
