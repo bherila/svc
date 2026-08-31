@@ -14,6 +14,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * `lock_version` is maintained by {@see IncrementsAgentRevision} and never
+ * written directly. It is declared below because it is now read outside the
+ * Agent API - the Manage form round-trips it so a save composed against stale
+ * values can be refused - and an undeclared property is one PHPStan cannot
+ * check the comparison of.
+ *
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
@@ -22,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $description
  * @property string $status
  * @property bool $is_visible_to_client
+ * @property int $lock_version
  */
 #[Fillable(['workspace_id', 'client_company_id', 'name', 'description', 'status', 'is_visible_to_client'])]
 #[Hidden(['id', 'workspace_id', 'client_company_id'])]

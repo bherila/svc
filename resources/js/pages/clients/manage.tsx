@@ -21,6 +21,7 @@ type ManagedProject = {
     description: string | null;
     status: string;
     is_visible_to_client: boolean;
+    lock_version: number;
 };
 
 /**
@@ -125,6 +126,11 @@ function ProjectForm({
         description: project.description ?? '',
         status: project.status,
         is_visible_to_client: project.is_visible_to_client,
+        // Round-tripped unchanged. The server compares it to the row's current
+        // version and refuses the save if someone else has written since this
+        // form was rendered, which is the only way a stale but well-formed
+        // payload can be told from a deliberate one.
+        lock_version: project.lock_version,
     });
 
     return (
@@ -159,6 +165,20 @@ function ProjectForm({
                 placeholder="No description"
                 rows={2}
             />
+
+            {/*
+                A refused save has to say so. The conflict case is the reason
+                this exists: the request is rejected, Inertia re-renders with
+                the operator's edits intact, and without a message on screen
+                that is indistinguishable from a save that worked - which is
+                the failure the version check was added to prevent, moved one
+                step later.
+            */}
+            {form.errors.lock_version ? (
+                <p role="alert" className="text-sm text-destructive">
+                    {form.errors.lock_version}
+                </p>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-3">
