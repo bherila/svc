@@ -13,6 +13,20 @@ vi.mock('@inertiajs/react', () => ({
     Link: ({ href, children }: { href: string; children: ReactNode }) => (
         <a href={href}>{children}</a>
     ),
+    router: { visit: vi.fn() },
+    // The page renders inside the client chrome now, which reads the shared
+    // switcher payload. Supplied here so these stay tests of the Overview
+    // content rather than of the layout - `client-context-layout.test.tsx`
+    // owns the switcher and the tabs.
+    usePage: () => ({
+        props: {
+            clientContext: {
+                workspace: { id: 'workspace-1', name: 'Synthetic Workspace' },
+                companies: [{ id: 'company-1', name: 'Synthetic Client' }],
+                current_company_id: 'company-1',
+            },
+        },
+    }),
 }));
 
 function agreement(
@@ -77,7 +91,7 @@ function props(overrides: Partial<ClientShowProps> = {}): ClientShowProps {
 }
 
 describe('client detail', () => {
-    it('heads the screen with the company and links back to its workspace list', () => {
+    it('heads the screen with the company', () => {
         render(<ClientShow {...props()} />);
 
         expect(
@@ -86,9 +100,6 @@ describe('client detail', () => {
         expect(
             screen.getByText('Billing: billing@synthetic.test'),
         ).toBeInTheDocument();
-        expect(
-            screen.getByRole('link', { name: '← Synthetic Workspace clients' }),
-        ).toHaveAttribute('href', '/workspaces/workspace-1/clients');
     });
 
     it('reads a recurring agreement’s cadence, term and retainer terms', () => {
