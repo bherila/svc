@@ -40,8 +40,21 @@ class InvoiceController extends Controller
     public function index(Request $request, Workspace $workspace, ProjectAccess $access): JsonResponse|InertiaResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
-        $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany');
-        if (! $workspace->memberships()->where('user_id', $request->user()->id)->exists()) {
+        // The company relation is constrained to this workspace. It is
+        // unconstrained lineage, so a row migrated from before #113's composite
+        // keys can name a company in another tenant - and serializing its name
+        // here would be a cross-tenant disclosure the old Blade page never
+        // made, on a screen whose whole job is listing everything.
+        $query = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->with(['clientCompany' => fn ($relation) => $relation->where('workspace_id', $workspace->id)]);
+        // One membership decision for the whole request. Asking twice let a
+        // revocation between the two calls skip *both* narrowings and leave the
+        // query bounded only by workspace - every invoice in it, for one
+        // request.
+        $isMember = $workspace->memberships()->where('user_id', $request->user()->id)->exists();
+
+        if (! $isMember) {
             // Through AgentAccess so the membership's own workspace is checked too,
             // rather than restating half the condition here.
             $companyIds = $this->agentAccess->portalCompanyIdsIn($request->user(), $workspace);
@@ -50,12 +63,12 @@ class InvoiceController extends Controller
                 ->whereIn('status', ['issued', 'partially_paid', 'paid']);
         }
         // A workspace member sees the clients they reach, on the same rule the
-        // directory follows (#157). Portal users were already narrowed above by
-        // the company ids their access grants, so this only applies to the
-        // branch that was previously unbounded.
+        // directory follows (#157). Portal users were narrowed above by the
+        // company ids their access grants, so exactly one of these two branches
+        // applies to any request.
         $user = $request->user();
 
-        if ($user instanceof User && $workspace->memberships()->where('user_id', $user->id)->exists()) {
+        if ($isMember && $user instanceof User) {
             $reachable = $access->reachableCompanyIds($user, $workspace);
 
             if ($reachable !== null) {
@@ -92,6 +105,23 @@ class InvoiceController extends Controller
                     'id' => $invoice->clientCompany?->public_id,
                     'name' => $invoice->clientCompany?->name,
                 ],
+                // Built here rather than in the page, because where a row leads
+                // depends on who is asking. A member goes to the client-scoped
+                // detail; a portal viewer would be refused there - that route
+                // authorizes on workspace membership - so they get the route
+                // that applies portal invoice authorization instead.
+                'href' => $isMember
+                    ? ($invoice->clientCompany === null
+                        ? null
+                        : route('clients.invoice', [
+                            'workspace' => $workspace,
+                            'clientCompany' => $invoice->clientCompany,
+                            'clientInvoice' => $invoice,
+                        ], false))
+                    : route('svc.billing.invoices.show', [
+                        'workspace' => $workspace,
+                        'clientInvoice' => $invoice,
+                    ], false),
             ])->values()->all(),
         ]);
     }

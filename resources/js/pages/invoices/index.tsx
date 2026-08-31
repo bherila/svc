@@ -22,6 +22,15 @@ type WorkspaceInvoice = {
     paid_amount: number;
     balance_amount: number;
     company: { id: string | null; name: string | null };
+    /**
+     * Where this row leads, decided server-side.
+     *
+     * Null when there is nowhere to send the reader - a row whose client is not
+     * in this workspace. Built there rather than here because the destination
+     * depends on who is asking: a portal viewer would be refused the
+     * client-scoped screen, which authorizes on workspace membership.
+     */
+    href: string | null;
 };
 
 /**
@@ -31,10 +40,11 @@ type WorkspaceInvoice = {
  * so a switcher naming one would be lying about where the reader is. The
  * workspace time sheet renders the same way for the same reason.
  *
- * Each row drops into its client's Invoices tab rather than a workspace-level
- * detail route, because that is where an invoice actually lives: the reader
- * arrives with the client named around them instead of having to work out
- * whose invoice they just opened.
+ * Each row's destination is decided server-side. For a workspace member it is
+ * the client's Invoices tab, because that is where an invoice lives — the
+ * reader arrives with the client named around them. A portal viewer reaches
+ * this list through a different door and would be refused that screen, so they
+ * get the route that applies portal invoice authorization.
  *
  * The client column tolerates a missing name rather than assuming one.
  * `client_company_id` is NOT NULL, so every invoice names a client - but the
@@ -109,13 +119,15 @@ export default function WorkspaceInvoices({
                                             {invoices.map((invoice) => (
                                                 <TableRow key={invoice.id}>
                                                     <TableCell className="font-medium">
-                                                        {invoice.company.id ===
+                                                        {invoice.href ===
                                                         null ? (
                                                             (invoice.invoice_number ??
                                                             'Unnumbered')
                                                         ) : (
                                                             <Link
-                                                                href={`/workspaces/${workspace.id}/clients/${invoice.company.id}/invoices/${invoice.id}`}
+                                                                href={
+                                                                    invoice.href
+                                                                }
                                                                 className="underline-offset-4 hover:underline"
                                                             >
                                                                 {invoice.invoice_number ??

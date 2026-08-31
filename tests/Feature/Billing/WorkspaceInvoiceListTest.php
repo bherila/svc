@@ -9,8 +9,10 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -28,6 +30,7 @@ class WorkspaceInvoiceListTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_a_manager_sees_every_invoice_in_the_workspace(): void
     {
@@ -90,6 +93,80 @@ class WorkspaceInvoiceListTest extends TestCase
             'THEIRS-LIST-9999',
             'Unreachable List Client',
         ], 'MINE-LIST-1');
+    }
+
+    /**
+     * A legacy invoice whose client belongs to another workspace.
+     *
+     * `client_company_id` is unconstrained lineage, so a row migrated from
+     * before #113's composite keys can name a company in another tenant. The
+     * eager load is constrained to this workspace, so the row still appears -
+     * a list claiming completeness must not drop it - while the foreign
+     * client's name and id do not.
+     */
+    public function test_a_foreign_clients_name_never_reaches_the_payload(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Lineage', 'synthetic-lineage', $manager);
+        $mine = $this->company($workspace, 'Local Lineage Client', 'local-lineage-client');
+        $this->invoice($workspace, $mine, 'LOCAL-LINEAGE-1');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Lineage Tenant', 'slug' => 'foreign-lineage']);
+        $foreignCompany = $this->company($foreign, 'Foreign Lineage Client Name', 'foreign-lineage-client');
+
+        // Refused by the composite keys since #113, so seeded with enforcement
+        // suspended: the subject is what the payload does with a row that a
+        // migrated database can still hold.
+        $stray = $this->writingLegacyCrossTenantRows(
+            fn () => $this->invoice($workspace, $foreignCompany, 'STRAY-LINEAGE-9999'),
+        );
+
+        $response = $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('invoices', 2));
+        $this->assertInertiaPayloadOmits(
+            $response,
+            ['Foreign Lineage Client Name', 'Foreign Lineage Tenant'],
+            'LOCAL-LINEAGE-1',
+        );
+
+        // And it links nowhere, rather than to a client screen that would
+        // refuse the reader anyway.
+        $response->assertInertia(fn (Assert $page) => $page
+            ->where('invoices.0.href', null)
+            ->where('invoices.0.invoice_number', $stray->invoice_number));
+    }
+
+    /**
+     * A portal viewer's rows lead somewhere they are allowed to go.
+     *
+     * They reach this list through the non-member branch, and the client-scoped
+     * invoice screen authorizes on workspace membership - so linking there
+     * would hand every row a 403.
+     */
+    public function test_a_portal_viewers_rows_link_to_a_route_that_admits_them(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Portal', 'synthetic-portal', $manager);
+        $company = $this->company($workspace, 'Synthetic Portal Client', 'synthetic-portal-client');
+        $invoice = $this->invoice($workspace, $company, 'PORTAL-LIST-1');
+        $invoice->forceFill(['is_visible_to_client' => true])->save();
+
+        $client = User::factory()->create();
+        $client->clientCompanies()->attach($company->id, [
+            'workspace_id' => $workspace->id,
+            'public_id' => (string) Str::uuid(),
+            'role' => 'client',
+        ]);
+
+        $this->actingAs($client)
+            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('invoices', 1)
+                ->where('invoices.0.href', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}"));
     }
 
     private function workspace(string $name, string $slug, User $owner): Workspace
