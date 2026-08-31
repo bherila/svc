@@ -12,6 +12,9 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Services\Authorization\PortalAccess;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -36,13 +39,47 @@ class ClientPortalController extends Controller
      *
      * @return Builder<ClientInvoice>
      */
-    private function visibleInvoices(ClientCompany $clientCompany): Builder
+    private function visibleInvoices(ClientCompany $clientCompany, ?User $viewer): Builder
     {
-        return ClientInvoice::query()
+        $invoices = ClientInvoice::query()
             ->where('workspace_id', $clientCompany->workspace_id)
             ->where('client_company_id', $clientCompany->id)
             ->where('is_visible_to_client', true)
             ->whereIn('status', ['issued', 'partially_paid', 'paid']);
+
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
+
+        // Null is the whole company - an owner, an admin, or a client whose
+        // access is company-scoped. A project-scoped client is a different
+        // question, and the invoice list ignored it: they were shown, and could
+        // open, every invoice the company had, including for work on projects
+        // their own portal deliberately hides.
+        if ($visibleProjectIds === null) {
+            return $invoices;
+        }
+
+        if ($visibleProjectIds === []) {
+            return $invoices->whereRaw('1 = 0');
+        }
+
+        // The same rule the operator side applies: every project the invoice
+        // names must be one they see, and an invoice naming none is not theirs
+        // to read. A mixed invoice is refused rather than partly rendered,
+        // because its totals and its PDF describe the whole document.
+        return $invoices
+            ->whereNotExists(fn (QueryBuilder $line): QueryBuilder => $line
+                ->select(DB::raw('1'))
+                ->from('client_invoice_lines')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
+                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
+                ->whereNotNull('client_invoice_lines.client_project_id')
+                ->whereNotIn('client_invoice_lines.client_project_id', $visibleProjectIds))
+            ->whereExists(fn (QueryBuilder $line): QueryBuilder => $line
+                ->select(DB::raw('1'))
+                ->from('client_invoice_lines')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
+                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
+                ->whereIn('client_invoice_lines.client_project_id', $visibleProjectIds));
     }
 
     /**
@@ -57,13 +94,16 @@ class ClientPortalController extends Controller
      * recurring-item keys the model already hides are not reintroduced here by
      * a hand-built array.
      */
-    public function invoice(ClientCompany $clientCompany, ClientInvoice $clientInvoice): Response
+    public function invoice(Request $request, ClientCompany $clientCompany, ClientInvoice $clientInvoice): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
         // Resolved through the same query the list uses, so an invoice the
         // client cannot see is not found rather than merely unlinked.
-        $invoice = $this->visibleInvoices($clientCompany)
+        $viewer = $request->user();
+        $viewer = $viewer instanceof User ? $viewer : null;
+
+        $invoice = $this->visibleInvoices($clientCompany, $viewer)
             ->whereKey($clientInvoice->getKey())
             ->first();
 
@@ -160,7 +200,7 @@ class ClientPortalController extends Controller
             ->latest('id')
             ->get();
 
-        $invoices = $this->visibleInvoices($clientCompany)->latest('id')->get();
+        $invoices = $this->visibleInvoices($clientCompany, $viewer)->latest('id')->get();
 
         $visibleRecords = [
             'proposal' => $proposals->pluck('public_id')->all(),

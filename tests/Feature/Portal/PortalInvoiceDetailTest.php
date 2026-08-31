@@ -6,9 +6,11 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
@@ -159,14 +161,191 @@ final class PortalInvoiceDetailTest extends TestCase
         }
     }
 
-    private function portalUser(): User
+    /**
+     * A project-scoped client sees invoices for their projects and no others.
+     *
+     * The portal scoped projects, proposals and agreements and then listed
+     * invoices company-wide, so a client admitted to one project of their own
+     * company read every invoice it had - including work they were
+     * deliberately not shown anywhere else on the same page.
+     */
+    public function test_a_project_scoped_client_sees_only_their_projects_invoices(): void
+    {
+        $mine = $this->project('Mine');
+        $theirs = $this->project('Theirs');
+
+        $ours = $this->invoice('SCOPED-MINE-1', ['is_visible_to_client' => true, 'status' => 'issued']);
+        $this->line($ours, 'Synthetic mine line', $mine);
+
+        $sibling = $this->invoice('SCOPED-THEIRS-9999', ['is_visible_to_client' => true, 'status' => 'issued']);
+        $this->line($sibling, 'Synthetic theirs line', $theirs);
+
+        // No lineage at all: not theirs to read either.
+        $unscoped = $this->invoice('SCOPED-NONE-8888', ['is_visible_to_client' => true, 'status' => 'issued']);
+
+        $client = $this->portalUser(ClientCompanyMembership::SCOPE_PROJECTS);
+        $this->grant($client, $mine);
+
+        $this->actingAs($client)
+            ->get("/portal/{$this->company->public_id}/invoices/{$ours->public_id}")
+            ->assertOk();
+
+        foreach ([$sibling, $unscoped] as $refused) {
+            $this->actingAs($client)
+                ->get("/portal/{$this->company->public_id}/invoices/{$refused->public_id}")
+                ->assertNotFound();
+        }
+
+        // And the list agrees with the detail.
+        $response = $this->actingAs($client)->get("/portal/{$this->company->public_id}")->assertOk();
+        $body = (string) $response->getContent();
+        $this->assertStringContainsString('SCOPED-MINE-1', $body);
+        $this->assertStringNotContainsString('SCOPED-THEIRS-9999', $body);
+        $this->assertStringNotContainsString('SCOPED-NONE-8888', $body);
+    }
+
+    /**
+     * An ordinary workspace member cannot preview a client's portal at all.
+     *
+     * The policy admitted any workspace membership, and `PortalAccess` then
+     * returned unrestricted access for the same reason - so the portal was a
+     * way around every project scope the operator screens apply. Owners and
+     * admins keep the preview, since they already reach everything.
+     */
+    public function test_an_ordinary_workspace_member_cannot_preview_the_portal(): void
+    {
+        $invoice = $this->invoice('PREVIEW-1', ['is_visible_to_client' => true, 'status' => 'issued']);
+
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $this->actingAs($member)
+            ->get("/portal/{$this->company->public_id}")
+            ->assertForbidden();
+
+        $this->actingAs($member)
+            ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
+            ->assertForbidden();
+
+        $admin = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk();
+    }
+
+    private function project(string $name): ClientProject
+    {
+        return ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => $name,
+            'status' => 'active',
+            'is_visible_to_client' => true,
+        ]);
+    }
+
+    private function grant(User $user, ClientProject $project): void
+    {
+        $membership = ClientCompanyMembership::query()
+            ->where('client_company_id', $this->company->id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        DB::table('client_portal_project_access')->insert([
+            'workspace_id' => $this->workspace->id,
+            'client_company_membership_id' => $membership->id,
+            'client_project_id' => $project->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * Reading an invoice does not make you able to pay it.
+     *
+     * The payment-intent route was gated on the same check as opening an
+     * invoice, so any workspace member could create a real Stripe intent - and
+     * the recorded pending payment reserves the remaining balance, so an
+     * abandoned or unauthorised one blocks a genuine payment.
+     *
+     * Nothing covered this route at all before, which is why the split broke
+     * no test when it landed.
+     */
+    public function test_internal_staff_cannot_start_a_payment(): void
+    {
+        $invoice = $this->invoice('PAYABLE-1', ['is_visible_to_client' => true, 'status' => 'issued']);
+
+        foreach (['member', 'admin', 'owner'] as $role) {
+            $staff = User::factory()->create();
+            $this->workspace->memberships()->create(['user_id' => $staff->id, 'role' => $role]);
+
+            $this->actingAs($staff)
+                ->postJson(
+                    "/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/stripe-payment-intent",
+                    ['idempotency_key' => 'synthetic-'.$role],
+                )
+                ->assertForbidden();
+        }
+    }
+
+    /**
+     * And neither does being a client of a different company.
+     */
+    public function test_a_client_of_another_company_cannot_start_a_payment(): void
+    {
+        $invoice = $this->invoice('PAYABLE-2', ['is_visible_to_client' => true, 'status' => 'issued']);
+
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other Payable Client',
+            'slug' => 'other-payable-client',
+        ]);
+
+        $outsider = User::factory()->create();
+        ClientCompanyMembership::query()->create([
+            'client_company_id' => $otherCompany->id,
+            'user_id' => $outsider->id,
+            'role' => 'client',
+            'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+        ]);
+
+        $this->actingAs($outsider)
+            ->postJson(
+                "/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/stripe-payment-intent",
+                ['idempotency_key' => 'synthetic-outsider'],
+            )
+            ->assertForbidden();
+    }
+
+    /**
+     * A paid invoice cannot take another intent either.
+     *
+     * The status list here is narrower than the one for reading: an invoice
+     * that is settled has nothing to pay, and reserving its balance again is
+     * the same blocking failure by a different door.
+     */
+    public function test_a_settled_invoice_cannot_take_a_payment(): void
+    {
+        $paid = $this->invoice('PAYABLE-3', ['is_visible_to_client' => true, 'status' => 'paid']);
+
+        $this->actingAs($this->portalUser())
+            ->postJson(
+                "/workspaces/{$this->workspace->public_id}/invoices/{$paid->public_id}/stripe-payment-intent",
+                ['idempotency_key' => 'synthetic-paid'],
+            )
+            ->assertForbidden();
+    }
+
+    private function portalUser(?string $scope = null): User
     {
         $user = User::factory()->create();
         ClientCompanyMembership::query()->create([
             'client_company_id' => $this->company->id,
             'user_id' => $user->id,
             'role' => 'client',
-            'access_scope' => ClientCompanyMembership::SCOPE_COMPANY,
+            'access_scope' => $scope ?? ClientCompanyMembership::SCOPE_COMPANY,
         ]);
 
         return $user;
@@ -192,14 +371,15 @@ final class PortalInvoiceDetailTest extends TestCase
         return $invoice;
     }
 
-    private function line(ClientInvoice $invoice, string $description, string $quantity): ClientInvoiceLine
+    private function line(ClientInvoice $invoice, string $description, ClientProject|string $quantity = '1.0000'): ClientInvoiceLine
     {
         return ClientInvoiceLine::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_invoice_id' => $invoice->id,
+            'client_project_id' => $quantity instanceof ClientProject ? $quantity->id : null,
             'type' => 'time',
             'description' => $description,
-            'quantity' => $quantity,
+            'quantity' => $quantity instanceof ClientProject ? '1.0000' : $quantity,
             'unit_amount' => 4000,
             'tax_amount' => 0,
             'total_amount' => 10000,
