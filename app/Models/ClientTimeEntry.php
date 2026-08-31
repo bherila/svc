@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $billing_rate_amount
  * @property string|null $currency
  * @property string $status
+ * @property CarbonImmutable|null $approved_at
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
  * @property int $lock_version
  */
