@@ -2,8 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ClientCompany;
+use App\Models\Workspace;
 use BWH\Auth\OAuth\ProviderApplications;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -58,6 +61,77 @@ class HandleInertiaRequests extends Middleware
             'applications' => $user === null
                 ? []
                 : ProviderApplications::forRequest($request),
+            // The client the operator is currently working inside, and the ones
+            // they could switch to. Shared rather than passed per page because
+            // it is chrome: the switcher and the tab strip are the same on every
+            // client screen, and a page that had to supply them would be free to
+            // supply a different set.
+            'clientContext' => $this->clientContext($request),
+        ];
+    }
+
+    /**
+     * The company switcher's options, plus which one is selected.
+     *
+     * Null off a workspace route - the portal has no switcher, and neither does
+     * the dashboard - so this costs one query on client screens and nothing
+     * anywhere else.
+     *
+     * Scoped through the workspace relation and gated by the same `view` policy
+     * the directory uses. A switcher is a list of names, which is exactly the
+     * kind of payload that leaks a client list across tenants if it is built
+     * from anything looser than the workspace that owns them.
+     *
+     * @return array{
+     *     workspace: array{id: string, name: string},
+     *     companies: list<array{id: string, name: string}>,
+     *     current_company_id: string|null,
+     * }|null
+     */
+    private function clientContext(Request $request): ?array
+    {
+        // Client screens only. Operations and the dashboard are workspace
+        // routes too, but they render no switcher - and a query paid on every
+        // one of them is the kind of quiet growth
+        // `WorkspaceOperationsTest::test_operations_queries_are_bounded_...`
+        // exists to refuse. Company tabs are named `clients.*` as they land, so
+        // they inherit this without another edit here.
+        if (! str_starts_with((string) $request->route()?->getName(), 'clients.')) {
+            return null;
+        }
+
+        $workspace = $request->route('workspace');
+        $user = $request->user('web');
+
+        if (! $workspace instanceof Workspace || $user === null) {
+            return null;
+        }
+
+        if (! Gate::forUser($user)->allows('view', $workspace)) {
+            return null;
+        }
+
+        $company = $request->route('clientCompany');
+
+        return [
+            'workspace' => [
+                'id' => (string) $workspace->public_id,
+                'name' => (string) $workspace->name,
+            ],
+            // `array_values` rather than the collection's own `values()`:
+            // both renumber, but only this one is a list to the analyser, and
+            // the shape above says list.
+            'companies' => array_values($workspace->clientCompanies()
+                ->orderBy('name')
+                ->get()
+                ->map(fn (ClientCompany $option): array => [
+                    'id' => (string) $option->public_id,
+                    'name' => (string) $option->name,
+                ])
+                ->all()),
+            'current_company_id' => $company instanceof ClientCompany
+                ? (string) $company->public_id
+                : null,
         ];
     }
 }
