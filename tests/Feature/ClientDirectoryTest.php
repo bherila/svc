@@ -846,6 +846,209 @@ class ClientDirectoryTest extends TestCase
             ->assertNotFound();
     }
 
+    /**
+     * A scoped member sees the clients they work for, and no others (#157).
+     *
+     * The directory used to answer this differently from the time sheet: it
+     * showed every company and every project name to anyone who passed the
+     * workspace gate. Both now answer it the strict way, so a contributor on
+     * one project of one client cannot read the rest of the workspace's client
+     * list.
+     */
+    public function test_a_scoped_member_sees_only_the_clients_they_can_reach(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Reach', 'synthetic-reach', $manager);
+        $mine = $this->company($workspace, 'Reachable Client Name', 'reachable-client');
+        $reachable = $this->project($workspace, $mine, 'Reachable Scope Project');
+        $this->project($workspace, $mine, 'Unreachable Sibling Project');
+
+        $theirs = $this->company($workspace, 'Unreachable Client Name', 'unreachable-client');
+        $this->project($workspace, $theirs, 'Someone Elses Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $reachable->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $response = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('companies', 1));
+        $this->assertInertiaPayloadOmits($response, [
+            'Unreachable Client Name',
+            'Someone Elses Project',
+        ], 'Reachable Client Name');
+
+        // The detail screen narrows the same way, so reaching one project of a
+        // client does not disclose the rest of that client's portfolio.
+        $detail = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$mine->public_id}")
+            ->assertOk();
+
+        $detail->assertInertia(fn (Assert $page) => $page->has('projects', 1));
+        $this->assertInertiaPayloadOmits(
+            $detail,
+            ['Unreachable Sibling Project'],
+            'Reachable Scope Project',
+        );
+    }
+
+    /**
+     * And a direct URL agrees with the list.
+     *
+     * Omitting a company from the index while still serving it by id would
+     * make the scoping decorative - the id would be the only thing in the way.
+     */
+    public function test_a_client_the_member_cannot_reach_is_not_found_by_url(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Direct', 'synthetic-direct', $manager);
+        $theirs = $this->company($workspace, 'Out Of Reach Client', 'out-of-reach-client');
+        $this->project($workspace, $theirs, 'Out Of Reach Project');
+        $this->invoice($workspace, $theirs, 'OUTOFREACH-1', 'issued');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        foreach (['', '/invoices', '/tasks'] as $suffix) {
+            $this->actingAs($member)
+                ->get("/workspaces/{$workspace->public_id}/clients/{$theirs->public_id}{$suffix}")
+                ->assertNotFound();
+        }
+    }
+
+    /**
+     * An owner or admin still reaches a client with no projects at all.
+     *
+     * Reachability is defined through projects, so a brand-new client would
+     * otherwise be invisible to the person who just created it.
+     */
+    public function test_an_admin_still_sees_a_client_with_no_projects(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Fresh', 'synthetic-fresh', $manager);
+        $this->company($workspace, 'Brand New Client', 'brand-new-client');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('companies', 1)
+                ->where('companies.0.name', 'Brand New Client'));
+    }
+
+    /**
+     * Manage is offered only to a manager, and refuses regardless.
+     *
+     * The tab is hidden without the ability, but hiding a link is not a check -
+     * so the action is asserted directly against someone who can see the client
+     * and cannot manage it.
+     */
+    public function test_manage_is_refused_to_a_member_who_cannot_manage(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Manage', 'synthetic-manage', $manager);
+        $company = $this->company($workspace, 'Synthetic Manage Client', 'synthetic-manage-client');
+        $project = $this->project($workspace, $company, 'Synthetic Manage Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        // They can reach the client - the Overview tab is fine.
+        $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('clientContext.can_manage', false));
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")
+            ->assertForbidden();
+
+        $this->actingAs($member)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'Renamed By Someone Who May Not',
+                'billing_email' => null,
+                'is_active' => true,
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('Synthetic Manage Client', $company->fresh()?->name);
+    }
+
+    public function test_a_manager_can_edit_the_client_and_its_projects(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Edit', 'synthetic-edit', $manager);
+        $company = $this->company($workspace, 'Before Rename Client', 'before-rename-client');
+        $project = $this->project($workspace, $company, 'Before Rename Project');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'After Rename Client',
+                'billing_email' => 'billing@synthetic.test',
+                'is_active' => false,
+            ])
+            ->assertRedirect();
+
+        $fresh = $company->fresh();
+        $this->assertSame('After Rename Client', $fresh?->name);
+        $this->assertSame('billing@synthetic.test', $fresh?->billing_email);
+        $this->assertFalse((bool) $fresh?->is_active);
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'After Rename Project',
+                'description' => 'Synthetic description',
+                'status' => 'archived',
+                'is_visible_to_client' => false,
+            ])
+            ->assertRedirect();
+
+        $freshProject = $project->fresh();
+        $this->assertSame('After Rename Project', $freshProject?->name);
+        $this->assertSame('archived', $freshProject?->status);
+        $this->assertFalse((bool) $freshProject?->is_visible_to_client);
+    }
+
+    /**
+     * A project reached through the wrong client is not editable.
+     *
+     * Projects bind by a public id unique across every workspace, so without
+     * the company check a manager edits another client's project through their
+     * own client's Manage tab - and the redirect would look like it worked.
+     */
+    public function test_a_project_cannot_be_edited_through_another_client(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Cross Edit', 'synthetic-cross-edit', $manager);
+        $owner = $this->company($workspace, 'Owning Edit Client', 'owning-edit-client');
+        $other = $this->company($workspace, 'Other Edit Client', 'other-edit-client');
+        $project = $this->project($workspace, $owner, 'Owned Edit Project');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$other->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed Through The Wrong Client',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => true,
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('Owned Edit Project', $project->fresh()?->name);
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

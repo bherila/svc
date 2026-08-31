@@ -44,6 +44,12 @@ Route::middleware('auth')->group(function (): void {
         ->name('clients.invoices');
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
         ->name('clients.tasks');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/manage', [ClientDirectoryController::class, 'manage'])
+        ->name('clients.manage');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
+        ->name('clients.update');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
+        ->name('projects.update');
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
         ->name('clients.invoice');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');

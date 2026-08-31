@@ -3,8 +3,12 @@
 namespace App\Http\Middleware;
 
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
+use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\ProjectAccess;
 use BWH\Auth\OAuth\ProviderApplications;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Middleware;
@@ -71,6 +75,42 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
+     * The companies this viewer may switch between.
+     *
+     * Reachability is defined through projects, so this asks the same
+     * authorization service the directory does rather than repeating the rule -
+     * two copies of "which clients can they see" is how the directory and the
+     * time sheet came to disagree in the first place.
+     *
+     * @return Collection<int, ClientCompany>
+     */
+    private function switchableCompanies(Workspace $workspace, User $user): Collection
+    {
+        $companies = $workspace->clientCompanies()->orderBy('name')->get();
+        $viewable = app(ProjectAccess::class)->viewableProjectIds($user, $workspace);
+
+        if ($viewable === null) {
+            return $companies;
+        }
+
+        if ($viewable === []) {
+            return new Collection;
+        }
+
+        $reachable = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('id', $viewable)
+            ->pluck('client_company_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        return $companies->filter(
+            fn (ClientCompany $company): bool => in_array((int) $company->id, $reachable, true),
+        )->values();
+    }
+
+    /**
      * The company switcher's options, plus which one is selected.
      *
      * Null off a workspace route - the portal has no switcher, and neither does
@@ -118,12 +158,16 @@ class HandleInertiaRequests extends Middleware
                 'id' => (string) $workspace->public_id,
                 'name' => (string) $workspace->name,
             ],
-            // `array_values` rather than the collection's own `values()`:
-            // both renumber, but only this one is a list to the analyser, and
-            // the shape above says list.
-            'companies' => array_values($workspace->clientCompanies()
-                ->orderBy('name')
-                ->get()
+            // Narrowed to the clients this viewer reaches (#157). The switcher
+            // is the one place a client list appears on *every* client screen,
+            // so a workspace-wide query here would publish the whole list to a
+            // scoped member no matter which page they opened - which is exactly
+            // what the directory's own scoping test caught.
+            //
+            // `array_values` rather than the collection's own `values()`: both
+            // renumber, but only this one is a list to the analyser, and the
+            // shape above says list.
+            'companies' => array_values($this->switchableCompanies($workspace, $user)
                 ->map(fn (ClientCompany $option): array => [
                     'id' => (string) $option->public_id,
                     'name' => (string) $option->name,
@@ -132,6 +176,12 @@ class HandleInertiaRequests extends Middleware
             'current_company_id' => $company instanceof ClientCompany
                 ? (string) $company->public_id
                 : null,
+            // Whether the Manage tab appears at all. Shared here rather than
+            // per page because the strip is chrome, and a tab that shows for
+            // some pages and not others reads as a bug. It gates the link
+            // only - the action authorizes independently, because a hidden
+            // link is not an authorization check.
+            'can_manage' => Gate::forUser($user)->allows('manage', $workspace),
         ];
     }
 }
