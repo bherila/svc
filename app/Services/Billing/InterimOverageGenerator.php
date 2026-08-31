@@ -564,15 +564,35 @@ final class InterimOverageGenerator
             ->where('client_company_id', $company->id)
             ->where('client_agreement_id', $agreement->id)
             ->where('invoice_kind', $kind->value)
+            // Per boundary, not across both. Widening as
+            // `(start = X AND end = Y) OR start IS NULL OR end IS NULL` discards
+            // the boundary a half-dated row *does* have: an invoice with a null
+            // start and a known end of 31 March would satisfy the null branch
+            // for every cycle, blocking interim billing for April onward and
+            // subtracting its hours from cycles it has nothing to do with. A row
+            // stays fail-closed only for the cycles its known data cannot rule
+            // out, which for a fully undated row is still all of them.
             ->where(function (Builder $cycleWindow) use ($cycle, $unattributable): void {
-                $cycleWindow
-                    ->whereDate('cycle_start', $cycle->start->toDateString())
-                    ->whereDate('cycle_end', $cycle->end->toDateString());
-
-                if ($unattributable === Unattributable::Include) {
-                    $cycleWindow->orWhereNull('cycle_start')->orWhereNull('cycle_end');
-                }
+                $this->boundary($cycleWindow, 'cycle_start', $cycle->start->toDateString(), $unattributable);
+                $this->boundary($cycleWindow, 'cycle_end', $cycle->end->toDateString(), $unattributable);
             });
+    }
+
+    /**
+     * One cycle boundary: the stated date, or - when an unplaceable row counts -
+     * no date at all.
+     *
+     * @param  Builder<ClientInvoice>  $query
+     */
+    private function boundary(Builder $query, string $column, string $date, Unattributable $unattributable): void
+    {
+        $query->where(function (Builder $side) use ($column, $date, $unattributable): void {
+            $side->whereDate($column, $date);
+
+            if ($unattributable === Unattributable::Include) {
+                $side->orWhereNull($column);
+            }
+        });
     }
 
     /**

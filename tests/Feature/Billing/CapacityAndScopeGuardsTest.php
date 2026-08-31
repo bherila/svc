@@ -950,6 +950,58 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * A half-dated invoice is fail-closed only for the cycles its known
+     * boundary allows.
+     *
+     * The first version of the widening read
+     * `(start = X AND end = Y) OR start IS NULL OR end IS NULL`, which throws
+     * away the boundary a half-dated row does have: a cadence invoice with a
+     * null start and a known end of 31 March satisfied the null branch for
+     * every cycle, so it blocked interim billing for April onward and would
+     * have had its hours subtracted from cycles it has nothing to do with.
+     * Found in review of #175.
+     *
+     * Two assertions, opposite ways round, because either alone is satisfied by
+     * a rule that is simply too narrow or simply too broad.
+     */
+    public function test_a_half_dated_invoice_blocks_only_the_cycle_its_known_boundary_names(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-04-15', 1800);
+
+        // Known end of 31 March, so this belongs to the January-March cycle and
+        // to no other - even though its start is missing.
+        $halfDated = $this->invoice($agreement);
+        $halfDated->forceFill([
+            'invoice_kind' => 'cadence_period',
+            'status' => 'issued',
+            'cycle_start' => null,
+            'cycle_end' => '2024-03-31',
+        ])->save();
+
+        // April-June is a different cycle, and its own is untouched by the row
+        // above. Generation proceeds.
+        $april = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-04-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $april);
+
+        // Its own cycle is blocked, because the end it states is that cycle's.
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('already exists for this cycle');
+
+        app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+    }
+
+    /**
      * A charged cadence invoice with no cycle still stops an interim being
      * created for that cycle.
      *
