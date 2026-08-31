@@ -674,6 +674,49 @@ class ClientDirectoryTest extends TestCase
         );
     }
 
+    /**
+     * The Invoices tab lists this client's invoices and only this client's.
+     *
+     * The same two-key rule the detail screen follows: `client_company_id`
+     * alone would serialize another workspace's invoice on the strength of the
+     * company it names, and the tab is a new query that has to obey it too
+     * rather than inheriting the discipline by proximity.
+     */
+    public function test_the_invoices_tab_lists_only_this_companys_invoices(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Tab Scope', 'synthetic-tab-scope', $manager);
+        $company = $this->company($workspace, 'Synthetic Tab Client', 'synthetic-tab-client');
+        $sibling = $this->company($workspace, 'Sibling Tab Client', 'sibling-tab-client');
+
+        $this->invoice($workspace, $company, 'SYN-TAB-1', 'issued');
+        $this->invoice($workspace, $company, 'SYN-TAB-2', 'draft');
+        $this->invoice($workspace, $sibling, 'SIBLING-TAB-9999', 'issued');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Tab Tenant', 'slug' => 'foreign-tab']);
+        // Another workspace's invoice naming a company visible here - refused
+        // by the composite keys since #113, so seeded with enforcement
+        // suspended; the query's second key is what must exclude it.
+        $this->writingLegacyCrossTenantRows(
+            fn () => $this->invoice($foreign, $company, 'STRAY-TAB-8888', 'issued'),
+        );
+
+        $response = $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('clients/invoices')
+            ->has('invoices', 2)
+            ->where('company.name', 'Synthetic Tab Client'));
+
+        $this->assertInertiaPayloadOmits($response, [
+            'SIBLING-TAB-9999',
+            'STRAY-TAB-8888',
+            'Foreign Tab Tenant',
+        ], 'SYN-TAB-1');
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

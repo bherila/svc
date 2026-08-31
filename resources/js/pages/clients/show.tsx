@@ -1,22 +1,11 @@
 import { Head } from '@inertiajs/react';
+import { InvoiceTable } from '@/components/clients/invoice-table';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import ClientContextLayout from '@/layouts/client-context-layout';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
-import type {
-    ClientShowProps,
-    CompanyAgreement,
-    CompanyInvoice,
-} from '@/types/clients';
+import type { ClientShowProps, CompanyAgreement } from '@/types/clients';
 
 const CADENCE_LABELS: Record<string, string> = {
     monthly: 'Monthly',
@@ -128,27 +117,6 @@ function AgreementCard({ agreement }: { agreement: CompanyAgreement }) {
     );
 }
 
-function InvoiceRow({ invoice }: { invoice: CompanyInvoice }) {
-    return (
-        <TableRow>
-            <TableCell className="font-medium">
-                {invoice.invoice_number ?? 'Unnumbered'}
-            </TableCell>
-            <TableCell>
-                <Badge variant="outline">{invoice.status}</Badge>
-            </TableCell>
-            <TableCell>{invoice.issue_date ?? 'Not issued'}</TableCell>
-            <TableCell>{invoice.due_date ?? '—'}</TableCell>
-            <TableCell className="tabular-nums">
-                {formatMoney(invoice.total_amount, invoice.currency)}
-            </TableCell>
-            <TableCell className="tabular-nums">
-                {formatMoney(invoice.balance_amount, invoice.currency)}
-            </TableCell>
-        </TableRow>
-    );
-}
-
 export default function ClientShow({
     company,
     projects,
@@ -237,40 +205,15 @@ export default function ClientShow({
                         <CardTitle>Recent invoices</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-2">
-                        {invoices.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">
-                                No invoices for this client.
+                        <InvoiceTable
+                            invoices={invoices}
+                            empty="No invoices for this client."
+                        />
+                        {invoices.length === invoiceLimit && (
+                            <p className="text-xs text-muted-foreground">
+                                Showing the {invoiceLimit} most recent invoices.
+                                The Invoices tab has the rest.
                             </p>
-                        ) : (
-                            <>
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Number</TableHead>
-                                            <TableHead>Status</TableHead>
-                                            <TableHead>Issued</TableHead>
-                                            <TableHead>Due</TableHead>
-                                            <TableHead>Total</TableHead>
-                                            <TableHead>Balance</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {invoices.map((invoice) => (
-                                            <InvoiceRow
-                                                key={invoice.id}
-                                                invoice={invoice}
-                                            />
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                                {invoices.length === invoiceLimit && (
-                                    <p className="text-xs text-muted-foreground">
-                                        Showing the {invoiceLimit} most recent
-                                        invoices. Older ones are on the
-                                        operations screen.
-                                    </p>
-                                )}
-                            </>
                         )}
                     </CardContent>
                 </Card>

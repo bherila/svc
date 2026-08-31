@@ -145,18 +145,73 @@ class ClientDirectoryController extends Controller
                 fn (ClientAgreement $agreement): array => $this->agreementPayload($agreement, $projectNames),
             )->values()->all(),
             'invoice_limit' => self::RECENT_INVOICES,
-            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'total_amount' => (int) $invoice->total_amount,
-                'paid_amount' => (int) $invoice->paid_amount,
-                'balance_amount' => (int) $invoice->balance_amount,
-            ])->values()->all(),
+            'invoices' => $invoices->map(
+                fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
+            )->values()->all(),
         ]);
+    }
+
+    /**
+     * Every invoice this client has, as a tab of the client.
+     *
+     * Overview shows the most recent {@see self::RECENT_INVOICES} and links
+     * here; this is the unbounded list. Both read the same two keys - the
+     * workspace and the company - because `client_company_id` alone would
+     * serialize another workspace's invoice on the strength of the company it
+     * names, and both render through the same table component so the rows
+     * cannot drift apart.
+     */
+    public function invoices(
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        WorkspaceAuthorization $authorization,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        // Same reason as `show()`: the company binds by a public id unique
+        // across every workspace, so passing the workspace gate is not passing
+        // a check on the company reached through it.
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+
+        $invoices = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderByDesc('issue_date')
+            ->orderByDesc('id')
+            ->get();
+
+        return Inertia::render('clients/invoices', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'invoices' => $invoices->map(
+                fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
+            )->values()->all(),
+        ]);
+    }
+
+    /**
+     * One invoice as both screens send it.
+     *
+     * Shared so Overview's recent list and the Invoices tab cannot disagree
+     * about a field, and so a column added for one appears on the other rather
+     * than only where someone remembered.
+     *
+     * @return array<string, mixed>
+     */
+    private function invoicePayload(ClientInvoice $invoice): array
+    {
+        return [
+            'id' => $invoice->public_id,
+            'invoice_number' => $invoice->invoice_number,
+            'status' => $invoice->status,
+            'currency' => $invoice->currency,
+            'issue_date' => $invoice->issue_date?->toDateString(),
+            'due_date' => $invoice->due_date?->toDateString(),
+            'total_amount' => (int) $invoice->total_amount,
+            'paid_amount' => (int) $invoice->paid_amount,
+            'balance_amount' => (int) $invoice->balance_amount,
+        ];
     }
 
     /**
