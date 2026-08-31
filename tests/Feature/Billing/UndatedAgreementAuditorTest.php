@@ -63,15 +63,18 @@ final class UndatedAgreementAuditorTest extends TestCase
         $workspace = $this->workspace('ended');
         $company = $this->company($workspace, 'ended');
 
-        foreach (['active', 'paused', 'terminated', 'expired'] as $status) {
+        foreach (['active', 'active', 'paused', 'terminated', 'expired'] as $status) {
             $this->agreement($workspace, $company, ['status' => $status, 'starts_on' => null]);
         }
 
         $counts = app(UndatedAgreementAuditor::class)->count($workspace);
 
-        $this->assertSame(4, $counts->undated);
+        // Two actives, not one. Every bucket reading 1 is what a tally that
+        // overwrote rather than accumulated would also produce, so one bucket
+        // has to hold more than a single row for the count to mean anything.
+        $this->assertSame(5, $counts->undated);
         $this->assertSame(
-            ['active' => 1, 'expired' => 1, 'paused' => 1, 'terminated' => 1],
+            ['active' => 2, 'expired' => 1, 'paused' => 1, 'terminated' => 1],
             $counts->byStatus,
         );
     }
@@ -107,7 +110,7 @@ final class UndatedAgreementAuditorTest extends TestCase
         $this->agreement($workspace, $company, [
             'starts_on' => null,
             'period_retainer_amount' => 250000,
-            'billing_cadence' => 'quarterly',
+            'billing_cadence' => 'monthly',
         ]);
 
         $counts = app(UndatedAgreementAuditor::class)->count($workspace);
@@ -115,7 +118,8 @@ final class UndatedAgreementAuditorTest extends TestCase
         $this->assertSame(3, $counts->undated);
         $this->assertSame(1, $counts->hourlyOnly);
         $this->assertSame(2, $counts->withRetainerTerms);
-        $this->assertSame(['monthly' => 1, 'one_time' => 1, 'quarterly' => 1], $counts->byCadence);
+        // Two monthly, for the same reason the status tally has two actives.
+        $this->assertSame(['monthly' => 2, 'one_time' => 1], $counts->byCadence);
     }
 
     /**

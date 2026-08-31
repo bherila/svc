@@ -91,8 +91,10 @@ final class UndatedAgreementAuditor
         // says which of the cycle readers touch it, and `one_time` is the
         // default rather than a statement, so a large bucket there is a sign the
         // cadence was never set rather than that it was chosen.
-        $byStatus = $this->grouped(clone $undated, fn (ClientAgreement $a): string => $a->status);
-        $byCadence = $this->grouped(clone $undated, fn (ClientAgreement $a): string => $a->billing_cadence);
+        // Not cloned: `grouped()` only reads the builder, so a copy would be a
+        // defence against nothing.
+        $byStatus = $this->grouped($undated, fn (ClientAgreement $a): string => $a->status);
+        $byCadence = $this->grouped($undated, fn (ClientAgreement $a): string => $a->billing_cadence);
 
         // Two different blast radii, which is why #147 asks for the split. An
         // hourly-only agreement reaches the rate resolver and nothing else. One
@@ -115,6 +117,14 @@ final class UndatedAgreementAuditor
 
         $candidates = $this->entriesWithAnUndatedCandidate($workspace);
 
+        // The narrow figure first, the wide one after. Order matters: the copy
+        // taken inside `withNoDatedCandidate()` is what keeps its extra
+        // condition off `$candidates`, and taking the wide count last is what
+        // makes that observable - without the copy both figures would read the
+        // same and the bracket would collapse to its lower bound.
+        $certain = $this->withNoDatedCandidate($candidates)->count();
+        $possible = $candidates->count();
+
         return new UndatedAgreementCounts(
             agreements: $this->agreements($workspace)->count(),
             undated: $undated->count(),
@@ -122,8 +132,8 @@ final class UndatedAgreementAuditor
             byCadence: $byCadence,
             hourlyOnly: $hourlyOnly->count(),
             withRetainerTerms: $withRetainerTerms->count(),
-            entriesWithAnUndatedCandidate: $candidates->count(),
-            entriesWithNoOtherCandidate: $this->withNoDatedCandidate($candidates)->count(),
+            entriesWithAnUndatedCandidate: $possible,
+            entriesWithNoOtherCandidate: $certain,
             billedLinesOnAnUndatedAgreement: $this->billedLines($workspace),
         );
     }
