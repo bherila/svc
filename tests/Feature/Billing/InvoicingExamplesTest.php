@@ -197,6 +197,50 @@ final class InvoicingExamplesTest extends TestCase
         $this->assertSame(1.0, $agreement->catch_up_threshold_hours);
     }
 
+    public function test_an_unset_threshold_uses_the_period_retainer_override(): void
+    {
+        $agreement = $this->agreement(
+            retainerMinutes: null,
+            periodRetainerMinutes: 600,
+            thresholdMinutes: null,
+            hourlyRate: 15000,
+            retainerAmount: 150000,
+        );
+
+        $this->assertSame(10.0, $agreement->periodRetainerHours());
+        $this->assertSame(1.0, $agreement->catch_up_threshold_hours);
+    }
+
+    public function test_an_unset_threshold_is_capped_by_a_small_period_retainer_override(): void
+    {
+        $agreement = $this->agreement(
+            retainerMinutes: null,
+            periodRetainerMinutes: 30,
+            thresholdMinutes: null,
+            hourlyRate: 15000,
+            retainerAmount: 7500,
+        );
+
+        $this->assertSame(0.5, $agreement->periodRetainerHours());
+        $this->assertSame(0.5, $agreement->catch_up_threshold_hours);
+    }
+
+    public function test_shrinking_a_period_retainer_below_an_explicit_threshold_is_rejected(): void
+    {
+        $agreement = $this->agreement(
+            retainerMinutes: null,
+            periodRetainerMinutes: 120,
+            thresholdMinutes: 60,
+            hourlyRate: 15000,
+            retainerAmount: 30000,
+        );
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('catch_up_threshold_hours must be between 0 and period retainer hours (0.5). Got: 1');
+
+        $agreement->forceFill(['period_retainer_minutes' => 30])->save();
+    }
+
     /**
      * An agreement with no retainer has no capacity to hold a buffer, so the
      * default must not invent one.
@@ -223,12 +267,13 @@ final class InvoicingExamplesTest extends TestCase
     }
 
     private function agreement(
-        int $retainerMinutes,
+        ?int $retainerMinutes,
         ?int $thresholdMinutes,
         int $hourlyRate,
         int $retainerAmount,
         string $startsOn = '2024-02-01',
         int $rolloverMonths = 3,
+        ?int $periodRetainerMinutes = null,
     ): ClientAgreement {
         return ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
@@ -238,6 +283,7 @@ final class InvoicingExamplesTest extends TestCase
             'currency' => 'USD',
             'starts_on' => $startsOn,
             'retainer_minutes' => $retainerMinutes,
+            'period_retainer_minutes' => $periodRetainerMinutes,
             'retainer_amount' => $retainerAmount,
             'catch_up_threshold_minutes' => $thresholdMinutes,
             'hourly_rate_amount' => $hourlyRate,

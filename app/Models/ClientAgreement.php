@@ -254,7 +254,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
     public function getCatchUpThresholdHoursAttribute(): float
     {
         return $this->catch_up_threshold_minutes === null
-            ? min(1.0, $this->monthly_retainer_hours)
+            ? min(1.0, $this->periodRetainerHours())
             : ((int) $this->catch_up_threshold_minutes) / 60;
     }
 
@@ -289,7 +289,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             // activating or terminating the agreement - was the first thing to
             // run it, and threw over values that save never touched.
             if ($agreement->exists
-                && ! $agreement->isDirty(['catch_up_threshold_minutes', 'retainer_minutes', 'billing_cadence'])) {
+                && ! $agreement->isDirty(['catch_up_threshold_minutes', 'retainer_minutes', 'period_retainer_minutes', 'billing_cadence'])) {
                 return;
             }
 
