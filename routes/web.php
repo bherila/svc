@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ClientCompanyController;
+use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
@@ -36,6 +37,9 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->name('workspaces.operations');
+    Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
+        ->name('clients.show');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
