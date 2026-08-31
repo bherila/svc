@@ -363,7 +363,12 @@ export default function Portal({ company }: { company: PortalCompany }) {
                                 >
                                     <div className="flex items-start justify-between gap-4">
                                         <h3 className="text-xl font-semibold">
-                                            {invoice.invoice_number}
+                                            <Link
+                                                href={`/portal/${company.id}/invoices/${invoice.id}`}
+                                                className="underline-offset-4 hover:underline"
+                                            >
+                                                {invoice.invoice_number}
+                                            </Link>
                                         </h3>
                                         <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">
                                             {invoice.status}
