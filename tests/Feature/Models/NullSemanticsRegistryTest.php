@@ -226,7 +226,12 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 ['reader_in' => ClientInvoicingService::class, 'reads' => 'generateMonthlyInvoiceForWorkPeriod'],
             ],
-            // Not issued yet: issuing stamps the workspace's calendar date.
+            // Not issued yet - on the draft path, where issuing stamps the
+            // workspace's calendar date. Not a global reading: `issue()`
+            // returns early for an invoice that is already charged, so an
+            // imported issued or paid invoice with no date keeps the null and
+            // nothing ever fills it. The citation covers the transition, not
+            // the column's whole meaning.
             'issue_date' => [
                 'covered_by' => BillingWorkflowTest::class,
                 'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
@@ -251,12 +256,16 @@ final class NullSemanticsRegistryTest extends TestCase
                 'reader_in' => DraftInvoiceTimeRegenerator::class,
                 'reads' => 'regenerate',
             ],
-            // Three branches. The regeneration refusal is pinned; the
-            // billed-overage window is pinned since #135, where a `<=` that
-            // answers false for a null dropped charged invoices out of the sum
-            // and their overage was billed twice. The interim generator carries
-            // a parallel already-billed sum with its own `orWhereNull`, added in
-            // the #139 fix-forward, and nothing pins that one.
+            // Four branches, two of them pinned. The regeneration refusal is
+            // covered; the billed-overage window is covered since #135, where a
+            // `<=` that answers false for a null dropped charged invoices out
+            // of the sum and their overage was billed twice. The interim
+            // generator carries a parallel already-billed sum with its own
+            // `orWhereNull`, added in the #139 fix-forward, and nothing pins it.
+            // The fourth is a coercion rather than a predicate: the composer
+            // hands this column to `Carbon::parse()` unguarded when dating a
+            // deferred-termination line, and `parse(null)` is *now*, so a
+            // malformed invoice dates its line today. That one is #135 item 2.
             'service_period_end' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
@@ -267,6 +276,7 @@ final class NullSemanticsRegistryTest extends TestCase
                     'method' => 'test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
                 ],
                 ['reader_in' => InterimOverageGenerator::class, 'reads' => 'generateInterimOverageInvoice'],
+                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -412,8 +422,12 @@ final class NullSemanticsRegistryTest extends TestCase
                 'method' => 'test_an_agreement_with_no_retainer_reports_no_capacity',
             ],
             'rollover_policy' => 'PENDING-AUDIT',
-            // Never activated: activation stamps the date, and a later
-            // reactivation preserves the one already recorded.
+            // Never activated - on the draft path, where activation stamps the
+            // date and a later reactivation preserves the one recorded. Same
+            // limit as `issue_date`: `activate()` returns early for an
+            // agreement already `active`, so an imported active agreement with
+            // no stamp stays active-and-unstamped and null does not mean "never
+            // activated" for it.
             'activated_at' => [
                 'covered_by' => EngagementWorkflowTest::class,
                 'method' => 'test_only_an_unstamped_agreement_takes_an_activation_date',
@@ -660,14 +674,75 @@ final class NullSemanticsRegistryTest extends TestCase
                 // One entry or several: a column whose null is branched on in
                 // more than one place carries one per branch.
                 $entries = isset($entry['covered_by']) || isset($entry['reader_in']) ? [$entry] : $entry;
+                $seen = [];
 
                 foreach ($entries as $one) {
                     $bad = [...$bad, ...$this->problemsWith($table, (string) $column, $one)];
+
+                    // A list is a claim that the null is branched on in more
+                    // than one place. Repeating one entry makes a column look
+                    // twice-evidenced on the strength of a single test, which
+                    // is the over-claim this registry exists to prevent - in
+                    // miniature. Across columns a shared citation is often
+                    // legitimate, so this is scoped to one column's list.
+                    $key = implode('::', $one);
+
+                    if (isset($seen[$key])) {
+                        $bad[] = sprintf('%s.%s: names %s twice; a list must be one entry per distinct branch', $table, $column, $key);
+                    }
+
+                    $seen[$key] = true;
                 }
             }
         }
 
         $this->assertSame([], $bad, "These registry entries do not resolve:\n\n".implode("\n", $bad));
+    }
+
+    /**
+     * The audited table list and the registry must name the same tables.
+     *
+     * Without this the schema ratchet has a hole big enough to drive a table
+     * through. The two schema-direction tests iterate TABLES, while citation
+     * checking and the pending ceiling iterate REGISTRY - so dropping a table
+     * from TABLES and leaving its REGISTRY block in place removes it from
+     * schema checking entirely, while its citations still resolve and its
+     * PENDING entries still count. A new nullable column on that table then
+     * lands unregistered and nothing says so. The reverse - a registry block
+     * for a table nobody audits - is padding that inflates the pending ceiling
+     * against a schema that is never consulted.
+     *
+     * The literal list is deliberate duplication, and it is the ratchet: it
+     * makes narrowing the audit an edit someone has to make on purpose, rather
+     * than a deletion that looks like tidying.
+     */
+    public function test_the_audited_tables_are_exactly_the_registered_ones(): void
+    {
+        $audited = self::TABLES;
+        $registered = array_keys(self::REGISTRY);
+        sort($audited);
+        sort($registered);
+
+        $this->assertSame(
+            $audited,
+            $registered,
+            'NullSemanticsRegistryTest::TABLES and ::REGISTRY name different tables. '.
+            'Every audited table needs a registry block, and every registry block needs to be audited.',
+        );
+
+        $expected = [
+            'client_agreements',
+            'client_invoice_lines',
+            'client_invoices',
+            'client_time_entries',
+        ];
+
+        $this->assertSame(
+            $expected,
+            $audited,
+            'The set of tables audited by #115 changed. Removing one drops it out of the schema ratchet '.
+            'silently, so this list has to be edited on purpose and defended in review.',
+        );
     }
 
     /**
