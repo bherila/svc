@@ -12,17 +12,33 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable([
-    'public_id', 'workspace_id', 'client_agreement_id', 'description', 'cadence', 'anchor_month', 'anchor_day',
-    'effective_on', 'expires_on', 'quantity', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
-])]
-#[Hidden(['id', 'workspace_id', 'client_agreement_id'])]
 /**
+ * @property int $id
+ * @property string $public_id
+ * @property int $workspace_id
+ * @property int $client_agreement_id
+ * @property string $description
+ * @property string|null $cadence
+ * @property int|null $anchor_month
+ * @property int|null $anchor_day
+ * @property CarbonImmutable|null $effective_on
+ * @property CarbonImmutable|null $expires_on
+ * @property numeric-string|null $quantity
+ * @property int|null $amount
+ * @property string|null $currency
+ * @property bool $is_taxable
+ * @property bool $is_active
+ * @property int $sort_order
  * @property-read ChargeCadence|null $charge_cadence
  * @property-read CarbonImmutable|null $start_date
  * @property-read CarbonImmutable|null $end_date
  * @property-read float $charge_amount
  */
+#[Fillable([
+    'public_id', 'workspace_id', 'client_agreement_id', 'description', 'cadence', 'anchor_month', 'anchor_day',
+    'effective_on', 'expires_on', 'quantity', 'amount', 'currency', 'is_taxable', 'is_active', 'sort_order',
+])]
+#[Hidden(['id', 'workspace_id', 'client_agreement_id'])]
 class ClientAgreementRecurringItem extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;

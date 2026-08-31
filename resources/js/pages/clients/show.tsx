@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { InvoiceTable } from '@/components/clients/invoice-table';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,13 +63,26 @@ function retainerTerms(agreement: CompanyAgreement): string | null {
     return parts.length === 0 ? null : parts.join(' · ');
 }
 
-function AgreementCard({ agreement }: { agreement: CompanyAgreement }) {
+function AgreementCard({
+    agreement,
+    href,
+}: {
+    agreement: CompanyAgreement;
+    href: string;
+}) {
     const retainer = retainerTerms(agreement);
 
     return (
         <div className="grid gap-1 rounded-xl border p-4">
             <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-medium">{agreement.title}</h3>
+                <h3 className="font-medium">
+                    <Link
+                        href={href}
+                        className="underline-offset-4 hover:underline"
+                    >
+                        {agreement.title}
+                    </Link>
+                </h3>
                 <Badge variant="outline">{agreement.status}</Badge>
                 {agreement.project !== null && (
                     <Badge variant="secondary">{agreement.project} only</Badge>
@@ -194,6 +207,7 @@ export default function ClientShow({
                                     <AgreementCard
                                         key={agreement.id}
                                         agreement={agreement}
+                                        href={`/workspaces/${workspace.id}/clients/${company.id}/agreements/${agreement.id}`}
                                     />
                                 ))}
                             </div>

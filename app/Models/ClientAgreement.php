@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property CarbonImmutable|null $activated_at
+ * @property CarbonImmutable|null $terminated_at
  * @property CarbonImmutable|null $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $signed_at

@@ -1049,6 +1049,72 @@ class ClientDirectoryTest extends TestCase
         $this->assertSame('Owned Edit Project', $project->fresh()?->name);
     }
 
+    /**
+     * An agreement's full terms, and only through the client that owns it.
+     *
+     * Agreements bind by a public id unique across every workspace, so without
+     * the company check one client's terms - rates, retainer, signatories -
+     * render under another client's name and chrome.
+     */
+    public function test_an_agreement_is_only_reachable_through_its_own_client(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Terms', 'synthetic-terms', $manager);
+        $owner = $this->company($workspace, 'Owning Terms Client', 'owning-terms-client');
+        $other = $this->company($workspace, 'Other Terms Client', 'other-terms-client');
+
+        $agreement = $this->agreement($workspace, $owner, [
+            'title' => 'Synthetic Terms Agreement',
+            'status' => 'active',
+            'billing_cadence' => 'monthly',
+            'starts_on' => '2026-01-01',
+            'retainer_minutes' => 600,
+        ]);
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$owner->public_id}/agreements/{$agreement->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/agreement')
+                ->where('agreement.title', 'Synthetic Terms Agreement')
+                ->where('company.name', 'Owning Terms Client'));
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$other->public_id}/agreements/{$agreement->public_id}")
+            ->assertNotFound();
+    }
+
+    /**
+     * An unstated term is sent as null, not as zero.
+     *
+     * The screen distinguishes them - a null rate means the lookup refuses to
+     * price rather than pricing at nothing, and a null threshold means the
+     * engine defaults - so the payload has to preserve the difference the
+     * whole null-semantics registry exists to protect.
+     */
+    public function test_unstated_agreement_terms_are_sent_as_null(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Unstated', 'synthetic-unstated', $manager);
+        $company = $this->company($workspace, 'Synthetic Unstated Client', 'unstated-client');
+
+        $agreement = $this->agreement($workspace, $company, [
+            'title' => 'Synthetic Unstated Agreement',
+            'status' => 'active',
+            'billing_cadence' => 'monthly',
+            'starts_on' => '2026-01-01',
+        ]);
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements/{$agreement->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('agreement.hourly_rate_amount', null)
+                ->where('agreement.catch_up_threshold_minutes', null)
+                ->where('agreement.rollover_policy', null)
+                ->where('agreement.terminated_at', null));
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);
