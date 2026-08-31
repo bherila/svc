@@ -1002,6 +1002,52 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * The same, on the other boundary.
+     *
+     * Written because the mutation gate showed the start half was never
+     * exercised: the test above states an end and leaves the start null, so
+     * deleting the start comparison entirely changed no result. This states a
+     * start and leaves the end null, which is the only shape in which the start
+     * clause decides anything.
+     *
+     * The two together are what make the per-boundary form observable. Either
+     * alone leaves one of the two comparisons free to be removed.
+     */
+    public function test_an_invoice_dated_only_at_its_start_blocks_only_that_cycle(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-04-15', 1800);
+
+        // Known start of 1 January, so this belongs to the January-March cycle
+        // and to no other - even though its end is missing.
+        $halfDated = $this->invoice($agreement);
+        $halfDated->forceFill([
+            'invoice_kind' => 'cadence_period',
+            'status' => 'issued',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => null,
+        ])->save();
+
+        $april = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-04-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $april);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('already exists for this cycle');
+
+        app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+    }
+
+    /**
      * A charged cadence invoice with no cycle still stops an interim being
      * created for that cycle.
      *
