@@ -126,12 +126,30 @@ final class NullSemanticsRegistryTest extends TestCase
      * the PENDING-AUDIT count to an equality; the second put a floor under the
      * covered count. Both bound totals, and a total survives a swap. The third
      * named the covered columns - better, but still too coarse, because "this
-     * column carries a citation" is satisfied by *any one* of its entries. A
+     * column carries a citation" is satisfied by *any one* of its entries, so a
      * column registering four branches could be cut back to one and pass.
      *
-     * So the unit here is the branch, not the column and not a number. Each
-     * line is one `table.column => Class::method` that must still be present.
-     * Adding a branch is free; removing one fails by name.
+     * So the unit here is the branch, not the column and not a number: one line
+     * per `table.column => kind:Fully\Qualified\Class::method` that must still
+     * be present. Adding a branch is free; removing one fails by name.
+     *
+     * Both halves of that identity are load-bearing, and an earlier version of
+     * this constant carried neither.
+     *
+     * The **kind** distinguishes `covered_by` from `reader_in`. Without it the
+     * two collapse to the same string, so any citation could be rewritten as a
+     * named reader against the same test class and method - which
+     * `problemsWithReader()` accepts, since a test class is a class and a test
+     * method is a method - and coverage would silently decay into mere exposure
+     * with every guard green.
+     *
+     * The **fully-qualified name** is required because short names collide: this
+     * repository already contains `Tests\Feature\ExampleTest` and
+     * `Tests\Unit\ExampleTest`. On basenames alone, swapping one class for
+     * another in a different namespace with a same-named method preserves the
+     * identity and passes. An earlier revision of this file used basenames and
+     * claimed the qualified form "makes the pinned list unreadable without
+     * making it stricter". That was wrong on the second half.
      *
      * Yes, this duplicates the registry. That is what a ratchet is: the
      * duplication is the part that cannot be edited away by accident, and a
@@ -141,89 +159,91 @@ final class NullSemanticsRegistryTest extends TestCase
      * @var list<string>
      */
     private const REGISTERED_BRANCHES = [
-        'client_agreements.activated_at => EngagementWorkflowTest::test_only_an_unstamped_agreement_takes_an_activation_date',
-        'client_agreements.agreement_link => BackfillBillingLedgerCommand::applyRow',
-        'client_agreements.bill_overage_interim => CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
-        'client_agreements.catch_up_threshold_minutes => InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
-        'client_agreements.client_project_id => AgreementBillingRateResolver::resolve',
-        'client_agreements.ends_on => AgreementBillingRateResolver::resolve',
-        'client_agreements.first_cycle_proration => CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
-        'client_agreements.hourly_rate_amount => DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
-        'client_agreements.hourly_rate_amount => InvoiceLineComposer::addDeferredTerminationLine',
-        'client_agreements.initial_rollover_minutes => InvoiceLedgerBuilderTest::test_an_agreement_with_no_recorded_opening_rollover_grants_none',
-        'client_agreements.period_retainer_amount => RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
-        'client_agreements.period_retainer_minutes => RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
-        'client_agreements.retainer_amount => RetainerCalculatorTest::test_an_agreement_with_no_retainer_price_bills_no_retainer_fee',
-        'client_agreements.retainer_minutes => TimeSheetTest::test_an_agreement_with_no_retainer_reports_no_capacity',
-        'client_agreements.rollover_months => InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
-        'client_agreements.signed_at => EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
-        'client_agreements.source_proposal_id => ProposalWorkflow::accept',
-        'client_agreements.starts_on => AgreementBillingRateResolver::resolve',
-        'client_agreements.starts_on => TimeSheetController::capacityByMonth',
-        'client_agreements.starts_on => TimeSheetTest::test_an_agreement_with_no_start_date_reports_no_capacity',
-        'client_invoice_lines.client_agreement_id => ReplayInvoicesCommand::snapshot',
-        'client_invoice_lines.client_agreement_recurring_item_id => ReplayInvoicesCommand::snapshot',
-        'client_invoice_lines.client_project_id => InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
-        'client_invoice_lines.hours => ReplayInvoicesCommand::snapshot',
-        'client_invoice_lines.line_date => CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
-        'client_invoices.client_agreement_id => DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
-        'client_invoices.client_agreement_id => DraftInvoiceTimeRegenerator::regenerate',
-        'client_invoices.client_billing_schedule_id => BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
-        'client_invoices.client_billing_schedule_id => ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod',
-        'client_invoices.cycle_end => InterimOverageGenerator::interimOverageHoursForCycle',
-        'client_invoices.cycle_start => InterimOverageGenerator::interimOverageHoursForCycle',
-        'client_invoices.due_date => AgentReadController::summary',
-        'client_invoices.due_date => BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
-        'client_invoices.hours_billed_at_rate => ClientInvoicingService::totalBilledOveragesThrough',
-        'client_invoices.hours_billed_at_rate => InterimOverageGenerator::interimOverageHoursForCycle',
-        'client_invoices.hours_worked => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.invoice_kind => CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
-        'client_invoices.invoice_kind => DraftInvoiceTimeRegenerator::regenerate',
-        'client_invoices.issue_date => BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
-        'client_invoices.negative_hours_balance => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.paid_on => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.retainer_hours_included => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.rollover_hours_used => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.service_period_end => CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
-        'client_invoices.service_period_end => DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_without_a_service_period_fails_closed',
-        'client_invoices.service_period_end => InterimOverageGenerator::generateInterimOverageInvoice',
-        'client_invoices.service_period_end => InvoiceLineComposer::addDeferredTerminationLine',
-        'client_invoices.service_period_start => DraftInvoiceTimeRegenerator::regenerate',
-        'client_invoices.starting_negative_hours => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.starting_unused_hours => BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.unused_hours_balance => BackfillBillingLedgerCommand::applyRow',
-        'client_time_entries.billing_rate_amount => AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_amount => InvoiceFromTimeService::selectedTimeTerms',
-        'client_time_entries.billing_rate_source => AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_source => TimeEntryMutationService::approvalRate',
-        'client_time_entries.client_task_id => AllocationService::canMerge',
-        'client_time_entries.client_visible_description => AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
-        'client_time_entries.currency => InvoiceFromTimeService::selectedTimeTerms',
-        'client_time_entries.currency => TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
-        'client_time_entries.deleted_at => DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
-        'client_time_entries.job_type => BackfillBillingLedgerCommand::applyRow',
-        'client_time_entries.split_from_time_entry_id => AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
-        'client_time_entries.subcontractor_billing_mode => ClientTimeEntry::scopeRetainerBillable',
-        'client_time_entries.subcontractor_billing_mode => RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
-        'client_time_entries.subcontractor_cost_amount => InvoiceLineComposer::addFlatHourlySubcontractorEntries',
-        'client_time_entries.subcontractor_cost_amount => TimeEntryMutationService::approvalRate',
-        'client_time_entries.subcontractor_cost_currency => InvoiceLineComposer::addFlatHourlySubcontractorEntries',
-        'client_time_entries.subcontractor_cost_currency => TimeEntryMutationService::approvalRate',
-        'client_time_entries.subcontractor_cost_metadata => AllocationService::canMerge',
+        'client_agreements.activated_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unstamped_agreement_takes_an_activation_date',
+        'client_agreements.agreement_link => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
+        'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
+        'client_agreements.client_project_id => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
+        'client_agreements.ends_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
+        'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
+        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
+        'client_agreements.hourly_rate_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
+        'client_agreements.initial_rollover_minutes => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_recorded_opening_rollover_grants_none',
+        'client_agreements.period_retainer_amount => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
+        'client_agreements.period_retainer_minutes => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
+        'client_agreements.retainer_amount => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_an_agreement_with_no_retainer_price_bills_no_retainer_fee',
+        'client_agreements.retainer_minutes => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_retainer_reports_no_capacity',
+        'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
+        'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
+        'client_agreements.source_proposal_id => reader_in:App\Services\Engagement\ProposalWorkflow::accept',
+        'client_agreements.starts_on => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_start_date_reports_no_capacity',
+        'client_agreements.starts_on => reader_in:App\Http\Controllers\Engagement\TimeSheetController::capacityByMonth',
+        'client_agreements.starts_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
+        'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
+        'client_invoice_lines.hours => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
+        'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
+        'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod',
+        'client_invoices.cycle_end => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.cycle_start => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
+        'client_invoices.hours_billed_at_rate => reader_in:App\Services\Billing\ClientInvoicingService::totalBilledOveragesThrough',
+        'client_invoices.hours_billed_at_rate => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.hours_worked => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
+        'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.negative_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.paid_on => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.retainer_hours_included => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.rollover_hours_used => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_without_a_service_period_fails_closed',
+        'client_invoices.service_period_end => reader_in:App\Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice',
+        'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
+        'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.starting_negative_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.starting_unused_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_invoices.unused_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+        'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
+        'client_time_entries.billing_rate_source => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.client_visible_description => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
+        'client_time_entries.currency => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
+        'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
+        'client_time_entries.job_type => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
+        'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
+        'client_time_entries.subcontractor_billing_mode => reader_in:App\Models\ClientTimeEntry::scopeRetainerBillable',
+        'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
+        'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
+        'client_time_entries.subcontractor_cost_metadata => reader_in:App\Services\Billing\AllocationService::canMerge',
     ];
 
     /**
-     * The columns whose null has no known reader, by name.
+     * The columns whose null has no known reader, by name - exactly.
      *
      * A named set rather than a ceiling, for the reason the ceiling failed: a
-     * bound leaves reusable slack. Once one pending column resolved, a new
+     * bound leaves reusable slack, so once one pending column resolved, a new
      * unexamined nullable column could take its place in the count and land
-     * without anyone deciding anything - which is exactly what the ceiling's
-     * own comment claimed was impossible.
+     * without anyone deciding anything.
      *
-     * Leaving this set is free and is the direction of travel. Joining it is
-     * not: a column that appears here without being listed fails, so admitting
-     * "we have not looked at this one" stays a deliberate act.
+     * Compared as an exact set, not a subset, because a one-way membership test
+     * leaves the same kind of slack one level down: a resolved column left
+     * listed here is a standing permission for it to revert to PENDING-AUDIT
+     * later. Resolving a column therefore means deleting its name from this
+     * list, which is one more edit and the entire point - both directions are
+     * now deliberate.
      *
      * @var list<string>
      */
@@ -884,30 +904,38 @@ final class NullSemanticsRegistryTest extends TestCase
             implode("\n", $lost),
         ));
 
-        $joined = [];
+        $pending = [];
 
         foreach (self::REGISTRY as $table => $columns) {
             foreach ($columns as $column => $entry) {
-                if ($entry === 'PENDING-AUDIT' && ! in_array(sprintf('%s.%s', $table, $column), self::PENDING_COLUMNS, true)) {
-                    $joined[] = sprintf('%s.%s', $table, $column);
+                if ($entry === 'PENDING-AUDIT') {
+                    $pending[] = sprintf('%s.%s', $table, $column);
                 }
             }
         }
 
-        $this->assertSame([], $joined, sprintf(
-            "These columns became PENDING-AUDIT without being listed:\n\n%s\n\n".
-            'A count would have allowed this whenever earlier work had freed up slack. '.
-            'Add them to PENDING_COLUMNS deliberately, which is how "we have not looked at this one" stays a decision.',
-            implode("\n", $joined),
+        $listed = self::PENDING_COLUMNS;
+        sort($pending);
+        sort($listed);
+
+        $this->assertSame($listed, $pending, sprintf(
+            "The PENDING-AUDIT set no longer matches PENDING_COLUMNS.\n\n".
+            "Joined without being listed: %s\nListed but no longer pending: %s\n\n".
+            'Both directions are deliberate. A column joining the unexamined set has to be admitted by name. '.
+            'A column leaving it has to be struck off, because a resolved name left listed is a standing '.
+            'permission for that column to revert to PENDING-AUDIT later and still pass.',
+            implode(', ', array_diff($pending, $listed)) ?: '(none)',
+            implode(', ', array_diff($listed, $pending)) ?: '(none)',
         ));
     }
 
     /**
-     * The `Class::method` identity of every branch an entry registers.
+     * The identity of every branch an entry registers.
      *
-     * Short class names, matching REGISTERED_BRANCHES: the imports at the top
-     * of this file already bind them, and the fully-qualified form makes the
-     * pinned list unreadable without making it stricter.
+     * `kind:Fully\Qualified\Class::method`. The kind is what stops a citation
+     * being rewritten as a named reader against the same test and passing as
+     * the same branch; the qualified name is what stops two same-named classes
+     * in different namespaces standing in for each other.
      *
      * @return list<string>
      */
@@ -925,15 +953,20 @@ final class NullSemanticsRegistryTest extends TestCase
                 continue;
             }
 
-            $class = $one['covered_by'] ?? $one['reader_in'] ?? null;
-            $method = $one['method'] ?? $one['reads'] ?? null;
+            $kind = isset($one['covered_by']) ? 'covered_by' : (isset($one['reader_in']) ? 'reader_in' : null);
+
+            if ($kind === null) {
+                continue;
+            }
+
+            $class = $kind === 'covered_by' ? $one['covered_by'] : $one['reader_in'];
+            $method = $one[$kind === 'covered_by' ? 'method' : 'reads'] ?? null;
 
             if (! is_string($class) || ! is_string($method)) {
                 continue;
             }
 
-            $short = substr($class, (int) strrpos($class, '\\') + 1);
-            $identities[] = sprintf('%s::%s', $short, $method);
+            $identities[] = sprintf('%s:%s::%s', $kind, $class, $method);
         }
 
         return $identities;
@@ -979,11 +1012,27 @@ final class NullSemanticsRegistryTest extends TestCase
 
         // An abstract class satisfies `is_subclass_of` and can declare a public
         // `test_`-prefixed method that passes every check below, while PHPUnit
-        // can neither instantiate nor run it. Such a class can also live
-        // outside test discovery entirely, so the citation would name a test
-        // that never executes.
+        // can neither instantiate nor run it.
         if ($reflection->isAbstract()) {
             return [sprintf('%s.%s: cited class %s is abstract, so PHPUnit never runs it', $table, $column, $class)];
+        }
+
+        // Concreteness is not discovery. Composer autoloads every `Tests\`
+        // class, but PHPUnit only collects files under the directories named in
+        // phpunit.xml whose names end in the configured suffix - so a perfectly
+        // concrete test class in `tests/Support/Helpers.php` satisfies every
+        // reflection check above and never runs. The suites are read from
+        // phpunit.xml rather than hardcoded, so this cannot drift from the
+        // configuration it is asserting about.
+        $file = $reflection->getFileName();
+
+        if ($file === false || ! $this->isDiscoverableByPhpunit($file)) {
+            return [sprintf(
+                '%s.%s: cited class %s is not in a file PHPUnit collects (see the testsuite directories and suffix in phpunit.xml)',
+                $table,
+                $column,
+                $class,
+            )];
         }
 
         if (! is_string($method) || ! $reflection->hasMethod($method)) {
@@ -1003,6 +1052,40 @@ final class NullSemanticsRegistryTest extends TestCase
         }
 
         return [];
+    }
+
+    /**
+     * Would PHPUnit actually collect this file?
+     *
+     * Reads the testsuite directories and file suffix straight out of
+     * phpunit.xml, so the answer tracks the configuration instead of a copy of
+     * it. A citation naming a class PHPUnit never collects is a citation of a
+     * test that never runs.
+     */
+    private function isDiscoverableByPhpunit(string $file): bool
+    {
+        $config = simplexml_load_file(base_path('phpunit.xml'));
+
+        if ($config === false) {
+            return false;
+        }
+
+        $real = realpath($file);
+
+        if ($real === false) {
+            return false;
+        }
+
+        foreach ($config->xpath('//testsuites/testsuite/directory') ?: [] as $directory) {
+            $suffix = (string) ($directory['suffix'] ?? '') ?: 'Test.php';
+            $root = realpath(base_path((string) $directory));
+
+            if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR) && str_ends_with($real, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
