@@ -18,13 +18,11 @@ use Tests\TestCase;
  * What the command prints, and what it must never print.
  *
  * `UndatedAgreementAuditorTest` covers the arithmetic. This covers what only the
- * command can get wrong: the `--format=json` shape, the three notices, and the
+ * command can get wrong: the `--format=json` shape, the notices, and the
  * promise that the output is safe to paste into a public issue.
  *
- * The three notices matter more here than on the other audits, because this
- * command reports a bracket. Saying "no entry is provably affected" and saying
- * "nothing is affected" are different claims, and the second would be false -
- * so the wording of the not-proven branch is asserted rather than assumed.
+ * The live notice uses the exact resolver-selected count, while the candidate
+ * bounds remain visible as a cross-check.
  */
 final class AuditUndatedAgreementsCommandTest extends TestCase
 {
@@ -60,6 +58,7 @@ final class AuditUndatedAgreementsCommandTest extends TestCase
             'with_retainer_terms',
             'entries_with_an_undated_candidate',
             'entries_with_no_other_candidate',
+            'entries_selected_by_an_undated_agreement',
             'billed_lines_on_an_undated_agreement',
         ], array_keys($payload['summary']));
 
@@ -69,6 +68,7 @@ final class AuditUndatedAgreementsCommandTest extends TestCase
         $this->assertSame(0, $payload['summary']['with_retainer_terms']);
         $this->assertSame(['active' => 1], $payload['summary']['by_status']);
         $this->assertSame(['one_time' => 1], $payload['summary']['by_cadence']);
+        $this->assertSame(1, $payload['summary']['entries_selected_by_an_undated_agreement']);
     }
 
     /**
@@ -120,8 +120,8 @@ final class AuditUndatedAgreementsCommandTest extends TestCase
     }
 
     /**
-     * A provably-priced entry raises the live warning, and it points at the
-     * decision rather than at a fix.
+     * A resolver-selected entry raises the live warning and reports the exact
+     * population that needs a historical date before the contract changes.
      */
     public function test_it_warns_when_an_entry_is_certainly_priced_by_an_undated_agreement(): void
     {
@@ -129,21 +129,16 @@ final class AuditUndatedAgreementsCommandTest extends TestCase
 
         $output = $this->text();
 
-        $this->assertStringContainsString('nothing else eligible', $output);
-        $this->assertStringContainsString('Decide the contract in #147 before changing any of them', $output);
+        $this->assertStringContainsString('1 time entry/entries are priced by an agreement with no start date', $output);
+        $this->assertStringContainsString('Backfill an explicit historical start date', $output);
         $this->assertStringNotContainsString('#147 is latent', $output);
     }
 
     /**
-     * An undated agreement that a dated one competes with is reported as not
-     * proven, and explicitly not as safe.
-     *
-     * This is the branch worth pinning by its exact words. The audit cannot say
-     * which agreement the resolver picks when both are eligible, and a reader
-     * who took silence for safety would conclude the opposite of what the
-     * numbers support.
+     * An equally specific dated agreement wins the resolver ordering, so the
+     * exact count reports that the undated candidate prices no entry.
      */
-    public function test_a_contested_entry_is_reported_as_not_proven_rather_than_safe(): void
+    public function test_a_contested_entry_reports_the_resolver_selected_no_undated_agreement(): void
     {
         $workspace = $this->workspace();
         $company = $this->company($workspace);
@@ -155,8 +150,8 @@ final class AuditUndatedAgreementsCommandTest extends TestCase
 
         $output = $this->text();
 
-        $this->assertStringContainsString('No entry is provably priced by an undated agreement', $output);
-        $this->assertStringContainsString('not as "safe"', $output);
+        $this->assertStringContainsString('No time entry is currently priced by an undated agreement', $output);
+        $this->assertStringContainsString('the exact count asks the rate resolver', $output);
         $this->assertStringNotContainsString('#147 is latent', $output);
     }
 

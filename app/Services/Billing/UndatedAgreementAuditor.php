@@ -7,6 +7,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\Billing\UndatedAgreementCounts;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
@@ -40,17 +41,17 @@ use Illuminate\Support\Facades\DB;
  * sets `starts_on` to the acceptance date. The undated population is an imported
  * one, which is why sizing it comes before changing anything.
  *
- * ## Two bounds rather than one number
+ * ## Exact selection, bounded by queries
  *
  * The resolver does not pick by query alone - it collects candidates, then sorts
- * them, preferring a project-specific agreement over a company-wide one. There
- * is no honest single count of "entries priced by an undated agreement", so this
- * reports the bracket instead: {@see UndatedAgreementCounts::$entriesWithAnUndatedCandidate}
- * is every entry one of these could be selected for, an upper bound; and
+ * them, preferring a project-specific agreement over a company-wide one. The
+ * audit therefore asks {@see AgreementBillingRateResolver::select()} which row
+ * wins for every candidate instead of copying that precedence. It also reports
+ * {@see UndatedAgreementCounts::$entriesWithAnUndatedCandidate} as an upper
+ * bound and
  * {@see UndatedAgreementCounts::$entriesWithNoOtherCandidate} is the entries
- * where nothing else is eligible, so the undated agreement is certainly the one
- * chosen. A single number in the middle would have to be wrong in one direction
- * and would not say which.
+ * where nothing else is eligible, as a lower bound around the exact selected
+ * count and a cheap cross-check on the row-by-row audit.
  *
  * ## Why this is a service and not just a console command
  *
@@ -71,6 +72,8 @@ final class UndatedAgreementAuditor
      * @var list<string>
      */
     private const PRICING_STATUSES = ['active', 'paused', 'terminated', 'expired'];
+
+    public function __construct(private readonly AgreementBillingRateResolver $resolver) {}
 
     /**
      * Count the affected agreements and the work they touch.
@@ -124,6 +127,7 @@ final class UndatedAgreementAuditor
         // same and the bracket would collapse to its lower bound.
         $certain = $this->withNoDatedCandidate($candidates)->count();
         $possible = $candidates->count();
+        $selected = $this->entriesSelectedByAnUndatedAgreement($candidates);
 
         return new UndatedAgreementCounts(
             agreements: $this->agreements($workspace)->count(),
@@ -134,6 +138,7 @@ final class UndatedAgreementAuditor
             withRetainerTerms: $withRetainerTerms->count(),
             entriesWithAnUndatedCandidate: $possible,
             entriesWithNoOtherCandidate: $certain,
+            entriesSelectedByAnUndatedAgreement: $selected,
             billedLinesOnAnUndatedAgreement: $this->billedLines($workspace),
         );
     }
@@ -231,6 +236,41 @@ final class UndatedAgreementAuditor
                 // resolver makes against a date string.
                 ->whereColumn('client_agreements.starts_on', '<=', 'client_time_entries.worked_on'),
         );
+    }
+
+    /**
+     * Count entries the real resolver selects an undated agreement to price.
+     *
+     * The candidate query is only a prefilter. Eligibility is not selection:
+     * project scope, current status, start date, and id all participate in the
+     * resolver's precedence rules. Asking {@see AgreementBillingRateResolver::select()}
+     * keeps this exact count coupled to those rules instead of maintaining a
+     * second implementation here.
+     *
+     * An undated winner without an hourly rate is excluded because it cannot
+     * price the entry today; {@see AgreementBillingRateResolver::resolve()}
+     * rejects it under both the current and proposed contracts.
+     *
+     * @param  Builder<ClientTimeEntry>  $entries
+     */
+    private function entriesSelectedByAnUndatedAgreement(Builder $entries): int
+    {
+        $selected = 0;
+
+        (clone $entries)->chunkById(500, function (EloquentCollection $chunk) use (&$selected): void {
+            /** @var ClientTimeEntry $entry */
+            foreach ($chunk as $entry) {
+                $agreement = $this->resolver->select($entry);
+
+                if ($agreement instanceof ClientAgreement
+                    && $agreement->starts_on === null
+                    && $agreement->hourly_rate_amount !== null) {
+                    $selected++;
+                }
+            }
+        });
+
+        return $selected;
     }
 
     /**

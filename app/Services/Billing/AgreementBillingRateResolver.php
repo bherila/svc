@@ -11,8 +11,26 @@ final class AgreementBillingRateResolver
     /** @return array{amount:int,currency:string} */
     public function resolve(ClientTimeEntry $entry): array
     {
+        $agreement = $this->select($entry);
+        if (! $agreement instanceof ClientAgreement || $agreement->hourly_rate_amount === null) {
+            throw new DomainException("No active billing rate applies to time entry {$entry->public_id}.");
+        }
+
+        return [
+            'amount' => $agreement->hourly_rate_amount,
+            'currency' => MoneyService::currency($agreement->currency),
+        ];
+    }
+
+    /**
+     * Select the agreement whose rate applies without duplicating the resolver's
+     * eligibility or precedence rules in callers that need its identity.
+     */
+    public function select(ClientTimeEntry $entry): ?ClientAgreement
+    {
         $workedOn = $entry->worked_on->toDateString();
-        $agreements = ClientAgreement::query()
+
+        return ClientAgreement::query()
             ->where('workspace_id', $entry->workspace_id)
             ->where('client_company_id', $entry->client_company_id)
             // An agreement that has since ended was still in force on the day the
@@ -53,15 +71,7 @@ final class AgreementBillingRateResolver
                 $rightStart = $right->starts_on?->format('Y-m-d') ?? '';
 
                 return $rightStart <=> $leftStart ?: $right->id <=> $left->id;
-            });
-        $agreement = $agreements->first();
-        if (! $agreement instanceof ClientAgreement || $agreement->hourly_rate_amount === null) {
-            throw new DomainException("No active billing rate applies to time entry {$entry->public_id}.");
-        }
-
-        return [
-            'amount' => $agreement->hourly_rate_amount,
-            'currency' => MoneyService::currency($agreement->currency),
-        ];
+            })
+            ->first();
     }
 }
