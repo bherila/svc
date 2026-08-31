@@ -102,6 +102,42 @@ Three conditions have to hold together, and each alone overstates the population
 
 It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
 
+## Audit Missing Billed Overage
+
+Read-only. Counts charged invoices carrying no `hours_billed_at_rate` at all, and
+the agreements whose already-billed sums those invoices corrupt (#144).
+
+```bash
+php artisan svc:billing:audit-missing-billed-overage                 # counts
+php artisan svc:billing:audit-missing-billed-overage --format=json   # machine-readable
+```
+
+Three sums total the overage an agreement has already been charged so the next
+period does not charge it again. All three are `SUM(hours_billed_at_rate)`, and
+SQL aggregation contributes nothing for a null — so a charged invoice with a
+null there reads as *zero already billed*, and its hours can be sold a second
+time.
+
+Same defect class as #135 by a different route: there a `<=` answered false for
+a null and the row left the window; here the row is inside the window and the
+value it contributes vanishes.
+
+**No fix is implied, and none should be inferred from the count.**
+`service_period_end` could be read fail-closed because the question was which
+side of a window a row falls on. This one cannot: the question is *how much* was
+billed, and a null is not a quantity. Coercing it to zero is the current
+behaviour and is the bug; coercing it to anything else invents a number. The
+decision is to refuse on unknown, or to establish the column is never null on a
+charged invoice and make it `NOT NULL` for that status.
+
+The agreement count is the one that sizes the exposure, because the sums are per
+agreement: ten bad invoices on one agreement corrupt one figure, one bad invoice
+on each of ten agreements corrupts ten.
+
+It reports counts only — never a row, an id, an invoice number, a company or a
+workspace — so it is safe to run against real billing data and to paste into an
+issue. It always exits zero.
+
 ## Audit Unplaceable Invoices
 
 Read-only. Counts invoices whose period or cycle cannot be placed on a calendar, and how much billed overage they carry.
