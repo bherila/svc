@@ -1115,6 +1115,76 @@ class ClientDirectoryTest extends TestCase
                 ->where('agreement.terminated_at', null));
     }
 
+    /**
+     * Reaching a client is not reaching every project of it.
+     *
+     * The one-level-in version of #157: a contributor scoped to one project can
+     * open that client, so without a check here they read a sibling project's
+     * description and task list by pasting its id.
+     */
+    public function test_a_project_the_member_cannot_view_is_not_found(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Project Scope', 'synthetic-project-scope', $manager);
+        $company = $this->company($workspace, 'Synthetic Project Client', 'synthetic-project-client');
+        $reachable = $this->project($workspace, $company, 'Reachable Detail Project');
+        $hidden = $this->project($workspace, $company, 'Hidden Detail Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $reachable->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$reachable->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/project')
+                ->where('project.name', 'Reachable Detail Project'));
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$hidden->public_id}")
+            ->assertNotFound();
+    }
+
+    /**
+     * Time is totalled per status rather than summed into one figure.
+     *
+     * Approved and draft hours mean different things - only one has been
+     * agreed to be billable - so a single total would state something the
+     * ledger does not.
+     */
+    public function test_project_time_is_totalled_separately_by_status(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Totals', 'synthetic-totals', $manager);
+        $company = $this->company($workspace, 'Synthetic Totals Client', 'totals-client');
+        $project = $this->project($workspace, $company, 'Synthetic Totals Project');
+        $other = $this->project($workspace, $company, 'Other Totals Project');
+
+        $worked = '2026-08-01';
+        $this->timeEntry($workspace, $company, $project, ['worked_on' => $worked, 'minutes' => 120, 'status' => 'approved']);
+        $this->timeEntry($workspace, $company, $project, ['worked_on' => $worked, 'minutes' => 60, 'status' => 'approved']);
+        $this->timeEntry($workspace, $company, $project, ['worked_on' => $worked, 'minutes' => 30, 'status' => 'draft']);
+        // Another project's time must not be counted here.
+        $this->timeEntry($workspace, $company, $other, ['worked_on' => $worked, 'minutes' => 999, 'status' => 'approved']);
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('time', 2)
+                ->where('time.0.status', 'approved')
+                ->where('time.0.minutes', 180)
+                ->where('time.0.entries', 2)
+                ->where('time.1.status', 'draft')
+                ->where('time.1.minutes', 30));
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

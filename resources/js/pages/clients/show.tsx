@@ -174,9 +174,12 @@ export default function ClientShow({
                                         key={project.id}
                                         className="flex flex-wrap items-center gap-2 rounded-xl border p-3"
                                     >
-                                        <span className="font-medium">
+                                        <Link
+                                            href={`/workspaces/${workspace.id}/clients/${company.id}/projects/${project.id}`}
+                                            className="font-medium underline-offset-4 hover:underline"
+                                        >
                                             {project.name}
-                                        </span>
+                                        </Link>
                                         <Badge variant="outline">
                                             {project.status}
                                         </Badge>

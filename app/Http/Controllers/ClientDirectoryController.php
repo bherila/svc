@@ -390,6 +390,104 @@ class ClientDirectoryController extends Controller
     }
 
     /**
+     * One project: what it is, what is open on it, and what it has cost.
+     *
+     * A drill-down from the Overview that lists it, so it is marked as that
+     * tab rather than becoming a section of its own.
+     *
+     * Gated on project access rather than only on reaching the client. A
+     * member who reaches one project of a client must not read another's
+     * description and task list by id - which is the whole point of #157, one
+     * level further in.
+     *
+     * The time figures are aggregates rather than rows. A project can carry a
+     * year of entries, and this screen answers "how much" rather than "which";
+     * the Time tab answers the second question and is one click away.
+     */
+    public function project(
+        Request $request,
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        ClientProject $clientProject,
+        WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+        $authorization->assertOwnedBy($workspace, $clientProject);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        abort_unless(
+            (int) $clientProject->client_company_id === (int) $clientCompany->id,
+            404,
+        );
+
+        // Reaching the client is not reaching this project.
+        abort_unless($access->canView($user, $clientProject), 404);
+
+        $tasks = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_project_id', $clientProject->id)
+            ->orderBy('status')
+            ->orderBy('title')
+            ->get();
+
+        // One grouped query rather than one per status, so the cost does not
+        // follow the number of statuses anyone invents later.
+        $minutesByStatus = ClientTimeEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_project_id', $clientProject->id)
+            ->groupBy('status')
+            ->selectRaw('status, sum(minutes) as total_minutes, count(*) as entry_count')
+            ->get();
+
+        $agreements = ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('client_project_id', $clientProject->id)
+            ->orderByDesc('starts_on')
+            ->orderByDesc('id')
+            ->get();
+
+        $projectNames = collect([$clientProject->id => $clientProject->name]);
+
+        return Inertia::render('clients/project', [
+            'workspace' => ['id' => $workspace->public_id],
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'project' => [
+                'id' => $clientProject->public_id,
+                'name' => $clientProject->name,
+                'description' => $clientProject->description,
+                'status' => $clientProject->status,
+                'is_visible_to_client' => (bool) $clientProject->is_visible_to_client,
+            ],
+            'tasks' => $tasks->map(fn (ClientTask $task): array => [
+                'id' => $task->public_id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'is_visible_to_client' => (bool) $task->is_visible_to_client,
+                'completed_at' => $task->completed_at?->toDateString(),
+            ])->values()->all(),
+            'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
+                'status' => (string) $row->status,
+                'minutes' => (int) $row->getAttribute('total_minutes'),
+                'entries' => (int) $row->getAttribute('entry_count'),
+            ])->values()->all(),
+            // Only agreements scoped to this project. A company-wide agreement
+            // covers it too, but saying so here would read as this project
+            // having terms of its own.
+            'agreements' => $agreements->map(
+                fn (ClientAgreement $agreement): array => $this->agreementPayload($agreement, $projectNames),
+            )->values()->all(),
+        ]);
+    }
+
+    /**
      * The client record itself, and the shape of its projects.
      *
      * Manage is a tab rather than a parallel admin section, so it is reached
