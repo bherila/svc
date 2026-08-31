@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\AllocationService;
+use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\InterimOverageGenerator;
@@ -187,7 +188,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
         'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
-        'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod',
+        'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\BillingScheduleService::generateDue',
         'client_invoices.cycle_end => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
         'client_invoices.cycle_start => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
@@ -204,8 +205,10 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.rollover_hours_used => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
+        'client_invoices.service_period_end => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
         'client_invoices.service_period_end => reader_in:App\Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice',
         'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
+        'client_invoices.service_period_start => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
         'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.starting_negative_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.starting_unused_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
@@ -311,12 +314,21 @@ final class NullSemanticsRegistryTest extends TestCase
             // operator typed the invoice - `ClientInvoicingService` creates
             // cadence invoices without setting this column at all, so a future
             // guard keying "ad hoc" off a null here would misclassify them.
+            //
+            // That last sentence is a note, not a reader, and an earlier
+            // revision wrongly registered `ClientInvoicingService` as one: that
+            // class never mentions this column, it merely omits it on create.
+            // `reader_in` means the code branches on the null, and only
+            // `BillingScheduleService::generateDue()` does - it looks for an
+            // existing invoice with `where('client_billing_schedule_id', ...)`,
+            // which a null row can never match, so a cadence invoice carrying
+            // no schedule is invisible to that duplicate check.
             'client_billing_schedule_id' => [
                 [
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
                 ],
-                ['reader_in' => ClientInvoicingService::class, 'reads' => 'generateMonthlyInvoiceForWorkPeriod'],
+                ['reader_in' => BillingScheduleService::class, 'reads' => 'generateDue'],
             ],
             // Not issued yet - on the draft path, where issuing stamps the
             // workspace's calendar date. Not a global reading: `issue()`
@@ -343,10 +355,12 @@ final class NullSemanticsRegistryTest extends TestCase
             // fixture nulls the cycle columns too and the refusal fires on
             // either pair, so the citation never isolated this column. The null
             // is also read during generation, where it initialises to the
-            // earliest dated work line.
+            // earliest dated work line, and by replay, which builds no source
+            // scope at all when either boundary is missing - so the invoice
+            // proves against zero source minutes rather than against its own.
             'service_period_start' => [
-                'reader_in' => DraftInvoiceTimeRegenerator::class,
-                'reads' => 'regenerate',
+                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
+                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
             ],
             // Four branches, two of them pinned. The regeneration refusal is
             // covered; the billed-overage window is covered since #135, where a
@@ -369,6 +383,7 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 ['reader_in' => InterimOverageGenerator::class, 'reads' => 'generateInterimOverageInvoice'],
                 ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
+                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -1093,38 +1108,57 @@ final class NullSemanticsRegistryTest extends TestCase
             return false;
         }
 
-        $discovered = false;
-
         foreach ($config->xpath('//testsuites/testsuite') ?: [] as $suite) {
-            // Exclusions first, and they lose the file for every suite rather
-            // than just this one - a path PHPUnit is told to skip is skipped,
-            // and accepting it here would fail open, which is the direction
-            // that matters.
-            foreach ($suite->exclude ?? [] as $excluded) {
-                $path = realpath(base_path((string) $excluded));
+            // Per suite, not globally. PHPUnit scopes `<exclude>` to the suite
+            // that declares it, so a file excluded from one suite and included
+            // by another is still collected. Rejecting on the first exclusion
+            // anywhere fails *closed* - it would refuse a citation that does in
+            // fact run - which is the safe direction to be wrong in but wrong
+            // all the same.
+            $excluded = false;
 
-                if ($path !== false && ($real === $path || str_starts_with($real, $path.DIRECTORY_SEPARATOR))) {
-                    return false;
+            foreach ($suite->exclude ?? [] as $path) {
+                $root = realpath(base_path((string) $path));
+
+                if ($root !== false && ($real === $root || str_starts_with($real, $root.DIRECTORY_SEPARATOR))) {
+                    $excluded = true;
+
+                    break;
                 }
             }
 
+            if ($excluded) {
+                continue;
+            }
+
             foreach ($suite->directory ?? [] as $directory) {
+                // `prefix` and `suffix` both filter the *file name*, and
+                // ignoring the prefix fails open: a PSR-4-loadable `FooTest.php`
+                // would be accepted under `prefix="Integration"` even though
+                // PHPUnit never collects it.
                 $suffix = (string) ($directory['suffix'] ?? '') ?: 'Test.php';
+                $prefix = (string) ($directory['prefix'] ?? '');
                 $root = realpath(base_path((string) $directory));
 
-                if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR) && str_ends_with($real, $suffix)) {
-                    $discovered = true;
+                if ($root === false || ! str_starts_with($real, $root.DIRECTORY_SEPARATOR)) {
+                    continue;
+                }
+
+                $name = basename($real);
+
+                if (str_ends_with($name, $suffix) && ($prefix === '' || str_starts_with($name, $prefix))) {
+                    return true;
                 }
             }
 
             foreach ($suite->file ?? [] as $named) {
                 if (realpath(base_path((string) $named)) === $real) {
-                    $discovered = true;
+                    return true;
                 }
             }
         }
 
-        return $discovered;
+        return false;
     }
 
     /**
