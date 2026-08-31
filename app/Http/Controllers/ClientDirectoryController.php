@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
@@ -295,6 +296,95 @@ class ClientDirectoryController extends Controller
                 'amount' => (int) $payment->amount,
                 'refunded_amount' => (int) $payment->refunded_amount,
                 'currency' => $payment->currency,
+            ])->values()->all(),
+        ]);
+    }
+
+    /**
+     * One agreement's full terms, reached from the Overview that summarises it.
+     *
+     * Overview answers "what has this client agreed to" in a line each; this
+     * answers "what exactly does this one say", including the recurring items
+     * that generate invoice lines and the rollover and catch-up terms the
+     * summary has no room for.
+     *
+     * Marked as the Overview tab rather than a tab of its own, because it is a
+     * drill-down from there - an agreement is part of what the engagement is,
+     * not a fifth section of the client.
+     *
+     * Three keys as usual: the agreement binds by a public id unique across
+     * every workspace, so it is checked against the workspace and against the
+     * company in the URL, or one client's terms render under another client's
+     * name.
+     */
+    public function agreement(
+        Request $request,
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        ClientAgreement $clientAgreement,
+        WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+        $authorization->assertOwnedBy($workspace, $clientAgreement);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        $this->assertReachable($workspace, $clientCompany, $viewable);
+
+        abort_unless(
+            (int) $clientAgreement->client_company_id === (int) $clientCompany->id,
+            404,
+        );
+
+        $projectNames = $this->viewableProjectsOf($workspace, $clientCompany, $viewable)
+            ->pluck('name', 'id');
+
+        $items = ClientAgreementRecurringItem::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $clientAgreement->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        return Inertia::render('clients/agreement', [
+            'workspace' => ['id' => $workspace->public_id],
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'agreement' => $this->agreementPayload($clientAgreement, $projectNames) + [
+                // Terms the summary has no room for. Hours rather than minutes
+                // where the operator reads hours, and null rather than zero
+                // where the term is simply unstated - the difference decides
+                // whether the engine defaults or refuses.
+                'hourly_rate_amount' => $clientAgreement->hourly_rate_amount === null
+                    ? null
+                    : (int) $clientAgreement->hourly_rate_amount,
+                'rollover_policy' => $clientAgreement->rollover_policy,
+                'catch_up_threshold_minutes' => $clientAgreement->catch_up_threshold_minutes === null
+                    ? null
+                    : (int) $clientAgreement->catch_up_threshold_minutes,
+                'first_cycle_proration' => $clientAgreement->first_cycle_proration,
+                'bill_overage_interim' => $clientAgreement->bill_overage_interim,
+                'activated_at' => $clientAgreement->activated_at?->toISOString(),
+                'terminated_at' => $clientAgreement->terminated_at?->toISOString(),
+                'signer_name' => $clientAgreement->signer_name,
+                'signer_title' => $clientAgreement->signer_title,
+            ],
+            'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
+                'id' => $item->public_id,
+                'description' => $item->description,
+                'cadence' => $item->cadence,
+                'quantity' => $item->quantity === null ? null : (float) $item->quantity,
+                'amount' => $item->amount === null ? null : (int) $item->amount,
+                'currency' => $item->currency,
+                'effective_on' => $item->effective_on?->toDateString(),
+                'expires_on' => $item->expires_on?->toDateString(),
+                'is_active' => (bool) $item->is_active,
             ])->values()->all(),
         ]);
     }
