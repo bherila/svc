@@ -158,7 +158,7 @@ final class UnplaceableInvoiceAuditor
     {
         return $invoices->whereExists(
             fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
+                ->select(DB::raw('1'))
                 ->from('client_agreements')
                 ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
                 ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id'),
