@@ -15,13 +15,119 @@ type ManagedCompany = {
     is_active: boolean;
 };
 
+type ProjectMember = { user: string; role: string };
+
 type ManagedProject = {
     id: string;
     name: string;
     description: string | null;
     status: string;
     is_visible_to_client: boolean;
+    members: ProjectMember[];
 };
+
+type AssignableMember = { id: string; name: string };
+
+/**
+ * Roles a project membership can hold, plus removal.
+ *
+ * "No access" is an option in the same list rather than a separate delete
+ * control, because it is the same decision: who may reach this project. A
+ * separate button invites the half-finished state where someone is granted
+ * before anyone considers what they are replacing.
+ */
+const PROJECT_ROLES = [
+    { value: 'owner', label: 'Owner' },
+    { value: 'manager', label: 'Manager' },
+    { value: 'contributor', label: 'Contributor' },
+    { value: 'viewer', label: 'Viewer' },
+    { value: 'none', label: 'No access' },
+] as const;
+
+function ProjectAccess({
+    workspaceId,
+    companyId,
+    project,
+    assignable,
+}: {
+    workspaceId: string;
+    companyId: string;
+    project: ManagedProject;
+    assignable: AssignableMember[];
+}) {
+    const roleOf = (userId: string): string =>
+        project.members.find((member) => member.user === userId)?.role ??
+        'none';
+
+    if (assignable.length === 0) {
+        return (
+            <p className="text-sm text-muted-foreground">
+                Every member of this workspace is an owner or admin, so they
+                already reach this project.
+            </p>
+        );
+    }
+
+    return (
+        <div className="grid gap-2">
+            {assignable.map((member) => (
+                <AccessRow
+                    key={member.id}
+                    workspaceId={workspaceId}
+                    companyId={companyId}
+                    projectId={project.id}
+                    member={member}
+                    role={roleOf(member.id)}
+                />
+            ))}
+        </div>
+    );
+}
+
+function AccessRow({
+    workspaceId,
+    companyId,
+    projectId,
+    member,
+    role,
+}: {
+    workspaceId: string;
+    companyId: string;
+    projectId: string;
+    member: AssignableMember;
+    role: string;
+}) {
+    const form = useForm({ user: member.id, role });
+
+    return (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="min-w-40">{member.name}</span>
+            <select
+                aria-label={`Access for ${member.name}`}
+                className="h-9 rounded-md border bg-transparent px-2"
+                value={form.data.role}
+                onChange={(event) => {
+                    // `setData` is asynchronous, so the request is transformed
+                    // to carry the value that was just chosen rather than
+                    // whichever one the state happens to hold when it fires.
+                    const next = event.target.value;
+                    form.setData('role', next);
+                    form.transform((data) => ({ ...data, role: next }));
+                    form.put(
+                        `/workspaces/${workspaceId}/clients/${companyId}/projects/${projectId}/access`,
+                        { preserveScroll: true },
+                    );
+                }}
+            >
+                {PROJECT_ROLES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                        {option.label}
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+}
 
 /**
  * The shape of the client record, edited from the client's own tab.
@@ -115,10 +221,12 @@ function ProjectForm({
     workspaceId,
     companyId,
     project,
+    assignable,
 }: {
     workspaceId: string;
     companyId: string;
     project: ManagedProject;
+    assignable: AssignableMember[];
 }) {
     const form = useForm({
         name: project.name,
@@ -194,6 +302,16 @@ function ProjectForm({
                     Save project
                 </Button>
             </div>
+
+            <div className="grid gap-2 border-t pt-3">
+                <Label>Who can reach this project</Label>
+                <ProjectAccess
+                    workspaceId={workspaceId}
+                    companyId={companyId}
+                    project={project}
+                    assignable={assignable}
+                />
+            </div>
         </form>
     );
 }
@@ -250,10 +368,12 @@ export default function ClientManage({
     workspace,
     company,
     projects,
+    assignable,
 }: {
     workspace: { id: string };
     company: ManagedCompany;
     projects: ManagedProject[];
+    assignable: AssignableMember[];
 }) {
     return (
         <ClientContextLayout active="manage">
@@ -287,6 +407,7 @@ export default function ClientManage({
                                     workspaceId={workspace.id}
                                     companyId={company.id}
                                     project={project}
+                                    assignable={assignable}
                                 />
                             ))
                         )}

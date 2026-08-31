@@ -1185,6 +1185,104 @@ class ClientDirectoryTest extends TestCase
                 ->where('time.1.minutes', 30));
     }
 
+    /**
+     * Granting project access is what makes #157's scoping administrable.
+     *
+     * Until this endpoint existed the reachability rule could be tightened but
+     * not managed, so the grant is asserted end to end: the member cannot see
+     * the client, is granted access, can, is removed, and cannot again.
+     */
+    public function test_granting_and_removing_project_access_changes_what_a_member_sees(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Access', 'synthetic-access', $manager);
+        $company = $this->company($workspace, 'Synthetic Access Client', 'synthetic-access-client');
+        $project = $this->project($workspace, $company, 'Synthetic Access Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
+
+        $this->actingAs($member)->get($path)->assertNotFound();
+
+        $this->actingAs($manager)
+            ->put("{$path}/projects/{$project->public_id}/access", [
+                'user' => $member->public_id,
+                'role' => 'contributor',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($member)->get($path)->assertOk();
+
+        $this->actingAs($manager)
+            ->put("{$path}/projects/{$project->public_id}/access", [
+                'user' => $member->public_id,
+                'role' => 'none',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($member)->get($path)->assertNotFound();
+    }
+
+    /**
+     * Re-granting moves the role rather than adding a second row.
+     *
+     * Two membership rows would both match every reachability query, and the
+     * role that won would depend on which came back first.
+     */
+    public function test_regranting_access_replaces_the_role(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Regrant', 'synthetic-regrant', $manager);
+        $company = $this->company($workspace, 'Synthetic Regrant Client', 'regrant-client');
+        $project = $this->project($workspace, $company, 'Synthetic Regrant Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access";
+
+        foreach (['viewer', 'contributor'] as $role) {
+            $this->actingAs($manager)
+                ->put($path, ['user' => $member->public_id, 'role' => $role])
+                ->assertRedirect();
+        }
+
+        $rows = ClientProjectMembership::query()
+            ->where('client_project_id', $project->id)
+            ->where('user_id', $member->id)
+            ->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('contributor', $rows->first()?->role->value);
+    }
+
+    /**
+     * Access cannot be granted to someone outside the workspace.
+     *
+     * The membership row would be honoured by every reachability query while
+     * no workspace membership backed it - access through a side door.
+     */
+    public function test_access_cannot_be_granted_to_a_non_member(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Outsider', 'synthetic-outsider', $manager);
+        $company = $this->company($workspace, 'Synthetic Outsider Client', 'outsider-client');
+        $project = $this->project($workspace, $company, 'Synthetic Outsider Project');
+
+        $outsider = User::factory()->create();
+
+        $this->actingAs($manager)
+            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
+                'user' => $outsider->public_id,
+                'role' => 'contributor',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame(0, ClientProjectMembership::query()->where('user_id', $outsider->id)->count());
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

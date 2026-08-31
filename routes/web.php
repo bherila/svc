@@ -3,6 +3,7 @@
 use App\Http\Controllers\ClientCompanyController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
+use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\DashboardController;
@@ -54,6 +55,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('clients.update');
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
         ->name('projects.update');
+    Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
+        ->name('projects.access.update');
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
         ->name('clients.invoice');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
