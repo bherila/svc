@@ -43,6 +43,7 @@ const TABS: readonly ClientTab[] = [
  */
 const IMPLEMENTED_TABS: readonly ClientTab['key'][] = [
     'overview',
+    'tasks',
     'time',
     'invoices',
 ];
