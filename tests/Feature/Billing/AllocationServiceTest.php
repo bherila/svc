@@ -146,6 +146,51 @@ final class AllocationServiceTest extends TestCase
         $this->assertSame(2, $this->entryCount());
     }
 
+    public function test_fragments_with_and_without_a_task_do_not_recombine(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+        $task = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Synthetic Divergent Task',
+        ]);
+
+        $parts['overflow']->forceFill(['client_task_id' => $task->id])->save();
+
+        $this->assertNull($parts['primary']->fresh()?->client_task_id);
+        $this->assertSame($task->id, $parts['overflow']->fresh()?->client_task_id);
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+    }
+
+    public function test_fragments_with_and_without_an_approval_author_do_not_recombine(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+        $approver = User::factory()->create();
+
+        $parts['overflow']->forceFill(['approved_by_user_id' => $approver->id])->save();
+
+        $this->assertNull($parts['primary']->fresh()?->approved_by_user_id);
+        $this->assertSame($approver->id, $parts['overflow']->fresh()?->approved_by_user_id);
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+    }
+
+    public function test_fragments_with_and_without_an_approval_timestamp_do_not_recombine(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['overflow']->forceFill(['approved_at' => '2026-03-14 09:30:00'])->save();
+
+        $this->assertNull($parts['primary']->fresh()?->approved_at);
+        $this->assertSame(
+            '2026-03-14 09:30:00',
+            $parts['overflow']->fresh()?->approved_at?->format('Y-m-d H:i:s'),
+        );
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+    }
+
     #[DataProvider('fragmentFieldsThatMustAgree')]
     public function test_fragments_with_divergent_preserved_fields_do_not_recombine(string $field, mixed $value): void
     {
@@ -161,27 +206,11 @@ final class AllocationServiceTest extends TestCase
             $parts['overflow']->forceFill(['billing_rate_amount' => 15000])->save();
         }
 
-        // The approval author has to be a real user. A literal id in the
-        // provider passes on SQLite and violates the foreign key on MariaDB,
-        // which is the divergence that lane exists to catch - and a provider
-        // is static, so the substitution belongs here.
-        if ($field === 'approved_by_user_id') {
-            $value = User::factory()->create()->id;
-        }
-
         if ($field === 'client_project_id') {
             $value = ClientProject::query()->create([
                 'workspace_id' => $this->workspace->id,
                 'client_company_id' => $this->company->id,
                 'name' => 'Synthetic Divergent Project',
-            ])->id;
-        }
-
-        if ($field === 'client_task_id') {
-            $value = ClientTask::query()->create([
-                'workspace_id' => $this->workspace->id,
-                'client_project_id' => $this->project->id,
-                'title' => 'Synthetic Divergent Task',
             ])->id;
         }
 
@@ -301,16 +330,11 @@ final class AllocationServiceTest extends TestCase
             // The ids are replaced with real same-tenant fixtures in the test
             // body so both SQLite and MariaDB exercise their foreign keys.
             'project' => ['client_project_id', 0],
-            'task' => ['client_task_id', 0],
             'user' => ['user_id', 0],
             // `null` means this row has no stamped rate provenance; `agreement`
             // means a later workflow re-resolved it. The monetary amount can be
             // identical while those meanings cannot be folded together.
             'billing rate source' => ['billing_rate_source', 'agreement'],
-            // The id is replaced by a real user in the test body; a literal
-            // here would violate the foreign key on MariaDB.
-            'approval author' => ['approved_by_user_id', 0],
-            'approval timestamp' => ['approved_at', '2026-03-14 09:30:00'],
             'subcontractor cost' => ['subcontractor_cost_amount', 7500],
             'subcontractor cost currency' => ['subcontractor_cost_currency', 'EUR'],
             'subcontractor cost metadata' => ['subcontractor_cost_metadata', ['source' => 'synthetic-divergence']],

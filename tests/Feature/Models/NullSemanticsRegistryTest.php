@@ -164,7 +164,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.agreement_link => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
-        'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_uses_the_period_retainer_override',
+        'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
         'client_agreements.client_project_id => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
         'client_agreements.ends_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
@@ -215,19 +215,20 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.starting_negative_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.starting_unused_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.unused_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
-        'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
+        'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_source => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
         'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
-        'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_a_task_do_not_recombine',
         'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.client_visible_description => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
         'client_time_entries.currency => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
         'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
+        'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_an_absent_value_is_not_the_word_null',
         'client_time_entries.job_type => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
@@ -570,11 +571,10 @@ final class NullSemanticsRegistryTest extends TestCase
             'terminated_at' => 'PENDING-AUDIT',
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
-            // Unstated: one hour, capped by whatever retainer the agreement
-            // has. The citation exercises the default on an ordinary ten-hour
-            // retainer, which does not reach the cap - the zero-retainer case
-            // that does is covered elsewhere but not cited here, so the cap
-            // half of this note is unpinned.
+            // Unstated: one hour, capped by the period-aware retainer capacity.
+            // One citation pins the ordinary default and the other gives the
+            // agreement only half an hour through the period override, pinning
+            // both the cap and which retainer reading supplies it.
             'catch_up_threshold_minutes' => [
                 [
                     'covered_by' => InvoicingExamplesTest::class,
@@ -585,7 +585,7 @@ final class NullSemanticsRegistryTest extends TestCase
                 // is pinned now too.
                 [
                     'covered_by' => InvoicingExamplesTest::class,
-                    'method' => 'test_an_unset_threshold_uses_the_period_retainer_override',
+                    'method' => 'test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
                 ],
             ],
             // No period-level override, so the monthly terms are scaled to the
@@ -641,7 +641,7 @@ final class NullSemanticsRegistryTest extends TestCase
             'client_task_id' => [
                 [
                     'covered_by' => AllocationServiceTest::class,
-                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                    'method' => 'test_fragments_with_and_without_a_task_do_not_recombine',
                 ],
                 ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             ],
@@ -668,20 +668,19 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
             ],
-            // Not "unknown": unapproved. #153 put both in the fragment merge
-            // signature, so the null is what keeps an approved fragment from
-            // being folded into an unapproved one - and a merge *deletes* the
-            // loser, so a false equality here destroys the approval record
-            // rather than merely widening a query. Each is isolated by its own
-            // case: the split baseline leaves both null and one fragment
-            // receives exactly one of them.
+            // Missing approval metadata, independently of status. Imported or
+            // legacy entries may already be `approved` while either stamp is
+            // null. #153 put both in the fragment merge signature so a stamped
+            // fragment cannot be folded into one whose audit metadata is
+            // absent. A merge deletes the loser, so a false equality here loses
+            // an approval record rather than merely widening a query.
             'approved_by_user_id' => [
                 'covered_by' => AllocationServiceTest::class,
-                'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                'method' => 'test_fragments_with_and_without_an_approval_author_do_not_recombine',
             ],
             'approved_at' => [
                 'covered_by' => AllocationServiceTest::class,
-                'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                'method' => 'test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
             ],
             // Both cited a fixture that nulls the pair, while production refuses
             // on `amount === null || currency === ''`. Because that is an OR,
@@ -736,11 +735,14 @@ final class NullSemanticsRegistryTest extends TestCase
                 // case diverges two non-null sources, so it pins no null.
                 ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             ],
-            // Also in the fragment signature. Not cited: #153's divergence
-            // cases give this column a non-null baseline ('Software
-            // Development'), so they prove the field is compared, not that a
-            // null is. Exposure, not coverage, until a case nulls it.
+            // Also in the fragment signature. The dedicated collision test
+            // isolates a real null from the literal text `null`, proving the
+            // typed tuple keeps absence distinct from user-entered content.
             'job_type' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_an_absent_value_is_not_the_word_null',
+                ],
                 ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
                 ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             ],
