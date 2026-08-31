@@ -53,15 +53,23 @@ final class MissingBilledOverageAuditor
         $charged = (clone $missing)->whereIn('status', InvoiceStatus::charged());
         $onAgreement = $this->onAnAgreementInItsOwnWorkspace(clone $charged);
 
+        // Counted into locals rather than inline, so the order the two reads of
+        // `$onAgreement` happen in is stated rather than inherited from
+        // argument evaluation - `distinct()` mutates the builder, and the
+        // plain count has to happen first.
+        $onAgreementCount = $onAgreement->count();
+
+        // Distinct agreements, not invoices: the sums are per agreement, so
+        // this is how many already-billed figures are wrong rather than how
+        // many rows are missing a value.
+        $agreementsAffected = $onAgreement->distinct()->count('client_agreement_id');
+
         return new MissingBilledOverageCounts(
             invoices: $this->invoices($workspace)->count(),
             withoutABilledOverage: $missing->count(),
             chargedOfThose: $charged->count(),
-            onAnAgreementOfThose: $onAgreement->count(),
-            // Distinct agreements, not invoices: the sums are per agreement, so
-            // this is how many already-billed figures are wrong rather than how
-            // many rows are missing a value.
-            agreementsAffected: (clone $onAgreement)->distinct()->count('client_agreement_id'),
+            onAnAgreementOfThose: $onAgreementCount,
+            agreementsAffected: $agreementsAffected,
         );
     }
 
@@ -85,7 +93,10 @@ final class MissingBilledOverageAuditor
     {
         return $invoices->whereExists(
             fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
+                // A string, because `DB::raw()` takes a SQL fragment - and an
+                // integer literal here is a mutation target that can never be
+                // killed, since EXISTS does not care what constant it selects.
+                ->select(DB::raw('1'))
                 ->from('client_agreements')
                 ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
                 ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id'),
