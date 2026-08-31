@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -532,6 +533,41 @@ class ClientDirectoryController extends Controller
             ->orderBy('name')
             ->get();
 
+        // One query for every membership on these projects, grouped in memory.
+        // Asking per project would cost a query per row on a screen whose
+        // whole job is listing rows.
+        $memberships = ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_project_id', $projects->pluck('id')->all())
+            ->get()
+            ->groupBy('client_project_id');
+
+        $members = $workspace->memberships()->with('user')->get();
+
+        $assignableIds = $members
+            ->filter(fn (mixed $membership): bool => ! in_array(
+                (string) $membership->role,
+                ['owner', 'admin'],
+                true,
+            ))
+            ->pluck('user_id')
+            ->all();
+
+        // Keyed to the assignable set, so a membership row for anyone else has
+        // no public id to be serialized with.
+        $userIds = User::query()
+            ->whereIn('id', $assignableIds)
+            ->pluck('public_id', 'id');
+
+        $assignable = $members
+            ->filter(fn (mixed $membership): bool => in_array(
+                (int) $membership->user_id,
+                array_map('intval', $assignableIds),
+                true,
+            ))
+            ->map(fn (mixed $membership): ?User => $membership->user)
+            ->filter(fn (?User $member): bool => $member instanceof User);
+
         return Inertia::render('clients/manage', [
             'workspace' => ['id' => $workspace->public_id],
             'company' => [
@@ -550,6 +586,33 @@ class ClientDirectoryController extends Controller
                 // the write can refuse a payload composed against values
                 // someone has since changed.
                 'lock_version' => (int) $project->lock_version,
+                // Who reaches this project, and with what role. Sent per
+                // project rather than as one map because that is how the screen
+                // reads it, and because an owner or admin holds no membership
+                // row at all - they are listed separately below so the absence
+                // does not read as "no access".
+                //
+                // Only rows for people the screen can actually offer. An
+                // owner or admin can hold a membership row - written before a
+                // promotion, or by the console command - and sending it would
+                // disclose an identity the `assignable` list deliberately
+                // omits, to no purpose, since the page correlates against that
+                // list and would never render it.
+                'members' => $memberships->get($project->id, collect())
+                    ->filter(fn (ClientProjectMembership $membership): bool => isset($userIds[$membership->user_id]))
+                    ->map(fn (ClientProjectMembership $membership): array => [
+                        'user' => (string) ($userIds[$membership->user_id] ?? ''),
+                        // The column is cast to the enum, so this is its value
+                        // rather than a cast of the object.
+                        'role' => $membership->role->value,
+                    ])->values()->all(),
+            ])->values()->all(),
+            // Workspace members who can be given project access. Owners and
+            // admins are excluded: they already reach every project, so
+            // offering to grant them one would imply the grant does something.
+            'assignable' => $assignable->map(fn (User $member): array => [
+                'id' => $member->public_id,
+                'name' => $member->name,
             ])->values()->all(),
         ]);
     }
