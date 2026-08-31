@@ -32,6 +32,24 @@
                 // lines down, which coerces a numeric string identically, and
                 // the strict lane requires the cast for the same reason.
                 "App\\Services\\Billing\\InterimOverageGenerator::generateInterimOverageInvoice",
+                // And once more where the auditor rounds a sum: same shape,
+                // same reason - `round()` returns float regardless, and the
+                // strict lane will not accept the sum's `float|int|string`
+                // without the cast.
+                "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
+            ],
+        },
+        // Rounding a `decimal:4` column to *more* places cannot change a
+        // value: the storage has already discarded anything finer, so
+        // `round($x, 5)` and `round($x, 4)` are the same number for every row
+        // that can exist. Rounding to fewer places is a real change and is
+        // killed - `test_each_stage_of_the_funnel_narrows_and_the_boundaries_hold`
+        // sums to 3.2345 precisely so that losing a place shows.
+        //
+        // Only the increment is ignored, and only here. Decrement stays live.
+        IncrementInteger: {
+            ignore: [
+                "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
             ],
         },
     },
