@@ -6,7 +6,8 @@
 
         <script>
             (() => {
-                const appearance = localStorage.getItem('svc:appearance') ?? 'system';
+                const stored = localStorage.getItem('svc:appearance');
+                const appearance = ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
                 const isDark = appearance === 'dark'
                     || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 

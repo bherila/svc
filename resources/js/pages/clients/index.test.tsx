@@ -63,6 +63,14 @@ describe('client list', () => {
         expect(within(row).getByText('3')).toBeInTheDocument();
     });
 
+    it('offers the appearance selector on the workspace client list', () => {
+        render(<ClientIndex {...props()} />);
+
+        expect(
+            screen.getByRole('combobox', { name: 'Appearance' }),
+        ).toBeInTheDocument();
+    });
+
     it('links each company to its detail screen inside this workspace', () => {
         render(<ClientIndex {...props()} />);
 

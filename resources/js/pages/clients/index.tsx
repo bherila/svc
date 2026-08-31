@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { AppearanceSelector } from '@/components/appearance-selector';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -122,16 +123,19 @@ export default function ClientIndex({
         <>
             <Head title={`${workspace.name} clients`} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
-                <header className="grid gap-1">
-                    <Link
-                        href="/app"
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← Workspaces
-                    </Link>
-                    <h1 className="text-2xl font-semibold">
-                        {workspace.name} clients
-                    </h1>
+                <header className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="grid gap-1">
+                        <Link
+                            href="/app"
+                            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        >
+                            ← Workspaces
+                        </Link>
+                        <h1 className="text-2xl font-semibold">
+                            {workspace.name} clients
+                        </h1>
+                    </div>
+                    <AppearanceSelector />
                 </header>
 
                 <Card>

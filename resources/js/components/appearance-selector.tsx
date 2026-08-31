@@ -19,7 +19,7 @@ function readAppearance(): Appearance {
     return isAppearance(stored) ? stored : 'system';
 }
 
-function applyAppearance(appearance: Appearance): boolean {
+function applyAppearance(appearance: Appearance): void {
     const isDark =
         appearance === 'dark' ||
         (appearance === 'system' &&
@@ -27,8 +27,6 @@ function applyAppearance(appearance: Appearance): boolean {
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-
-    return isDark;
 }
 
 export function AppearanceSelector() {

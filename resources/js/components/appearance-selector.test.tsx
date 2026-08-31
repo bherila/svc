@@ -7,6 +7,7 @@ afterEach(() => {
     document.documentElement.classList.remove('dark');
     document.documentElement.style.colorScheme = '';
     window.localStorage.clear();
+    vi.unstubAllGlobals();
 });
 
 test('persists the selected dark appearance and updates the document root', async () => {
@@ -21,7 +22,17 @@ test('persists the selected dark appearance and updates the document root', asyn
     expect(window.localStorage.getItem('svc:appearance')).toBe('dark');
 });
 
-test('follows a system appearance change', () => {
+test('restores a persisted appearance when an authenticated page mounts', () => {
+    window.localStorage.setItem('svc:appearance', 'dark');
+
+    render(<AppearanceSelector />);
+
+    expect(screen.getByLabelText('Appearance')).toHaveValue('dark');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+});
+
+test('follows system appearance changes and removes its listener', () => {
     let onChange: ((event: MediaQueryListEvent) => void) | undefined;
     const media = {
         matches: false,
@@ -40,11 +51,23 @@ test('follows a system appearance change', () => {
         'matchMedia',
         vi.fn(() => media as unknown as MediaQueryList),
     );
-    render(<AppearanceSelector />);
+    const { unmount } = render(<AppearanceSelector />);
 
     media.matches = true;
     onChange?.({ matches: true } as MediaQueryListEvent);
 
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
+
+    media.matches = false;
+    onChange?.({ matches: false } as MediaQueryListEvent);
+
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(document.documentElement.style.colorScheme).toBe('light');
+
+    unmount();
+    expect(media.removeEventListener).toHaveBeenCalledWith(
+        'change',
+        expect.any(Function),
+    );
 });

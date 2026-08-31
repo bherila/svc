@@ -154,6 +154,9 @@ describe('client context layout', () => {
         expect(
             screen.getByRole('link', { name: 'All clients' }),
         ).toHaveAttribute('href', '/workspaces/workspace-1/clients');
+        expect(
+            screen.getByRole('combobox', { name: 'Appearance' }),
+        ).toBeInTheDocument();
     });
 
     /**

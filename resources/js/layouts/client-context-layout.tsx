@@ -1,4 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
+import { AppearanceSelector } from '@/components/appearance-selector';
 import {
     Select,
     SelectContent,
@@ -139,6 +140,9 @@ export default function ClientContextLayout({
                     >
                         All clients
                     </Link>
+                    <div className="ml-auto">
+                        <AppearanceSelector />
+                    </div>
                 </div>
 
                 <nav
