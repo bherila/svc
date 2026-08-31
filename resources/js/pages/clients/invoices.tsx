@@ -16,9 +16,11 @@ import type { CompanyInvoice } from '@/types/clients';
  * do - so there is nothing to filter by here and no filter is offered.
  */
 export default function ClientInvoices({
+    workspace,
     company,
     invoices,
 }: {
+    workspace: { id: string };
     company: { id: string; name: string };
     invoices: CompanyInvoice[];
 }) {
@@ -34,6 +36,9 @@ export default function ClientInvoices({
                         <InvoiceTable
                             invoices={invoices}
                             empty="No invoices for this client yet."
+                            hrefFor={(invoice) =>
+                                `/workspaces/${workspace.id}/clients/${company.id}/invoices/${invoice.id}`
+                            }
                         />
                     </CardContent>
                 </Card>

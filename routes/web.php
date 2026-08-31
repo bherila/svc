@@ -44,6 +44,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('clients.invoices');
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
         ->name('clients.tasks');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
+        ->name('clients.invoice');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');

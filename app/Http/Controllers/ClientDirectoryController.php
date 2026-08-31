@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
@@ -184,6 +186,7 @@ class ClientDirectoryController extends Controller
             ->get();
 
         return Inertia::render('clients/invoices', [
+            'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -191,6 +194,75 @@ class ClientDirectoryController extends Controller
             'invoices' => $invoices->map(
                 fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
             )->values()->all(),
+        ]);
+    }
+
+    /**
+     * One invoice, inside the client it belongs to.
+     *
+     * Reached as a child of the Invoices tab rather than from a workspace-wide
+     * route, so the chrome keeps saying which client this is and the back path
+     * is the tab rather than a list the operator never opened.
+     *
+     * Three keys, not one. The invoice is bound by a public id unique across
+     * every workspace, so it is checked against both the workspace and the
+     * company in the URL - otherwise a member of one client's screens opens
+     * another client's invoice by pasting its id, and the chrome would
+     * cheerfully label it with the company they came from.
+     */
+    public function invoice(
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        ClientInvoice $clientInvoice,
+        WorkspaceAuthorization $authorization,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+        $authorization->assertOwnedBy($workspace, $clientInvoice);
+
+        abort_unless(
+            (int) $clientInvoice->client_company_id === (int) $clientCompany->id,
+            404,
+        );
+
+        $clientInvoice->load([
+            'lines' => fn ($query) => $query
+                ->where('workspace_id', $workspace->id)
+                ->orderBy('sort_order')
+                ->orderBy('id'),
+            'payments' => fn ($query) => $query
+                ->where('workspace_id', $workspace->id)
+                ->orderByDesc('received_on')
+                ->orderByDesc('id'),
+        ]);
+
+        return Inertia::render('clients/invoice', [
+            'workspace' => ['id' => $workspace->public_id],
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'invoice' => $this->invoicePayload($clientInvoice),
+            'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
+                'id' => $line->public_id,
+                'type' => $line->type,
+                'description' => $line->description,
+                'quantity' => (float) $line->quantity,
+                'hours' => $line->hours === null ? null : (float) $line->hours,
+                'line_date' => $line->line_date?->toDateString(),
+                'unit_amount' => (int) $line->unit_amount,
+                'total_amount' => (int) $line->total_amount,
+            ])->values()->all(),
+            'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => [
+                'id' => $payment->public_id,
+                'status' => $payment->status,
+                'method' => $payment->method,
+                'reference' => $payment->reference,
+                'received_on' => $payment->received_on?->toDateString(),
+                'amount' => (int) $payment->amount,
+                'refunded_amount' => (int) $payment->refunded_amount,
+                'currency' => $payment->currency,
+            ])->values()->all(),
         ]);
     }
 

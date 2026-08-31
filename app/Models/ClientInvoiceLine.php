@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property string $public_id
+ * @property int $workspace_id
+ * @property int $client_invoice_id
+ * @property string $type
+ * @property string $description
+ * @property numeric-string $quantity
+ * @property numeric-string|null $hours
+ * @property CarbonImmutable|null $line_date
+ * @property int|null $client_project_id
+ * @property int $unit_amount
+ * @property int $tax_amount
+ * @property int $total_amount
+ * @property int $sort_order
+ */
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'type', 'description', 'quantity',
     'client_project_id', 'unit_amount', 'tax_amount', 'total_amount', 'sort_order',

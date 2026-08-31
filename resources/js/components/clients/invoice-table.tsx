@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import {
     Table,
@@ -26,10 +27,18 @@ import type { CompanyInvoice } from '@/types/clients';
 export function InvoiceTable({
     invoices,
     empty,
+    hrefFor,
 }: {
     invoices: CompanyInvoice[];
     /** What to say instead of an empty table. */
     empty: string;
+    /**
+     * Where a row goes, when it goes anywhere.
+     *
+     * Optional so the table stays usable on a screen that has no detail route
+     * to offer, rather than rendering links that go nowhere.
+     */
+    hrefFor?: (invoice: CompanyInvoice) => string;
 }) {
     if (invoices.length === 0) {
         return <p className="text-sm text-muted-foreground">{empty}</p>;
@@ -52,7 +61,16 @@ export function InvoiceTable({
                     {invoices.map((invoice) => (
                         <TableRow key={invoice.id}>
                             <TableCell className="font-medium">
-                                {invoice.invoice_number ?? 'Unnumbered'}
+                                {hrefFor === undefined ? (
+                                    (invoice.invoice_number ?? 'Unnumbered')
+                                ) : (
+                                    <Link
+                                        href={hrefFor(invoice)}
+                                        className="underline-offset-4 hover:underline"
+                                    >
+                                        {invoice.invoice_number ?? 'Unnumbered'}
+                                    </Link>
+                                )}
                             </TableCell>
                             <TableCell>
                                 <Badge variant="outline">
