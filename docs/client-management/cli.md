@@ -66,6 +66,29 @@ php artisan client-management:invoice-email-status 123 --delivery=45 --format=js
 
 `--refresh` queries Brevo and stores the latest delivery events; without it the command reports the last stored status. Use `--delivery=<id>` to scope to one delivery record.
 
+## Regenerate the Null-Semantics Manifests
+
+Developer tooling, not an operational command. Rebuilds the two pinned constants
+in `NullSemanticsRegistryTest` from the registry itself.
+
+```bash
+composer registry:manifest          # report drift; writes nothing, exits 1 if stale
+php scripts/registry-manifest.php --apply
+```
+
+The registry ratchets on identity rather than on counts, so `REGISTERED_BRANCHES`
+names every branch that may not be lost and `PENDING_COLUMNS` names every column
+with no known reader, both compared as exact sets. Adding a branch therefore
+means editing a constant in the same commit — which is the point, and also a
+guaranteed conflict as soon as two branches add one. Hand-resolving a sorted
+70-line constant is the friction that gets a guard deleted rather than fixed;
+with this, resolving is *take both sides, re-run, commit*.
+
+It cannot weaken anything by itself: it derives the manifests from `REGISTRY`, so
+running it after a branch is deleted produces a manifest that agrees with the
+deletion. It resolves conflicts, it does not approve them — read the diff. The
+guard test remains the gate.
+
 ## Audit Opening Rollover
 
 Read-only. Counts the agreements whose ledger would change if the opening-rollover seed in `InvoiceLedgerBuilder` were repaired (#134), so the size of that change is known before it is made.
