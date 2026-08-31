@@ -46,7 +46,11 @@ const IMPLEMENTED_TABS: readonly ClientTab['key'][] = [
     'tasks',
     'time',
     'invoices',
+    'manage',
 ];
+
+/** Tabs that appear only for a viewer who may manage the workspace. */
+const MANAGE_ONLY: readonly ClientTab['key'][] = ['manage'];
 
 function tabHref(
     workspaceId: string,
@@ -84,7 +88,11 @@ export default function ClientContextLayout({
     }
 
     const workspaceId = context.workspace.id;
-    const visible = TABS.filter((tab) => available.includes(tab.key));
+    const visible = TABS.filter(
+        (tab) =>
+            available.includes(tab.key) &&
+            (context.can_manage || !MANAGE_ONLY.includes(tab.key)),
+    );
 
     return (
         <div className="min-h-screen">

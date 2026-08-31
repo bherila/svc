@@ -35,6 +35,7 @@ function withContext(overrides: Partial<ClientContext> = {}): ClientContext {
             { id: 'company-2', name: 'Bb Synthetic Client' },
         ],
         current_company_id: 'company-1',
+        can_manage: true,
         ...overrides,
     };
 }
@@ -92,7 +93,43 @@ describe('client context layout', () => {
             screen.getByRole('link', { name: 'Invoices' }),
         ).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument();
+        expect(
+            screen.getByRole('link', { name: 'Manage' }),
+        ).toBeInTheDocument();
+    });
+
+    /**
+     * Manage is the one tab that depends on who is looking, so it is asserted
+     * in both directions. A tab that is merely hidden is not a check - the
+     * action authorizes on its own - but offering it to someone who would be
+     * refused is a broken product.
+     */
+    it('offers Manage only to a viewer who may manage', () => {
+        context = withContext({ can_manage: true });
+
+        const { unmount } = render(
+            <ClientContextLayout active="overview">
+                <p>Overview body</p>
+            </ClientContextLayout>,
+        );
+
+        expect(
+            screen.getByRole('link', { name: 'Manage' }),
+        ).toBeInTheDocument();
+        unmount();
+
+        context = withContext({ can_manage: false });
+
+        render(
+            <ClientContextLayout active="overview">
+                <p>Overview body</p>
+            </ClientContextLayout>,
+        );
+
         expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull();
+        expect(
+            screen.getByRole('link', { name: 'Overview' }),
+        ).toBeInTheDocument();
     });
 
     /**

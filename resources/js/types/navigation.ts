@@ -21,6 +21,13 @@ export type ClientContext = {
     companies: ClientContextCompany[];
     /** Null on a workspace screen that is not inside one company. */
     current_company_id: string | null;
+    /**
+     * Whether this viewer may manage the workspace.
+     *
+     * Decides only whether the Manage tab is offered. The action behind it
+     * authorizes on its own, because a link nobody rendered is not a check.
+     */
+    can_manage: boolean;
 };
 
 export type ClientTab = {

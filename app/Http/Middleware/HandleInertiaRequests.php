@@ -176,6 +176,12 @@ class HandleInertiaRequests extends Middleware
             'current_company_id' => $company instanceof ClientCompany
                 ? (string) $company->public_id
                 : null,
+            // Whether the Manage tab appears at all. Shared here rather than
+            // per page because the strip is chrome, and a tab that shows for
+            // some pages and not others reads as a bug. It gates the link
+            // only - the action authorizes independently, because a hidden
+            // link is not an authorization check.
+            'can_manage' => Gate::forUser($user)->allows('manage', $workspace),
         ];
     }
 }

@@ -300,6 +300,53 @@ class ClientDirectoryController extends Controller
     }
 
     /**
+     * The client record itself, and the shape of its projects.
+     *
+     * Manage is a tab rather than a parallel admin section, so it is reached
+     * the same way every other tab is and carries the same chrome. It is gated
+     * on the workspace `manage` ability - the tab does not appear without it,
+     * and this refuses even if someone types the URL, because a hidden link is
+     * not an authorization check.
+     *
+     * Projects are listed unscoped by project access on purpose: someone who
+     * may manage the workspace may manage all of it, and a manage screen that
+     * hid half the projects would let an operator create a duplicate of one
+     * they cannot see.
+     */
+    public function manage(
+        Request $request,
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        WorkspaceAuthorization $authorization,
+    ): Response {
+        Gate::authorize('manage', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+
+        $projects = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('clients/manage', [
+            'workspace' => ['id' => $workspace->public_id],
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+                'billing_email' => $clientCompany->billing_email,
+                'is_active' => (bool) $clientCompany->is_active,
+            ],
+            'projects' => $projects->map(fn (ClientProject $project): array => [
+                'id' => $project->public_id,
+                'name' => $project->name,
+                'description' => $project->description,
+                'status' => $project->status,
+                'is_visible_to_client' => (bool) $project->is_visible_to_client,
+            ])->values()->all(),
+        ]);
+    }
+
+    /**
      * The client's tasks, by project.
      *
      * Tasks carry no company key - only `workspace_id` and
