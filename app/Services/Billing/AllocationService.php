@@ -125,24 +125,41 @@ final class AllocationService
         // own - a corrected date, a rewritten description, a reassignment -
         // would have that edit silently thrown away and its minutes folded in
         // under the survivor's version.
-        $signature = fn (ClientTimeEntry $entry): string => implode('|', [
-            $entry->status,
-            (int) $entry->is_billable,
-            (int) $entry->is_deferred,
-            (int) $entry->is_visible_to_client,
-            $entry->billing_rate_amount ?? 'null',
-            $entry->currency ?? 'null',
-            (string) $entry->worked_on,
-            (string) $entry->description,
-            (string) $entry->client_visible_description,
-            $entry->client_project_id ?? 'null',
-            $entry->client_task_id ?? 'null',
-            $entry->user_id ?? 'null',
-            $entry->subcontractor_billing_mode->value ?? 'null',
-            $entry->subcontractor_cost_amount ?? 'null',
-            $entry->subcontractor_cost_currency ?? 'null',
-            json_encode($entry->subcontractor_cost_metadata, JSON_THROW_ON_ERROR),
-        ]);
+        // A typed tuple compared with `===`, not a joined string.
+        //
+        // Two encodings failed here in turn. A `|` join collides whenever a
+        // free-text field contains the delimiter, because the boundaries move.
+        // Encoding that same array as JSON fixes the boundaries but not the
+        // sentinel: `?? 'null'` makes a real null and the literal string
+        // "null" indistinguishable, and `job_type` is free text a person can
+        // type that into.
+        //
+        // Comparing the arrays directly removes the question. There is no
+        // encoding to collide, nulls stay null, and an int stays an int - and
+        // because a match here *deletes* a fragment, a false equality is
+        // destructive rather than merely conservative.
+        $signature = fn (ClientTimeEntry $entry): array => [
+            'status' => $entry->status,
+            'is_billable' => $entry->is_billable,
+            'is_deferred' => $entry->is_deferred,
+            'is_visible_to_client' => $entry->is_visible_to_client,
+            'billing_rate_amount' => $entry->billing_rate_amount,
+            'currency' => $entry->currency,
+            'worked_on' => $entry->worked_on->toDateString(),
+            'description' => $entry->description,
+            'client_visible_description' => $entry->client_visible_description,
+            'job_type' => $entry->job_type,
+            'client_project_id' => $entry->client_project_id,
+            'client_task_id' => $entry->client_task_id,
+            'user_id' => $entry->user_id,
+            'billing_rate_source' => $entry->billing_rate_source,
+            'approved_by_user_id' => $entry->approved_by_user_id,
+            'approved_at' => $entry->approved_at?->toIso8601String(),
+            'subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value,
+            'subcontractor_cost_amount' => $entry->subcontractor_cost_amount,
+            'subcontractor_cost_currency' => $entry->subcontractor_cost_currency,
+            'subcontractor_cost_metadata' => $entry->subcontractor_cost_metadata,
+        ];
 
         $first = $signature($group->first());
 
