@@ -14,6 +14,7 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -142,6 +143,47 @@ final class AllocationServiceTest extends TestCase
 
         $this->assertSame(0, $this->recombine());
         $this->assertSame(2, $this->entryCount());
+    }
+
+    #[DataProvider('fragmentFieldsThatMustAgree')]
+    public function test_fragments_with_divergent_preserved_fields_do_not_recombine(string $field, mixed $value): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        if ($field === 'billing_rate_source') {
+            // Provenance matters even when the money matches: `explicit` must
+            // not be replaced by a rate resolved from an agreement later.
+            $parts['primary']->forceFill([
+                'billing_rate_amount' => 15000,
+                'billing_rate_source' => 'explicit',
+            ])->save();
+            $parts['overflow']->forceFill(['billing_rate_amount' => 15000])->save();
+        }
+
+        $parts['overflow']->forceFill([$field => $value])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertNotNull($parts['overflow']->fresh()?->{$field});
+
+        if ($field === 'billing_rate_source') {
+            $this->assertSame(15000, $parts['primary']->fresh()?->billing_rate_amount);
+            $this->assertSame(15000, $parts['overflow']->fresh()?->billing_rate_amount);
+        }
+    }
+
+    /** @return array<string, array{string, int|string}> */
+    public static function fragmentFieldsThatMustAgree(): array
+    {
+        return [
+            'job type' => ['job_type', 'Support'],
+            // `null` means this row has no stamped rate provenance; `agreement`
+            // means a later workflow re-resolved it. The monetary amount can be
+            // identical while those meanings cannot be folded together.
+            'billing rate source' => ['billing_rate_source', 'agreement'],
+            'approval author' => ['approved_by_user_id', 1],
+            'approval timestamp' => ['approved_at', '2026-03-14 09:30:00'],
+        ];
     }
 
     public function test_the_survivor_stops_being_a_fragment(): void
