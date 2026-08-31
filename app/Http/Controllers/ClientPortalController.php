@@ -6,10 +6,15 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Services\Authorization\PortalAccess;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,6 +22,132 @@ use Inertia\Response;
 class ClientPortalController extends Controller
 {
     public function __construct(private readonly PortalAccess $portalAccess) {}
+
+    /**
+     * The invoices this company's portal may show, as a query.
+     *
+     * Three conditions, and each is load-bearing. The workspace and company
+     * bound it to this tenant and this client; `is_visible_to_client` is the
+     * operator's own decision about disclosure; and the status list keeps a
+     * draft out - a draft is working arithmetic, and showing a client a figure
+     * nobody has committed to invites an argument about a number that was
+     * never sent.
+     *
+     * Shared between the list and the detail rather than restated, because a
+     * detail screen that admitted one invoice the list would not is the whole
+     * bug: the client never sees the row, and reaches it by id.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    private function visibleInvoices(ClientCompany $clientCompany, ?User $viewer): Builder
+    {
+        $invoices = ClientInvoice::query()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('is_visible_to_client', true)
+            ->whereIn('status', ['issued', 'partially_paid', 'paid']);
+
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
+
+        // Null is the whole company - an owner, an admin, or a client whose
+        // access is company-scoped. A project-scoped client is a different
+        // question, and the invoice list ignored it: they were shown, and could
+        // open, every invoice the company had, including for work on projects
+        // their own portal deliberately hides.
+        if ($visibleProjectIds === null) {
+            return $invoices;
+        }
+
+        if ($visibleProjectIds === []) {
+            return $invoices->whereRaw('1 = 0');
+        }
+
+        // The same rule the operator side applies: every project the invoice
+        // names must be one they see, and an invoice naming none is not theirs
+        // to read. A mixed invoice is refused rather than partly rendered,
+        // because its totals and its PDF describe the whole document.
+        return $invoices
+            ->whereNotExists(fn (QueryBuilder $line): QueryBuilder => $line
+                ->select(DB::raw('1'))
+                ->from('client_invoice_lines')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
+                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
+                ->whereNotNull('client_invoice_lines.client_project_id')
+                ->whereNotIn('client_invoice_lines.client_project_id', $visibleProjectIds))
+            ->whereExists(fn (QueryBuilder $line): QueryBuilder => $line
+                ->select(DB::raw('1'))
+                ->from('client_invoice_lines')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
+                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
+                ->whereIn('client_invoice_lines.client_project_id', $visibleProjectIds));
+    }
+
+    /**
+     * One invoice, for the client it was sent to.
+     *
+     * Read-only, like everything a client can reach. The lines are the point:
+     * the list says what is owed and this says what for, which is the question
+     * a client actually opens a portal to answer.
+     *
+     * Line rows are narrowed to what belongs on an invoice a client is looking
+     * at - description, quantity, hours and money. The internal agreement and
+     * recurring-item keys the model already hides are not reintroduced here by
+     * a hand-built array.
+     */
+    public function invoice(Request $request, ClientCompany $clientCompany, ClientInvoice $clientInvoice): Response
+    {
+        Gate::authorize('viewPortal', $clientCompany);
+
+        // Resolved through the same query the list uses, so an invoice the
+        // client cannot see is not found rather than merely unlinked.
+        $viewer = $request->user();
+        $viewer = $viewer instanceof User ? $viewer : null;
+
+        $invoice = $this->visibleInvoices($clientCompany, $viewer)
+            ->whereKey($clientInvoice->getKey())
+            ->first();
+
+        abort_if($invoice === null, 404);
+
+        $lines = ClientInvoiceLine::query()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        return Inertia::render('portal/invoice', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'invoice' => [
+                'id' => $invoice->public_id,
+                'invoice_number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'issue_date' => $invoice->issue_date?->toDateString(),
+                'due_date' => $invoice->due_date?->toDateString(),
+                'service_period_start' => $invoice->service_period_start?->toDateString(),
+                'service_period_end' => $invoice->service_period_end?->toDateString(),
+                'subtotal_amount' => (int) $invoice->subtotal_amount,
+                'tax_amount' => (int) $invoice->tax_amount,
+                'total_amount' => (int) $invoice->total_amount,
+                'paid_amount' => (int) $invoice->paid_amount,
+                'balance_amount' => (int) $invoice->balance_amount,
+                'pdf_url' => "/workspaces/{$clientCompany->workspace->public_id}/invoices/{$invoice->public_id}/pdf",
+            ],
+            'lines' => $lines->map(fn (ClientInvoiceLine $line): array => [
+                'id' => $line->public_id,
+                'description' => $line->description,
+                'quantity' => (float) $line->quantity,
+                'hours' => $line->hours === null ? null : (float) $line->hours,
+                'line_date' => $line->line_date?->toDateString(),
+                'unit_amount' => (int) $line->unit_amount,
+                'total_amount' => (int) $line->total_amount,
+            ])->values()->all(),
+        ]);
+    }
 
     public function show(ClientCompany $clientCompany): Response
     {
@@ -69,13 +200,7 @@ class ClientPortalController extends Controller
             ->latest('id')
             ->get();
 
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('is_visible_to_client', true)
-            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
-            ->latest('id')
-            ->get();
+        $invoices = $this->visibleInvoices($clientCompany, $viewer)->latest('id')->get();
 
         $visibleRecords = [
             'proposal' => $proposals->pluck('public_id')->all(),

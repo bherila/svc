@@ -68,6 +68,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('tasks.update');
 
     Route::get('/portal/{clientCompany}', [ClientPortalController::class, 'show'])->name('portal.show');
+    Route::get('/portal/{clientCompany}/invoices/{clientInvoice}', [ClientPortalController::class, 'invoice'])
+        ->name('portal.invoice');
 });
 
 require __DIR__.'/engagement.php';

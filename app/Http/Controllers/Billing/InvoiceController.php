@@ -9,8 +9,10 @@ use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\StorePaymentRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -24,6 +26,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
@@ -31,13 +35,27 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly AgentAccess $agentAccess,
+        private readonly BillingRecordAccess $billingAccess,
     ) {}
 
-    public function index(Request $request, Workspace $workspace): JsonResponse|View
+    public function index(Request $request, Workspace $workspace): JsonResponse|InertiaResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
-        $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany');
-        if (! $workspace->memberships()->where('user_id', $request->user()->id)->exists()) {
+        // The company relation is constrained to this workspace. It is
+        // unconstrained lineage, so a row migrated from before #113's composite
+        // keys can name a company in another tenant - and serializing its name
+        // here would be a cross-tenant disclosure the old Blade page never
+        // made, on a screen whose whole job is listing everything.
+        $query = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->with(['clientCompany' => fn ($relation) => $relation->where('workspace_id', $workspace->id)]);
+        // One membership decision for the whole request. Asking twice let a
+        // revocation between the two calls skip *both* narrowings and leave the
+        // query bounded only by workspace - every invoice in it, for one
+        // request.
+        $isMember = $workspace->memberships()->where('user_id', $request->user()->id)->exists();
+
+        if (! $isMember) {
             // Through AgentAccess so the membership's own workspace is checked too,
             // rather than restating half the condition here.
             $companyIds = $this->agentAccess->portalCompanyIdsIn($request->user(), $workspace);
@@ -45,9 +63,64 @@ class InvoiceController extends Controller
                 ->where('is_visible_to_client', true)
                 ->whereIn('status', ['issued', 'partially_paid', 'paid']);
         }
+        // A workspace member sees the clients they reach, on the same rule the
+        // directory follows (#157). Portal users were narrowed above by the
+        // company ids their access grants, so exactly one of these two branches
+        // applies to any request.
+        $user = $request->user();
+
+        if ($isMember && $user instanceof User) {
+            $query = $this->billingAccess->constrainInvoices($query, $user, $workspace);
+        }
+
         $invoices = $query->latest('id')->get();
 
-        return $request->expectsJson() ? response()->json(['data' => $invoices]) : view('invoices.index', compact('workspace', 'invoices'));
+        if ($request->expectsJson()) {
+            return response()->json(['data' => $invoices]);
+        }
+
+        // The workspace-wide list, above any one client - so it renders with no
+        // client chrome, the way the workspace time sheet does. Clicking an
+        // invoice drops into that client's context, which is where an invoice
+        // actually lives.
+        return Inertia::render('invoices/index', [
+            'workspace' => [
+                'id' => $workspace->public_id,
+                'name' => $workspace->name,
+            ],
+            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
+                'id' => $invoice->public_id,
+                'invoice_number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'issue_date' => $invoice->issue_date?->toDateString(),
+                'due_date' => $invoice->due_date?->toDateString(),
+                'total_amount' => (int) $invoice->total_amount,
+                'paid_amount' => (int) $invoice->paid_amount,
+                'balance_amount' => (int) $invoice->balance_amount,
+                'company' => [
+                    'id' => $invoice->clientCompany?->public_id,
+                    'name' => $invoice->clientCompany?->name,
+                ],
+                // Built here rather than in the page, because where a row leads
+                // depends on who is asking. A member goes to the client-scoped
+                // detail; a portal viewer would be refused there - that route
+                // authorizes on workspace membership - so they get the route
+                // that applies portal invoice authorization instead.
+                'href' => $isMember
+                    ? ($invoice->clientCompany === null
+                        ? null
+                        : route('clients.invoice', [
+                            'workspace' => $workspace,
+                            'clientCompany' => $invoice->clientCompany,
+                            'clientInvoice' => $invoice,
+                        ], false))
+                    : route('svc.billing.invoices.show', [
+                        'workspace' => $workspace,
+                        'clientInvoice' => $invoice,
+                    ], false),
+            ])->values()->all(),
+        ]);
     }
 
     public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service, InvoiceFromTimeService $fromTime): JsonResponse|RedirectResponse
@@ -114,7 +187,12 @@ class InvoiceController extends Controller
 
     public function stripePaymentIntent(CreateStripePaymentIntentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, StripePaymentIntentService $service): JsonResponse
     {
-        $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
+        // Paying is not reading. This route creates a real Stripe intent and
+        // records a pending payment that reserves the remaining balance, so an
+        // abandoned or unauthorised one blocks a genuine payment - and it was
+        // gated on the same check as opening the invoice, which made any
+        // workspace member a payer by side effect.
+        $this->authorizeInvoicePayment($request, $workspace, $clientInvoice);
         $data = $request->validated();
         $idempotencyKey = $data['idempotency_key'] ?? $request->header('Idempotency-Key');
         abort_unless(is_string($idempotencyKey) && trim($idempotencyKey) !== '', 422, 'An idempotency key is required.');
@@ -166,10 +244,53 @@ class InvoiceController extends Controller
         abort_unless($this->agentAccess->isWorkspaceClient($request->user(), $workspace), 403);
     }
 
+    /**
+     * Who may start a payment against this invoice.
+     *
+     * Strictly narrower than viewing it. Reading an invoice is something a
+     * member of the team does; paying one is something the client does, and
+     * conflating them let anyone who could open an invoice reserve its balance
+     * with an intent nobody asked for.
+     *
+     * So: a portal user of the company, admitted by the same visibility and
+     * status rules the portal itself applies. Internal staff are refused -
+     * an operator recording a payment has other routes, and none of them
+     * should be a side effect of being able to look.
+     */
+    private function authorizeInvoicePayment(Request $request, Workspace $workspace, ClientInvoice $invoice): void
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
+
+        $user = $request->user();
+
+        abort_unless(
+            $user instanceof User
+                && $invoice->is_visible_to_client
+                && in_array($invoice->status, ['issued', 'partially_paid'], true)
+                && $invoice->clientCompany?->portalUsers()->whereKey($user->id)->exists() === true,
+            403,
+        );
+    }
+
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
+
         if (Gate::forUser($request->user())->allows('view', $workspace)) {
+            // Membership admits them to the workspace, not to every client in
+            // it (#157). Without this the list narrows and the direct routes do
+            // not, so a scoped member reads any client's invoice - and its PDF,
+            // which is the same disclosure with a filename - by pasting an id.
+            // Reaching the client is not reaching this invoice. A member
+            // granted one project of a client must not read an invoice for
+            // work on another - see `BillingRecordAccess` for why every
+            // attributed project has to be reachable rather than any.
+            $user = $request->user();
+
+            if ($user instanceof User) {
+                abort_unless($this->billingAccess->canViewInvoice($user, $workspace, $invoice), 404);
+            }
+
             return;
         }
         abort_unless(

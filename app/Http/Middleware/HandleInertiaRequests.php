@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Models\ClientCompany;
-use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
@@ -87,23 +86,11 @@ class HandleInertiaRequests extends Middleware
     private function switchableCompanies(Workspace $workspace, User $user): Collection
     {
         $companies = $workspace->clientCompanies()->orderBy('name')->get();
-        $viewable = app(ProjectAccess::class)->viewableProjectIds($user, $workspace);
+        $reachable = app(ProjectAccess::class)->reachableCompanyIds($user, $workspace);
 
-        if ($viewable === null) {
+        if ($reachable === null) {
             return $companies;
         }
-
-        if ($viewable === []) {
-            return new Collection;
-        }
-
-        $reachable = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('id', $viewable)
-            ->pluck('client_company_id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->all();
 
         return $companies->filter(
             fn (ClientCompany $company): bool => in_array((int) $company->id, $reachable, true),

@@ -14,6 +14,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
@@ -83,7 +84,7 @@ class ClientDirectoryController extends Controller
             ->orderBy('name')
             ->get();
 
-        $companies = $this->reachable($workspace, $companies, $viewable);
+        $companies = $this->reachable($companies, $access->reachableCompanyIds($user, $workspace));
         $retainers = $this->retainerUsage($workspace, $companies);
 
         return Inertia::render('clients/index', [
@@ -110,6 +111,7 @@ class ClientDirectoryController extends Controller
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -121,7 +123,7 @@ class ClientDirectoryController extends Controller
         // legitimately pass the gate for.
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         // Only the projects this viewer reaches. Reaching one project of a
         // client is not reaching the client's whole portfolio, and a project
@@ -129,20 +131,24 @@ class ClientDirectoryController extends Controller
         // working on what.
         $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
-        $agreements = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('starts_on')
-            ->orderByDesc('id')
-            ->get();
+        // Reaching the client is not reaching its money. A member granted one
+        // project sees the agreements and invoices attributed to it, not the
+        // client's whole financial record - see `BillingRecordAccess`.
+        $agreements = $billing->constrainAgreements(
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('starts_on')->orderByDesc('id')->get();
 
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
-            ->limit(self::RECENT_INVOICES)
-            ->get();
+        $invoices = $billing->constrainInvoices(
+            ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('issue_date')->orderByDesc('id')->limit(self::RECENT_INVOICES)->get();
 
         // An agreement may be scoped to a single project, and it names that
         // project by an independent key. Resolving the name from the projects
@@ -194,6 +200,7 @@ class ClientDirectoryController extends Controller
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -204,14 +211,15 @@ class ClientDirectoryController extends Controller
         // a check on the company reached through it.
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
-            ->get();
+        $invoices = $billing->constrainInvoices(
+            ClientInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id),
+            $user,
+            $workspace,
+        )->orderByDesc('issue_date')->orderByDesc('id')->get();
 
         return Inertia::render('clients/invoices', [
             'workspace' => ['id' => $workspace->public_id],
@@ -245,6 +253,7 @@ class ClientDirectoryController extends Controller
         ClientInvoice $clientInvoice,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -252,13 +261,15 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
         $authorization->assertOwnedBy($workspace, $clientInvoice);
 
         abort_unless(
             (int) $clientInvoice->client_company_id === (int) $clientCompany->id,
             404,
         );
+
+        abort_unless($billing->canViewInvoice($user, $workspace, $clientInvoice), 404);
 
         $clientInvoice->load([
             'lines' => fn ($query) => $query
@@ -325,6 +336,7 @@ class ClientDirectoryController extends Controller
         ClientAgreement $clientAgreement,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -334,12 +346,14 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
 
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         abort_unless(
             (int) $clientAgreement->client_company_id === (int) $clientCompany->id,
             404,
         );
+
+        abort_unless($billing->canViewAgreement($user, $workspace, $clientAgreement), 404);
 
         $projectNames = $this->viewableProjectsOf($workspace, $clientCompany, $viewable)
             ->pluck('name', 'id');
@@ -412,6 +426,7 @@ class ClientDirectoryController extends Controller
         ClientProject $clientProject,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        BillingRecordAccess $billing,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -444,13 +459,14 @@ class ClientDirectoryController extends Controller
             ->selectRaw('status, sum(minutes) as total_minutes, count(*) as entry_count')
             ->get();
 
-        $agreements = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('client_project_id', $clientProject->id)
-            ->orderByDesc('starts_on')
-            ->orderByDesc('id')
-            ->get();
+        $agreements = $billing->constrainAgreements(
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id)
+                ->where('client_project_id', $clientProject->id),
+            $user,
+            $workspace,
+        )->orderByDesc('starts_on')->orderByDesc('id')->get();
 
         $projectNames = collect([$clientProject->id => $clientProject->name]);
 
@@ -566,11 +582,16 @@ class ClientDirectoryController extends Controller
                 'description' => $project->description,
                 'status' => $project->status,
                 'is_visible_to_client' => (bool) $project->is_visible_to_client,
+                // The version this form is rendered from, sent back on save so
+                // the write can refuse a payload composed against values
+                // someone has since changed.
+                'lock_version' => (int) $project->lock_version,
                 // Who reaches this project, and with what role. Sent per
                 // project rather than as one map because that is how the screen
                 // reads it, and because an owner or admin holds no membership
                 // row at all - they are listed separately below so the absence
                 // does not read as "no access".
+                //
                 // Only rows for people the screen can actually offer. An
                 // owner or admin can hold a membership row - written before a
                 // promotion, or by the console command - and sending it would
@@ -627,7 +648,7 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
 
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
@@ -701,40 +722,21 @@ class ClientDirectoryController extends Controller
     /**
      * Which companies this viewer has any business with.
      *
-     * Workspace membership is not access to every project in it (#157). The
-     * time sheet has always refused to show a scoped member other projects'
-     * work; the directory used to show every company and every project name to
-     * anyone who passed the workspace gate, and those two answers to the same
-     * question are now settled the strict way.
-     *
      * A company they cannot reach is absent rather than empty. Rendering it
      * with nothing in it would still disclose the client's name and existence,
      * which is the disclosure being scoped in the first place.
      *
      * @param  EloquentCollection<int, ClientCompany>  $companies
-     * @param  list<int>|null  $viewableProjectIds
+     * @param  list<int>|null  $reachableCompanyIds
      * @return EloquentCollection<int, ClientCompany>
      */
     private function reachable(
-        Workspace $workspace,
         EloquentCollection $companies,
-        ?array $viewableProjectIds,
+        ?array $reachableCompanyIds,
     ): EloquentCollection {
-        if ($viewableProjectIds === null) {
+        if ($reachableCompanyIds === null) {
             return $companies;
         }
-
-        if ($viewableProjectIds === []) {
-            return new EloquentCollection;
-        }
-
-        $reachableCompanyIds = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('id', $viewableProjectIds)
-            ->pluck('client_company_id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->all();
 
         return new EloquentCollection($companies->filter(
             fn (ClientCompany $company): bool => in_array((int) $company->id, $reachableCompanyIds, true),
@@ -747,15 +749,15 @@ class ClientDirectoryController extends Controller
      * The list already omits it, so a direct URL has to agree - otherwise the
      * scoping is decorative and the id is the only thing in the way.
      *
-     * @param  list<int>|null  $viewableProjectIds
+     * @param  list<int>|null  $reachableCompanyIds
      */
     private function assertReachable(
-        Workspace $workspace,
         ClientCompany $company,
-        ?array $viewableProjectIds,
+        ?array $reachableCompanyIds,
     ): void {
         abort_if(
-            $this->reachable($workspace, new EloquentCollection([$company]), $viewableProjectIds)->isEmpty(),
+            $reachableCompanyIds !== null
+                && ! in_array((int) $company->id, $reachableCompanyIds, true),
             404,
         );
     }
