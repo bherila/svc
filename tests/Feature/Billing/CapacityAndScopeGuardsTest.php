@@ -905,6 +905,137 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * The same fail-closed reading on the cycle columns, which #139 left behind.
+     *
+     * #139 widened the `service_period_end` window inside this sum, but the
+     * lookup enclosing it still required a non-null `cycle_start` and
+     * `cycle_end` - so a charged interim invoice missing *those* dropped out
+     * anyway and its hours were billed a second time. The sibling test above
+     * nulls the service period; this nulls the cycle, and before the fix it
+     * failed where that one passed (#141).
+     */
+    public function test_a_charged_interim_invoice_with_no_cycle_still_reduces_the_next_interim(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        $this->entry($project, '2024-01-15', 1800);
+        $this->entry($project, '2024-02-10', 1200);
+
+        $first = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $first);
+        $this->assertSame(20.0, (float) $first->hours_billed_at_rate);
+
+        // Charged, and unplaceable on the cycle rather than on the period - the
+        // shape an import leaves behind, since the generator always writes both.
+        $first->forceFill(['status' => 'issued', 'cycle_start' => null, 'cycle_end' => null])->save();
+
+        $second = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $second);
+        $this->assertSame(
+            10.0,
+            (float) $second->hours_billed_at_rate,
+            "Only February's new excess: the unplaceable interim already charged January's",
+        );
+    }
+
+    /**
+     * A charged cadence invoice with no cycle still stops an interim being
+     * created for that cycle.
+     *
+     * This guard exists to refuse selling a cycle a cadence invoice has already
+     * reconciled, and it throws rather than returning - so a row it cannot see
+     * is a whole invoice created against work already billed. Refusing on a row
+     * that merely *might* be this cycle's costs an operator a look at it;
+     * assuming it is not costs the client a second charge.
+     */
+    public function test_a_charged_cadence_invoice_with_no_cycle_still_blocks_an_interim(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+
+        $reconciled = $this->invoice($agreement);
+        $reconciled->forceFill([
+            'invoice_kind' => 'cadence_period',
+            'status' => 'issued',
+            'cycle_start' => null,
+            'cycle_end' => null,
+        ])->save();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('already exists for this cycle');
+
+        app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+    }
+
+    /**
+     * The widening stops at the path that rewrites invoices.
+     *
+     * `releaseUnchargedInterimClaims()` strips the system-generated lines from
+     * every draft it selects and zeroes the charge. Including a row that cannot
+     * be shown to belong to this cycle would wipe a claim that was not this
+     * cycle\'s to wipe - the opposite error from the guards above, and a worse
+     * one, since excluding it merely leaves a draft for someone to look at.
+     *
+     * One shared lookup serves both readings, so this pins the boundary: with
+     * the sweep passing `Unattributable::Include` instead, the orphan is
+     * released along with the real draft and both assertions below change.
+     */
+    public function test_the_draft_sweep_leaves_a_claim_it_cannot_place(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+
+        $interim = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $interim);
+
+        // A draft carrying a charge and no cycle - what an import leaves, since
+        // the generator always writes both dates on the rows it creates.
+        $orphan = $this->invoice($agreement);
+        $orphan->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'draft',
+            'hours_billed_at_rate' => '3',
+            'cycle_start' => null,
+            'cycle_end' => null,
+        ])->save();
+
+        $released = app(InterimOverageGenerator::class)->releaseUnchargedInterimClaims(
+            $this->company,
+            $agreement,
+            app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15')),
+        );
+
+        // One, not two: the real draft for this cycle, and not the orphan.
+        $this->assertSame(1, $released);
+        $this->assertSame(
+            3.0,
+            (float) $orphan->refresh()->hours_billed_at_rate,
+            "A claim with no cycle is not this cycle's to release",
+        );
+    }
+
+    /**
      * The widening is grouped inside the date window and nothing else. An
      * unplaceable *draft* has charged nobody, so it must not suppress the
      * interim that would actually bill the work - the leak an ungrouped

@@ -16,6 +16,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
+use App\Support\Billing\Unattributable;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -152,7 +153,7 @@ final class InterimOverageGenerator
             // direct or delegated interim path can invoice a broken chain.
             $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
-            $issuedCycleInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::CadencePeriod, $cycle)
+            $issuedCycleInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::CadencePeriod, $cycle, Unattributable::Include)
                 ->whereIn('status', InvoiceStatus::charged())
                 ->lockForUpdate()
                 ->first();
@@ -161,7 +162,7 @@ final class InterimOverageGenerator
                 throw new RuntimeException("A cadence invoice (#{$issuedCycleInvoice->invoice_number}) already exists for this cycle.");
             }
 
-            $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+            $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
                 ->whereIn('status', InvoiceStatus::live())
@@ -191,7 +192,7 @@ final class InterimOverageGenerator
             // hours it already charged would be billed a second time. Counting
             // it errs toward understating this invoice instead, which the
             // cycle's cadence reconciliation recovers.
-            $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+            $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
                 ->where(function (Builder $window) use ($periodStart): void {
                     $window
                         ->whereDate('service_period_end', '<', $periodStart->toDateString())
@@ -394,7 +395,7 @@ final class InterimOverageGenerator
 
             // Only completed months, and never the cycle's own closing month.
             if ($periodEnd->lt($cycle->end) && $periodEnd->lte($today)) {
-                $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+                $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
                     ->whereDate('service_period_start', $periodStart->toDateString())
                     ->whereDate('service_period_end', $periodEnd->toDateString())
                     ->whereIn('status', InvoiceStatus::live())
@@ -520,6 +521,35 @@ final class InterimOverageGenerator
     /**
      * Invoices of one kind belonging to a specific cycle of one agreement.
      *
+     * `cycle_start` and `cycle_end` are nullable, and SQL answers false for a
+     * null rather than unknown, so an invoice missing either was invisible to
+     * every caller here (#141). Generated rows always carry both - the
+     * generator writes them - so the exposure is imported and hand-edited data,
+     * which `ExternalImportService` passes through unchanged.
+     *
+     * Whether that invisibility is safe depends entirely on what the caller is
+     * asking, which is why this takes the answer rather than picking one. A
+     * blanket `orWhereNull` would be wrong in one direction and a blanket
+     * exclusion is wrong in the other:
+     *
+     * - **Guards and sums** pass `Unattributable::Include`. A row that cannot be
+     *   placed *might* be this cycle's, and for a duplicate guard the cost of
+     *   assuming it is is a refusal an operator can look at, while the cost of
+     *   assuming it is not is a second invoice for a cycle already billed. For
+     *   a sum of what has already been charged it is the #135 answer: dropping
+     *   the row bills its hours again.
+     * - **Anything that rewrites what it selects** passes
+     *   `Unattributable::Exclude`, the default. `releaseUnchargedInterimClaims()`
+     *   strips a draft's system-generated lines and zeroes its charge, so
+     *   including a row that cannot be placed wipes a claim that was not this
+     *   cycle's to wipe - a worse error than leaving it, which merely leaves a
+     *   draft for someone to look at.
+     *
+     * `invoice_kind` is nullable too and is deliberately left strict here. A
+     * null-kind row matching an interim lookup would let a migrated cadence
+     * invoice be picked up and rewritten as an interim draft, which is a
+     * different and worse failure than the one this addresses.
+     *
      * @return Builder<ClientInvoice>
      */
     private function cycleInvoices(
@@ -527,14 +557,22 @@ final class InterimOverageGenerator
         ClientAgreement $agreement,
         InvoiceKind $kind,
         BillingCycle $cycle,
+        Unattributable $unattributable = Unattributable::Exclude,
     ): Builder {
         return ClientInvoice::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('client_agreement_id', $agreement->id)
             ->where('invoice_kind', $kind->value)
-            ->whereDate('cycle_start', $cycle->start->toDateString())
-            ->whereDate('cycle_end', $cycle->end->toDateString());
+            ->where(function (Builder $cycleWindow) use ($cycle, $unattributable): void {
+                $cycleWindow
+                    ->whereDate('cycle_start', $cycle->start->toDateString())
+                    ->whereDate('cycle_end', $cycle->end->toDateString());
+
+                if ($unattributable === Unattributable::Include) {
+                    $cycleWindow->orWhereNull('cycle_start')->orWhereNull('cycle_end');
+                }
+            });
     }
 
     /**
