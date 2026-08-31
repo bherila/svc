@@ -81,11 +81,15 @@ describe('client context layout', () => {
             </ClientContextLayout>,
         );
 
+        // Asserted against the real shared list rather than an override, so
+        // this fails when a tab joins the strip without a route behind it -
+        // which is the whole reason the list is single-sourced.
         expect(
             screen.getByRole('link', { name: 'Overview' }),
         ).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Time' })).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Tasks' })).toBeNull();
-        expect(screen.queryByRole('link', { name: 'Time' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Invoices' })).toBeNull();
         expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull();
     });
 

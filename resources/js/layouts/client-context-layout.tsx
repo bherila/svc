@@ -33,6 +33,16 @@ const TABS: readonly ClientTab[] = [
     { key: 'manage', label: 'Manage', segment: 'manage' },
 ];
 
+/**
+ * The tabs that have a page behind them.
+ *
+ * One list rather than a prop each page supplies, because pages that each
+ * declare the tab set drift: the strip would differ depending on which tab you
+ * were standing on. Adding a tab is one edit here, in the commit that adds its
+ * route.
+ */
+const IMPLEMENTED_TABS: readonly ClientTab['key'][] = ['overview', 'time'];
+
 function tabHref(
     workspaceId: string,
     companyId: string,
@@ -45,17 +55,14 @@ function tabHref(
 
 export default function ClientContextLayout({
     active,
-    available = ['overview'],
+    available = IMPLEMENTED_TABS,
     children,
 }: {
     /** Which tab this page is. */
     active: ClientTab['key'];
     /**
-     * The tabs that exist yet.
-     *
-     * Defaulted rather than assumed complete: a tab strip that links to a
-     * route nobody has built reads as a broken product, so a tab appears only
-     * once its page does. This shrinks as the remaining tabs land.
+     * Overridable only for tests. Pages take the shared list, so the strip
+     * cannot link to a route nobody has built and cannot differ between tabs.
      */
     available?: readonly ClientTab['key'][];
     children: React.ReactNode;
