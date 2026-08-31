@@ -801,6 +801,51 @@ class ClientDirectoryTest extends TestCase
         ]);
     }
 
+    /**
+     * An invoice detail reached through the wrong client is not found.
+     *
+     * The invoice binds by a public id unique across every workspace, so
+     * passing the workspace gate is not passing a check on the invoice in the
+     * URL - and the company segment is checked too, or the chrome would label
+     * one client's invoice with the name of the client the operator came from.
+     */
+    public function test_an_invoice_cannot_be_opened_under_another_client(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Detail Route', 'synthetic-detail-route', $manager);
+        $owner = $this->company($workspace, 'Owning Detail Client', 'owning-detail-client');
+        $other = $this->company($workspace, 'Other Detail Client', 'other-detail-client');
+        $invoice = $this->invoice($workspace, $owner, 'SYN-DETAIL-1', 'issued');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$owner->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk();
+
+        // Same invoice, a sibling company in the same workspace.
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$other->public_id}/invoices/{$invoice->public_id}")
+            ->assertNotFound();
+    }
+
+    /**
+     * And not from another workspace either, even by an operator who passes
+     * that workspace's own gate.
+     */
+    public function test_an_invoice_from_another_workspace_is_not_found(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Mine Route', 'synthetic-mine-route', $manager);
+        $company = $this->company($mine, 'Synthetic Mine Route Client', 'mine-route-client');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Route Tenant', 'slug' => 'foreign-route']);
+        $foreignCompany = $this->company($foreign, 'Foreign Route Client', 'foreign-route-client');
+        $foreignInvoice = $this->invoice($foreign, $foreignCompany, 'FOREIGN-ROUTE-1', 'issued');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$mine->public_id}/clients/{$company->public_id}/invoices/{$foreignInvoice->public_id}")
+            ->assertNotFound();
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

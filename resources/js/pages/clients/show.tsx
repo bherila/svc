@@ -118,6 +118,7 @@ function AgreementCard({ agreement }: { agreement: CompanyAgreement }) {
 }
 
 export default function ClientShow({
+    workspace,
     company,
     projects,
     agreements,
@@ -208,6 +209,9 @@ export default function ClientShow({
                         <InvoiceTable
                             invoices={invoices}
                             empty="No invoices for this client."
+                            hrefFor={(invoice) =>
+                                `/workspaces/${workspace.id}/clients/${company.id}/invoices/${invoice.id}`
+                            }
                         />
                         {invoices.length === invoiceLimit && (
                             <p className="text-xs text-muted-foreground">
