@@ -12,7 +12,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
-use App\Services\Authorization\ProjectAccess;
+use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -35,7 +35,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly AgentAccess $agentAccess,
-        private readonly ProjectAccess $projectAccess,
+        private readonly BillingRecordAccess $billingAccess,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse|InertiaResponse
@@ -70,11 +70,7 @@ class InvoiceController extends Controller
         $user = $request->user();
 
         if ($isMember && $user instanceof User) {
-            $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
-
-            if ($reachable !== null) {
-                $query->whereIn('client_company_id', $reachable);
-            }
+            $query = $this->billingAccess->constrainInvoices($query, $user, $workspace);
         }
 
         $invoices = $query->latest('id')->get();
@@ -191,7 +187,12 @@ class InvoiceController extends Controller
 
     public function stripePaymentIntent(CreateStripePaymentIntentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, StripePaymentIntentService $service): JsonResponse
     {
-        $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
+        // Paying is not reading. This route creates a real Stripe intent and
+        // records a pending payment that reserves the remaining balance, so an
+        // abandoned or unauthorised one blocks a genuine payment - and it was
+        // gated on the same check as opening the invoice, which made any
+        // workspace member a payer by side effect.
+        $this->authorizeInvoicePayment($request, $workspace, $clientInvoice);
         $data = $request->validated();
         $idempotencyKey = $data['idempotency_key'] ?? $request->header('Idempotency-Key');
         abort_unless(is_string($idempotencyKey) && trim($idempotencyKey) !== '', 422, 'An idempotency key is required.');
@@ -243,6 +244,34 @@ class InvoiceController extends Controller
         abort_unless($this->agentAccess->isWorkspaceClient($request->user(), $workspace), 403);
     }
 
+    /**
+     * Who may start a payment against this invoice.
+     *
+     * Strictly narrower than viewing it. Reading an invoice is something a
+     * member of the team does; paying one is something the client does, and
+     * conflating them let anyone who could open an invoice reserve its balance
+     * with an intent nobody asked for.
+     *
+     * So: a portal user of the company, admitted by the same visibility and
+     * status rules the portal itself applies. Internal staff are refused -
+     * an operator recording a payment has other routes, and none of them
+     * should be a side effect of being able to look.
+     */
+    private function authorizeInvoicePayment(Request $request, Workspace $workspace, ClientInvoice $invoice): void
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
+
+        $user = $request->user();
+
+        abort_unless(
+            $user instanceof User
+                && $invoice->is_visible_to_client
+                && in_array($invoice->status, ['issued', 'partially_paid'], true)
+                && $invoice->clientCompany?->portalUsers()->whereKey($user->id)->exists() === true,
+            403,
+        );
+    }
+
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
@@ -252,16 +281,14 @@ class InvoiceController extends Controller
             // it (#157). Without this the list narrows and the direct routes do
             // not, so a scoped member reads any client's invoice - and its PDF,
             // which is the same disclosure with a filename - by pasting an id.
+            // Reaching the client is not reaching this invoice. A member
+            // granted one project of a client must not read an invoice for
+            // work on another - see `BillingRecordAccess` for why every
+            // attributed project has to be reachable rather than any.
             $user = $request->user();
 
             if ($user instanceof User) {
-                $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
-
-                abort_unless(
-                    $reachable === null
-                        || in_array((int) $invoice->client_company_id, $reachable, true),
-                    404,
-                );
+                abort_unless($this->billingAccess->canViewInvoice($user, $workspace, $invoice), 404);
             }
 
             return;

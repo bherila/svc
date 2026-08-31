@@ -40,8 +40,14 @@ final class PortalAccess
             return [];
         }
 
-        // Internal staff see the company's whole portal.
-        if ($company->workspace->memberships()->where('user_id', $viewer->id)->exists()) {
+        // Owners and admins see the whole portal, and only they. Any workspace
+        // membership used to unlock it, which combined with the policy made
+        // the portal a way past every project scope the operator screens apply.
+        $workspaceRole = $company->workspace->memberships()
+            ->where('user_id', $viewer->id)
+            ->value('role');
+
+        if (in_array((string) $workspaceRole, ['owner', 'admin'], true)) {
             return null;
         }
 

@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
@@ -72,7 +73,9 @@ class WorkspaceInvoiceListTest extends TestCase
         ]);
         $theirs = $this->company($workspace, 'Unreachable List Client', 'unreachable-list-client');
 
-        $this->invoice($workspace, $mine, 'MINE-LIST-1');
+        // Lineage matters now: an invoice is visible when every project it
+        // names is reachable, so the fixture has to name one.
+        $this->line($this->invoice($workspace, $mine, 'MINE-LIST-1'), $project);
         $this->invoice($workspace, $theirs, 'THEIRS-LIST-9999');
 
         $member = User::factory()->create();
@@ -191,6 +194,7 @@ class WorkspaceInvoiceListTest extends TestCase
             'status' => 'active',
         ]);
         $ours = $this->invoice($workspace, $mine, 'MINE-DIRECT-1');
+        $this->line($ours, $project);
 
         $theirs = $this->company($workspace, 'Unreachable Direct Client', 'unreachable-direct-client');
         $hidden = $this->invoice($workspace, $theirs, 'THEIRS-DIRECT-9999');
@@ -230,6 +234,123 @@ class WorkspaceInvoiceListTest extends TestCase
         $this->actingAs($manager)
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")
             ->assertOk();
+    }
+
+    /**
+     * The case the earlier tests missed: two projects, one company.
+     *
+     * Reaching a client is not reaching its money. A member granted one
+     * project must not read an invoice for work on another - and proving that
+     * with two *companies* proved something much weaker, which is how this
+     * shipped.
+     */
+    public function test_a_project_scoped_member_sees_only_their_projects_invoices(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Sibling', 'synthetic-sibling', $manager);
+        $company = $this->company($workspace, 'Shared Sibling Client', 'shared-sibling-client');
+
+        $mine = $this->project($workspace, $company, 'Mine');
+        $theirs = $this->project($workspace, $company, 'Theirs');
+
+        $this->line($this->invoice($workspace, $company, 'SIB-MINE-1'), $mine);
+        $this->line($this->invoice($workspace, $company, 'SIB-THEIRS-9999'), $theirs);
+
+        // A mixed invoice is refused rather than partly rendered: its totals,
+        // payments and PDF describe the whole document.
+        $mixed = $this->invoice($workspace, $company, 'SIB-MIXED-8888');
+        $this->line($mixed, $mine);
+        $this->line($mixed, $theirs);
+
+        // And one with no lineage at all is manager scope.
+        $this->invoice($workspace, $company, 'SIB-UNSCOPED-7777');
+
+        $member = $this->memberOf($workspace, $mine);
+
+        $response = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('invoices', 1));
+        $this->assertInertiaPayloadOmits($response, [
+            'SIB-THEIRS-9999',
+            'SIB-MIXED-8888',
+            'SIB-UNSCOPED-7777',
+        ], 'SIB-MINE-1');
+    }
+
+    /** And the same three refusals by id, not only in the list. */
+    public function test_a_project_scoped_member_cannot_open_a_sibling_projects_invoice(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Sibling Id', 'synthetic-sibling-id', $manager);
+        $company = $this->company($workspace, 'Shared Id Client', 'shared-id-client');
+        $mine = $this->project($workspace, $company, 'Mine');
+        $theirs = $this->project($workspace, $company, 'Theirs');
+
+        $ours = $this->invoice($workspace, $company, 'ID-MINE-1');
+        $this->line($ours, $mine);
+
+        $sibling = $this->invoice($workspace, $company, 'ID-THEIRS-1');
+        $this->line($sibling, $theirs);
+
+        $unscoped = $this->invoice($workspace, $company, 'ID-UNSCOPED-1');
+
+        $member = $this->memberOf($workspace, $mine);
+
+        $this->actingAs($member)
+            ->getJson("/workspaces/{$workspace->public_id}/invoices/{$ours->public_id}")
+            ->assertOk();
+
+        foreach ([$sibling, $unscoped] as $refused) {
+            $this->actingAs($member)
+                ->getJson("/workspaces/{$workspace->public_id}/invoices/{$refused->public_id}")
+                ->assertNotFound();
+
+            $this->actingAs($member)
+                ->get("/workspaces/{$workspace->public_id}/invoices/{$refused->public_id}/pdf")
+                ->assertNotFound();
+        }
+    }
+
+    private function memberOf(Workspace $workspace, ClientProject $project): User
+    {
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        return $member;
+    }
+
+    private function project(Workspace $workspace, ClientCompany $company, string $name): ClientProject
+    {
+        return ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => $name,
+            'status' => 'active',
+        ]);
+    }
+
+    private function line(ClientInvoice $invoice, ClientProject $project): ClientInvoiceLine
+    {
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_invoice_id' => $invoice->id,
+            'client_project_id' => $project->id,
+            'type' => 'time',
+            'description' => 'Synthetic line',
+            'quantity' => '1.0000',
+            'unit_amount' => 10000,
+            'tax_amount' => 0,
+            'total_amount' => 10000,
+            'sort_order' => 0,
+        ]);
     }
 
     private function workspace(string $name, string $slug, User $owner): Workspace
