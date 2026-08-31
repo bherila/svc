@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ClientCompanyController;
+use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
@@ -36,6 +37,25 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->name('workspaces.operations');
+    Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
+        ->name('clients.show');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices', [ClientDirectoryController::class, 'invoices'])
+        ->name('clients.invoices');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
+        ->name('clients.tasks');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/manage', [ClientDirectoryController::class, 'manage'])
+        ->name('clients.manage');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
+        ->name('clients.agreement');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientDirectoryController::class, 'project'])
+        ->name('clients.project');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
+        ->name('clients.update');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
+        ->name('projects.update');
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
+        ->name('clients.invoice');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
