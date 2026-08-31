@@ -47,6 +47,11 @@ class TimeSheetController extends Controller
         AgentTimeEntryQuery $visible,
         AgreementSelector $selector,
         TimeEntryProjectChainGuard $projectChainGuard,
+        // Declared even though only one of the two routes supplies it: the
+        // binding is substituted from the signature, so without the parameter
+        // the route's company arrives as a raw id string and is silently
+        // ignored.
+        ?ClientCompany $clientCompany = null,
     ): Response {
         Gate::authorize('view', $workspace);
         $user = $request->user();
@@ -135,7 +140,7 @@ class TimeSheetController extends Controller
             'tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
         ]);
 
-        $selectedCompany = $this->selectedCompany($request, $companies);
+        $selectedCompany = $this->selectedCompany($request, $companies, $clientCompany);
         $entries = $this->entries($visible, $user, $workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
 
@@ -186,8 +191,20 @@ class TimeSheetController extends Controller
     }
 
     /** @param EloquentCollection<int, ClientCompany> $companies */
-    private function selectedCompany(Request $request, EloquentCollection $companies): ?ClientCompany
-    {
+    private function selectedCompany(
+        Request $request,
+        EloquentCollection $companies,
+        ?ClientCompany $routed = null,
+    ): ?ClientCompany {
+        // A company in the route wins over one in the query string, and is
+        // still resolved through the visible set rather than trusted: route
+        // binding proves the row exists, not that this member may see it. An
+        // id that survives binding but not this lookup falls back exactly as a
+        // stale query parameter does.
+        if ($routed !== null) {
+            return $companies->firstWhere('id', $routed->id) ?? $companies->first();
+        }
+
         $requested = $request->query('company');
 
         if (is_string($requested) && $requested !== '') {
