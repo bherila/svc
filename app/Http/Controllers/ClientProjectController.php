@@ -9,7 +9,9 @@ use App\Models\ClientProject;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class ClientProjectController extends Controller
 {
@@ -51,17 +53,50 @@ class ClientProjectController extends Controller
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $authorization->assertOwnedBy($workspace, $clientProject);
 
-        abort_unless(
-            (int) $clientProject->client_company_id === (int) $clientCompany->id,
-            404,
-        );
+        // Re-read under a row lock inside the transaction that writes, keyed on
+        // every column the authorization above relied on.
+        //
+        // Those assertions describe the instances the router bound, and the
+        // router binds by public id alone, so the write that followed named
+        // only the primary key: reparent the project - to another workspace, or
+        // to another company in this one - between the check and the write, and
+        // the request modifies a row it was never authorized for. The project
+        // carries both keys, so both are re-asserted here rather than only the
+        // workspace.
+        DB::transaction(function () use ($workspace, $clientCompany, $clientProject, $request): void {
+            $locked = ClientProject::query()
+                ->whereKey($clientProject->getKey())
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id)
+                ->lockForUpdate()
+                ->first();
 
-        $clientProject->update([
-            'name' => $request->string('name')->toString(),
-            'description' => $request->validated('description'),
-            'status' => $request->string('status')->toString(),
-            'is_visible_to_client' => $request->boolean('is_visible_to_client'),
-        ]);
+            abort_if($locked === null, 404);
+
+            // The version the form was rendered from. A stale payload is
+            // well-formed - every field validates - so this is the only thing
+            // that separates "set visibility to true" from "I loaded this page
+            // before someone hid it". Refused rather than merged, because the
+            // field at stake decides what a client can see and a silent
+            // last-write-wins re-exposes it.
+            //
+            // A validation error rather than a 409: Inertia reserves 409 for
+            // its own asset-version protocol and would turn one into a full
+            // page reload, discarding the operator's edits and telling them
+            // nothing. This puts the reason on the field.
+            if ((int) $locked->lock_version !== (int) $request->validated('lock_version')) {
+                throw ValidationException::withMessages([
+                    'lock_version' => 'This project changed while you were editing it. Reload to see the current values before saving.',
+                ]);
+            }
+
+            $locked->update([
+                'name' => $request->string('name')->toString(),
+                'description' => $request->validated('description'),
+                'status' => $request->string('status')->toString(),
+                'is_visible_to_client' => $request->boolean('is_visible_to_client'),
+            ]);
+        });
 
         return redirect()->back()->with('status', 'Project updated.');
     }
