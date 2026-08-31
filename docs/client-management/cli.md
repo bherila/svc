@@ -105,7 +105,7 @@ It reports counts and aggregate minutes only — never a row, an id, a name, a c
 ## Audit Missing Billed Overage
 
 Read-only. Counts charged invoices carrying no `hours_billed_at_rate` at all, and
-the agreements whose already-billed sums those invoices corrupt (#144).
+the agreements whose already-billed sums may therefore read short (#144).
 
 ```bash
 php artisan svc:billing:audit-missing-billed-overage                 # counts
@@ -131,8 +131,14 @@ decision is to refuse on unknown, or to establish the column is never null on a
 charged invoice and make it `NOT NULL` for that status.
 
 The agreement count is the one that sizes the exposure, because the sums are per
-agreement: ten bad invoices on one agreement corrupt one figure, one bad invoice
-on each of ten agreements corrupts ten.
+agreement: ten such invoices on one agreement leave one figure unknown, one on
+each of ten leaves ten.
+
+It says *may* throughout, deliberately. A null proves the contribution is
+unknown — not that the invoice carried overage — so a flagged sum may read
+short and may be exactly right. This audit exists to establish whether #144 is
+live at all, and claiming more than counts can support is how an audit stops
+being believed.
 
 It reports counts only — never a row, an id, an invoice number, a company or a
 workspace — so it is safe to run against real billing data and to paste into an

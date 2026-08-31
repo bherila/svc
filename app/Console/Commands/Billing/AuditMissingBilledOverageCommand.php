@@ -50,17 +50,22 @@ final class AuditMissingBilledOverageCommand extends Command
         $this->components->twoColumnDetail('... of those, charged', (string) $counts->chargedOfThose);
         $this->components->twoColumnDetail('... of those, on an agreement in their workspace', (string) $counts->onAnAgreementOfThose);
         $this->newLine();
-        $this->components->twoColumnDetail('Agreements whose already-billed sum is wrong', (string) $counts->agreementsAffected);
+        $this->components->twoColumnDetail('Agreements with an unknown billed-overage contribution', (string) $counts->agreementsAffected);
         $this->newLine();
 
         if ($counts->agreementsAffected === 0) {
             $this->components->info(
-                'No charged invoice is missing its billed-overage figure, so every already-billed sum reads what was actually charged. #144 is latent.'
+                'No charged invoice is missing its billed-overage figure, so every already-billed sum reads a figure someone recorded. #144 is latent.'
             );
         } else {
+            // Deliberately "may". A null proves the contribution is unknown,
+            // not that the invoice carried overage - so the sum may read short
+            // and may be exactly right. Saying more than the data supports is
+            // how a counts-only audit stops being believed, and this audit
+            // exists to establish whether the defect is live at all.
             $this->components->warn(
-                $counts->agreementsAffected.' agreement(s) have an already-billed sum that reads short, because a charged invoice contributes nothing to it. '
-                .'Overage those invoices carry can be sold again. This needs a decision, not a default: a null is not a quantity, so there is no value to coerce it to.'
+                $counts->agreementsAffected.' agreement(s) may have an already-billed sum that reads short, because a charged invoice contributes nothing to it. '
+                .'Inspect or repair the source invoices before generating further overage. A null is not a quantity, so there is no value to coerce it to.'
             );
         }
 
