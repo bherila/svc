@@ -140,9 +140,9 @@ final class AllocationService
         // destructive rather than merely conservative.
         $signature = fn (ClientTimeEntry $entry): array => [
             'status' => $entry->status,
-            'is_billable' => (bool) $entry->is_billable,
-            'is_deferred' => (bool) $entry->is_deferred,
-            'is_visible_to_client' => (bool) $entry->is_visible_to_client,
+            'is_billable' => $entry->is_billable,
+            'is_deferred' => $entry->is_deferred,
+            'is_visible_to_client' => $entry->is_visible_to_client,
             'billing_rate_amount' => $entry->billing_rate_amount,
             'currency' => $entry->currency,
             'worked_on' => $entry->worked_on->toDateString(),

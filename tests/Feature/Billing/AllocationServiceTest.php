@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -168,6 +169,37 @@ final class AllocationServiceTest extends TestCase
             $value = User::factory()->create()->id;
         }
 
+        if ($field === 'client_project_id') {
+            $value = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Synthetic Divergent Project',
+            ])->id;
+        }
+
+        if ($field === 'client_task_id') {
+            $value = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $this->project->id,
+                'title' => 'Synthetic Divergent Task',
+            ])->id;
+        }
+
+        if ($field === 'user_id') {
+            $value = User::factory()->create()->id;
+        }
+
+        if (str_starts_with($field, 'subcontractor_cost_')) {
+            foreach ($parts as $part) {
+                $part->forceFill([
+                    'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+                    'subcontractor_cost_amount' => 5000,
+                    'subcontractor_cost_currency' => 'USD',
+                    'subcontractor_cost_metadata' => ['source' => 'synthetic-baseline'],
+                ])->save();
+            }
+        }
+
         $parts['overflow']->forceFill([$field => $value])->save();
 
         $this->assertSame(0, $this->recombine());
@@ -254,11 +286,23 @@ final class AllocationServiceTest extends TestCase
         $this->assertSame(2, $this->entryCount());
     }
 
-    /** @return array<string, array{string, int|string}> */
+    /** @return array<string, array{string, mixed}> */
     public static function fragmentFieldsThatMustAgree(): array
     {
         return [
+            'billable flag' => ['is_billable', false],
+            'deferred flag' => ['is_deferred', true],
+            'client visibility' => ['is_visible_to_client', true],
+            'currency' => ['currency', 'EUR'],
+            'work date' => ['worked_on', '2026-03-15'],
+            'description' => ['description', 'Synthetic divergent work'],
+            'client-visible description' => ['client_visible_description', 'Synthetic client-safe divergence'],
             'job type' => ['job_type', 'Support'],
+            // The ids are replaced with real same-tenant fixtures in the test
+            // body so both SQLite and MariaDB exercise their foreign keys.
+            'project' => ['client_project_id', 0],
+            'task' => ['client_task_id', 0],
+            'user' => ['user_id', 0],
             // `null` means this row has no stamped rate provenance; `agreement`
             // means a later workflow re-resolved it. The monetary amount can be
             // identical while those meanings cannot be folded together.
@@ -267,6 +311,9 @@ final class AllocationServiceTest extends TestCase
             // here would violate the foreign key on MariaDB.
             'approval author' => ['approved_by_user_id', 0],
             'approval timestamp' => ['approved_at', '2026-03-14 09:30:00'],
+            'subcontractor cost' => ['subcontractor_cost_amount', 7500],
+            'subcontractor cost currency' => ['subcontractor_cost_currency', 'EUR'],
+            'subcontractor cost metadata' => ['subcontractor_cost_metadata', ['source' => 'synthetic-divergence']],
         ];
     }
 
