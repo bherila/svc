@@ -3,8 +3,10 @@
 namespace App\Console\Commands\Billing;
 
 use App\Models\ClientInvoice;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +32,22 @@ use Illuminate\Support\Facades\DB;
  * Hence this command. The guard stops the bad outcome; this surfaces the rows
  * behind it so they can be given a real period instead of a defaulted one. Run
  * it after an import, and after any bulk invoice edit.
+ *
+ * It reports the same class on `cycle_start`/`cycle_end` too (#141), because
+ * that pair is nullable for the same reason and drops rows out of the same kind
+ * of predicate. Two counts, because they endanger two different things.
+ * `InterimOverageGenerator::cycleInvoices()` matches on both columns, so the
+ * charged rows fall out of the already-billed subtraction and are charged
+ * again - the money case - while the live rows are invisible to the duplicate
+ * guards that refuse to create a second invoice for a cycle, which costs a
+ * whole invoice rather than a wrong number.
+ *
+ * No fix is implied for the cycle columns, and none should be inferred from
+ * this count. A null service period can be read fail-closed because the
+ * question is which side of a window the row falls on. A null cycle cannot: the
+ * question is which single cycle the row belongs to, and counting it in every
+ * cycle would under-charge repeatedly rather than repair anything. Those rows
+ * need a real value, which is what this command exists to find.
  *
  * It prints counts and aggregate hours only - never a row, an id, an invoice
  * number, a company, or a workspace. The output is safe to paste into a public
@@ -64,14 +82,41 @@ final class AuditUnplaceableInvoicesCommand extends Command
         // too - they shrink it - so the hours at stake are a magnitude, kept
         // from cancelling against the positive rows.
         $charged = (clone $unplaceable)->whereIn('status', InvoiceStatus::charged());
-        $onAgreement = (clone $charged)->whereExists(
-            fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
-                ->from('client_agreements')
-                ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
-                ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id'),
-        );
+        $onAgreement = $this->onAnAgreementInItsOwnWorkspace(clone $charged);
         $affected = (clone $onAgreement)->where('hours_billed_at_rate', '!=', 0);
+
+        // The cycle columns are the same class on different columns (#141), and
+        // they endanger two different things, so they are counted twice.
+        //
+        // `InterimOverageGenerator::cycleInvoices()` matches on both, so a row
+        // missing either is invisible to every caller. The charged funnel is
+        // the money one: it feeds the already-billed subtraction and
+        // `interimOverageHoursForCycle()`, and a row that drops out of those is
+        // charged a second time. The live count is the guard one: the duplicate
+        // checks that refuse to create a second invoice for a cycle read live
+        // and settled statuses, and a row they cannot see costs a whole invoice
+        // rather than a wrong number.
+        $noCycle = ClientInvoice::query()
+            ->where(function (Builder $missing): void {
+                $missing->whereNull('cycle_start')->orWhereNull('cycle_end');
+            });
+
+        // Kind first, exactly as those lookups apply it. Running this audit
+        // against real data is what put this condition here: all three
+        // null-cycle rows in the replay corpus are ad-hoc, and no cycle lookup
+        // reads an ad-hoc invoice, so reporting them as exposed would have been
+        // an overcount of a population that is in fact empty.
+        $readByCycle = (clone $noCycle)->where(function (Builder $kind): void {
+            $kind->whereNull('invoice_kind')->orWhereIn('invoice_kind', InvoiceKind::matchedByCycle());
+        });
+
+        $liveNoCycle = $this->onAnAgreementInItsOwnWorkspace(
+            (clone $readByCycle)->whereIn('status', InvoiceStatus::live()),
+        );
+        $chargedNoCycle = $this->onAnAgreementInItsOwnWorkspace(
+            (clone $readByCycle)->whereIn('status', InvoiceStatus::charged()),
+        );
+        $cycleAffected = (clone $chargedNoCycle)->where('hours_billed_at_rate', '!=', 0);
 
         $summary = [
             'invoices' => ClientInvoice::query()->count(),
@@ -80,6 +125,11 @@ final class AuditUnplaceableInvoicesCommand extends Command
             'on_an_agreement_of_those' => $onAgreement->count(),
             'affected' => $affected->count(),
             'overage_hours_at_stake' => round((float) $affected->sum(DB::raw('abs(hours_billed_at_rate)')), 4),
+            'without_a_cycle' => $noCycle->count(),
+            'of_a_kind_read_by_cycle' => $readByCycle->count(),
+            'live_without_a_cycle' => $liveNoCycle->count(),
+            'cycle_affected' => $cycleAffected->count(),
+            'cycle_overage_hours_at_stake' => round((float) $cycleAffected->sum(DB::raw('abs(hours_billed_at_rate)')), 4),
         ];
 
         if ($format === 'json') {
@@ -103,6 +153,13 @@ final class AuditUnplaceableInvoicesCommand extends Command
         $this->components->twoColumnDetail('Overage hours at stake', (string) $summary['overage_hours_at_stake']);
 
         $this->newLine();
+        $this->components->twoColumnDetail('Without a cycle start or end', (string) $summary['without_a_cycle']);
+        $this->components->twoColumnDetail('... of those, of a kind matched by cycle', (string) $summary['of_a_kind_read_by_cycle']);
+        $this->components->twoColumnDetail('... of those, live and on an agreement', (string) $summary['live_without_a_cycle']);
+        $this->components->twoColumnDetail('... of those, charged and carrying overage', (string) $summary['cycle_affected']);
+        $this->components->twoColumnDetail('Cycle overage hours at stake', (string) $summary['cycle_overage_hours_at_stake']);
+
+        $this->newLine();
 
         if ($summary['affected'] === 0) {
             $this->components->info(
@@ -114,9 +171,45 @@ final class AuditUnplaceableInvoicesCommand extends Command
             );
         }
 
+        if ($summary['live_without_a_cycle'] === 0) {
+            $this->components->info(
+                'Every live invoice on an agreement can be matched to its cycle, so no duplicate guard is blind and no interim sum is short.'
+            );
+        } else {
+            $this->components->warn(
+                $summary['live_without_a_cycle'].' live invoice(s) name no cycle. The duplicate guards cannot see them, so a second invoice can be created for a cycle they already cover'
+                .($summary['cycle_affected'] > 0
+                    ? '; '.$summary['cycle_affected'].' of them carry overage a cadence invoice would then charge again.'
+                    : '.')
+            );
+        }
+
         // Always a clean exit. This reports on data quality that the guard in
         // the overage sum already handles safely; it is a prompt to correct
         // rows, not a gate something is about to refuse.
         return self::SUCCESS;
+    }
+
+    /**
+     * Narrow to invoices whose named agreement exists in their own workspace.
+     *
+     * Every sum and guard this command reports on filters agreement and
+     * workspace together. `client_agreement_id` is unconstrained lineage, so a
+     * row can name an agreement that has been deleted or one belonging to
+     * another tenant; no sum ever reads such a row, and counting it would
+     * overstate the population this command exists to bound.
+     *
+     * @param  Builder<ClientInvoice>  $invoices
+     * @return Builder<ClientInvoice>
+     */
+    private function onAnAgreementInItsOwnWorkspace(Builder $invoices): Builder
+    {
+        return $invoices->whereExists(
+            fn (QueryBuilder $query): QueryBuilder => $query
+                ->select(DB::raw(1))
+                ->from('client_agreements')
+                ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
+                ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id'),
+        );
     }
 }
