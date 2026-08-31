@@ -30,6 +30,8 @@ use RuntimeException;
  * @property numeric-string|null $retainer_hours_included
  * @property numeric-string|null $hours_worked
  * @property numeric-string|null $rollover_hours_used
+ * @property string $currency
+ * @property int $balance_amount
  * @property numeric-string|null $unused_hours_balance
  * @property numeric-string|null $negative_hours_balance
  * @property numeric-string|null $hours_billed_at_rate
