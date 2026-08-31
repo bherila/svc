@@ -7,7 +7,6 @@ use App\Models\Workspace;
 use App\Support\Billing\UndatedCollectibleInvoiceCounts;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Count the collectible invoices that no overdue figure can ever include.
@@ -155,14 +154,18 @@ final class UndatedCollectibleInvoiceAuditor
         /** @var array<string, list<int>> $byTimezone */
         $byTimezone = [];
 
+        // The workspaces themselves, rather than a join selecting two columns
+        // off the invoice query. A joined row arrives as untyped attributes on
+        // an invoice model, and reading them means casting `mixed` - which the
+        // strict lane forbids, and forbids for a good reason here: a join that
+        // silently selected the wrong `id` would group invoices under another
+        // workspace's calendar and no cast would notice.
         foreach (
-            (clone $invoices)
-                ->join('workspaces', 'workspaces.id', '=', 'client_invoices.workspace_id')
-                ->select('workspaces.timezone', 'workspaces.id')
-                ->distinct()
-                ->get() as $row
+            Workspace::query()
+                ->whereIn('id', (clone $invoices)->select('client_invoices.workspace_id'))
+                ->get() as $workspace
         ) {
-            $byTimezone[(string) $row->getAttribute('timezone')][] = (int) $row->getAttribute('id');
+            $byTimezone[$workspace->timezone][] = $workspace->id;
         }
 
         // No rows, so no groups. Left as an impossible condition rather than an
@@ -197,17 +200,35 @@ final class UndatedCollectibleInvoiceAuditor
     {
         $balances = [];
 
-        foreach (
-            (clone $invoices)
-                ->select('currency', DB::raw('sum(balance_amount) as total'))
-                ->groupBy('currency')
-                ->get() as $row
-        ) {
-            $balances[(string) $row->getAttribute('currency')] = (int) $row->getAttribute('total');
+        // A sum per currency rather than one grouped aggregate select. The
+        // aggregate arrives as an untyped attribute, and casting `mixed` is
+        // what the strict lane refuses; `sum()` on a column is statically
+        // `float|int|string`, which is a cast that can be checked. The extra
+        // query per currency is paid once on an audit, and there are as many of
+        // them as the workspace bills in.
+        foreach ($this->currencies($invoices) as $currency) {
+            $balances[$currency] = (int) (clone $invoices)->where('currency', $currency)->sum('balance_amount');
         }
 
         ksort($balances);
 
         return $balances;
+    }
+
+    /**
+     * The distinct currencies present in a set of invoices.
+     *
+     * @param  Builder<ClientInvoice>  $invoices
+     * @return list<string>
+     */
+    private function currencies(Builder $invoices): array
+    {
+        $currencies = [];
+
+        foreach ((clone $invoices)->get() as $invoice) {
+            $currencies[$invoice->currency] = true;
+        }
+
+        return array_keys($currencies);
     }
 }

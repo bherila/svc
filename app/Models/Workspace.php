@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $public_id
  * @property string $name
  * @property string $slug
+ * @property string $timezone
  */
 #[Fillable(['name', 'slug', 'timezone', 'default_currency'])]
 class Workspace extends Model
