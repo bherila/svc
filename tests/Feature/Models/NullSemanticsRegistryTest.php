@@ -239,7 +239,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // No stated term: issuing makes it due on the issue date. A null
             // also drops the invoice out of the overdue query, which compares
             // with `whereDate`, so an imported invoice with a balance and no due
-            // date is collectible but never overdue. Nothing pins that.
+            // date is collectible but never overdue. Nothing pins that (#149).
             'due_date' => [
                 [
                     'covered_by' => BillingWorkflowTest::class,
@@ -325,7 +325,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // sums total the overage an agreement has already been charged, and
             // SQL aggregation contributes nothing for a null, so a restored
             // charged invoice with a null here reads as zero already billed and
-            // its hours are sold a second time.
+            // its hours are sold a second time (#144).
             'hours_billed_at_rate' => [
                 ['reader_in' => ClientInvoicingService::class, 'reads' => 'totalBilledOveragesThrough'],
                 ['reader_in' => InterimOverageGenerator::class, 'reads' => 'interimOverageHoursForCycle'],
@@ -374,7 +374,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // asks the proposal's `agreements()` relationship whether one
             // already exists, and a null makes the row invisible to that
             // relationship, so accepting again creates a second active agreement
-            // and a second set of recurring items.
+            // and a second set of recurring items (#148).
             'source_proposal_id' => ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
             // Three readers, and they do not agree with each other. The pinned
             // one treats a null as "not ready" and reports no capacity. The rate
@@ -382,7 +382,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // does the active-agreement lookup. The timesheet capacity query
             // uses `whereNotNull` and drops it. So an undated agreement can
             // stamp its rate onto approved time while contributing no capacity -
-            // that disagreement is unresolved, not a settled meaning.
+            // that disagreement is unresolved, not a settled meaning (#147).
             'starts_on' => [
                 [
                     'covered_by' => TimeSheetTest::class,
@@ -497,7 +497,9 @@ final class NullSemanticsRegistryTest extends TestCase
             // encoded distinctly from a task id and decides whether two
             // fragments may merge. Treating it as inert would let fragments that
             // differ only in task attribution recombine, and the survivor's
-            // values would silently replace the other's.
+            // values would silently replace the other's. That signature also
+            // omits four fields the splitter deliberately preserves (#146), so
+            // pinning this column should wait on that decision.
             'client_task_id' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             // Null is permitted for flat-hourly and direct entries, which is
             // what the citation covers. On ordinary billable time the same null
@@ -581,7 +583,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // and is invoiceable at the client rate - the pinned branch. The
             // retainer scope reaches that reading only for an entry with no
             // subcontractor cost; a cost-bearing entry with no mode is excluded
-            // fail-closed by the same scope, and nothing pins that half.
+            // fail-closed by the same scope, and nothing pins that half (#143).
             'subcontractor_billing_mode' => [
                 [
                     'covered_by' => RetainerDrawConsistencyTest::class,
