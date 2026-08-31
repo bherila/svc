@@ -88,8 +88,10 @@ describe('client context layout', () => {
             screen.getByRole('link', { name: 'Overview' }),
         ).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Time' })).toBeInTheDocument();
-        expect(screen.queryByRole('link', { name: 'Tasks' })).toBeNull();
-        expect(screen.queryByRole('link', { name: 'Invoices' })).toBeNull();
+        expect(
+            screen.getByRole('link', { name: 'Invoices' }),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull();
     });
 

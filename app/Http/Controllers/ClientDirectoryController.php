@@ -6,13 +6,17 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -145,18 +149,153 @@ class ClientDirectoryController extends Controller
                 fn (ClientAgreement $agreement): array => $this->agreementPayload($agreement, $projectNames),
             )->values()->all(),
             'invoice_limit' => self::RECENT_INVOICES,
-            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'total_amount' => (int) $invoice->total_amount,
-                'paid_amount' => (int) $invoice->paid_amount,
-                'balance_amount' => (int) $invoice->balance_amount,
+            'invoices' => $invoices->map(
+                fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
+            )->values()->all(),
+        ]);
+    }
+
+    /**
+     * Every invoice this client has, as a tab of the client.
+     *
+     * Overview shows the most recent {@see self::RECENT_INVOICES} and links
+     * here; this is the unbounded list. Both read the same two keys - the
+     * workspace and the company - because `client_company_id` alone would
+     * serialize another workspace's invoice on the strength of the company it
+     * names, and both render through the same table component so the rows
+     * cannot drift apart.
+     */
+    public function invoices(
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        WorkspaceAuthorization $authorization,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        // Same reason as `show()`: the company binds by a public id unique
+        // across every workspace, so passing the workspace gate is not passing
+        // a check on the company reached through it.
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+
+        $invoices = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderByDesc('issue_date')
+            ->orderByDesc('id')
+            ->get();
+
+        return Inertia::render('clients/invoices', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'invoices' => $invoices->map(
+                fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
+            )->values()->all(),
+        ]);
+    }
+
+    /**
+     * The client's tasks, by project.
+     *
+     * Tasks carry no company key - only `workspace_id` and
+     * `client_project_id` - so the company is reached through its projects,
+     * and the tasks are then bounded by the workspace *and* by that project
+     * set. Keying on the project alone would serialize another workspace's
+     * task on the strength of a project visible here, which is the chain
+     * rather than the key.
+     *
+     * This screen also applies per-project access, which its siblings on this
+     * controller do not. That is deliberate rather than inconsistent: a task
+     * carries a title and a description written for whoever is doing the work,
+     * and membership of a workspace is not access to every project in it. The
+     * time sheet already refuses to show a scoped member other projects' work
+     * for the same reason.
+     */
+    public function tasks(
+        Request $request,
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $projects = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (ClientProject $project): bool => $access->canView($user, $project))
+            ->values();
+
+        // A stale or unreachable project falls back to every visible one,
+        // rather than to an empty list that reads as "this client has no
+        // tasks".
+        $requested = $request->query('project');
+        $selected = is_string($requested) && $requested !== ''
+            ? $projects->firstWhere('public_id', $requested)
+            : null;
+
+        $scope = $selected === null ? $projects : collect([$selected]);
+
+        $tasks = ClientTask::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_project_id', $scope->pluck('id')->all())
+            ->orderBy('status')
+            ->orderBy('title')
+            ->get();
+
+        $projectNames = $projects->pluck('name', 'id');
+
+        return Inertia::render('clients/tasks', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'filters' => [
+                'project_id' => $selected?->public_id,
+            ],
+            'projects' => $projects->map(fn (ClientProject $project): array => [
+                'id' => $project->public_id,
+                'name' => $project->name,
+            ])->values()->all(),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => [
+                'id' => $task->public_id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'project' => $projectNames[$task->client_project_id] ?? null,
+                'is_visible_to_client' => (bool) $task->is_visible_to_client,
+                'completed_at' => $task->completed_at?->toDateString(),
             ])->values()->all(),
         ]);
+    }
+
+    /**
+     * One invoice as both screens send it.
+     *
+     * Shared so Overview's recent list and the Invoices tab cannot disagree
+     * about a field, and so a column added for one appears on the other rather
+     * than only where someone remembered.
+     *
+     * @return array<string, mixed>
+     */
+    private function invoicePayload(ClientInvoice $invoice): array
+    {
+        return [
+            'id' => $invoice->public_id,
+            'invoice_number' => $invoice->invoice_number,
+            'status' => $invoice->status,
+            'currency' => $invoice->currency,
+            'issue_date' => $invoice->issue_date?->toDateString(),
+            'due_date' => $invoice->due_date?->toDateString(),
+            'total_amount' => (int) $invoice->total_amount,
+            'paid_amount' => (int) $invoice->paid_amount,
+            'balance_amount' => (int) $invoice->balance_amount,
+        ];
     }
 
     /**

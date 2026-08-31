@@ -41,7 +41,12 @@ const TABS: readonly ClientTab[] = [
  * were standing on. Adding a tab is one edit here, in the commit that adds its
  * route.
  */
-const IMPLEMENTED_TABS: readonly ClientTab['key'][] = ['overview', 'time'];
+const IMPLEMENTED_TABS: readonly ClientTab['key'][] = [
+    'overview',
+    'tasks',
+    'time',
+    'invoices',
+];
 
 function tabHref(
     workspaceId: string,

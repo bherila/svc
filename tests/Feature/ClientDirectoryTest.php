@@ -6,6 +6,8 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -672,6 +674,131 @@ class ClientDirectoryTest extends TestCase
                 ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
                 ->assertOk(),
         );
+    }
+
+    /**
+     * The Invoices tab lists this client's invoices and only this client's.
+     *
+     * The same two-key rule the detail screen follows: `client_company_id`
+     * alone would serialize another workspace's invoice on the strength of the
+     * company it names, and the tab is a new query that has to obey it too
+     * rather than inheriting the discipline by proximity.
+     */
+    public function test_the_invoices_tab_lists_only_this_companys_invoices(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Tab Scope', 'synthetic-tab-scope', $manager);
+        $company = $this->company($workspace, 'Synthetic Tab Client', 'synthetic-tab-client');
+        $sibling = $this->company($workspace, 'Sibling Tab Client', 'sibling-tab-client');
+
+        $this->invoice($workspace, $company, 'SYN-TAB-1', 'issued');
+        $this->invoice($workspace, $company, 'SYN-TAB-2', 'draft');
+        $this->invoice($workspace, $sibling, 'SIBLING-TAB-9999', 'issued');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Tab Tenant', 'slug' => 'foreign-tab']);
+        // Another workspace's invoice naming a company visible here - refused
+        // by the composite keys since #113, so seeded with enforcement
+        // suspended; the query's second key is what must exclude it.
+        $this->writingLegacyCrossTenantRows(
+            fn () => $this->invoice($foreign, $company, 'STRAY-TAB-8888', 'issued'),
+        );
+
+        $response = $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('clients/invoices')
+            ->has('invoices', 2)
+            ->where('company.name', 'Synthetic Tab Client'));
+
+        $this->assertInertiaPayloadOmits($response, [
+            'SIBLING-TAB-9999',
+            'STRAY-TAB-8888',
+            'Foreign Tab Tenant',
+        ], 'SYN-TAB-1');
+    }
+
+    /**
+     * A member who reaches one project sees that project's tasks and no others.
+     *
+     * This screen applies per-project access where its siblings on this
+     * controller do not, and that difference is the assertion: a task carries a
+     * title written for whoever is doing the work, so a member scoped to one
+     * project must not read another's through a company they can otherwise see.
+     */
+    public function test_tasks_are_limited_to_the_projects_the_viewer_can_reach(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Task Scope', 'synthetic-task-scope', $manager);
+        $company = $this->company($workspace, 'Synthetic Task Client', 'synthetic-task-client');
+        $reachable = $this->project($workspace, $company, 'Reachable Project');
+        $hidden = $this->project($workspace, $company, 'Hidden Project');
+
+        $this->task($workspace, $reachable, 'Reachable Task Title');
+        $this->task($workspace, $hidden, 'Hidden Task Title');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $reachable->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $response = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/tasks")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('clients/tasks')
+            ->has('projects', 1)
+            ->has('tasks', 1)
+            ->where('tasks.0.title', 'Reachable Task Title'));
+
+        $this->assertInertiaPayloadOmits($response, [
+            'Hidden Task Title',
+            'Hidden Project',
+        ], 'Reachable Task Title');
+    }
+
+    /**
+     * A task owned by another workspace that names a project visible here.
+     *
+     * Tasks have no company key, so the company is reached through its
+     * projects - and keying on the project alone would serialize this row on
+     * the strength of a project the viewer can legitimately see.
+     */
+    public function test_a_foreign_workspaces_task_on_a_visible_project_is_excluded(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Task Chain', 'synthetic-task-chain', $manager);
+        $company = $this->company($workspace, 'Synthetic Chain Client', 'synthetic-chain-client');
+        $project = $this->project($workspace, $company, 'Shared Name Project');
+        $this->task($workspace, $project, 'Own Task Title');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Task Tenant', 'slug' => 'foreign-task']);
+        $this->writingLegacyCrossTenantRows(
+            fn () => $this->task($foreign, $project, 'Stray Task Title'),
+        );
+
+        $response = $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/tasks")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('tasks', 1));
+        $this->assertInertiaPayloadOmits($response, ['Stray Task Title'], 'Own Task Title');
+    }
+
+    private function task(Workspace $workspace, ClientProject $project, string $title): ClientTask
+    {
+        return ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => $title,
+            'status' => 'open',
+        ]);
     }
 
     private function workspace(string $name, string $slug, User $member): Workspace
