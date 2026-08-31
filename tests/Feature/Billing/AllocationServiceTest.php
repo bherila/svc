@@ -213,6 +213,47 @@ final class AllocationServiceTest extends TestCase
         $this->assertSame('Investigate|billing', $parts['overflow']->fresh()?->description);
     }
 
+    /**
+     * A real null and the literal string "null" are different values.
+     *
+     * The signature used a `?? 'null'` sentinel, so a fragment with no job
+     * type and one whose job type a person had typed as "null" compared equal
+     * - and a match here deletes a fragment rather than merely declining to
+     * merge one. Encoding the tuple as JSON fixed the delimiter problem and
+     * left this one, which is why the comparison is now the typed array
+     * itself.
+     */
+    public function test_an_absent_value_is_not_the_word_null(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill(['job_type' => null])->save();
+        $parts['overflow']->forceFill(['job_type' => 'null'])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertNull($parts['primary']->fresh()?->job_type);
+        $this->assertSame('null', $parts['overflow']->fresh()?->job_type);
+    }
+
+    /**
+     * And a numeric id is not its own decimal string.
+     *
+     * The same sentinel shape stringified every id, so a comparison that
+     * should have been `1 === 1` became `'1' === '1'` - harmless until a value
+     * arrives that is equal as a string and not as a value.
+     */
+    public function test_fragments_differing_only_in_rate_type_do_not_merge(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill(['billing_rate_amount' => 15000])->save();
+        $parts['overflow']->forceFill(['billing_rate_amount' => null])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+    }
+
     /** @return array<string, array{string, int|string}> */
     public static function fragmentFieldsThatMustAgree(): array
     {
