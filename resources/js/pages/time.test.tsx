@@ -18,6 +18,11 @@ const inertia = vi.hoisted(() => ({
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
     router: inertia,
+    // The sheet renders inside the client chrome on the company tab and bare
+    // on the workspace-wide route. A null context is the latter, which keeps
+    // these tests about the sheet's own controls - the chrome has its own
+    // tests in `client-context-layout.test.tsx`.
+    usePage: () => ({ props: { clientContext: null } }),
 }));
 
 function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {

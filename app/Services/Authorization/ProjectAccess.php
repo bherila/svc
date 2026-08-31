@@ -43,6 +43,33 @@ final class ProjectAccess
         return is_string($role) ? ProjectRole::tryFrom($role) : null;
     }
 
+    /**
+     * Every project id this user may view in this workspace, or null for all.
+     *
+     * Null means an owner or admin, who reaches everything - including a
+     * company with no projects at all, which nobody could otherwise reach.
+     *
+     * Resolved in one query on purpose. This service holds no cache, so asking
+     * {@see self::canView()} while filtering a list costs a membership lookup
+     * per row: scoping the client directory that way turned a 13-query page
+     * into a 53-query one before this existed.
+     *
+     * @return list<int>|null
+     */
+    public function viewableProjectIds(User|AgentPrincipal $user, Workspace $workspace): ?array
+    {
+        if (in_array($this->workspaceRole($user, $workspace), ['owner', 'admin'], true)) {
+            return null;
+        }
+
+        return array_values(ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->pluck('client_project_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all());
+    }
+
     public function canView(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project) !== null;

@@ -30,6 +30,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import ClientContextLayout from '@/layouts/client-context-layout';
 import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
@@ -285,7 +286,10 @@ export default function TimeSheet({
     };
 
     return (
-        <>
+        // Renders bare on the workspace-wide sheet and inside the client chrome
+        // on the company tab. The layout decides which, from the shared
+        // context, so this page does not need to know where it is mounted.
+        <ClientContextLayout active="time">
             <Head title="Time" />
 
             <div className="min-h-screen bg-background text-foreground">
@@ -497,7 +501,7 @@ export default function TimeSheet({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </>
+        </ClientContextLayout>
     );
 }
 

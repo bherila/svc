@@ -76,6 +76,9 @@
         "lint:check": [
             "pint --parallel --test"
         ],
+        "registry:manifest": [
+            "@php scripts/registry-manifest.php"
+        ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "pnpm run lint:check",
