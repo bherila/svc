@@ -65,3 +65,41 @@ php artisan client-management:invoice-email-status 123 --delivery=45 --format=js
 ```
 
 `--refresh` queries Brevo and stores the latest delivery events; without it the command reports the last stored status. Use `--delivery=<id>` to scope to one delivery record.
+
+## Audit Opening Rollover
+
+Read-only. Counts the agreements whose ledger would change if the opening-rollover seed in `InvoiceLedgerBuilder` were repaired (#134), so the size of that change is known before it is made.
+
+```bash
+php artisan svc:billing:audit-opening-rollover                 # counts
+php artisan svc:billing:audit-opening-rollover --format=json   # machine-readable
+```
+
+Three conditions have to hold together, and each alone overstates the population: the agreement carries an initial rollover, it takes the legacy monthly branch (an agreement with period retainer terms returns before the seed and never reaches it), and it has a rollover policy (with none, the seeded capacity expires in the month it is granted and no invoice sees it).
+
+It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
+
+## Audit Unplaceable Invoices
+
+Read-only. Counts invoices whose period or cycle cannot be placed on a calendar, and how much billed overage they carry.
+
+```bash
+php artisan svc:billing:audit-unplaceable-invoices                 # counts
+php artisan svc:billing:audit-unplaceable-invoices --format=json   # machine-readable
+```
+
+The column is nullable and stays that way (#73): an invoice can be created by hand without a service period, and the external importer passes the source value through unchanged. Everything downstream, though, decides which period an invoice belongs to by comparing that column, and SQL comparison answers false for a null rather than unknown — so an unplaceable invoice is silently treated as outside whatever window is being asked about.
+
+`ClientInvoicingService::totalBilledOveragesThrough()` is where that costs money, and its read is now fail-closed: a null period counts as *inside* the window, so overage already charged can no longer be charged a second time (#135). The interim generator's parallel already-billed sum (`InterimOverageGenerator`) carries the same guard. This command exists because that guard places an invoice by fallback rather than by a date anyone entered. Run it after an import and after any bulk invoice edit, and give the rows it names a real period.
+
+Four conditions have to hold together, and each alone overstates: the invoice has no service period, it is charged (a draft has charged nobody), it names an agreement that exists in its own workspace (the sum filters on both keys, and the agreement column is unconstrained lineage that can dangle or cross tenants), and it carries nonzero overage hours (zero contributes nothing whichever side of the window it lands on, while negative hours move the sum too, so the hours at stake are reported as a magnitude).
+
+### The cycle columns
+
+`cycle_start` and `cycle_end` are nullable for the same reasons and drop rows out of the same kind of predicate (#141), so the command reports them too — in two counts, because they endanger two different things. `InterimOverageGenerator::cycleInvoices()` matches on both columns, so a row missing either is invisible to every caller: the **charged** count is the money one, feeding the already-billed subtraction and `interimOverageHoursForCycle()`, where a dropped row is charged a second time; the **live** count is the guard one, since the duplicate checks that refuse to create a second invoice for a cycle read live and settled statuses, and a row they cannot see costs a whole invoice rather than a wrong number.
+
+Kind is applied before either, exactly as those lookups apply it — an ad-hoc or terminal invoice is excluded by kind before its cycle columns are read at all, so a null there is inert. A **null** kind is counted, deliberately: a migrated invoice carries none, and the cadence resell guard reads it on purpose for that reason.
+
+**No fix is implied for the cycle columns, and none should be inferred from the count.** A null service period can be read fail-closed because the question is which side of a window the row falls on. A null cycle cannot: the question is which single cycle the row belongs to, and counting it in every cycle would under-charge repeatedly rather than repair anything. Those rows need a real value, which is what this command exists to find.
+
+It reports counts and aggregate hours only — never a row, an id, an invoice number, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It always exits zero; it is a prompt to correct rows, not a gate.
