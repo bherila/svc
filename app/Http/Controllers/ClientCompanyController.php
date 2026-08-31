@@ -50,7 +50,7 @@ class ClientCompanyController extends Controller
 
         $clientCompany->update([
             'name' => $request->string('name')->toString(),
-            'billing_email' => is_string($billingEmail) && $billingEmail !== '' ? $billingEmail : null,
+            'billing_email' => is_string($billingEmail) ? $billingEmail : null,
             'is_active' => $request->boolean('is_active'),
         ]);
 

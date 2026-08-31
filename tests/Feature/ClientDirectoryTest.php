@@ -1185,6 +1185,121 @@ class ClientDirectoryTest extends TestCase
                 ->where('time.1.minutes', 30));
     }
 
+    /**
+     * Clearing a billing address is a thing an operator does.
+     *
+     * The null comes from Laravel's `ConvertEmptyStringsToNull`, not from the
+     * controller - a mutation check proved that, by removing the controller's
+     * own empty-string guard and watching this test still pass. The guard was
+     * dead code and is gone.
+     *
+     * The test stays, and is the more valuable half: it pins the behaviour
+     * end to end rather than one line's implementation of it, so it still
+     * fails if that middleware is ever removed from the stack. What matters is
+     * that "no billing email" is null rather than a blank string every
+     * `!== null` check downstream would accept.
+     */
+    public function test_clearing_a_billing_email_stores_null_rather_than_an_empty_string(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Clear', 'synthetic-clear', $manager);
+        $company = $this->company($workspace, 'Synthetic Clear Client', 'synthetic-clear-client');
+        $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Clear Client',
+                'billing_email' => '',
+                'is_active' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($company->fresh()?->billing_email);
+    }
+
+    /**
+     * Hiding a project from a client must not be undone by omission.
+     *
+     * `is_visible_to_client` is `required` rather than `sometimes` precisely so
+     * a form that forgets the checkbox cannot silently re-expose a project
+     * someone hid. That is a disclosure decision, so the refusal is asserted
+     * rather than trusted to the rule string.
+     */
+    public function test_a_project_update_that_omits_visibility_is_refused(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Omit', 'synthetic-omit', $manager);
+        $company = $this->company($workspace, 'Synthetic Omit Client', 'omit-client');
+        $project = $this->project($workspace, $company, 'Synthetic Omit Project');
+        $project->forceFill(['is_visible_to_client' => false])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Synthetic Omit Project',
+                'description' => null,
+                'status' => 'active',
+            ])
+            ->assertSessionHasErrors('is_visible_to_client');
+
+        $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
+    }
+
+    /**
+     * A client of another workspace cannot be edited through one you manage.
+     *
+     * Companies bind by a public id unique across every workspace, so passing
+     * the `manage` gate on your own workspace is not passing a check on the
+     * company named in the URL. The read paths assert this; the write path did
+     * not.
+     */
+    public function test_a_company_from_another_workspace_cannot_be_edited(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Mine Write', 'synthetic-mine-write', $manager);
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Write Tenant', 'slug' => 'foreign-write']);
+        $foreignCompany = $this->company($foreign, 'Foreign Write Client', 'foreign-write-client');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}", [
+                'name' => 'Renamed Across Tenants',
+                'billing_email' => null,
+                'is_active' => true,
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('Foreign Write Client', $foreignCompany->fresh()?->name);
+    }
+
+    /**
+     * The update writes the named columns and nothing else.
+     *
+     * Both controllers pass an explicit array rather than `$request->all()`,
+     * so a payload naming `workspace_id` should be ignored. Asserted because
+     * the consequence - a client moving tenant on a rename - is exactly the
+     * kind of thing the composite keys exist to make unrepresentable and the
+     * application should never attempt.
+     */
+    public function test_an_update_cannot_move_a_client_to_another_workspace(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Anchor', 'synthetic-anchor', $manager);
+        $company = $this->company($mine, 'Synthetic Anchor Client', 'anchor-client');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Anchor Tenant', 'slug' => 'foreign-anchor']);
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Anchor Client',
+                'billing_email' => null,
+                'is_active' => true,
+                'workspace_id' => $foreign->id,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame((int) $mine->id, (int) $company->fresh()?->workspace_id);
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);
