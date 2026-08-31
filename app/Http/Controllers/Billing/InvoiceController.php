@@ -9,8 +9,10 @@ use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\StorePaymentRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -24,6 +26,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
@@ -33,7 +37,7 @@ class InvoiceController extends Controller
         private readonly AgentAccess $agentAccess,
     ) {}
 
-    public function index(Request $request, Workspace $workspace): JsonResponse|View
+    public function index(Request $request, Workspace $workspace, ProjectAccess $access): JsonResponse|InertiaResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
         $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->with('clientCompany');
@@ -45,9 +49,51 @@ class InvoiceController extends Controller
                 ->where('is_visible_to_client', true)
                 ->whereIn('status', ['issued', 'partially_paid', 'paid']);
         }
+        // A workspace member sees the clients they reach, on the same rule the
+        // directory follows (#157). Portal users were already narrowed above by
+        // the company ids their access grants, so this only applies to the
+        // branch that was previously unbounded.
+        $user = $request->user();
+
+        if ($user instanceof User && $workspace->memberships()->where('user_id', $user->id)->exists()) {
+            $reachable = $access->reachableCompanyIds($user, $workspace);
+
+            if ($reachable !== null) {
+                $query->whereIn('client_company_id', $reachable);
+            }
+        }
+
         $invoices = $query->latest('id')->get();
 
-        return $request->expectsJson() ? response()->json(['data' => $invoices]) : view('invoices.index', compact('workspace', 'invoices'));
+        if ($request->expectsJson()) {
+            return response()->json(['data' => $invoices]);
+        }
+
+        // The workspace-wide list, above any one client - so it renders with no
+        // client chrome, the way the workspace time sheet does. Clicking an
+        // invoice drops into that client's context, which is where an invoice
+        // actually lives.
+        return Inertia::render('invoices/index', [
+            'workspace' => [
+                'id' => $workspace->public_id,
+                'name' => $workspace->name,
+            ],
+            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
+                'id' => $invoice->public_id,
+                'invoice_number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'issue_date' => $invoice->issue_date?->toDateString(),
+                'due_date' => $invoice->due_date?->toDateString(),
+                'total_amount' => (int) $invoice->total_amount,
+                'paid_amount' => (int) $invoice->paid_amount,
+                'balance_amount' => (int) $invoice->balance_amount,
+                'company' => [
+                    'id' => $invoice->clientCompany?->public_id,
+                    'name' => $invoice->clientCompany?->name,
+                ],
+            ])->values()->all(),
+        ]);
     }
 
     public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service, InvoiceFromTimeService $fromTime): JsonResponse|RedirectResponse

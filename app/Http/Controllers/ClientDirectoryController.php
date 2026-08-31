@@ -82,7 +82,7 @@ class ClientDirectoryController extends Controller
             ->orderBy('name')
             ->get();
 
-        $companies = $this->reachable($workspace, $companies, $viewable);
+        $companies = $this->reachable($companies, $access->reachableCompanyIds($user, $workspace));
         $retainers = $this->retainerUsage($workspace, $companies);
 
         return Inertia::render('clients/index', [
@@ -120,7 +120,7 @@ class ClientDirectoryController extends Controller
         // legitimately pass the gate for.
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         // Only the projects this viewer reaches. Reaching one project of a
         // client is not reaching the client's whole portfolio, and a project
@@ -203,7 +203,7 @@ class ClientDirectoryController extends Controller
         // a check on the company reached through it.
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
@@ -251,7 +251,7 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
         $authorization->assertOwnedBy($workspace, $clientInvoice);
 
         abort_unless(
@@ -333,7 +333,7 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
 
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         abort_unless(
             (int) $clientAgreement->client_company_id === (int) $clientCompany->id,
@@ -565,7 +565,7 @@ class ClientDirectoryController extends Controller
         abort_unless($user instanceof User, 401);
 
         $viewable = $access->viewableProjectIds($user, $workspace);
-        $this->assertReachable($workspace, $clientCompany, $viewable);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
         $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
@@ -639,40 +639,21 @@ class ClientDirectoryController extends Controller
     /**
      * Which companies this viewer has any business with.
      *
-     * Workspace membership is not access to every project in it (#157). The
-     * time sheet has always refused to show a scoped member other projects'
-     * work; the directory used to show every company and every project name to
-     * anyone who passed the workspace gate, and those two answers to the same
-     * question are now settled the strict way.
-     *
      * A company they cannot reach is absent rather than empty. Rendering it
      * with nothing in it would still disclose the client's name and existence,
      * which is the disclosure being scoped in the first place.
      *
      * @param  EloquentCollection<int, ClientCompany>  $companies
-     * @param  list<int>|null  $viewableProjectIds
+     * @param  list<int>|null  $reachableCompanyIds
      * @return EloquentCollection<int, ClientCompany>
      */
     private function reachable(
-        Workspace $workspace,
         EloquentCollection $companies,
-        ?array $viewableProjectIds,
+        ?array $reachableCompanyIds,
     ): EloquentCollection {
-        if ($viewableProjectIds === null) {
+        if ($reachableCompanyIds === null) {
             return $companies;
         }
-
-        if ($viewableProjectIds === []) {
-            return new EloquentCollection;
-        }
-
-        $reachableCompanyIds = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('id', $viewableProjectIds)
-            ->pluck('client_company_id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->all();
 
         return new EloquentCollection($companies->filter(
             fn (ClientCompany $company): bool => in_array((int) $company->id, $reachableCompanyIds, true),
@@ -685,15 +666,15 @@ class ClientDirectoryController extends Controller
      * The list already omits it, so a direct URL has to agree - otherwise the
      * scoping is decorative and the id is the only thing in the way.
      *
-     * @param  list<int>|null  $viewableProjectIds
+     * @param  list<int>|null  $reachableCompanyIds
      */
     private function assertReachable(
-        Workspace $workspace,
         ClientCompany $company,
-        ?array $viewableProjectIds,
+        ?array $reachableCompanyIds,
     ): void {
         abort_if(
-            $this->reachable($workspace, new EloquentCollection([$company]), $viewableProjectIds)->isEmpty(),
+            $reachableCompanyIds !== null
+                && ! in_array((int) $company->id, $reachableCompanyIds, true),
             404,
         );
     }
