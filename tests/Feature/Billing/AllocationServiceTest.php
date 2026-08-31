@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -14,6 +15,7 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -142,6 +144,177 @@ final class AllocationServiceTest extends TestCase
 
         $this->assertSame(0, $this->recombine());
         $this->assertSame(2, $this->entryCount());
+    }
+
+    #[DataProvider('fragmentFieldsThatMustAgree')]
+    public function test_fragments_with_divergent_preserved_fields_do_not_recombine(string $field, mixed $value): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        if ($field === 'billing_rate_source') {
+            // Provenance matters even when the money matches: `explicit` must
+            // not be replaced by a rate resolved from an agreement later.
+            $parts['primary']->forceFill([
+                'billing_rate_amount' => 15000,
+                'billing_rate_source' => 'explicit',
+            ])->save();
+            $parts['overflow']->forceFill(['billing_rate_amount' => 15000])->save();
+        }
+
+        // The approval author has to be a real user. A literal id in the
+        // provider passes on SQLite and violates the foreign key on MariaDB,
+        // which is the divergence that lane exists to catch - and a provider
+        // is static, so the substitution belongs here.
+        if ($field === 'approved_by_user_id') {
+            $value = User::factory()->create()->id;
+        }
+
+        if ($field === 'client_project_id') {
+            $value = ClientProject::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Synthetic Divergent Project',
+            ])->id;
+        }
+
+        if ($field === 'client_task_id') {
+            $value = ClientTask::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_project_id' => $this->project->id,
+                'title' => 'Synthetic Divergent Task',
+            ])->id;
+        }
+
+        if ($field === 'user_id') {
+            $value = User::factory()->create()->id;
+        }
+
+        if (str_starts_with($field, 'subcontractor_cost_')) {
+            foreach ($parts as $part) {
+                $part->forceFill([
+                    'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+                    'subcontractor_cost_amount' => 5000,
+                    'subcontractor_cost_currency' => 'USD',
+                    'subcontractor_cost_metadata' => ['source' => 'synthetic-baseline'],
+                ])->save();
+            }
+        }
+
+        $parts['overflow']->forceFill([$field => $value])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertNotNull($parts['overflow']->fresh()?->{$field});
+
+        if ($field === 'billing_rate_source') {
+            $this->assertSame(15000, $parts['primary']->fresh()?->billing_rate_amount);
+            $this->assertSame(15000, $parts['overflow']->fresh()?->billing_rate_amount);
+        }
+    }
+
+    /**
+     * Two fragments that differ only across a field boundary must not merge.
+     *
+     * The signature used to join fields with `|`, and the free-text ones -
+     * description, client-visible description, job type - can contain it. A
+     * value carrying the delimiter shifts every field after it, so entries
+     * that genuinely differ collapse to one signature, and recombination folds
+     * the edited fragment into the survivor and deletes it.
+     *
+     * The two rows here are constructed to be exactly that pair: the same
+     * characters, split differently across two adjacent fields.
+     */
+    public function test_a_delimiter_in_free_text_cannot_forge_a_matching_signature(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill([
+            'description' => 'Investigate',
+            'client_visible_description' => 'billing|export',
+        ])->save();
+
+        // Same characters, one boundary further along.
+        $parts['overflow']->forceFill([
+            'description' => 'Investigate|billing',
+            'client_visible_description' => 'export',
+        ])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertSame('Investigate', $parts['primary']->fresh()?->description);
+        $this->assertSame('Investigate|billing', $parts['overflow']->fresh()?->description);
+    }
+
+    /**
+     * A real null and the literal string "null" are different values.
+     *
+     * The signature used a `?? 'null'` sentinel, so a fragment with no job
+     * type and one whose job type a person had typed as "null" compared equal
+     * - and a match here deletes a fragment rather than merely declining to
+     * merge one. Encoding the tuple as JSON fixed the delimiter problem and
+     * left this one, which is why the comparison is now the typed array
+     * itself.
+     */
+    public function test_an_absent_value_is_not_the_word_null(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill(['job_type' => null])->save();
+        $parts['overflow']->forceFill(['job_type' => 'null'])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertNull($parts['primary']->fresh()?->job_type);
+        $this->assertSame('null', $parts['overflow']->fresh()?->job_type);
+    }
+
+    /**
+     * And a numeric id is not its own decimal string.
+     *
+     * The same sentinel shape stringified every id, so a comparison that
+     * should have been `1 === 1` became `'1' === '1'` - harmless until a value
+     * arrives that is equal as a string and not as a value.
+     */
+    public function test_fragments_differing_only_in_rate_type_do_not_merge(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill(['billing_rate_amount' => 15000])->save();
+        $parts['overflow']->forceFill(['billing_rate_amount' => null])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+    }
+
+    /** @return array<string, array{string, mixed}> */
+    public static function fragmentFieldsThatMustAgree(): array
+    {
+        return [
+            'billable flag' => ['is_billable', false],
+            'deferred flag' => ['is_deferred', true],
+            'client visibility' => ['is_visible_to_client', true],
+            'currency' => ['currency', 'EUR'],
+            'work date' => ['worked_on', '2026-03-15'],
+            'description' => ['description', 'Synthetic divergent work'],
+            'client-visible description' => ['client_visible_description', 'Synthetic client-safe divergence'],
+            'job type' => ['job_type', 'Support'],
+            // The ids are replaced with real same-tenant fixtures in the test
+            // body so both SQLite and MariaDB exercise their foreign keys.
+            'project' => ['client_project_id', 0],
+            'task' => ['client_task_id', 0],
+            'user' => ['user_id', 0],
+            // `null` means this row has no stamped rate provenance; `agreement`
+            // means a later workflow re-resolved it. The monetary amount can be
+            // identical while those meanings cannot be folded together.
+            'billing rate source' => ['billing_rate_source', 'agreement'],
+            // The id is replaced by a real user in the test body; a literal
+            // here would violate the foreign key on MariaDB.
+            'approval author' => ['approved_by_user_id', 0],
+            'approval timestamp' => ['approved_at', '2026-03-14 09:30:00'],
+            'subcontractor cost' => ['subcontractor_cost_amount', 7500],
+            'subcontractor cost currency' => ['subcontractor_cost_currency', 'EUR'],
+            'subcontractor cost metadata' => ['subcontractor_cost_metadata', ['source' => 'synthetic-divergence']],
+        ];
     }
 
     public function test_the_survivor_stops_being_a_fragment(): void
