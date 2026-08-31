@@ -229,6 +229,26 @@ final class AuditUnplaceableInvoicesCommandTest extends TestCase
         $this->assertSame(0, $summary['cycle_affected']);
     }
 
+    public function test_each_kind_matched_by_cycle_is_counted_on_its_own(): void
+    {
+        // Both kinds, separately. `cycleInvoices()` is called for interim
+        // overage and the resell guards match cadence periods, so dropping
+        // either from the rule would leave a whole class of exposed invoice
+        // unreported while the other kept the count non-zero and plausible.
+        // `terminal` is deliberately absent: no cycle lookup reads it.
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '5', 'invoice_kind' => 'cadence_period']);
+
+        $this->assertSame(1, $this->summary()['of_a_kind_read_by_cycle'], 'A cadence period is matched by cycle');
+
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '3', 'invoice_kind' => 'interim_overage']);
+
+        $this->assertSame(2, $this->summary()['of_a_kind_read_by_cycle'], 'And so is an interim overage');
+
+        $this->invoice(['status' => 'issued', 'hours_billed_at_rate' => '7', 'invoice_kind' => 'terminal']);
+
+        $this->assertSame(2, $this->summary()['of_a_kind_read_by_cycle'], 'A terminal invoice is not');
+    }
+
     public function test_a_migrated_invoice_carrying_no_kind_is_counted(): void
     {
         // The one exception, and it is deliberate: the cadence resell guard
