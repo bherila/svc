@@ -140,6 +140,19 @@ class TimeSheetController extends Controller
             'tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
         ]);
 
+        // A company named in the route has to be one this member reaches, the
+        // same rule the directory applies (#157). The sheet's own project
+        // filtering already empties the *content* for an unreachable client -
+        // but the page still rendered, with that client's name in the chrome
+        // and its id echoed back in `filters`, which is the disclosure. Found
+        // by the route sweep rather than by review.
+        if ($clientCompany !== null) {
+            abort_unless(
+                $companies->contains(fn (ClientCompany $candidate): bool => (int) $candidate->id === (int) $clientCompany->id),
+                404,
+            );
+        }
+
         $selectedCompany = $this->selectedCompany($request, $companies, $clientCompany);
         $entries = $this->entries($visible, $user, $workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
