@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -9,6 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import ClientContextLayout from '@/layouts/client-context-layout';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
 import type {
@@ -149,7 +150,6 @@ function InvoiceRow({ invoice }: { invoice: CompanyInvoice }) {
 }
 
 export default function ClientShow({
-    workspace,
     company,
     projects,
     agreements,
@@ -157,16 +157,10 @@ export default function ClientShow({
     invoices,
 }: ClientShowProps) {
     return (
-        <>
+        <ClientContextLayout active="overview">
             <Head title={company.name} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <header className="grid gap-1">
-                    <Link
-                        href={`/workspaces/${workspace.id}/clients`}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← {workspace.name} clients
-                    </Link>
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="text-2xl font-semibold">
                             {company.name}
@@ -281,6 +275,6 @@ export default function ClientShow({
                     </CardContent>
                 </Card>
             </main>
-        </>
+        </ClientContextLayout>
     );
 }

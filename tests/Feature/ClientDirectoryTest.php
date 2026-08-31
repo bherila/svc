@@ -536,7 +536,6 @@ class ClientDirectoryTest extends TestCase
 
         $this->assertInertiaPayloadOmits($response, [
             'Foreign Detail Tenant',
-            'Sibling Client Name',
             'Sibling Project Name',
             'Sibling Agreement Title',
             'SIBLING-INV-4242',
@@ -551,6 +550,25 @@ class ClientDirectoryTest extends TestCase
             ->has('invoices', 1)
             ->where('agreements.0.title', 'Synthetic Cross Scoped Agreement')
             ->where('agreements.0.project', null));
+
+        // The sibling *company's* name is deliberately absent from the omit
+        // list above, because the company switcher lists every company in this
+        // workspace on purpose - the operator can already see them all in the
+        // directory, and a switcher that hid them would be useless.
+        //
+        // It is asserted here instead, against this screen's own props with the
+        // shared chrome removed. Dropping the name from the scan without this
+        // would have quietly retired a real guarantee: that company A's detail
+        // screen never renders company B's name in its projects, agreements or
+        // invoices.
+        $props = $response->viewData('page')['props'];
+        unset($props['clientContext']);
+
+        $this->assertStringNotContainsString(
+            'Sibling Client Name',
+            (string) json_encode($props, JSON_THROW_ON_ERROR),
+            "A sibling company's name reached this company's own payload, outside the switcher.",
+        );
     }
 
     public function test_the_list_does_not_query_once_per_row(): void
