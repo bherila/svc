@@ -184,8 +184,19 @@ final class InterimOverageGenerator
             $this->assertImmediateLedgerSupportsInterimOverage($agreement, $immediateLedger, $cycle, $periodEnd);
 
             $cumulativeExcessHours = $this->cumulativeInterimExcessHoursThrough($agreement, $immediateLedger, $cycle, $periodEnd);
+            // Fail-closed on a missing service period, for the same reason as
+            // ClientInvoicingService::totalBilledOveragesThrough(): `<` answers
+            // false for a null, so a charged interim invoice whose period cannot
+            // be placed would drop out of this subtraction silently and the
+            // hours it already charged would be billed a second time. Counting
+            // it errs toward understating this invoice instead, which the
+            // cycle's cadence reconciliation recovers.
             $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
-                ->whereDate('service_period_end', '<', $periodStart->toDateString())
+                ->where(function (Builder $window) use ($periodStart): void {
+                    $window
+                        ->whereDate('service_period_end', '<', $periodStart->toDateString())
+                        ->orWhereNull('service_period_end');
+                })
                 ->whereIn('status', InvoiceStatus::charged())
                 ->sum('hours_billed_at_rate');
 

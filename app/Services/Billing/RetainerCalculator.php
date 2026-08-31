@@ -2,7 +2,7 @@
 
 namespace App\Services\Billing;
 
-use App\Models\ClientAgreement;
+use App\Contracts\RetainerAgreementTerms;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\FirstCycleProration;
 use Carbon\Carbon;
@@ -16,18 +16,21 @@ class RetainerCalculator
      *
      * @param  array<string, float>  $cycleLedger
      */
-    public function cycleRetainerHours(ClientAgreement $agreement, BillingCycle $cycle, array $cycleLedger): float
+    public function cycleRetainerHours(RetainerAgreementTerms $agreement, BillingCycle $cycle, array $cycleLedger): float
     {
-        if ($agreement->retainer_hours !== null) {
+        if ($agreement->periodRetainerHoursOverride() !== null) {
             return $this->cyclePeriodRetainerHours($agreement, $cycle);
         }
 
         return $cycleLedger['retainer_hours'];
     }
 
-    public function cyclePeriodRetainerHours(ClientAgreement $agreement, BillingCycle $cycle): float
+    public function cyclePeriodRetainerHours(RetainerAgreementTerms $agreement, BillingCycle $cycle): float
     {
-        return round((float) $agreement->retainer_hours * $this->cyclePeriodRetainerMultiplier($agreement, $cycle), 4);
+        return round(
+            (float) $agreement->periodRetainerHoursOverride() * $this->cyclePeriodRetainerMultiplier($agreement, $cycle),
+            4,
+        );
     }
 
     /**
@@ -35,13 +38,16 @@ class RetainerCalculator
      *
      * @param  array<string, float>  $cycleLedger
      */
-    public function cycleRetainerFee(ClientAgreement $agreement, BillingCycle $cycle, array $cycleLedger): float
+    public function cycleRetainerFee(RetainerAgreementTerms $agreement, BillingCycle $cycle, array $cycleLedger): float
     {
-        if ($agreement->retainer_fee !== null) {
-            return round((float) $agreement->retainer_fee * $this->cyclePeriodRetainerMultiplier($agreement, $cycle), 2);
+        if ($agreement->periodRetainerFeeOverride() !== null) {
+            return round(
+                (float) $agreement->periodRetainerFeeOverride() * $this->cyclePeriodRetainerMultiplier($agreement, $cycle),
+                2,
+            );
         }
 
-        return round((float) $agreement->monthly_retainer_fee * $cycleLedger['retainer_multiplier'], 2);
+        return round($agreement->retainerMonthlyFee() * $cycleLedger['retainer_multiplier'], 2);
     }
 
     /**
@@ -54,11 +60,21 @@ class RetainerCalculator
      * by `$through` (e.g., when an interim ledger is built mid-cycle), which is
      * not a real shortening of the client's retainer entitlement.
      */
-    public function cyclePeriodRetainerMultiplier(ClientAgreement $agreement, BillingCycle $cycle): float
+    public function cyclePeriodRetainerMultiplier(RetainerAgreementTerms $agreement, BillingCycle $cycle): float
     {
         $naturalCycle = $this->billingCycleResolver->cycleContaining($agreement, $cycle->start);
 
-        $activeDate = Carbon::instance($agreement->starts_on)->startOfDay();
+        $startsOn = $agreement->retainerStartsOn();
+        if ($startsOn === null) {
+            // An agreement with no start date has not started, so it grants no
+            // retainer entitlement. Throwing here would contradict
+            // ClientInvoicingService::agreementStart(), which deliberately
+            // surfaces an empty ledger rather than an exception for a
+            // half-configured agreement; parsing the null into "now" - the
+            // behaviour this replaced - silently invented a start date.
+            return 0.0;
+        }
+        $activeDate = Carbon::instance($startsOn)->startOfDay();
         $fullPeriodFirstCycle = $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod
             && $cycle->start->isSameDay($activeDate)
             && $cycle->start->gt($naturalCycle->start);
@@ -68,8 +84,8 @@ class RetainerCalculator
             : $cycle->start->copy();
         $effectiveEnd = $naturalCycle->end->copy();
 
-        $terminationDate = $agreement->ends_on
-            ? Carbon::parse($agreement->ends_on)->startOfDay()
+        $terminationDate = $agreement->retainerEndsOn()
+            ? Carbon::instance($agreement->retainerEndsOn())->startOfDay()
             : null;
         if ($terminationDate !== null && $terminationDate->lt($effectiveEnd)) {
             $effectiveEnd = $terminationDate->copy();
@@ -101,7 +117,7 @@ class RetainerCalculator
      * the 15th was charged half a retainer and granted a whole month's pool.
      * Both questions have one answer now.
      */
-    public function retainerHoursForMonth(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
+    public function retainerHoursForMonth(RetainerAgreementTerms $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
         return round(
             $agreement->retainerHoursPerMonth() * $this->monthRetainerMultiplier($agreement, $monthStart, $monthEnd),
@@ -109,11 +125,21 @@ class RetainerCalculator
         );
     }
 
-    public function monthRetainerMultiplier(ClientAgreement $agreement, Carbon $monthStart, Carbon $monthEnd): float
+    public function monthRetainerMultiplier(RetainerAgreementTerms $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
-        $activeDate = Carbon::parse($agreement->starts_on)->startOfDay();
-        $terminationDate = $agreement->ends_on
-            ? Carbon::parse($agreement->ends_on)->startOfDay()
+        $startsOn = $agreement->retainerStartsOn();
+        if ($startsOn === null) {
+            // An agreement with no start date has not started, so it grants no
+            // retainer entitlement. Throwing here would contradict
+            // ClientInvoicingService::agreementStart(), which deliberately
+            // surfaces an empty ledger rather than an exception for a
+            // half-configured agreement; parsing the null into "now" - the
+            // behaviour this replaced - silently invented a start date.
+            return 0.0;
+        }
+        $activeDate = Carbon::instance($startsOn)->startOfDay();
+        $terminationDate = $agreement->retainerEndsOn()
+            ? Carbon::instance($agreement->retainerEndsOn())->startOfDay()
             : null;
 
         if ($activeDate->lte($monthStart) && (! $terminationDate || $terminationDate->gte($monthEnd))) {
@@ -137,12 +163,8 @@ class RetainerCalculator
         // FirstCycleProration says what happens to the *first* cycle. Applying
         // it to any partial month also grants a full month's capacity in a
         // termination month, which understates the overage the client owes.
-        $agreementStart = $agreement->starts_on === null
-            ? null
-            : Carbon::parse((string) $agreement->starts_on)->startOfDay();
-
-        $isOpeningMonth = $agreementStart !== null
-            && $agreementStart->betweenIncluded($monthStart, $monthEnd);
+        $agreementStart = Carbon::instance($startsOn)->startOfDay();
+        $isOpeningMonth = $agreementStart->betweenIncluded($monthStart, $monthEnd);
 
         if ($isOpeningMonth && $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod) {
             return 1.0;

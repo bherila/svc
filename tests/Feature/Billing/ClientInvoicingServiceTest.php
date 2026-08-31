@@ -17,6 +17,7 @@ use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,7 @@ use Tests\TestCase;
 final class ClientInvoicingServiceTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -324,6 +326,30 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->assertSame($pivotAfterFirst, DB::table('client_invoice_line_time_entries')->count());
     }
 
+    public function test_month_end_generation_stops_at_the_next_calendar_month(): void
+    {
+        $this->monthlyAgreement(startsOn: '2026-06-01');
+        $this->travelTo(Carbon::parse('2026-08-31 12:00:00'));
+
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+
+        $cadenceInvoices = ClientInvoice::query()
+            ->where('workspace_id', $this->workspace->id)
+            ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+            ->orderBy('cycle_start')
+            ->get();
+
+        $this->assertNotEmpty($cadenceInvoices);
+        $this->assertSame('2026-09-01', $cadenceInvoices->last()?->cycle_start?->toDateString());
+        $this->assertSame('2026-08-01', $cadenceInvoices->last()?->service_period_start?->toDateString());
+        $this->assertFalse(
+            $cadenceInvoices->contains(
+                static fn (ClientInvoice $invoice): bool => $invoice->cycle_start?->gte(Carbon::parse('2026-10-01')) === true,
+            ),
+            'August 31 must not overflow into generation of an October retainer.',
+        );
+    }
+
     public function test_generation_keeps_project_scoped_successor_chains_independent(): void
     {
         $otherProject = ClientProject::query()->create([
@@ -403,24 +429,28 @@ final class ClientInvoicingServiceTest extends TestCase
             'name' => 'Generation Other Workspace',
             'slug' => 'generation-other-workspace',
         ]);
-        $foreignProject = ClientProject::query()->create([
-            'workspace_id' => $otherWorkspace->id,
-            'client_company_id' => $this->company->id,
-            'name' => 'Malformed Foreign Project',
-        ]);
-        ClientTimeEntry::query()->create([
-            'workspace_id' => $otherWorkspace->id,
-            'client_company_id' => $this->company->id,
-            'client_project_id' => $foreignProject->id,
-            'user_id' => $this->user->id,
-            'worked_on' => '2024-04-15',
-            'minutes' => 120,
-            'description' => 'Work hidden by an ordinary workspace scope',
-            'is_billable' => true,
-            'is_deferred' => false,
-            'status' => 'approved',
-            'currency' => 'USD',
-        ]);
+        // Unstorable since #113; written with enforcement suspended so
+        // generation's own refusal stays the subject of the test.
+        $this->writingLegacyCrossTenantRows(function () use ($otherWorkspace): void {
+            $foreignProject = ClientProject::query()->create([
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,
+                'name' => 'Malformed Foreign Project',
+            ]);
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,
+                'client_project_id' => $foreignProject->id,
+                'user_id' => $this->user->id,
+                'worked_on' => '2024-04-15',
+                'minutes' => 120,
+                'description' => 'Work hidden by an ordinary workspace scope',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'status' => 'approved',
+                'currency' => 'USD',
+            ]);
+        });
 
         $this->travelTo(Carbon::parse('2024-06-15'));
 

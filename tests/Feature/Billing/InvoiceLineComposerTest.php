@@ -20,6 +20,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,7 @@ use Tests\TestCase;
 final class InvoiceLineComposerTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -114,7 +116,8 @@ final class InvoiceLineComposerTest extends TestCase
     {
         $invoice = $this->invoice();
         $otherWorkspace = Workspace::query()->create(['name' => 'Other composer', 'slug' => 'other-composer']);
-        $foreignLine = ClientInvoiceLine::query()->create([
+        // Unstorable since #113; the composer's own refusal is the subject here.
+        $foreignLine = $this->writingLegacyCrossTenantRows(fn () => ClientInvoiceLine::query()->create([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_id' => $invoice->id,
             'type' => InvoiceLineType::AdditionalHours->value,
@@ -124,7 +127,7 @@ final class InvoiceLineComposerTest extends TestCase
             'tax_amount' => 0,
             'total_amount' => 100,
             'sort_order' => 1,
-        ]);
+        ]));
 
         try {
             app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
@@ -140,7 +143,8 @@ final class InvoiceLineComposerTest extends TestCase
     {
         $invoice = $this->invoice();
         $otherWorkspace = Workspace::query()->create(['name' => 'Other totals', 'slug' => 'other-totals']);
-        $foreignLine = ClientInvoiceLine::query()->create([
+        // Unstorable since #113; the totals guard is the subject here.
+        $foreignLine = $this->writingLegacyCrossTenantRows(fn () => ClientInvoiceLine::query()->create([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_id' => $invoice->id,
             'type' => InvoiceLineType::Adjustment->value,
@@ -150,7 +154,7 @@ final class InvoiceLineComposerTest extends TestCase
             'tax_amount' => 0,
             'total_amount' => 100,
             'sort_order' => 1,
-        ]);
+        ]));
 
         try {
             $invoice->recalculateTotals();

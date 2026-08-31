@@ -184,6 +184,47 @@ class BillingWorkflowTest extends TestCase
         $this->assertSame(2, ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->count());
     }
 
+    /**
+     * A null `client_billing_schedule_id` is what makes a draft ad hoc.
+     *
+     * `createDraft` classifies on the absence of a schedule, not on who called
+     * it: a draft with no schedule is an operator's one-off and is exempted
+     * from the cadence overlap guard, while a scheduled one is a machine-made
+     * cadence invoice that guard has to see. Classifying the scheduled ones as
+     * ad hoc let a second invoice be generated for the same agreement and
+     * period, so the two halves of the branch are asserted together.
+     */
+    public function test_a_draft_without_a_billing_schedule_is_classified_ad_hoc(): void
+    {
+        [, $workspace, $company] = $this->tenant('Kind Workspace');
+        $service = app(InvoiceLifecycleService::class);
+
+        $operatorDraft = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+
+        $this->assertNull($operatorDraft->client_billing_schedule_id);
+        $this->assertSame('ad_hoc', $operatorDraft->invoice_kind);
+
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        $scheduledDraft = $service->createDraft(
+            $workspace,
+            $company,
+            $this->invoiceData() + ['client_billing_schedule_id' => $schedule->id],
+            [$this->line()],
+        );
+
+        $this->assertSame($schedule->id, $scheduledDraft->client_billing_schedule_id);
+        $this->assertSame('cadence_period', $scheduledDraft->invoice_kind);
+    }
+
     public function test_manual_payment_command_is_tenant_scoped_and_returns_json(): void
     {
         [, $workspace, $company] = $this->tenant('Command Workspace');

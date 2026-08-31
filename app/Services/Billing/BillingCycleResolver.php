@@ -2,7 +2,7 @@
 
 namespace App\Services\Billing;
 
-use App\Models\ClientAgreement;
+use App\Contracts\RetainerAgreementTerms;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
@@ -27,7 +27,7 @@ class BillingCycleResolver
      *
      * @return iterable<BillingCycle>
      */
-    public function cyclesForAgreement(ClientAgreement $agreement, CarbonInterface $through): iterable
+    public function cyclesForAgreement(RetainerAgreementTerms $agreement, CarbonInterface $through): iterable
     {
         $cadence = $agreement->effectiveBillingCadence();
 
@@ -35,15 +35,16 @@ class BillingCycleResolver
         // here is measured from one. Without this the call died on a TypeError
         // deep inside Carbon, which reads as a bug in the billing engine rather
         // than as an agreement that is not ready to be billed.
-        if ($agreement->starts_on === null) {
+        $startsOn = $agreement->retainerStartsOn();
+        if ($startsOn === null) {
             throw new RuntimeException(
                 'This agreement has no start date, so its billing cycles cannot be determined. Set one before generating invoices.'
             );
         }
 
-        $activeDate = Carbon::instance($agreement->starts_on)->startOfDay();
-        $terminationDate = $agreement->ends_on
-            ? Carbon::instance($agreement->ends_on)->startOfDay()
+        $activeDate = Carbon::instance($startsOn)->startOfDay();
+        $terminationDate = $agreement->retainerEndsOn()
+            ? Carbon::instance($agreement->retainerEndsOn())->startOfDay()
             : null;
 
         $ceiling = Carbon::instance($through)->startOfDay();
@@ -69,11 +70,17 @@ class BillingCycleResolver
     /**
      * Return the billing cycle that contains the given $date for $agreement.
      */
-    public function cycleContaining(ClientAgreement $agreement, CarbonInterface $date): BillingCycle
+    public function cycleContaining(RetainerAgreementTerms $agreement, CarbonInterface $date): BillingCycle
     {
         $cadence = $agreement->effectiveBillingCadence();
         if ($cadence !== BillingCadence::Monthly) {
-            $activeDate = Carbon::instance($agreement->starts_on)->startOfDay();
+            $startsOn = $agreement->retainerStartsOn();
+            if ($startsOn === null) {
+                throw new RuntimeException(
+                    'This agreement has no start date, so its billing cycle cannot be determined. Set one before generating invoices.'
+                );
+            }
+            $activeDate = Carbon::instance($startsOn)->startOfDay();
             if (Carbon::instance($date)->startOfDay()->lt($activeDate)) {
                 throw new \InvalidArgumentException(
                     'Cannot resolve a cycle for a date before the agreement active_date.'

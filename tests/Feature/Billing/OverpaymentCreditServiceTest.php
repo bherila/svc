@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Billing\OverpaymentCreditService;
 use App\Support\Billing\InvoiceLineType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,7 @@ use Tests\TestCase;
 final class OverpaymentCreditServiceTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -150,14 +152,15 @@ final class OverpaymentCreditServiceTest extends TestCase
     {
         $invoice = $this->invoice('SVC-FOREIGN-PAYMENT', 'paid', 10000);
         $otherWorkspace = Workspace::query()->create(['name' => 'Other credits', 'slug' => 'other-credits']);
-        $invoice->payments()->create([
+        // Unstorable since #113; the credit pool's own refusal is the subject.
+        $this->writingLegacyCrossTenantRows(fn () => $invoice->payments()->create([
             'workspace_id' => $otherWorkspace->id,
             'status' => 'succeeded',
             'amount' => 15000,
             'currency' => 'USD',
             'method' => 'ach',
             'received_on' => '2026-03-01',
-        ]);
+        ]));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('payment owned by another workspace');
@@ -170,7 +173,8 @@ final class OverpaymentCreditServiceTest extends TestCase
         $draft = $this->invoice('SVC-FOREIGN-LINE', 'draft', 8000);
         $this->line($draft, 'service', 8000);
         $otherWorkspace = Workspace::query()->create(['name' => 'Other credit line', 'slug' => 'other-credit-line']);
-        ClientInvoiceLine::query()->create([
+        // Unstorable since #113; the credit application guard is the subject.
+        $this->writingLegacyCrossTenantRows(fn () => ClientInvoiceLine::query()->create([
             'workspace_id' => $otherWorkspace->id,
             'client_invoice_id' => $draft->id,
             'type' => InvoiceLineType::Adjustment->value,
@@ -180,7 +184,7 @@ final class OverpaymentCreditServiceTest extends TestCase
             'tax_amount' => 0,
             'total_amount' => 100,
             'sort_order' => 1,
-        ]);
+        ]));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('line owned by another workspace');
@@ -196,13 +200,14 @@ final class OverpaymentCreditServiceTest extends TestCase
             'name' => 'Other Credit Client',
             'slug' => 'other-credit-client',
         ]);
-        $draft = ClientInvoice::query()->create([
+        // Unstorable since #113; the credit application guard is the subject.
+        $draft = $this->writingLegacyCrossTenantRows(fn () => ClientInvoice::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $otherCompany->id,
             'invoice_number' => 'SVC-FOREIGN-COMPANY',
             'currency' => 'USD',
             'status' => 'draft',
-        ]);
+        ]));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('available client company in its workspace');

@@ -50,6 +50,35 @@ class RetainerCalculatorTest extends TestCase
         ]));
     }
 
+    /**
+     * An agreement carrying no retainer price charges nothing for one.
+     *
+     * With both the period override and the monthly amount unset, the fee this
+     * returns is the fee the retainer line on the invoice asks for. Reading an
+     * absent price as anything but zero would invent a charge; reading it as
+     * zero is what makes "no retainer recorded" and "no retainer billed" the
+     * same statement.
+     */
+    public function test_an_agreement_with_no_retainer_price_bills_no_retainer_fee(): void
+    {
+        $unpriced = new ClientAgreement([
+            'starts_on' => '2026-01-01',
+            'billing_cadence' => BillingCadence::Monthly->value,
+        ]);
+        $cycle = (new BillingCycleResolver)->cycleContaining($unpriced, Carbon::parse('2026-01-15'));
+
+        $calculator = new RetainerCalculator;
+
+        $this->assertNull($unpriced->retainer_amount);
+        $this->assertNull($unpriced->retainer_fee, 'No period override either');
+        $this->assertSame(0.0, $calculator->cycleRetainerFee($unpriced, $cycle, ['retainer_multiplier' => 1.0]));
+
+        // The priced alternative, so the assertion above is pinned to the null
+        // rather than to the multiplier.
+        $priced = $this->agreement(['monthly_retainer_fee' => 1500]);
+        $this->assertSame(1500.0, $calculator->cycleRetainerFee($priced, $cycle, ['retainer_multiplier' => 1.0]));
+    }
+
     public function test_cycle_period_multiplier_respects_termination_date(): void
     {
         $agreement = $this->agreement([
@@ -106,6 +135,28 @@ class RetainerCalculatorTest extends TestCase
      * Only construction is translated here; every assertion in this file is the
      * one the predecessor implementation shipped.
      */
+    public function test_an_agreement_with_no_start_date_grants_no_retainer(): void
+    {
+        $agreement = $this->agreement(['active_date' => null]);
+        $calculator = new RetainerCalculator;
+
+        // ClientInvoicingService::agreementStart() deliberately surfaces an
+        // empty ledger rather than an exception for a half-configured
+        // agreement, so retainer arithmetic has to agree with it. Reading the
+        // null as "now" - the behaviour this replaced - invented a start date
+        // and granted a full month's pool from it.
+        $this->assertSame(0.0, $calculator->monthRetainerMultiplier(
+            $agreement,
+            Carbon::parse('2026-02-01'),
+            Carbon::parse('2026-02-28'),
+        ));
+        $this->assertSame(0.0, $calculator->retainerHoursForMonth(
+            $agreement,
+            Carbon::parse('2026-02-01'),
+            Carbon::parse('2026-02-28'),
+        ));
+    }
+
     private function agreement(array $attributes = []): ClientAgreement
     {
         $terms = array_merge([

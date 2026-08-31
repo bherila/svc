@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -11,15 +12,17 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 
 /**
  * @property int $id
+ * @property int $workspace_id
  * @property int $client_company_id
  * @property int $user_id
  * @property string $role
  * @property string $access_scope
  */
 #[Fillable(['public_id', 'client_company_id', 'user_id', 'role', 'access_scope'])]
-#[Hidden(['id', 'client_company_id', 'user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'user_id'])]
 class ClientCompanyMembership extends Pivot
 {
+    use BelongsToWorkspace;
     use HasPublicId;
 
     public $incrementing = true;
@@ -31,6 +34,35 @@ class ClientCompanyMembership extends Pivot
 
     /** Portal access covers every client-visible project the company owns. */
     public const SCOPE_COMPANY = 'company';
+
+    /**
+     * `workspace_id` is derived, never supplied.
+     *
+     * The column exists so the composite key added in
+     * `2026_08_31_000200_add_composite_tenant_foreign_keys` can refuse a
+     * membership whose company belongs to another tenant. It is deliberately
+     * absent from the fillable list: a caller that could set it could also set it
+     * wrongly, and the only correct value is the one the company already carries.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $membership): void {
+            if ($membership->getAttribute('workspace_id') !== null) {
+                return;
+            }
+
+            $companyId = $membership->getAttribute('client_company_id');
+
+            if ($companyId === null) {
+                return;
+            }
+
+            $membership->setAttribute(
+                'workspace_id',
+                ClientCompany::query()->whereKey($companyId)->value('workspace_id'),
+            );
+        });
+    }
 
     /** @return BelongsTo<ClientCompany, $this> */
     public function clientCompany(): BelongsTo

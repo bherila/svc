@@ -219,7 +219,27 @@ Three commands run against production data. Two of them cannot write at all;
 the third writes only when told to, and only if every check passes.
 
 - `svc:billing:replay` regenerates history and classifies every divergence.
-  Always-rollback, and tested to be.
+  Where recorded invoice history begins before its agreement's stored start,
+  the replay uses the historical service period as its comparison identity,
+  clock, and retainer-ledger opening basis. That aligns the predecessor's
+  period-equals-cycle label with the current engine's next-cycle label without
+  changing the agreement date. A monetary or structural difference passes only
+  when a narrow rule proves the current contract requires it, and there are
+  five such rules:
+
+  - whole-minute arithmetic, where the source priced decimal hours;
+  - a recurring item's exact opening incidence;
+  - a complete configured cadence that predecessor history omitted altogether;
+  - the capacity a replay-only opening month sold, consumed once in service
+    period order and never beyond its configured rollover window;
+  - a same-rate move of billed overage into retainer capacity, accepted only
+    as a minute-for-minute transfer at identical currency, rate, tax, scope
+    and claims.
+
+  The last two exist because seeding the ledger one period earlier grants the
+  opening month capacity that history recorded but did not carry forward.
+  An isolated extra cycle and a later missing recurring incidence still fail.
+  The whole command is always-rollback, and tested to be.
 - `svc:billing:rehearse-generation` answers the operational question directly —
   would running generation change anything a client has already been charged
   for? It fingerprints every column and every line of every settled invoice
@@ -243,27 +263,32 @@ the reason to believe the command was safe to point at production.
 
 Tracked on the epic (#14) and the issues named here. The engine is implemented
 and green on both database engines; what is listed below is either work not
-started, or a defect found by review and not yet fixed. Three of the latter
-(#79, #80, #82) change what a client would be charged.
+started, or a defect found by review and not yet fixed.
 
-#71 and #72 are both on `main`. Five review findings were merged with them
-rather than silently, and two of those move money: a monthly correction range
-can resell a cycle an earlier invoice already sold (#79), and a draft interim
-invoice claims work the cadence invoice then cannot see (#80). Neither should
-be outstanding when this bills a real client.
+Every defect this table carried in its earlier versions is now closed: the
+correction range that could resell a sold cycle (#79), the draft interim invoice
+that stranded its work (#80), the milestone claims that were not reconstructed
+(#82), the opening balances a fresh import dropped (#83), the `mysql` driver
+pointed at a MariaDB server (#78), the operator time-entry screen (#74), the
+storage-only activity timeline (#77, #107), the unrepresented subcontractor
+billing modes (#76), and the replay against migrated production data itself
+(#73). That is worth stating rather than quietly deleting the rows, because the
+same table said for several revisions running that two of those findings moved
+money and should not be outstanding when this bills a real client.
+
+The two rows that move money now are #134 and #135, and both were found by the
+null-semantics audit rather than by review of a change.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Replay against production data | **Ran again on the fixed harness. 11 of 42 reproduce exactly, 13 do not, and the reason is no longer capacity arithmetic.** See below. | #73 |
-| Operator UI for time entries | Logging and approval exist on the agent API and the CLI; there is no screen. Everything downstream of a time entry has one. | #74 |
-| Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. | #75 |
-| Subcontractor billing modes | **Closed by the implementation tracked in #76.** Every time entry can carry the immutable billing snapshot. Flat-hourly work is excluded from retainer draw and billed at its own snapshotted rate; retainer-mode work draws on the agreement at its rate; direct work remains visible but is excluded from every invoicing path. Unknown or incomplete imported terms fail closed. | #76 |
-| Activity timeline | The #77 manager reader shows the latest 100 events per company. The #107 writer appends native agreement, invoice, payment, Stripe, and saved-payment-method events inside the owning state transaction, with public subject UUIDs and retry deduplication. | #77, #107 |
-| Correction range can resell a sold cycle | A disjoint monthly correction derives the same `cycle_start` as the invoice that already sold that retainer, and the service-period overlap guard does not see it. Bills the retainer and its recurring items twice. | #79 |
-| Draft interim invoices strand their work | A missing interim invoice is created as a draft and immediately claims its entries; the cadence selector skips claimed entries and the reconciliation skips drafts, so the work is billed by neither. | #80 |
-| Milestone claims are not reconstructed | The migration adding `client_invoice_line_id` leaves it null for every existing task, so a database with issued milestone lines will have those deliverables charged again. Blocks enabling generation against imported data. | #82 |
-| Fresh imports drop opening balances | `starting_unused_hours` and `starting_negative_hours` are repaired by the backfill command but absent from `ExternalImportService`'s invoice mapping, so a new onboarding stores nulls. | #83 |
-| Laravel `mariadb` driver | Production and the hosted MariaDB job use the matching `mariadb` driver. A deploy-time and test-time guard refuses server 10.7+, where Laravel switches new `uuid()` columns to native `uuid`, until a fresh inventory and deliberate migration cover all UUID columns (currently 31 logical columns: 29 `uuid()` and two `foreignUuid()`). | #78 |
+| Opening rollover seed never fires | `InvoiceLedgerBuilder` reads `initial_rollover_hours`, which is neither a column nor an accessor, so the read is always null and the seed month is never built. Every agreement migrated mid-life opens at zero carried capacity, understating available hours and overstating overage. The replay path is unaffected — it reads the minutes column through its own DTO. | #134 |
+| Unguarded nulls in billing math | Four of them. The consequential one drops a charged invoice with no service period out of the billed-overage sum, so its overage can be charged a second time; the others parse a null into "now" or raise where a fallback was intended. | #135 |
+| Client expenses | No table. The source had no rows, so nothing was migrated and nothing is lost — the generator hook sits beside the milestone one if it returns. Scope is now recorded on the issue: reimbursable pass-through at cost, receipt attachments, an approval workflow, and recurring expenses whose every occurrence is approved after it recurs and before it can be invoiced. | #75 |
+| Time-entry write paths disagree | `store()` routes through a collaborator that performs no authorization of its own, while update, destroy and approve all go through the service that owns the policy. Resolved in favour of project-level parity; not yet implemented. | #101 |
+| Load-bearing NULLs on billing columns | The registry pins each nullable billing column to the behaviour its null selects. 28 of 66 columns are cited against tests; 38 remain audited-but-uncited, having no null branch to cite. | #115 |
+| Lock-order registry | Pessimistic lock acquisition order is neither documented nor asserted. Unblocked now that the composite tenant keys have landed. | #117 |
+| Mutation gate is not yet honest | The diff-scoped gate scopes to three billing directories, so a diff touching only UI or controllers reports green without having run. Its cost is also unbudgeted: the mutation phase ran forty minutes against a four-minute suite. | #132, #133 |
+| The rest of the operator and portal surface | Agreement detail, project detail, invoice detail, the all-invoices view, inviting people, and the portal's four manage pages. Client list and detail are in flight. Unlike everything else in this table, most of this is not yet tracked as issues. | #14 |
 
 ### What the replay says now
 
@@ -339,6 +364,22 @@ Interim overage invoices deserve a specific caveat: they are implemented and
 tested, and production has never produced one (75 cadence-period invoices, 3
 ad-hoc, 0 interim). The tests are the only exercise this path has ever had.
 
+#### How it was closed
+
+#73 was decided in favour of a **replay-only history**: the replay seeds its
+basis one period before the recorded agreement start, and the agreements' own
+start dates are left exactly as the source wrote them. Rewriting those starts to
+make the comparison agree was considered and rejected — the comparison bends to
+history, and the record of what was sold does not bend at all. The seed lives
+only in the replay's basis, never in the agreement, and the tests assert that
+after a replay the agreement's `starts_on` is unchanged.
+
+Two residues survive that decision as a separate, named investigation rather
+than as part of it: three invoices only the engine produces, and a small
+one-directional total divergence. Neither blocks the decision. Both have to be
+explained, or shown to be regressions, before the replay is promoted from a gate
+into a test.
+
 ---
 
 ## Quick links
@@ -354,6 +395,7 @@ ad-hoc, 0 interim). The tests are the only exercise this path has ever had.
 - **[Deferred billing](deferred-billing.md)** — per-entry flag that lets admins complete work now and bill for it only when retainer capacity exists.
 - **[Overpayment credits](overpayment-credits.md)** — any overpaid amount carries forward as a credit on the next invoice(s) and never expires.
 - **[Subcontractors](overview.md#subcontractors)** — project-scoped subcontractors with scoped portal access, self-logged + admin-approved hours, and flat-hourly / retainer / direct billing modes.
+- **[Tenant foreign keys](tenant-foreign-keys.md)** — the composite `(workspace_id, parent_id)` keys that make a cross-tenant reference unstorable, what every new tenant-owned table has to do, and which columns are exempt and why.
 
 
 ## Where this lives in SVC

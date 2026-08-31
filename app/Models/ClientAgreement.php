@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Contracts\RetainerAgreementTerms;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -39,7 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read CarbonImmutable|null $active_date
  * @property-read CarbonImmutable|null $termination_date
  */
-class ClientAgreement extends Model implements WorkspaceOwned
+class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
 
@@ -122,6 +123,36 @@ class ClientAgreement extends Model implements WorkspaceOwned
             ?? FirstCycleProration::ProrateHours;
     }
 
+    public function retainerStartsOn(): ?CarbonImmutable
+    {
+        return $this->starts_on;
+    }
+
+    public function retainerEndsOn(): ?CarbonImmutable
+    {
+        return $this->ends_on;
+    }
+
+    public function retainerMonthlyHours(): float
+    {
+        return $this->monthly_retainer_hours;
+    }
+
+    public function retainerMonthlyFee(): float
+    {
+        return $this->monthly_retainer_fee;
+    }
+
+    public function periodRetainerHoursOverride(): ?float
+    {
+        return $this->retainer_hours;
+    }
+
+    public function periodRetainerFeeOverride(): ?float
+    {
+        return $this->retainer_fee;
+    }
+
     /** Retainer hours granted per calendar month. */
     public function getMonthlyRetainerHoursAttribute(): float
     {
@@ -132,6 +163,25 @@ class ClientAgreement extends Model implements WorkspaceOwned
     public function getMonthlyRetainerFeeAttribute(): float
     {
         return ((int) ($this->retainer_amount ?? 0)) / 100;
+    }
+
+    /**
+     * Unused hours the predecessor carried in as of the agreement's start.
+     *
+     * This accessor is the whole of #134. `InvoiceLedgerBuilder` had read
+     * `initial_rollover_hours` since the port, the column has always been
+     * `initial_rollover_minutes`, and with no accessor to bridge them the read
+     * returned null on every agreement. A null coerced to a plausible `0.0`, so
+     * the seed month it guarded was simply never built and nothing failed.
+     *
+     * Defined here rather than converted at the call site so it reads like the
+     * three sibling terms above and below it. The absent one was the only
+     * `_hours` read in the application without an accessor, which is what made
+     * it invisible.
+     */
+    public function getInitialRolloverHoursAttribute(): float
+    {
+        return ((int) ($this->initial_rollover_minutes ?? 0)) / 60;
     }
 
     /**

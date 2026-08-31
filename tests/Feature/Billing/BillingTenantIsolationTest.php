@@ -19,6 +19,7 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Services\WorkspaceAuthorization;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -33,6 +34,7 @@ use Tests\TestCase;
 final class BillingTenantIsolationTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_deferred_allocation_ignores_another_workspaces_entries(): void
     {
@@ -43,7 +45,11 @@ final class BillingTenantIsolationTest extends TestCase
 
         // The same company id, reachable only if a reference is malformed - but
         // the point is that the query must not depend on that never happening.
-        $this->deferredEntry($otherProject->workspace_id, $company->id, $otherProject->id, $otherUser->id, 600);
+        // The composite tenant keys refuse to store it now, so enforcement is
+        // suspended to reproduce a row a pre-#113 database can still hold.
+        $this->writingLegacyCrossTenantRows(
+            fn () => $this->deferredEntry($otherProject->workspace_id, $company->id, $otherProject->id, $otherUser->id, 600),
+        );
 
         $allocator = new DeferredBillingAllocator;
 

@@ -16,11 +16,13 @@ use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
+use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
+use App\Support\Billing\RetainerLineDescription;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -105,7 +107,10 @@ final class ClientInvoicingService
 
     private readonly ClientActivityRecorder $activities;
 
+    private readonly ReplayHistoryBasis $replayHistoryBasis;
+
     public function __construct(
+        ?ReplayHistoryBasis $replayHistoryBasis = null,
         private readonly RolloverCalculator $rolloverCalculator = new RolloverCalculator,
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RecurringItemBiller $recurringItemBiller = new RecurringItemBiller,
@@ -123,6 +128,7 @@ final class ClientInvoicingService
         ?ClientActivityRecorder $activities = null,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {
+        $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
         // rather than defaulted in the signature - a second RolloverCalculator
         // would not be wrong, but it would make the object graph a lie.
@@ -131,6 +137,7 @@ final class ClientInvoicingService
             $this->rolloverCalculator,
             $this->billingCycleResolver,
             $this->retainerCalculator,
+            replayHistoryBasis: $this->replayHistoryBasis,
         );
         $this->activities = $activities ?? app(ClientActivityRecorder::class);
         $this->interimOverageGenerator = $interimOverageGenerator ?? new InterimOverageGenerator(
@@ -862,7 +869,7 @@ final class ClientInvoicingService
                 $catchUpLine = $this->createHourlyLine(
                     $invoice,
                     $agreement,
-                    'Catch-up hours for prior month overage and minimum availability',
+                    CadenceOverageLineDescription::for(BillingCadence::Monthly),
                     $totalCatchupHours,
                     $periodStart,
                     $sortOrder,
@@ -1135,7 +1142,7 @@ final class ClientInvoicingService
                 $line = $this->createHourlyLine(
                     $invoice,
                     $agreement,
-                    'Additional hours beyond cadence retainer',
+                    CadenceOverageLineDescription::for($agreement->effectiveBillingCadence()),
                     $overageHours,
                     $periodEnd,
                     $sortOrder,
@@ -1317,12 +1324,11 @@ final class ClientInvoicingService
             'workspace_id' => $invoice->workspace_id,
             'client_invoice_id' => $invoice->id,
             'client_agreement_id' => $agreement->id,
-            'description' => sprintf(
-                '%s Retainer (%s hours) - %s through %s',
-                BillingCadenceLabel::for($agreement->effectiveBillingCadence()),
-                HoursQuantity::format($retainerHours),
-                $cycleStart->format('M j, Y'),
-                $cycleEnd->format('M j, Y'),
+            'description' => RetainerLineDescription::for(
+                $agreement->effectiveBillingCadence(),
+                $retainerHours,
+                $cycleStart,
+                $cycleEnd,
             ),
             'quantity' => '1',
             'unit_amount' => $feeAmount,
@@ -1394,7 +1400,8 @@ final class ClientInvoicingService
         Carbon $retainerMonthStart,
         ?string $terminationMonthKey,
     ): array {
-        $agreementStart = $this->agreementStart($agreement)->copy()->startOfMonth();
+        $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
+        $agreementStart = $this->agreementStart($ledgerAgreement)->startOfMonth();
 
         $earliestEntryDate = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
@@ -1452,7 +1459,7 @@ final class ClientInvoicingService
                 'retainer_hours' => ($isPreAgreement || $isPostTermination)
                     ? 0.0
                     : $this->retainerCalculator->retainerHoursForMonth(
-                        $agreement,
+                        $ledgerAgreement,
                         Carbon::parse($monthKey.'-01')->startOfDay(),
                         Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
                     ),
@@ -1557,8 +1564,33 @@ final class ClientInvoicingService
         return [$netUnused, $netNegative];
     }
 
+    /**
+     * Overage this agreement has already charged, through a period end.
+     *
+     * The window is deliberately fail-closed on a missing service period. `<=`
+     * answers false for a null, so an invoice whose period cannot be placed
+     * would drop out of the sum silently, and overage the client has already
+     * been charged for would be invisible to the next period's balance - which
+     * would then bill it a second time.
+     *
+     * Counting it instead errs the other way: capacity credited a period early,
+     * understating one invoice and coming back on the next. That is a recoverable
+     * error. A second charge already sent to a client is not.
+     *
+     * A fallback chain onto `cycle_end` or `issue_date` would place most of these
+     * rows more precisely, and is still the wrong trade: it would decide which
+     * period an invoice belongs to by a different column than every other query
+     * in this class uses, so two reads in the same generation could disagree
+     * about the same invoice. `svc:billing:audit-unplaceable-invoices` surfaces
+     * the rows so they can be given a real period rather than a guessed one.
+     */
     private function totalBilledOveragesThrough(ClientAgreement $agreement, Carbon $periodEnd): float
     {
+        // The cast is required by the strict analysis lane - the sum is
+        // statically float|int|string - and is invisible to every test, because
+        // the declared return type coerces the same value without it. It is
+        // named as an equivalent mutant in infection.diff.json5 rather than
+        // tested around.
         return (float) ClientInvoice::query()
             ->where('workspace_id', $agreement->workspace_id)
             ->where('client_agreement_id', $agreement->id)
@@ -1566,7 +1598,11 @@ final class ClientInvoicingService
             // be issued, and counting its hours as debt the client has already
             // settled grants capacity against money nobody has been asked for.
             ->whereIn('status', InvoiceStatus::charged())
-            ->where('service_period_end', '<=', $periodEnd->toDateString())
+            ->where(function (Builder $window) use ($periodEnd): void {
+                $window
+                    ->where('service_period_end', '<=', $periodEnd->toDateString())
+                    ->orWhereNull('service_period_end');
+            })
             ->sum('hours_billed_at_rate');
     }
 
@@ -1610,7 +1646,13 @@ final class ClientInvoicingService
         $terminationDate = $this->agreementEnd($agreement);
 
         if ($agreement->effectiveBillingCadence() === BillingCadence::Monthly) {
-            $retainerPeriodStart = Carbon::instance($this->clock->today($agreement->workspace))->addMonth();
+            // Generate through the end of the next calendar month. Adding one
+            // month to an arbitrary month-end date can overflow (August 31 +
+            // one month becomes October 1), which would sell an extra future
+            // retainer and reconcile a work period that has not happened yet.
+            $retainerPeriodStart = Carbon::instance($this->clock->today($agreement->workspace))
+                ->startOfMonth()
+                ->addMonth();
 
             if ($successorAgreement instanceof ClientAgreement && $terminationDate instanceof Carbon) {
                 // Leave room for the final catch-up invoice: the month after

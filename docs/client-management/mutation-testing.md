@@ -30,8 +30,10 @@ during its initial suite because `InvoiceStatusVocabularyTest` went red. Mutatio
 runs use PHPUnit's default order so unrelated order dependencies cannot make the
 re-review gate intermittent.
 
-Install and enable PCOV before running either command locally. The pull-request
-job does this on the SQLite lane and is advisory while the threshold is tuned.
+Install PCOV before running either command locally. The Composer entry points
+enable it, including for Infection's serial coverage subprocess, and give both
+processes the repository's 1 GiB memory budget. The pull-request job installs
+PCOV on the SQLite lane and is advisory while the threshold is tuned.
 
 ```sh
 composer test:mutation-diff # only PHP lines changed from origin/main
