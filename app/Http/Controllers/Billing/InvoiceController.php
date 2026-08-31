@@ -35,9 +35,10 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly AgentAccess $agentAccess,
+        private readonly ProjectAccess $projectAccess,
     ) {}
 
-    public function index(Request $request, Workspace $workspace, ProjectAccess $access): JsonResponse|InertiaResponse
+    public function index(Request $request, Workspace $workspace): JsonResponse|InertiaResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
         // The company relation is constrained to this workspace. It is
@@ -69,7 +70,7 @@ class InvoiceController extends Controller
         $user = $request->user();
 
         if ($isMember && $user instanceof User) {
-            $reachable = $access->reachableCompanyIds($user, $workspace);
+            $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
 
             if ($reachable !== null) {
                 $query->whereIn('client_company_id', $reachable);
@@ -245,7 +246,24 @@ class InvoiceController extends Controller
     private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
+
         if (Gate::forUser($request->user())->allows('view', $workspace)) {
+            // Membership admits them to the workspace, not to every client in
+            // it (#157). Without this the list narrows and the direct routes do
+            // not, so a scoped member reads any client's invoice - and its PDF,
+            // which is the same disclosure with a filename - by pasting an id.
+            $user = $request->user();
+
+            if ($user instanceof User) {
+                $reachable = $this->projectAccess->reachableCompanyIds($user, $workspace);
+
+                abort_unless(
+                    $reachable === null
+                        || in_array((int) $invoice->client_company_id, $reachable, true),
+                    404,
+                );
+            }
+
             return;
         }
         abort_unless(

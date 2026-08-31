@@ -169,6 +169,69 @@ class WorkspaceInvoiceListTest extends TestCase
                 ->where('invoices.0.href', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}"));
     }
 
+    /**
+     * Narrowing the list is not narrowing the invoice.
+     *
+     * Review finding, and the sharper half of #157: the list was scoped and
+     * the direct routes were not, so a scoped member read any client's invoice
+     * - and its PDF, which is the same disclosure with a filename - by pasting
+     * an id. Membership admits them to the workspace, not to every client in
+     * it.
+     */
+    public function test_a_scoped_member_cannot_open_an_unreachable_clients_invoice(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Direct', 'synthetic-direct-invoice', $manager);
+
+        $mine = $this->company($workspace, 'Reachable Direct Client', 'reachable-direct-client');
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $mine->id,
+            'name' => 'Reachable Direct Project',
+            'status' => 'active',
+        ]);
+        $ours = $this->invoice($workspace, $mine, 'MINE-DIRECT-1');
+
+        $theirs = $this->company($workspace, 'Unreachable Direct Client', 'unreachable-direct-client');
+        $hidden = $this->invoice($workspace, $theirs, 'THEIRS-DIRECT-9999');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        // Their own client's invoice is fine.
+        $this->actingAs($member)
+            ->getJson("/workspaces/{$workspace->public_id}/invoices/{$ours->public_id}")
+            ->assertOk();
+
+        // The other client's is not - by id, and by PDF, which shares the check.
+        $this->actingAs($member)
+            ->getJson("/workspaces/{$workspace->public_id}/invoices/{$hidden->public_id}")
+            ->assertNotFound();
+
+        $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/invoices/{$hidden->public_id}/pdf")
+            ->assertNotFound();
+    }
+
+    /** A manager still reaches every invoice, including on a projectless client. */
+    public function test_a_manager_still_opens_any_invoice_directly(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Direct Admin', 'synthetic-direct-admin', $manager);
+        $company = $this->company($workspace, 'Projectless Direct Client', 'projectless-direct-client');
+        $invoice = $this->invoice($workspace, $company, 'ADMIN-DIRECT-1');
+
+        $this->actingAs($manager)
+            ->getJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk();
+    }
+
     private function workspace(string $name, string $slug, User $owner): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);
