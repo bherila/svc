@@ -528,14 +528,25 @@ class ClientDirectoryController extends Controller
 
         $members = $workspace->memberships()->with('user')->get();
 
-        $userIds = User::query()
-            ->whereIn('id', $memberships->flatten()->pluck('user_id')->unique()->all())
-            ->pluck('public_id', 'id');
-
-        $assignable = $members
+        $assignableIds = $members
             ->filter(fn (mixed $membership): bool => ! in_array(
                 (string) $membership->role,
                 ['owner', 'admin'],
+                true,
+            ))
+            ->pluck('user_id')
+            ->all();
+
+        // Keyed to the assignable set, so a membership row for anyone else has
+        // no public id to be serialized with.
+        $userIds = User::query()
+            ->whereIn('id', $assignableIds)
+            ->pluck('public_id', 'id');
+
+        $assignable = $members
+            ->filter(fn (mixed $membership): bool => in_array(
+                (int) $membership->user_id,
+                array_map('intval', $assignableIds),
                 true,
             ))
             ->map(fn (mixed $membership): ?User => $membership->user)
@@ -560,7 +571,14 @@ class ClientDirectoryController extends Controller
                 // reads it, and because an owner or admin holds no membership
                 // row at all - they are listed separately below so the absence
                 // does not read as "no access".
+                // Only rows for people the screen can actually offer. An
+                // owner or admin can hold a membership row - written before a
+                // promotion, or by the console command - and sending it would
+                // disclose an identity the `assignable` list deliberately
+                // omits, to no purpose, since the page correlates against that
+                // list and would never render it.
                 'members' => $memberships->get($project->id, collect())
+                    ->filter(fn (ClientProjectMembership $membership): bool => isset($userIds[$membership->user_id]))
                     ->map(fn (ClientProjectMembership $membership): array => [
                         'user' => (string) ($userIds[$membership->user_id] ?? ''),
                         // The column is cast to the enum, so this is its value

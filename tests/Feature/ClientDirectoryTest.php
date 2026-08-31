@@ -1283,6 +1283,93 @@ class ClientDirectoryTest extends TestCase
         $this->assertSame(0, ClientProjectMembership::query()->where('user_id', $outsider->id)->count());
     }
 
+    /**
+     * The cross-workspace isolation test this endpoint was missing.
+     *
+     * Three guards protect it - the company against the workspace, the project
+     * against the workspace, and the project's company against the company in
+     * the URL - and none of them had a test that used another workspace's rows
+     * and then checked that no membership was written. Asserting the refusal
+     * without asserting the absence would pass on a 404 that still wrote.
+     */
+    public function test_no_membership_is_written_across_a_workspace_boundary(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Boundary', 'synthetic-boundary', $manager);
+        $myCompany = $this->company($mine, 'My Boundary Client', 'my-boundary-client');
+        $myProject = $this->project($mine, $myCompany, 'My Boundary Project');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Boundary Tenant', 'slug' => 'foreign-boundary']);
+        $foreignCompany = $this->company($foreign, 'Foreign Boundary Client', 'foreign-boundary-client');
+        $foreignProject = $this->project($foreign, $foreignCompany, 'Foreign Boundary Project');
+
+        $foreignMember = User::factory()->create();
+        $foreign->memberships()->create(['user_id' => $foreignMember->id, 'role' => 'member']);
+
+        $myMember = User::factory()->create();
+        $mine->memberships()->create(['user_id' => $myMember->id, 'role' => 'member']);
+
+        $attempts = [
+            // Their company and project, through my workspace.
+            ["/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
+            // My company, their project.
+            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
+            // My company and project, their member.
+            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$myProject->public_id}/access", $foreignMember],
+        ];
+
+        foreach ($attempts as [$path, $target]) {
+            $this->actingAs($manager)
+                ->put($path, ['user' => $target->public_id, 'role' => 'contributor'])
+                ->assertNotFound();
+        }
+
+        // The refusal is not the property - the absence is.
+        $this->assertSame(0, ClientProjectMembership::query()
+            ->whereIn('client_project_id', [$foreignProject->id, $myProject->id])
+            ->whereIn('user_id', [$foreignMember->id, $myMember->id])
+            ->count());
+    }
+
+    /**
+     * An admin cannot pre-seed a project role that outlives their own.
+     *
+     * A membership row for an owner or admin does nothing while they hold
+     * workspace-wide access, because the role lookup short-circuits before
+     * reading it - but it survives a demotion to `member`, and the rule then
+     * honours it. That is privilege that persists precisely because nothing
+     * looks at it on the way down.
+     */
+    public function test_an_admin_cannot_be_granted_a_project_role(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Seed', 'synthetic-seed', $manager);
+        $company = $this->company($workspace, 'Synthetic Seed Client', 'seed-client');
+        $project = $this->project($workspace, $company, 'Synthetic Seed Project');
+
+        $admin = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+
+        $this->actingAs($manager)
+            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
+                'user' => $admin->public_id,
+                'role' => 'owner',
+            ])
+            ->assertStatus(422);
+
+        $this->assertSame(0, ClientProjectMembership::query()
+            ->where('user_id', $admin->id)
+            ->count());
+
+        // And the Manage payload does not carry them either way.
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('assignable', 0)
+                ->has('projects.0.members', 0));
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);

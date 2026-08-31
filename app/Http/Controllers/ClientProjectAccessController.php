@@ -52,9 +52,24 @@ class ClientProjectAccessController extends Controller
             ->first();
 
         abort_if($user === null, 404);
-        abort_unless(
-            $workspace->memberships()->where('user_id', $user->id)->exists(),
-            404,
+
+        $membershipRole = $workspace->memberships()
+            ->where('user_id', $user->id)
+            ->value('role');
+
+        abort_if($membershipRole === null, 404);
+
+        // Owners and admins are refused, not merely hidden by the UI.
+        //
+        // A row for them has no effect while they hold workspace-wide access -
+        // `ProjectAccess::projectRole()` short-circuits to Owner before it is
+        // read - but it survives a demotion to `member`, at which point the
+        // rule starts honouring it. That lets an administrator pre-seed a
+        // project role that outlives their own, which is the kind of privilege
+        // that persists precisely because nothing looks at it on the way down.
+        abort_if(
+            in_array((string) $membershipRole, ['owner', 'admin'], true),
+            422,
         );
 
         $role = $request->string('role')->toString();
