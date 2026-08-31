@@ -218,6 +218,56 @@ class InvoiceLedgerBuilderTest extends TestCase
     }
 
     /**
+     * A null initial rollover means no opening capacity, not an unknown amount.
+     *
+     * Registered for #115: until #134 the column had no reachable reader at
+     * all, so its null could not mean anything and the registry marked it
+     * pending. It has one now, which makes the meaning a decision rather than
+     * an accident - and the decision has to be pinned against a stated value in
+     * the same test, or it would pass on the surrounding retainer arithmetic
+     * exactly as the original defect did.
+     *
+     * Null and zero agree here deliberately. An agreement that never recorded
+     * an opening balance is not carrying an unknown one, and inventing capacity
+     * for it would grant hours nobody agreed to sell.
+     */
+    public function test_an_agreement_with_no_recorded_opening_rollover_grants_none(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-01-01',
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 1,
+            'initial_rollover_hours' => 5,
+            'retainer_hours' => null,
+        ]);
+
+        $agreement->forceFill(['initial_rollover_minutes' => null])->save();
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2026-01', $ledger[0]->yearMonth, 'No carrier month is built');
+        $this->assertSame(0.0, $ledger[0]->opening->rolloverHours);
+        $this->assertSame(10.0, $ledger[0]->opening->totalAvailable, 'The retainer alone');
+
+        // The same agreement with the value stated, so the assertions above are
+        // pinned to the null rather than to the retainer arithmetic.
+        $agreement->forceFill(['initial_rollover_minutes' => 300])->save();
+        $stated = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement->fresh(),
+            Carbon::parse('2026-01-31'),
+        );
+
+        $this->assertSame('2025-12', $stated[0]->yearMonth, 'A stated opening does build one');
+        $this->assertSame(15.0, $stated[1]->opening->totalAvailable);
+    }
+
+    /**
      * The grant expires on the agreement's own rollover policy.
      *
      * This is why it is a carrier month rather than hours added to the start

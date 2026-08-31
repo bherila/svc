@@ -52,11 +52,15 @@ use Tests\Unit\Billing\RetainerCalculatorTest;
  * branch to cover, and inventing one would be the prose exemption list again in
  * another costume. Retiring them is #73's `NOT NULL` question, not this one's.
  *
- * One is pending for a different reason: `client_agreements.initial_rollover_minutes`
- * has no reachable reader at all. InvoiceLedgerBuilder asks for
- * `initial_rollover_hours`, which is neither a column nor an accessor, so the
- * seed month it guards is never built and the column's null cannot mean
- * anything until that is fixed.
+ * `client_agreements.initial_rollover_minutes` was pending for a different
+ * reason - it had no reachable reader at all, because InvoiceLedgerBuilder
+ * asked for `initial_rollover_hours`, which was neither a column nor an
+ * accessor, so the seed month it guards was never built and the column's null
+ * could not mean anything. #134 fixed the read and the column is registered
+ * like any other. Left here rather than deleted because it is the clearest
+ * example this registry has produced of what it is for: the column sat in a
+ * schema, a model and a service for the whole port, and nothing forced anyone
+ * to notice that no code path read it.
  */
 final class NullSemanticsRegistryTest extends TestCase
 {
@@ -82,7 +86,7 @@ final class NullSemanticsRegistryTest extends TestCase
      * unregistered) and a decrease (an audited column whose pin was not
      * updated) fail this test.
      */
-    private const PENDING_AUDIT_COUNT = 38;
+    private const PENDING_AUDIT_COUNT = 37;
 
     /**
      * One entry per nullable column on the tables above.
@@ -90,11 +94,18 @@ final class NullSemanticsRegistryTest extends TestCase
      * Each value is either:
      *   - `['covered_by' => SomeTest::class, 'method' => 'test_...']`, a
      *     citation of an existing test that constructs this column's null
-     *     case and asserts what happens - verified below by reflection; or
+     *     case and asserts what happens - verified below by reflection;
+     *   - a list of such citations, where the null is branched on in more than
+     *     one place and the branches mean different things; or
      *   - the string `'PENDING-AUDIT'`, an honest marker that the semantic
      *     audit has not yet reached this column.
      *
-     * @var array<string, array<string, 'PENDING-AUDIT'|array{covered_by: class-string, method: string}>>
+     * A list rather than a second registry: one citation on a column with two
+     * null branches is worse than none, because it reads as settled. That is
+     * how `service_period_end` came to look audited while the branch that
+     * decides whether overage is charged twice went uncovered until #135.
+     *
+     * @var array<string, array<string, 'PENDING-AUDIT'|array{covered_by: class-string, method: string}|list<array{covered_by: class-string, method: string}>>>
      */
     private const REGISTRY = [
         'client_invoices' => [
@@ -129,9 +140,20 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                 'method' => 'test_a_cadence_draft_without_a_service_period_fails_closed',
             ],
+            // Two branches, and the second is the consequential one. A null also
+            // means "inside the billed-overage window": the sum of what an
+            // agreement has already been charged reads `<=` against this
+            // column, which is false for a null, so an unplaceable invoice
+            // dropped out of it and its overage was charged again (#135).
             'service_period_end' => [
-                'covered_by' => DraftInvoiceTimeRegenerationTest::class,
-                'method' => 'test_a_cadence_draft_without_a_service_period_fails_closed',
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_cadence_draft_without_a_service_period_fails_closed',
+                ],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
+                ],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -264,7 +286,14 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => InvoiceLedgerBuilderTest::class,
                 'method' => 'test_an_agreement_with_no_rollover_term_carries_nothing_forward',
             ],
-            'initial_rollover_minutes' => 'PENDING-AUDIT',
+            // No opening balance was recorded, which is not an unknown one: the
+            // ledger builds no carrier month and the agreement opens on its
+            // retainer alone. Pending until #134, when the column acquired a
+            // reachable reader and its null could mean something.
+            'initial_rollover_minutes' => [
+                'covered_by' => InvoiceLedgerBuilderTest::class,
+                'method' => 'test_an_agreement_with_no_recorded_opening_rollover_grants_none',
+            ],
             // Unset reads as off. The column stays nullable so the backfill can
             // tell an unset flag from a deliberate false, but for billing there
             // is one safe reading and it is "do not charge mid-cycle".
@@ -407,23 +436,35 @@ final class NullSemanticsRegistryTest extends TestCase
                     continue;
                 }
 
-                if (! is_array($entry) || array_keys($entry) !== ['covered_by', 'method']) {
-                    $bad[] = sprintf("%s.%s: entry must be 'PENDING-AUDIT' or ['covered_by' => ..., 'method' => ...]", $table, $column);
+                // One citation or several: a column whose null is branched on
+                // in more than one place carries one entry per branch.
+                $citations = isset($entry['covered_by']) ? [$entry] : $entry;
+
+                if (! is_array($entry) || $citations === []) {
+                    $bad[] = sprintf("%s.%s: entry must be 'PENDING-AUDIT', a citation, or a non-empty list of citations", $table, $column);
 
                     continue;
                 }
 
-                $class = $entry['covered_by'];
-                $method = $entry['method'];
+                foreach ($citations as $citation) {
+                    if (! is_array($citation) || array_keys($citation) !== ['covered_by', 'method']) {
+                        $bad[] = sprintf("%s.%s: each citation must be ['covered_by' => ..., 'method' => ...]", $table, $column);
 
-                if (! class_exists($class)) {
-                    $bad[] = sprintf('%s.%s: cited class %s does not exist', $table, $column, $class);
+                        continue;
+                    }
 
-                    continue;
-                }
+                    $class = $citation['covered_by'];
+                    $method = $citation['method'];
 
-                if (! (new ReflectionClass($class))->hasMethod($method)) {
-                    $bad[] = sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, $method);
+                    if (! class_exists($class)) {
+                        $bad[] = sprintf('%s.%s: cited class %s does not exist', $table, $column, $class);
+
+                        continue;
+                    }
+
+                    if (! (new ReflectionClass($class))->hasMethod($method)) {
+                        $bad[] = sprintf('%s.%s: cited method %s::%s does not exist', $table, $column, $class, $method);
+                    }
                 }
             }
         }
