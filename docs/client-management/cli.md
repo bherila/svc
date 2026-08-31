@@ -102,6 +102,45 @@ Three conditions have to hold together, and each alone overstates the population
 
 It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
 
+## Audit Undated Collectible Invoices
+
+Read-only. Counts collectible invoices with no `due_date` — rows that appear in
+collectible balances and in no overdue figure (#149).
+
+```bash
+php artisan svc:billing:audit-undated-collectible-invoices                 # counts
+php artisan svc:billing:audit-undated-collectible-invoices --format=json   # machine-readable
+```
+
+`AgentReadController::summary()` builds the collectible set and then narrows it
+with `whereDate('due_date', '<', ...)`. SQL answers false for a null rather than
+unknown, so an undated invoice stays in `collectible_balances` — which does not
+filter on that column — and vanishes from `overdue_count` and `overdue_balances`.
+The two figures disagree and nothing says why.
+
+The null survives because `InvoiceLifecycleService::issue()` defaults a null due
+date to the issue date, but **returns early for an invoice that is already
+charged** — so an imported issued or paid invoice never passes through that
+transition and keeps its null permanently.
+
+**Do not fix this with `orWhereNull`.** That was right for #135, which was
+fail-closed against charging a client twice. Here it would move invoices into a
+collections-adjacent report on no evidence: an invoice with no stated term is not
+self-evidently late, and reclassifying it silently is a different wrong answer
+rather than a safer one. The command says so in its own output.
+
+The population is split by whether an `issue_date` exists, because that split is
+the size of what the preferred repair can reach — backfilling to the issue date is
+exactly what `issue()` would have done. `would_become_overdue_if_backfilled` and
+its balances say how much that repair moves into overdue reporting on the day it
+runs, which is what an operator approving it needs to see first. Rows with no
+issue date either cannot be dated honestly at all, and are the population a
+separate `undated_collectible` bucket exists to report rather than absorb.
+
+Balances are reported per currency, never summed across them. It reports counts
+and balances only, so it is safe to run against real billing data and to paste
+into an issue. It always exits zero.
+
 ## Audit Missing Billed Overage
 
 Read-only. Counts charged invoices carrying no `hours_billed_at_rate` at all, and
