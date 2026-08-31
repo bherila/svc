@@ -44,9 +44,14 @@ class ClientDirectoryController extends Controller
     /** How many invoices the detail screen shows before it stops. */
     private const RECENT_INVOICES = 20;
 
-    public function index(Workspace $workspace): Response
+    public function index(Request $request, Workspace $workspace, ProjectAccess $access): Response
     {
         Gate::authorize('view', $workspace);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $viewable = $access->viewableProjectIds($user, $workspace);
 
         // The counts are correlated subqueries on the one companies query, so
         // the list costs the same whether the workspace has three companies or
@@ -55,8 +60,14 @@ class ClientDirectoryController extends Controller
         // and invoices against a company visible here.
         $companies = $workspace->clientCompanies()
             ->withCount([
+                // Counted over the projects this viewer reaches, not the
+                // company's whole portfolio: a count of 4 beside a detail
+                // screen listing 1 says three projects exist that they may not
+                // see, which is the disclosure the scoping is closing.
                 'projects as project_count' => fn (Builder $query): Builder => $query
-                    ->where('workspace_id', $workspace->id),
+                    ->where('workspace_id', $workspace->id)
+                    ->when($viewable !== null, fn (Builder $scoped): Builder => $scoped
+                        ->whereIn('id', $viewable ?? [])),
                 'invoices as draft_invoice_count' => fn (Builder $query): Builder => $query
                     ->where('workspace_id', $workspace->id)
                     ->where('status', InvoiceStatus::Draft->value),
@@ -70,6 +81,7 @@ class ClientDirectoryController extends Controller
             ->orderBy('name')
             ->get();
 
+        $companies = $this->reachable($workspace, $companies, $viewable);
         $retainers = $this->retainerUsage($workspace, $companies);
 
         return Inertia::render('clients/index', [
@@ -91,22 +103,29 @@ class ClientDirectoryController extends Controller
     }
 
     public function show(
+        Request $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
     ): Response {
         Gate::authorize('view', $workspace);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
         // The company is bound by its public id, which is unique across every
         // workspace. Without this, a member of one workspace opens another's
         // company by pasting its id into a URL whose workspace segment they
         // legitimately pass the gate for.
         $authorization->assertOwnedBy($workspace, $clientCompany);
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        $this->assertReachable($workspace, $clientCompany, $viewable);
 
-        $projects = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderBy('name')
-            ->get();
+        // Only the projects this viewer reaches. Reaching one project of a
+        // client is not reaching the client's whole portfolio, and a project
+        // name is the smallest thing on this screen that says who else is
+        // working on what.
+        $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
         $agreements = ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
@@ -168,15 +187,22 @@ class ClientDirectoryController extends Controller
      * cannot drift apart.
      */
     public function invoices(
+        Request $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
     ): Response {
         Gate::authorize('view', $workspace);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
         // Same reason as `show()`: the company binds by a public id unique
         // across every workspace, so passing the workspace gate is not passing
         // a check on the company reached through it.
         $authorization->assertOwnedBy($workspace, $clientCompany);
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        $this->assertReachable($workspace, $clientCompany, $viewable);
 
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
@@ -211,13 +237,20 @@ class ClientDirectoryController extends Controller
      * cheerfully label it with the company they came from.
      */
     public function invoice(
+        Request $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
         ClientInvoice $clientInvoice,
         WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
     ): Response {
         Gate::authorize('view', $workspace);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
         $authorization->assertOwnedBy($workspace, $clientCompany);
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        $this->assertReachable($workspace, $clientCompany, $viewable);
         $authorization->assertOwnedBy($workspace, $clientInvoice);
 
         abort_unless(
@@ -296,13 +329,10 @@ class ClientDirectoryController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 401);
 
-        $projects = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->orderBy('name')
-            ->get()
-            ->filter(fn (ClientProject $project): bool => $access->canView($user, $project))
-            ->values();
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        $this->assertReachable($workspace, $clientCompany, $viewable);
+
+        $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
 
         // A stale or unreachable project falls back to every visible one,
         // rather than to an empty list that reads as "this client has no
@@ -344,6 +374,93 @@ class ClientDirectoryController extends Controller
                 'completed_at' => $task->completed_at?->toDateString(),
             ])->values()->all(),
         ]);
+    }
+
+    /**
+     * This company's projects, narrowed to the ones the viewer may see.
+     *
+     * Takes the already-resolved id set rather than asking `ProjectAccess` per
+     * project, for the reason on {@see ProjectAccess::viewableProjectIds()}.
+     *
+     * @param  list<int>|null  $viewableProjectIds
+     * @return EloquentCollection<int, ClientProject>
+     */
+    private function viewableProjectsOf(
+        Workspace $workspace,
+        ClientCompany $company,
+        ?array $viewableProjectIds,
+    ): EloquentCollection {
+        $projects = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->when($viewableProjectIds !== null, fn (Builder $query): Builder => $query
+                ->whereIn('id', $viewableProjectIds ?? []))
+            ->orderBy('name')
+            ->get();
+
+        return $projects;
+    }
+
+    /**
+     * Which companies this viewer has any business with.
+     *
+     * Workspace membership is not access to every project in it (#157). The
+     * time sheet has always refused to show a scoped member other projects'
+     * work; the directory used to show every company and every project name to
+     * anyone who passed the workspace gate, and those two answers to the same
+     * question are now settled the strict way.
+     *
+     * A company they cannot reach is absent rather than empty. Rendering it
+     * with nothing in it would still disclose the client's name and existence,
+     * which is the disclosure being scoped in the first place.
+     *
+     * @param  EloquentCollection<int, ClientCompany>  $companies
+     * @param  list<int>|null  $viewableProjectIds
+     * @return EloquentCollection<int, ClientCompany>
+     */
+    private function reachable(
+        Workspace $workspace,
+        EloquentCollection $companies,
+        ?array $viewableProjectIds,
+    ): EloquentCollection {
+        if ($viewableProjectIds === null) {
+            return $companies;
+        }
+
+        if ($viewableProjectIds === []) {
+            return new EloquentCollection;
+        }
+
+        $reachableCompanyIds = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('id', $viewableProjectIds)
+            ->pluck('client_company_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        return new EloquentCollection($companies->filter(
+            fn (ClientCompany $company): bool => in_array((int) $company->id, $reachableCompanyIds, true),
+        )->values()->all());
+    }
+
+    /**
+     * Refuse a company this viewer reaches no project of.
+     *
+     * The list already omits it, so a direct URL has to agree - otherwise the
+     * scoping is decorative and the id is the only thing in the way.
+     *
+     * @param  list<int>|null  $viewableProjectIds
+     */
+    private function assertReachable(
+        Workspace $workspace,
+        ClientCompany $company,
+        ?array $viewableProjectIds,
+    ): void {
+        abort_if(
+            $this->reachable($workspace, new EloquentCollection([$company]), $viewableProjectIds)->isEmpty(),
+            404,
+        );
     }
 
     /**

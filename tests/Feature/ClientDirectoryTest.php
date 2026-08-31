@@ -846,6 +846,103 @@ class ClientDirectoryTest extends TestCase
             ->assertNotFound();
     }
 
+    /**
+     * A scoped member sees the clients they work for, and no others (#157).
+     *
+     * The directory used to answer this differently from the time sheet: it
+     * showed every company and every project name to anyone who passed the
+     * workspace gate. Both now answer it the strict way, so a contributor on
+     * one project of one client cannot read the rest of the workspace's client
+     * list.
+     */
+    public function test_a_scoped_member_sees_only_the_clients_they_can_reach(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Reach', 'synthetic-reach', $manager);
+        $mine = $this->company($workspace, 'Reachable Client Name', 'reachable-client');
+        $reachable = $this->project($workspace, $mine, 'Reachable Scope Project');
+        $this->project($workspace, $mine, 'Unreachable Sibling Project');
+
+        $theirs = $this->company($workspace, 'Unreachable Client Name', 'unreachable-client');
+        $this->project($workspace, $theirs, 'Someone Elses Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $reachable->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $response = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients")
+            ->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('companies', 1));
+        $this->assertInertiaPayloadOmits($response, [
+            'Unreachable Client Name',
+            'Someone Elses Project',
+        ], 'Reachable Client Name');
+
+        // The detail screen narrows the same way, so reaching one project of a
+        // client does not disclose the rest of that client's portfolio.
+        $detail = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$mine->public_id}")
+            ->assertOk();
+
+        $detail->assertInertia(fn (Assert $page) => $page->has('projects', 1));
+        $this->assertInertiaPayloadOmits(
+            $detail,
+            ['Unreachable Sibling Project'],
+            'Reachable Scope Project',
+        );
+    }
+
+    /**
+     * And a direct URL agrees with the list.
+     *
+     * Omitting a company from the index while still serving it by id would
+     * make the scoping decorative - the id would be the only thing in the way.
+     */
+    public function test_a_client_the_member_cannot_reach_is_not_found_by_url(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Direct', 'synthetic-direct', $manager);
+        $theirs = $this->company($workspace, 'Out Of Reach Client', 'out-of-reach-client');
+        $this->project($workspace, $theirs, 'Out Of Reach Project');
+        $this->invoice($workspace, $theirs, 'OUTOFREACH-1', 'issued');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        foreach (['', '/invoices', '/tasks'] as $suffix) {
+            $this->actingAs($member)
+                ->get("/workspaces/{$workspace->public_id}/clients/{$theirs->public_id}{$suffix}")
+                ->assertNotFound();
+        }
+    }
+
+    /**
+     * An owner or admin still reaches a client with no projects at all.
+     *
+     * Reachability is defined through projects, so a brand-new client would
+     * otherwise be invisible to the person who just created it.
+     */
+    public function test_an_admin_still_sees_a_client_with_no_projects(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Fresh', 'synthetic-fresh', $manager);
+        $this->company($workspace, 'Brand New Client', 'brand-new-client');
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('companies', 1)
+                ->where('companies.0.name', 'Brand New Client'));
+    }
+
     private function workspace(string $name, string $slug, User $member): Workspace
     {
         $workspace = Workspace::query()->create(['name' => $name, 'slug' => $slug]);
