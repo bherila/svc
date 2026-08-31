@@ -12,6 +12,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
@@ -1013,6 +1014,7 @@ class ClientDirectoryTest extends TestCase
                 'description' => 'Synthetic description',
                 'status' => 'archived',
                 'is_visible_to_client' => false,
+                'lock_version' => (int) $project->fresh()?->lock_version,
             ])
             ->assertRedirect();
 
@@ -1043,6 +1045,9 @@ class ClientDirectoryTest extends TestCase
                 'description' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
+                // A payload that validates, so the refusal below is the
+                // company check and not the version rule arriving first.
+                'lock_version' => (int) $project->fresh()?->lock_version,
             ])
             ->assertNotFound();
 
@@ -1183,6 +1188,465 @@ class ClientDirectoryTest extends TestCase
                 ->where('time.0.entries', 2)
                 ->where('time.1.status', 'draft')
                 ->where('time.1.minutes', 30));
+    }
+
+    /**
+     * Granting project access is what makes #157's scoping administrable.
+     *
+     * Until this endpoint existed the reachability rule could be tightened but
+     * not managed, so the grant is asserted end to end: the member cannot see
+     * the client, is granted access, can, is removed, and cannot again.
+     */
+    public function test_granting_and_removing_project_access_changes_what_a_member_sees(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Access', 'synthetic-access', $manager);
+        $company = $this->company($workspace, 'Synthetic Access Client', 'synthetic-access-client');
+        $project = $this->project($workspace, $company, 'Synthetic Access Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
+
+        $this->actingAs($member)->get($path)->assertNotFound();
+
+        $this->actingAs($manager)
+            ->put("{$path}/projects/{$project->public_id}/access", [
+                'user' => $member->public_id,
+                'role' => 'contributor',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($member)->get($path)->assertOk();
+
+        $this->actingAs($manager)
+            ->put("{$path}/projects/{$project->public_id}/access", [
+                'user' => $member->public_id,
+                'role' => 'none',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($member)->get($path)->assertNotFound();
+    }
+
+    /**
+     * Re-granting moves the role rather than adding a second row.
+     *
+     * Two membership rows would both match every reachability query, and the
+     * role that won would depend on which came back first.
+     */
+    public function test_regranting_access_replaces_the_role(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Regrant', 'synthetic-regrant', $manager);
+        $company = $this->company($workspace, 'Synthetic Regrant Client', 'regrant-client');
+        $project = $this->project($workspace, $company, 'Synthetic Regrant Project');
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access";
+
+        foreach (['viewer', 'contributor'] as $role) {
+            $this->actingAs($manager)
+                ->put($path, ['user' => $member->public_id, 'role' => $role])
+                ->assertRedirect();
+        }
+
+        $rows = ClientProjectMembership::query()
+            ->where('client_project_id', $project->id)
+            ->where('user_id', $member->id)
+            ->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('contributor', $rows->first()?->role->value);
+    }
+
+    /**
+     * Access cannot be granted to someone outside the workspace.
+     *
+     * The membership row would be honoured by every reachability query while
+     * no workspace membership backed it - access through a side door.
+     */
+    public function test_access_cannot_be_granted_to_a_non_member(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Outsider', 'synthetic-outsider', $manager);
+        $company = $this->company($workspace, 'Synthetic Outsider Client', 'outsider-client');
+        $project = $this->project($workspace, $company, 'Synthetic Outsider Project');
+
+        $outsider = User::factory()->create();
+
+        $this->actingAs($manager)
+            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
+                'user' => $outsider->public_id,
+                'role' => 'contributor',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame(0, ClientProjectMembership::query()->where('user_id', $outsider->id)->count());
+    }
+
+    /**
+     * The cross-workspace isolation test this endpoint was missing.
+     *
+     * Three guards protect it - the company against the workspace, the project
+     * against the workspace, and the project's company against the company in
+     * the URL - and none of them had a test that used another workspace's rows
+     * and then checked that no membership was written. Asserting the refusal
+     * without asserting the absence would pass on a 404 that still wrote.
+     */
+    public function test_no_membership_is_written_across_a_workspace_boundary(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Boundary', 'synthetic-boundary', $manager);
+        $myCompany = $this->company($mine, 'My Boundary Client', 'my-boundary-client');
+        $myProject = $this->project($mine, $myCompany, 'My Boundary Project');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Boundary Tenant', 'slug' => 'foreign-boundary']);
+        $foreignCompany = $this->company($foreign, 'Foreign Boundary Client', 'foreign-boundary-client');
+        $foreignProject = $this->project($foreign, $foreignCompany, 'Foreign Boundary Project');
+
+        $foreignMember = User::factory()->create();
+        $foreign->memberships()->create(['user_id' => $foreignMember->id, 'role' => 'member']);
+
+        $myMember = User::factory()->create();
+        $mine->memberships()->create(['user_id' => $myMember->id, 'role' => 'member']);
+
+        $attempts = [
+            // Their company and project, through my workspace.
+            ["/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
+            // My company, their project.
+            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
+            // My company and project, their member.
+            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$myProject->public_id}/access", $foreignMember],
+        ];
+
+        foreach ($attempts as [$path, $target]) {
+            $this->actingAs($manager)
+                ->put($path, ['user' => $target->public_id, 'role' => 'contributor'])
+                ->assertNotFound();
+        }
+
+        // The refusal is not the property - the absence is.
+        $this->assertSame(0, ClientProjectMembership::query()
+            ->whereIn('client_project_id', [$foreignProject->id, $myProject->id])
+            ->whereIn('user_id', [$foreignMember->id, $myMember->id])
+            ->count());
+    }
+
+    /**
+     * An admin cannot pre-seed a project role that outlives their own.
+     *
+     * A membership row for an owner or admin does nothing while they hold
+     * workspace-wide access, because the role lookup short-circuits before
+     * reading it - but it survives a demotion to `member`, and the rule then
+     * honours it. That is privilege that persists precisely because nothing
+     * looks at it on the way down.
+     */
+    public function test_an_admin_cannot_be_granted_a_project_role(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Seed', 'synthetic-seed', $manager);
+        $company = $this->company($workspace, 'Synthetic Seed Client', 'seed-client');
+        $project = $this->project($workspace, $company, 'Synthetic Seed Project');
+
+        $admin = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+
+        $this->actingAs($manager)
+            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
+                'user' => $admin->public_id,
+                'role' => 'owner',
+            ])
+            ->assertStatus(422);
+
+        $this->assertSame(0, ClientProjectMembership::query()
+            ->where('user_id', $admin->id)
+            ->count());
+
+        // And the Manage payload does not carry them either way.
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('assignable', 0)
+                ->has('projects.0.members', 0));
+    }
+
+    /**
+     * Clearing a billing address is a thing an operator does.
+     *
+     * The null comes from Laravel's `ConvertEmptyStringsToNull`, not from the
+     * controller - a mutation check proved that, by removing the controller's
+     * own empty-string guard and watching this test still pass. The guard was
+     * dead code and is gone.
+     *
+     * The test stays, and is the more valuable half: it pins the behaviour
+     * end to end rather than one line's implementation of it, so it still
+     * fails if that middleware is ever removed from the stack. What matters is
+     * that "no billing email" is null rather than a blank string every
+     * `!== null` check downstream would accept.
+     */
+    public function test_clearing_a_billing_email_stores_null_rather_than_an_empty_string(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Clear', 'synthetic-clear', $manager);
+        $company = $this->company($workspace, 'Synthetic Clear Client', 'synthetic-clear-client');
+        $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Clear Client',
+                'billing_email' => '',
+                'is_active' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($company->fresh()?->billing_email);
+    }
+
+    /**
+     * Hiding a project from a client must not be undone by omission.
+     *
+     * `is_visible_to_client` is `required` rather than `sometimes` precisely so
+     * a form that forgets the checkbox cannot silently re-expose a project
+     * someone hid. That is a disclosure decision, so the refusal is asserted
+     * rather than trusted to the rule string.
+     */
+    public function test_a_project_update_that_omits_visibility_is_refused(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Omit', 'synthetic-omit', $manager);
+        $company = $this->company($workspace, 'Synthetic Omit Client', 'omit-client');
+        $project = $this->project($workspace, $company, 'Synthetic Omit Project');
+        $project->forceFill(['is_visible_to_client' => false])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Synthetic Omit Project',
+                'description' => null,
+                'status' => 'active',
+            ])
+            ->assertSessionHasErrors('is_visible_to_client');
+
+        $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
+    }
+
+    /**
+     * A client of another workspace cannot be edited through one you manage.
+     *
+     * Companies bind by a public id unique across every workspace, so passing
+     * the `manage` gate on your own workspace is not passing a check on the
+     * company named in the URL. The read paths assert this; the write path did
+     * not.
+     */
+    public function test_a_company_from_another_workspace_cannot_be_edited(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Mine Write', 'synthetic-mine-write', $manager);
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Write Tenant', 'slug' => 'foreign-write']);
+        $foreignCompany = $this->company($foreign, 'Foreign Write Client', 'foreign-write-client');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}", [
+                'name' => 'Renamed Across Tenants',
+                'billing_email' => null,
+                'is_active' => true,
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('Foreign Write Client', $foreignCompany->fresh()?->name);
+    }
+
+    /**
+     * The update writes the named columns and nothing else.
+     *
+     * Both controllers pass an explicit array rather than `$request->all()`,
+     * so a payload naming `workspace_id` should be ignored. Asserted because
+     * the consequence - a client moving tenant on a rename - is exactly the
+     * kind of thing the composite keys exist to make unrepresentable and the
+     * application should never attempt.
+     */
+    public function test_an_update_cannot_move_a_client_to_another_workspace(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Anchor', 'synthetic-anchor', $manager);
+        $company = $this->company($mine, 'Synthetic Anchor Client', 'anchor-client');
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign Anchor Tenant', 'slug' => 'foreign-anchor']);
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Anchor Client',
+                'billing_email' => null,
+                'is_active' => true,
+                'workspace_id' => $foreign->id,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame((int) $mine->id, (int) $company->fresh()?->workspace_id);
+    }
+
+    /**
+     * An omitted billing address is not an instruction to erase one.
+     *
+     * `nullable` says an empty value is legal. It says nothing about an absent
+     * key, so a PATCH that supplied only `name` and `is_active` validated, and
+     * `validated('billing_email')` returned the same null an explicit clear
+     * produces - the controller could not tell the two apart and wrote over a
+     * real address. `present` separates them, and this asserts the separation
+     * rather than the rule, because the rule reads correct either way.
+     */
+    public function test_a_billing_address_survives_a_payload_that_omits_it(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Keep', 'synthetic-keep', $manager);
+        $company = $this->company($workspace, 'Synthetic Keep Client', 'synthetic-keep-client');
+        $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Keep Client',
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors('billing_email');
+
+        $this->assertSame('billing@synthetic.test', $company->fresh()?->billing_email);
+    }
+
+    /**
+     * The same distinction on a project's description.
+     *
+     * Asserted separately rather than trusted to the shared reasoning: the two
+     * requests are different classes, and the rule was wrong in both of them
+     * for the same reason, which is exactly the pattern a single test lets
+     * survive on one side.
+     */
+    public function test_a_description_survives_a_payload_that_omits_it(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Desc', 'synthetic-desc', $manager);
+        $company = $this->company($workspace, 'Synthetic Desc Client', 'desc-client');
+        $project = $this->project($workspace, $company, 'Synthetic Desc Project');
+        $project->forceFill(['description' => 'Original scope of work.'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed Project',
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertSessionHasErrors('description');
+
+        $this->assertSame('Original scope of work.', $project->fresh()?->description);
+    }
+
+    /**
+     * A form composed before someone hid a project cannot un-hide it.
+     *
+     * Two managers with the Manage page open. One hides a project; the other
+     * submits a form loaded earlier, meaning only to rename it. Every field in
+     * that payload validates - it is not malformed, it is out of date - and its
+     * stale `is_visible_to_client: true` silently re-exposed the project to the
+     * client. The version the form was rendered from is the only thing that
+     * distinguishes the two, so the save is refused whole rather than merged
+     * field by field.
+     */
+    public function test_a_stale_project_form_cannot_re_expose_a_hidden_project(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Stale', 'synthetic-stale', $manager);
+        $company = $this->company($workspace, 'Synthetic Stale Client', 'stale-client');
+        $project = $this->project($workspace, $company, 'Synthetic Stale Project');
+
+        // What the second manager's browser is holding.
+        $staleVersion = (int) $project->fresh()?->lock_version;
+
+        // The first manager hides it, which advances the version.
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Synthetic Stale Project',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => false,
+                'lock_version' => $staleVersion,
+            ])
+            ->assertRedirect();
+
+        $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
+        $this->assertNotSame($staleVersion, (int) $project->fresh()?->lock_version);
+
+        // The second manager saves a rename from the older form.
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed From A Stale Form',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => $staleVersion,
+            ])
+            ->assertSessionHasErrors('lock_version');
+
+        // Neither the disclosure nor the rename lands: the save is refused as a
+        // whole, so the operator reloads and decides again with current values.
+        $fresh = $project->fresh();
+        $this->assertFalse((bool) $fresh?->is_visible_to_client);
+        $this->assertSame('Synthetic Stale Project', $fresh?->name);
+    }
+
+    /**
+     * A company reparented between the authorization and the write is not
+     * written.
+     *
+     * `assertOwnedBy` describes the instance the router bound, and the router
+     * binds by public id alone. The write that followed named only the primary
+     * key, so the two were separate statements about a row nothing held still
+     * in between - reparent it after the check and a request authorized against
+     * one tenant edits a row now owned by another.
+     *
+     * The race is made deterministic with `beforeExecuting`, which lands the
+     * reparent in the same gap a concurrent request would occupy: after the
+     * controller has authorized, before its first statement runs. The reparent
+     * is fired once and on its own connection callback guard, because it issues
+     * queries itself and would otherwise recurse.
+     */
+    public function test_a_company_reparented_after_authorization_is_not_edited(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Race', 'synthetic-race', $manager);
+        $company = $this->company($mine, 'Synthetic Race Client', 'race-client');
+        $foreign = Workspace::query()->create(['name' => 'Foreign Race Tenant', 'slug' => 'foreign-race']);
+
+        $reparented = false;
+        DB::connection()->beforeExecuting(function () use (&$reparented, $company, $foreign): void {
+            if ($reparented) {
+                return;
+            }
+
+            $reparented = true;
+            DB::table('client_companies')
+                ->where('id', $company->id)
+                ->update(['workspace_id' => $foreign->id]);
+        });
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
+                'name' => 'Renamed Mid Race',
+                'billing_email' => null,
+                'is_active' => true,
+            ])
+            ->assertNotFound();
+
+        // The row now belongs to the other tenant and still carries its own
+        // name: the request was refused rather than applied to a record it was
+        // never authorized for.
+        $fresh = $company->fresh();
+        $this->assertSame((int) $foreign->id, (int) $fresh?->workspace_id);
+        $this->assertSame('Synthetic Race Client', $fresh?->name);
     }
 
     private function workspace(string $name, string $slug, User $member): Workspace
