@@ -16,12 +16,25 @@ class UpdateClientProjectRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:160'],
-            'description' => ['nullable', 'string', 'max:5000'],
+            // Present as well as nullable, for the same reason as the client's
+            // billing address: nullable says an empty description is legal, not
+            // that an absent key means one. Without `present` a PATCH that only
+            // meant to rename the project erased its description.
+            'description' => ['present', 'nullable', 'string', 'max:5000'],
             'status' => ['required', 'string', 'in:active,archived'],
             // Narrowing what a client sees is a disclosure decision, so it is
             // always sent rather than defaulted - an omitted checkbox must not
             // quietly re-expose a project someone hid.
             'is_visible_to_client' => ['required', 'boolean'],
+            // The version the operator was looking at when they opened the
+            // form. Required, because the field it protects is a disclosure
+            // decision: two managers with the Manage page open, one hides a
+            // project, and the other's stale form still carries
+            // `is_visible_to_client: true` and re-exposes it. Every field here
+            // passes validation in that scenario - the payload is not
+            // malformed, it is out of date - so nothing but the version can
+            // tell the difference.
+            'lock_version' => ['required', 'integer', 'min:1'],
         ];
     }
 }

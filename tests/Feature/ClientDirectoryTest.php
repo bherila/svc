@@ -12,6 +12,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
@@ -1013,6 +1014,7 @@ class ClientDirectoryTest extends TestCase
                 'description' => 'Synthetic description',
                 'status' => 'archived',
                 'is_visible_to_client' => false,
+                'lock_version' => (int) $project->fresh()?->lock_version,
             ])
             ->assertRedirect();
 
@@ -1043,6 +1045,9 @@ class ClientDirectoryTest extends TestCase
                 'description' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
+                // A payload that validates, so the refusal below is the
+                // company check and not the version rule arriving first.
+                'lock_version' => (int) $project->fresh()?->lock_version,
             ])
             ->assertNotFound();
 
@@ -1298,6 +1303,165 @@ class ClientDirectoryTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame((int) $mine->id, (int) $company->fresh()?->workspace_id);
+    }
+
+    /**
+     * An omitted billing address is not an instruction to erase one.
+     *
+     * `nullable` says an empty value is legal. It says nothing about an absent
+     * key, so a PATCH that supplied only `name` and `is_active` validated, and
+     * `validated('billing_email')` returned the same null an explicit clear
+     * produces - the controller could not tell the two apart and wrote over a
+     * real address. `present` separates them, and this asserts the separation
+     * rather than the rule, because the rule reads correct either way.
+     */
+    public function test_a_billing_address_survives_a_payload_that_omits_it(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Keep', 'synthetic-keep', $manager);
+        $company = $this->company($workspace, 'Synthetic Keep Client', 'synthetic-keep-client');
+        $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'name' => 'Synthetic Keep Client',
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors('billing_email');
+
+        $this->assertSame('billing@synthetic.test', $company->fresh()?->billing_email);
+    }
+
+    /**
+     * The same distinction on a project's description.
+     *
+     * Asserted separately rather than trusted to the shared reasoning: the two
+     * requests are different classes, and the rule was wrong in both of them
+     * for the same reason, which is exactly the pattern a single test lets
+     * survive on one side.
+     */
+    public function test_a_description_survives_a_payload_that_omits_it(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Desc', 'synthetic-desc', $manager);
+        $company = $this->company($workspace, 'Synthetic Desc Client', 'desc-client');
+        $project = $this->project($workspace, $company, 'Synthetic Desc Project');
+        $project->forceFill(['description' => 'Original scope of work.'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed Project',
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertSessionHasErrors('description');
+
+        $this->assertSame('Original scope of work.', $project->fresh()?->description);
+    }
+
+    /**
+     * A form composed before someone hid a project cannot un-hide it.
+     *
+     * Two managers with the Manage page open. One hides a project; the other
+     * submits a form loaded earlier, meaning only to rename it. Every field in
+     * that payload validates - it is not malformed, it is out of date - and its
+     * stale `is_visible_to_client: true` silently re-exposed the project to the
+     * client. The version the form was rendered from is the only thing that
+     * distinguishes the two, so the save is refused whole rather than merged
+     * field by field.
+     */
+    public function test_a_stale_project_form_cannot_re_expose_a_hidden_project(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Stale', 'synthetic-stale', $manager);
+        $company = $this->company($workspace, 'Synthetic Stale Client', 'stale-client');
+        $project = $this->project($workspace, $company, 'Synthetic Stale Project');
+
+        // What the second manager's browser is holding.
+        $staleVersion = (int) $project->fresh()?->lock_version;
+
+        // The first manager hides it, which advances the version.
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Synthetic Stale Project',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => false,
+                'lock_version' => $staleVersion,
+            ])
+            ->assertRedirect();
+
+        $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
+        $this->assertNotSame($staleVersion, (int) $project->fresh()?->lock_version);
+
+        // The second manager saves a rename from the older form.
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed From A Stale Form',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => $staleVersion,
+            ])
+            ->assertSessionHasErrors('lock_version');
+
+        // Neither the disclosure nor the rename lands: the save is refused as a
+        // whole, so the operator reloads and decides again with current values.
+        $fresh = $project->fresh();
+        $this->assertFalse((bool) $fresh?->is_visible_to_client);
+        $this->assertSame('Synthetic Stale Project', $fresh?->name);
+    }
+
+    /**
+     * A company reparented between the authorization and the write is not
+     * written.
+     *
+     * `assertOwnedBy` describes the instance the router bound, and the router
+     * binds by public id alone. The write that followed named only the primary
+     * key, so the two were separate statements about a row nothing held still
+     * in between - reparent it after the check and a request authorized against
+     * one tenant edits a row now owned by another.
+     *
+     * The race is made deterministic with `beforeExecuting`, which lands the
+     * reparent in the same gap a concurrent request would occupy: after the
+     * controller has authorized, before its first statement runs. The reparent
+     * is fired once and on its own connection callback guard, because it issues
+     * queries itself and would otherwise recurse.
+     */
+    public function test_a_company_reparented_after_authorization_is_not_edited(): void
+    {
+        $manager = User::factory()->create();
+        $mine = $this->workspace('Synthetic Race', 'synthetic-race', $manager);
+        $company = $this->company($mine, 'Synthetic Race Client', 'race-client');
+        $foreign = Workspace::query()->create(['name' => 'Foreign Race Tenant', 'slug' => 'foreign-race']);
+
+        $reparented = false;
+        DB::connection()->beforeExecuting(function () use (&$reparented, $company, $foreign): void {
+            if ($reparented) {
+                return;
+            }
+
+            $reparented = true;
+            DB::table('client_companies')
+                ->where('id', $company->id)
+                ->update(['workspace_id' => $foreign->id]);
+        });
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
+                'name' => 'Renamed Mid Race',
+                'billing_email' => null,
+                'is_active' => true,
+            ])
+            ->assertNotFound();
+
+        // The row now belongs to the other tenant and still carries its own
+        // name: the request was refused rather than applied to a record it was
+        // never authorized for.
+        $fresh = $company->fresh();
+        $this->assertSame((int) $foreign->id, (int) $fresh?->workspace_id);
+        $this->assertSame('Synthetic Race Client', $fresh?->name);
     }
 
     private function workspace(string $name, string $slug, User $member): Workspace

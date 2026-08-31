@@ -9,6 +9,7 @@ use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class ClientCompanyController extends Controller
@@ -48,11 +49,34 @@ class ClientCompanyController extends Controller
 
         $billingEmail = $request->validated('billing_email');
 
-        $clientCompany->update([
-            'name' => $request->string('name')->toString(),
-            'billing_email' => is_string($billingEmail) ? $billingEmail : null,
-            'is_active' => $request->boolean('is_active'),
-        ]);
+        // Re-read under a row lock inside the transaction that writes, scoped
+        // to the workspace this request was authorized against.
+        //
+        // `assertOwnedBy` checks the instance the router bound, and the router
+        // binds by key alone. The write that followed was also keyed by primary
+        // key, so the authorization and the update were two statements about a
+        // row that nothing held still in between: reparent the company after
+        // the check and the request authorized against one tenant modifies a
+        // row now owned by another. Taking the lock and re-asserting ownership
+        // under it makes the check and the write one decision.
+        DB::transaction(function () use ($workspace, $clientCompany, $request, $billingEmail): void {
+            $locked = ClientCompany::query()
+                ->whereKey($clientCompany->getKey())
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->first();
+
+            // Gone, or no longer this workspace's. 404 rather than 403 for the
+            // same reason every other miss here does: a tenant learns nothing
+            // about a record it cannot reach, including that it exists.
+            abort_if($locked === null, 404);
+
+            $locked->update([
+                'name' => $request->string('name')->toString(),
+                'billing_email' => is_string($billingEmail) ? $billingEmail : null,
+                'is_active' => $request->boolean('is_active'),
+            ]);
+        });
 
         return redirect()->back()->with('status', 'Client updated.');
     }
