@@ -127,30 +127,57 @@
 
 /* The original operations screens predate the token-based UI components.
  * Keep their slate utility palette responsive while they are progressively
- * migrated, so a dark root changes the entire authenticated surface. */
+ * migrated, so a dark root changes the entire authenticated surface.
+ *
+ * Scoped to [data-appearance-bridge], which the operator surfaces set and
+ * customer-facing ones do not. These utilities are dual-use, and unscoped
+ * these rules invert the second use: `text-slate-950` is the page
+ * foreground on the operations and dashboard screens, but on the portal's
+ * "Accept proposal" button and the welcome page's call to action it is a
+ * dark label on a light `bg-cyan-300` - and remapping that to
+ * `--foreground` paints it near-white on a light background. Those pages
+ * have no selector and their visitors never chose dark; they would inherit
+ * it from `prefers-color-scheme` alone.
+ *
+ * Opt-in rather than opt-out, so a customer-facing page added later is
+ * unaffected by default instead of by someone remembering to exclude it.
+ *
+ * Each rule is doubled because on some screens the marker sits on the very
+ * element carrying the utility (`<main class="bg-slate-100 text-slate-950">`),
+ * which a descendant selector alone would skip. */
 @layer utilities {
-    .dark .bg-white {
+    .dark [data-appearance-bridge].bg-white,
+    .dark [data-appearance-bridge] .bg-white {
         background-color: var(--card);
     }
 
-    .dark .bg-slate-50,
-    .dark .bg-slate-100 {
+    .dark [data-appearance-bridge].bg-slate-50,
+    .dark [data-appearance-bridge] .bg-slate-50,
+    .dark [data-appearance-bridge].bg-slate-100,
+    .dark [data-appearance-bridge] .bg-slate-100 {
         background-color: var(--muted);
     }
 
-    .dark .border-slate-200,
-    .dark .border-slate-300 {
+    .dark [data-appearance-bridge].border-slate-200,
+    .dark [data-appearance-bridge] .border-slate-200,
+    .dark [data-appearance-bridge].border-slate-300,
+    .dark [data-appearance-bridge] .border-slate-300 {
         border-color: var(--border);
     }
 
-    .dark .text-slate-950,
-    .dark .text-slate-800 {
+    .dark [data-appearance-bridge].text-slate-950,
+    .dark [data-appearance-bridge] .text-slate-950,
+    .dark [data-appearance-bridge].text-slate-800,
+    .dark [data-appearance-bridge] .text-slate-800 {
         color: var(--foreground);
     }
 
-    .dark .text-slate-400,
-    .dark .text-slate-500,
-    .dark .text-slate-600 {
+    .dark [data-appearance-bridge].text-slate-400,
+    .dark [data-appearance-bridge] .text-slate-400,
+    .dark [data-appearance-bridge].text-slate-500,
+    .dark [data-appearance-bridge] .text-slate-500,
+    .dark [data-appearance-bridge].text-slate-600,
+    .dark [data-appearance-bridge] .text-slate-600 {
         color: var(--muted-foreground);
     }
 }

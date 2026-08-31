@@ -157,6 +157,9 @@ describe('client context layout', () => {
         expect(
             screen.getByRole('combobox', { name: 'Appearance' }),
         ).toBeInTheDocument();
+        expect(
+            document.querySelector('[data-appearance-bridge]'),
+        ).not.toBeNull();
     });
 
     /**

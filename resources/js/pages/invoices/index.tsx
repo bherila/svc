@@ -78,7 +78,10 @@ export default function WorkspaceInvoices({
     return (
         <>
             <Head title="Invoices" />
-            <main className="mx-auto grid max-w-6xl gap-6 p-6">
+            <main
+                className="mx-auto grid max-w-6xl gap-6 p-6"
+                data-appearance-bridge
+            >
                 <header className="flex flex-wrap items-end justify-between gap-3">
                     <div className="grid gap-1">
                         <Link

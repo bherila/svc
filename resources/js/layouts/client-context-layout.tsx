@@ -96,7 +96,7 @@ export default function ClientContextLayout({
     );
 
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen" data-appearance-bridge>
             <div className="border-b">
                 <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-3">
                     <Select

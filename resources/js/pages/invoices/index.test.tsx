@@ -21,4 +21,5 @@ test('offers the appearance selector above the workspace invoice list', () => {
     expect(
         screen.getByRole('combobox', { name: 'Appearance' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveAttribute('data-appearance-bridge');
 });

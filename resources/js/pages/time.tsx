@@ -293,7 +293,10 @@ export default function TimeSheet({
         <ClientContextLayout active="time">
             <Head title="Time" />
 
-            <div className="min-h-screen bg-background text-foreground">
+            <div
+                className="min-h-screen bg-background text-foreground"
+                data-appearance-bridge
+            >
                 <div className="mx-auto max-w-6xl px-6 py-10">
                     <header className="flex flex-wrap items-end justify-between gap-4">
                         <div>

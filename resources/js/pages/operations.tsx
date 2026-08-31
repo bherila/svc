@@ -606,7 +606,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
     return (
         <>
             <Head title={`${workspace.name} operations`} />
-            <main className="min-h-screen bg-slate-100 text-slate-950">
+            <main
+                className="min-h-screen bg-slate-100 text-slate-950"
+                data-appearance-bridge
+            >
                 <header className="border-b border-slate-200 bg-white">
                     <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
                         <div>
