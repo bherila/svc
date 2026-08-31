@@ -164,6 +164,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.agreement_link => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
+        'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_uses_the_period_retainer_override',
         'client_agreements.client_project_id => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
         'client_agreements.ends_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
@@ -214,16 +215,21 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.starting_negative_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.starting_unused_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.unused_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_source => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.client_visible_description => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
         'client_time_entries.currency => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
         'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
         'client_time_entries.job_type => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
+        'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
         'client_time_entries.subcontractor_billing_mode => reader_in:App\Models\ClientTimeEntry::scopeRetainerBillable',
@@ -268,8 +274,6 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.updated_at',
         'client_invoices.void_reason',
         'client_invoices.voided_at',
-        'client_time_entries.approved_at',
-        'client_time_entries.approved_by_user_id',
         'client_time_entries.created_at',
         'client_time_entries.updated_at',
     ];
@@ -572,8 +576,17 @@ final class NullSemanticsRegistryTest extends TestCase
             // that does is covered elsewhere but not cited here, so the cap
             // half of this note is unpinned.
             'catch_up_threshold_minutes' => [
-                'covered_by' => InvoicingExamplesTest::class,
-                'method' => 'test_an_unset_threshold_defaults_to_one_hour',
+                [
+                    'covered_by' => InvoicingExamplesTest::class,
+                    'method' => 'test_an_unset_threshold_defaults_to_one_hour',
+                ],
+                // #152: the default is derived from period-aware capacity, so a
+                // period override moves it, and the cap half of the note above
+                // is pinned now too.
+                [
+                    'covered_by' => InvoicingExamplesTest::class,
+                    'method' => 'test_an_unset_threshold_uses_the_period_retainer_override',
+                ],
             ],
             // No period-level override, so the monthly terms are scaled to the
             // cycle instead - a different ledger algorithm, not a default value.
@@ -616,13 +629,22 @@ final class NullSemanticsRegistryTest extends TestCase
         ],
         'client_time_entries' => [
             // Part of the fragment-recombination signature, where null is
-            // encoded distinctly from a task id and decides whether two
-            // fragments may merge. Treating it as inert would let fragments that
-            // differ only in task attribution recombine, and the survivor's
-            // values would silently replace the other's. That signature also
-            // omits four fields the splitter deliberately preserves (#146), so
-            // pinning this column should wait on that decision.
-            'client_task_id' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            // compared as a typed value distinct from a task id and decides
+            // whether two fragments may merge. Treating it as inert would let
+            // fragments that differ only in task attribution recombine, and the
+            // survivor's values would silently replace the other's.
+            //
+            // #153 closed #146 and with it the reason this waited: the
+            // signature no longer omits the fields the splitter preserves, and
+            // that test pins this column's null on its own - the split baseline
+            // carries no task and exactly one fragment is given one.
+            'client_task_id' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            ],
             // Null is permitted for flat-hourly and direct entries, which is
             // what the citation covers. On ordinary billable time the same null
             // blocks approval and makes the entry unselectable for an explicit
@@ -646,8 +668,21 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
             ],
-            'approved_by_user_id' => 'PENDING-AUDIT',
-            'approved_at' => 'PENDING-AUDIT',
+            // Not "unknown": unapproved. #153 put both in the fragment merge
+            // signature, so the null is what keeps an approved fragment from
+            // being folded into an unapproved one - and a merge *deletes* the
+            // loser, so a false equality here destroys the approval record
+            // rather than merely widening a query. Each is isolated by its own
+            // case: the split baseline leaves both null and one fragment
+            // receives exactly one of them.
+            'approved_by_user_id' => [
+                'covered_by' => AllocationServiceTest::class,
+                'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+            ],
+            'approved_at' => [
+                'covered_by' => AllocationServiceTest::class,
+                'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+            ],
             // Both cited a fixture that nulls the pair, while production refuses
             // on `amount === null || currency === ''`. Because that is an OR,
             // deleting either half left the cited test green on the other's
@@ -661,8 +696,11 @@ final class NullSemanticsRegistryTest extends TestCase
                 ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
                 ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
             ],
-            // Also part of the fragment signature, and json-encoded into it, so
-            // a null is distinguishable from a payload.
+            // Also part of the fragment signature. #153 replaced the json
+            // encoding this note described with a direct typed comparison,
+            // because encoding reintroduced the ambiguity it was meant to
+            // remove - `?? 'null'` made a real null and the literal string
+            // "null" identical. Compared as arrays, a null stays a null.
             'subcontractor_cost_metadata' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
@@ -692,8 +730,20 @@ final class NullSemanticsRegistryTest extends TestCase
                     'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
                 ],
                 ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                // Third reader, added by #153: provenance survives
+                // recombination, so an `explicit` rate is never replaced by one
+                // re-resolved from the agreement. Not a second citation - that
+                // case diverges two non-null sources, so it pins no null.
+                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             ],
-            'job_type' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            // Also in the fragment signature. Not cited: #153's divergence
+            // cases give this column a non-null baseline ('Software
+            // Development'), so they prove the field is compared, not that a
+            // null is. Exposure, not coverage, until a case nulls it.
+            'job_type' => [
+                ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            ],
             // Not a fragment of anything. Lineage is the only thing that makes
             // two rows one entry, so entries that merely look alike - same day,
             // person, project and description - are never merged.
