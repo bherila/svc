@@ -125,7 +125,13 @@ final class AllocationService
         // own - a corrected date, a rewritten description, a reassignment -
         // would have that edit silently thrown away and its minutes folded in
         // under the survivor's version.
-        $signature = fn (ClientTimeEntry $entry): string => implode('|', [
+        // JSON rather than a delimiter join. `description`,
+        // `client_visible_description` and `job_type` are free text, so a value
+        // containing the delimiter shifts every field after it: two entries
+        // that differ can produce one signature, and recombination then folds
+        // an edited fragment into the survivor and deletes it. JSON quotes and
+        // escapes each element, so the boundaries cannot move.
+        $signature = fn (ClientTimeEntry $entry): string => (string) json_encode([
             $entry->status,
             (int) $entry->is_billable,
             (int) $entry->is_deferred,
@@ -146,7 +152,7 @@ final class AllocationService
             $entry->subcontractor_cost_amount ?? 'null',
             $entry->subcontractor_cost_currency ?? 'null',
             json_encode($entry->subcontractor_cost_metadata, JSON_THROW_ON_ERROR),
-        ]);
+        ], JSON_THROW_ON_ERROR);
 
         $first = $signature($group->first());
 

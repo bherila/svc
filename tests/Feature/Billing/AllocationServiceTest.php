@@ -180,6 +180,39 @@ final class AllocationServiceTest extends TestCase
         }
     }
 
+    /**
+     * Two fragments that differ only across a field boundary must not merge.
+     *
+     * The signature used to join fields with `|`, and the free-text ones -
+     * description, client-visible description, job type - can contain it. A
+     * value carrying the delimiter shifts every field after it, so entries
+     * that genuinely differ collapse to one signature, and recombination folds
+     * the edited fragment into the survivor and deletes it.
+     *
+     * The two rows here are constructed to be exactly that pair: the same
+     * characters, split differently across two adjacent fields.
+     */
+    public function test_a_delimiter_in_free_text_cannot_forge_a_matching_signature(): void
+    {
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        $parts['primary']->forceFill([
+            'description' => 'Investigate',
+            'client_visible_description' => 'billing|export',
+        ])->save();
+
+        // Same characters, one boundary further along.
+        $parts['overflow']->forceFill([
+            'description' => 'Investigate|billing',
+            'client_visible_description' => 'export',
+        ])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(2, $this->entryCount());
+        $this->assertSame('Investigate', $parts['primary']->fresh()?->description);
+        $this->assertSame('Investigate|billing', $parts['overflow']->fresh()?->description);
+    }
+
     /** @return array<string, array{string, int|string}> */
     public static function fragmentFieldsThatMustAgree(): array
     {
