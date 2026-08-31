@@ -67,6 +67,65 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.update', 'outcome' => 'failed', 'error_category' => 'conflict']);
     }
 
+    /**
+     * The agent door refuses a payload that names a subject, and attributes the
+     * entry to the token holder.
+     *
+     * The web door is pinned for the same property in `TimeSheetTest`, and the
+     * two doors reach it differently: this one validates `entries.*` against an
+     * explicit key allowlist, so an unknown field is a 422; the web request
+     * simply never reads one, so it is dropped. Refusal is the stronger of the
+     * two and is asserted as refusal rather than flattened into "the subject is
+     * ignored", which would pass on either mechanism and notice neither
+     * changing.
+     *
+     * Both are asserted because #101's whole subject is these two doors having
+     * drifted apart on authorization while nothing compared them - and "a
+     * contributor may log time for themselves" is only safe while neither door
+     * takes a subject. This is what would have to give first.
+     */
+    public function test_the_agent_door_refuses_to_log_time_for_another_user(): void
+    {
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $other = User::factory()->create();
+        $this->member($workspace, $contributor);
+        $this->member($workspace, $other);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $named = [
+            'project_id' => $project->public_id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 45,
+            'description' => 'Logged for someone else',
+        ];
+
+        foreach (['user_id' => $other->id, 'user' => $other->public_id] as $field => $value) {
+            $this->withHeader('Idempotency-Key', "time-log-subject-{$field}")
+                ->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", [
+                    'entries' => [[...$named, $field => $value]],
+                ])
+                ->assertUnprocessable();
+        }
+
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        // The same request without the subject is accepted, and lands on the
+        // token holder - so the refusals above are about the extra field and
+        // not about something else wrong with the payload.
+        $this->withHeader('Idempotency-Key', 'time-log-self')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$named]])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('client_time_entries', ['user_id' => $contributor->id]);
+        $this->assertDatabaseMissing('client_time_entries', ['user_id' => $other->id]);
+    }
+
     public function test_client_visible_time_requires_explicit_client_facing_text(): void
     {
         config(['agent_api.writes_enabled' => true]);

@@ -56,7 +56,6 @@ class TimeSheetController extends Controller
         Gate::authorize('view', $workspace);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $canManage = Gate::forUser($user)->allows('manage', $workspace);
 
         // Each relation is constrained by the workspace as well as by its
         // parent. The schema carries independent foreign keys rather than
@@ -189,10 +188,16 @@ class TimeSheetController extends Controller
                 'projects' => $company->projects->map(fn (ClientProject $project): array => [
                     'id' => $project->public_id,
                     'name' => $project->name,
-                    // Both halves, because the write requires both. Project
-                    // access alone would advertise a form whose POST is
-                    // refused by the workspace gate on `store()`.
-                    'can_log_time' => $canManage && ($permissions[$project->id]['log'] ?? false),
+                    // One half now, because the write asks one question. This
+                    // was `$canManage && ...`, to keep the screen from
+                    // advertising a form the workspace gate on `store()` would
+                    // refuse - a workaround for the two doors disagreeing
+                    // rather than a rule of its own (#101). `store()` now asks
+                    // `canLogTime` and nothing else, so restating the old gate
+                    // here would hide the form from exactly the contributors
+                    // the change exists to admit, and the workspace lookup it
+                    // needed is gone with it.
+                    'can_log_time' => $permissions[$project->id]['log'] ?? false,
                     'tasks' => $project->tasks->map(fn (ClientTask $task): array => [
                         'id' => $task->public_id,
                         'title' => $task->title,

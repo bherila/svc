@@ -575,35 +575,54 @@ class TimeSheetTest extends TestCase
     }
 
     /**
-     * The screen must not offer a form whose submission is refused. Logging
-     * goes through the workspace `manage` gate, so project access alone is not
-     * enough to advertise it.
+     * The screen offers the log form to exactly whoever the endpoint admits.
+     *
+     * That invariant is older than #101 and survives it; only the answer
+     * changed. It used to hold by having the screen restate the workspace
+     * `manage` gate on top of project access, because `store()` asked for both
+     * - so a contributor was refused, and the form was correctly hidden. Now
+     * `store()` asks `canLogTime` alone and the contributor is admitted, so the
+     * form must be shown.
+     *
+     * Both roles in one test on purpose. Asserted separately, a screen that
+     * always says true and an endpoint that always says true agree with each
+     * other while agreeing about nothing, and the viewer half is what makes the
+     * contributor half mean something.
      */
-    public function test_a_member_without_the_manage_gate_is_not_offered_the_log_form(): void
+    public function test_the_screen_offers_the_log_form_to_exactly_whoever_may_use_it(): void
     {
-        $member = User::factory()->create();
-        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
-        ClientProjectMembership::query()->create([
-            'workspace_id' => $this->workspace->id,
-            'client_project_id' => $this->project->id,
-            'user_id' => $member->id,
-            'role' => ProjectRole::Contributor->value,
-        ]);
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
 
-        $this->actingAs($member)
+        $this->actingAs($contributor)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('companies.0.projects.0.can_log_time', true));
+
+        $this->actingAs($contributor)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Offered and accepted',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($viewer)
             ->get("/workspaces/{$this->workspace->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('companies.0.projects.0.can_log_time', false));
 
-        // And the endpoint agrees, which is the half that matters.
-        $this->actingAs($member)
+        $this->actingAs($viewer)
             ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
-                'worked_on' => '2026-07-04',
+                'worked_on' => $this->today(),
                 'minutes' => 30,
-                'description' => 'Refused',
+                'description' => 'Neither offered nor accepted',
             ])
             ->assertForbidden();
+
+        $this->assertSame(1, ClientTimeEntry::query()->count());
     }
 
     /**
@@ -2576,6 +2595,202 @@ class TimeSheetTest extends TestCase
     private static function unquote(string $sql): string
     {
         return str_replace(['`', '"'], '', $sql);
+    }
+
+    /**
+     * A project contributor can log time from a browser, as they always could
+     * through a token.
+     *
+     * The two doors disagreed: the web path asked `manage` on the workspace,
+     * the agent API asked `canLogTime` on the project (#101). This is the
+     * behaviour that changes - everything below is what must not change with it.
+     */
+    public function test_a_project_contributor_can_log_time_from_the_web(): void
+    {
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+
+        $this->actingAs($contributor)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic contributor time.',
+            ])
+            ->assertRedirect();
+
+        $entry = ClientTimeEntry::query()->latest('id')->sole();
+        $this->assertSame($contributor->id, $entry->user_id);
+    }
+
+    /**
+     * A viewer still cannot, on either door.
+     *
+     * `canLogTime()` is every project role except viewer, so this is the edge
+     * the new gate turns on. Without it "both doors ask canLogTime" would be
+     * satisfied by a rule that admitted everyone who can see the project.
+     */
+    public function test_a_project_viewer_cannot_log_time_from_the_web(): void
+    {
+        $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
+
+        $this->actingAs($viewer)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic viewer time.',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * A workspace member with no project role cannot log time.
+     *
+     * Membership admits them to the workspace, not to a project in it. Asserted
+     * because the old gate keyed on the workspace, so a rule that kept any part
+     * of that reading would let this through.
+     */
+    public function test_a_workspace_member_with_no_project_role_cannot_log_time(): void
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+
+        $this->actingAs($member)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic outsider time.',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * Time is logged against the person logging it, whatever the payload says.
+     *
+     * The whole safety of admitting contributors rests on this: neither door
+     * accepts a subject, so widening who may write does not widen whose time
+     * they may write. It was true before this change and pinned by nothing -
+     * the property most worth a test is the one everything else assumes.
+     *
+     * Both spellings are sent, because the workflow takes the actor as the
+     * worker and a future edition that started reading the payload would
+     * plausibly reach for either name.
+     */
+    public function test_time_is_attributed_to_the_actor_not_to_a_named_subject(): void
+    {
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $someoneElse = $this->memberWithProjectRole(ProjectRole::Contributor);
+
+        $this->actingAs($contributor)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic attributed time.',
+                'user_id' => $someoneElse->id,
+                'user' => $someoneElse->public_id,
+            ])
+            ->assertRedirect();
+
+        $entry = ClientTimeEntry::query()->latest('id')->sole();
+        $this->assertSame($contributor->id, $entry->user_id);
+        $this->assertNotSame($someoneElse->id, $entry->user_id);
+    }
+
+    /**
+     * A contributor may record work; naming its rate is a manager's decision.
+     *
+     * A rate supplied at creation is stored as `billing_rate_source =>
+     * 'explicit'`, which outranks the rate the agreement would have resolved -
+     * so this field prices the work rather than describing it. Refused as a
+     * field error rather than a 403, because the request is a legitimate one
+     * from someone entitled to make it with one field they may not set.
+     */
+    public function test_a_contributor_cannot_price_their_own_time(): void
+    {
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+
+        $this->actingAs($contributor)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic priced time.',
+                'billing_rate_amount' => 99999,
+            ])
+            ->assertSessionHasErrors('billing_rate_amount');
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * A project manager still can, so the guard narrows one role rather than
+     * removing the field.
+     */
+    public function test_a_project_manager_can_state_the_rate(): void
+    {
+        $manager = $this->memberWithProjectRole(ProjectRole::Manager);
+
+        $this->actingAs($manager)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic managed time.',
+                'billing_rate_amount' => 12500,
+            ])
+            ->assertRedirect();
+
+        $entry = ClientTimeEntry::query()->latest('id')->sole();
+        $this->assertSame(12500, $entry->billing_rate_amount);
+        $this->assertSame('explicit', $entry->billing_rate_source);
+    }
+
+    /**
+     * A contributor logging time on a project in another workspace is not
+     * found, not merely refused.
+     *
+     * The ownership assertion runs before the access question deliberately:
+     * `canLogTime` reads the project's *own* workspace, so asking it about a
+     * foreign project would answer honestly about the wrong workspace - and a
+     * contributor there would be admitted through this workspace's URL.
+     */
+    public function test_a_project_from_another_workspace_is_not_loggable_here(): void
+    {
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $foreign = $this->foreignWorkspace();
+
+        // Workspace membership first: the project membership carries a
+        // composite key into it, so the rows cannot be written the other way
+        // round.
+        $foreign['workspace']->memberships()->create(['user_id' => $contributor->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $foreign['workspace']->id,
+            'client_project_id' => $foreign['project']->id,
+            'user_id' => $contributor->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+
+        $this->actingAs($contributor)
+            ->post("/workspaces/{$this->workspace->public_id}/projects/{$foreign['project']->public_id}/time-entries", [
+                'worked_on' => $this->today(),
+                'minutes' => 30,
+                'description' => 'Synthetic cross-tenant time.',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+    }
+
+    /**
+     * A date the sheet's window always contains.
+     *
+     * The window is twelve months either side of now rather than a fixed span,
+     * so a literal date would age out of it and start failing on the validation
+     * rule instead of on what the test is about.
+     */
+    private function today(): string
+    {
+        return now()->toDateString();
     }
 
     /**
