@@ -192,6 +192,80 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame('active', $agreement->fresh()->status);
     }
 
+    /**
+     * A null `activated_at` is what admits the stamp; a set one preserves it.
+     *
+     * Activation writes `activated_at ?? now()`, so the null is the only state
+     * in which the timestamp moves. Reactivating a paused agreement must leave
+     * the original date alone - it is when the client's terms took effect, and
+     * rewriting it forward on every pause would move the start of the billing
+     * relationship each time somebody toggled the status.
+     */
+    public function test_only_an_unstamped_agreement_takes_an_activation_date(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $workflow = app(AgreementWorkflow::class);
+        $agreement = $workflow->create($workspace, $company, null, null, [
+            'title' => 'Synthetic activation agreement',
+            'currency' => 'USD',
+        ]);
+
+        $this->assertNull($agreement->activated_at, 'A draft has not been activated');
+
+        $this->travelTo('2026-08-15 09:00:00');
+        $first = $workflow->activate($agreement)->activated_at;
+        $this->assertNotNull($first);
+
+        $agreement->fresh()->forceFill(['status' => 'paused'])->save();
+
+        $this->travelTo('2026-09-20 09:00:00');
+        $workflow->activate($agreement->fresh());
+
+        $this->assertTrue(
+            $first->equalTo($agreement->fresh()->activated_at),
+            'Reactivation keeps the date the agreement first took effect',
+        );
+    }
+
+    /**
+     * A null `signed_at` is what admits a signature; a set one closes it.
+     *
+     * The workflow returns early when the column is already stamped, so a
+     * second signing is a no-op rather than an overwrite. Without that, a
+     * replayed request would rewrite the signatory and the date recorded
+     * against a live agreement, and record a second signing activity for a
+     * signature that happened once.
+     */
+    public function test_only_an_unsigned_agreement_can_be_signed(): void
+    {
+        $owner = User::factory()->create();
+        $second = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $workspace->memberships()->create(['user_id' => $second->id, 'role' => 'admin']);
+        $workflow = app(AgreementWorkflow::class);
+        $agreement = $workflow->activate($workflow->create($workspace, $company, null, null, [
+            'title' => 'Synthetic signing agreement',
+            'currency' => 'USD',
+        ]));
+
+        $this->assertNull($agreement->signed_at, 'Nobody has signed yet');
+
+        $signed = $workflow->sign($agreement, $owner, 'First Signer', 'Owner');
+        $this->assertNotNull($signed->signed_at);
+
+        $again = $workflow->sign($agreement->fresh(), $second, 'Second Signer', 'Impostor');
+
+        $this->assertSame('First Signer', $again->signer_name);
+        $this->assertSame($owner->id, $again->signed_by_user_id);
+        $this->assertTrue($signed->signed_at->equalTo($again->signed_at));
+        $this->assertSame(
+            1,
+            ClientCompanyActivity::query()->where('action', 'agreement.signed')->count(),
+            'One signature, one activity',
+        );
+    }
+
     /** @return array{0: Workspace, 1: ClientCompany} */
     public function test_plain_workspace_member_cannot_accept_a_proposal_on_the_clients_behalf(): void
     {

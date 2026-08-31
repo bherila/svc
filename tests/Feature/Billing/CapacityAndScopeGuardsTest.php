@@ -223,6 +223,67 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
+     * An agreement that never stated a first-cycle policy prorates.
+     *
+     * `first_cycle_proration` is read through `tryFrom((string) $value)`, so a
+     * null lands on the `ProrateHours` fallback. The two readings differ by a
+     * whole month's capacity on a mid-month start, and the safe one is the
+     * smaller: granting a full month nobody agreed to shows as extra retainer
+     * hours the client never bought, and understates the overage that follows.
+     */
+    public function test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month(): void
+    {
+        $agreement = $this->agreement();
+        $agreement->forceFill(['starts_on' => '2024-01-16', 'first_cycle_proration' => null])->save();
+
+        $calculator = new RetainerCalculator;
+        $january = fn (ClientAgreement $terms): float => $calculator->monthRetainerMultiplier(
+            $terms,
+            Carbon::parse('2024-01-01'),
+            Carbon::parse('2024-01-31'),
+        );
+
+        $this->assertSame(0.5161, $january($agreement->fresh()), 'Sixteen of thirty-one days');
+
+        // The stated alternative, so the assertion above is pinned to the null
+        // rather than to the date arithmetic.
+        $agreement->forceFill(['first_cycle_proration' => 'full_period'])->save();
+        $this->assertSame(1.0, $january($agreement->fresh()));
+    }
+
+    /**
+     * An agreement that never stated an interim policy does not bill interim.
+     *
+     * Every reader coerces the flag with `(bool)`, so a null reads as off. The
+     * column is deliberately nullable rather than `default false` because the
+     * backfill has to tell an unset flag from a deliberate one - but for
+     * billing there is only one safe reading of "unset", and it is the one that
+     * does not send the client a mid-cycle charge nobody configured.
+     */
+    public function test_an_agreement_with_no_interim_policy_bills_no_interim_overage(): void
+    {
+        $project = $this->project('Interim');
+        $agreement = $this->quarterlyAgreement($project);
+        $agreement->forceFill(['bill_overage_interim' => null])->save();
+        $this->entry($project, '2024-01-10', 900); // 15h against a 10h retainer
+
+        $generator = app(InterimOverageGenerator::class);
+
+        $this->assertNull(
+            $generator->generateInterimOverageInvoice($this->company, Carbon::parse('2024-01-01'), $agreement->fresh()),
+            'An unset flag is not a licence to charge mid-cycle',
+        );
+
+        // The stated alternative, so the assertion above is pinned to the null
+        // rather than to the absence of an overage.
+        $agreement->forceFill(['bill_overage_interim' => true])->save();
+        $this->assertInstanceOf(
+            ClientInvoice::class,
+            $generator->generateInterimOverageInvoice($this->company, Carbon::parse('2024-01-01'), $agreement->fresh()),
+        );
+    }
+
+    /**
      * The invoice line is built from `period_retainer_minutes` when it is set.
      * Capacity read `retainer_minutes` directly, so an imported agreement
      * carrying both sold one number of hours and granted another.
@@ -242,6 +303,39 @@ final class CapacityAndScopeGuardsTest extends TestCase
             ),
             'Capacity must grant the hours the invoice charged for',
         );
+    }
+
+    /**
+     * An undated line does not move the invoice's service period.
+     *
+     * The period is widened from the dates its work lines carry, and a null
+     * `line_date` is "no date recorded" rather than a date at all. Reading it
+     * as one - `Carbon::parse(null)` is today - would stamp the period with the
+     * day the invoice happened to be generated, and the overlap guard reads
+     * that period to decide whether the next cycle may be billed.
+     */
+    public function test_an_undated_line_does_not_widen_the_service_period(): void
+    {
+        $agreement = $this->agreement();
+        $invoice = $this->invoice($agreement);
+        $line = $invoice->lines()->create([
+            'workspace_id' => $this->workspace->id, 'type' => 'additional_hours', 'description' => 'Undated work',
+            'quantity' => '1', 'unit_amount' => 20000, 'total_amount' => 20000, 'tax_amount' => 0, 'sort_order' => 1,
+            'line_date' => null,
+        ]);
+
+        $this->widenPeriodFromLines($invoice);
+
+        $this->assertNull($invoice->refresh()->service_period_start, 'An undated line says nothing about when the work happened');
+        $this->assertNull($invoice->service_period_end);
+
+        // The dated alternative, so the assertion above is pinned to the null
+        // rather than to the widening never happening at all.
+        $line->forceFill(['line_date' => '2024-02-11'])->save();
+        $this->widenPeriodFromLines($invoice);
+
+        $this->assertSame('2024-02-11', $invoice->refresh()->service_period_start?->toDateString());
+        $this->assertSame('2024-02-11', $invoice->service_period_end?->toDateString());
     }
 
     // ── Scope ────────────────────────────────────────────────────────────────
@@ -951,6 +1045,12 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $method = new \ReflectionMethod(ClientInvoicingService::class, 'totalBilledOveragesThrough');
 
         return (float) $method->invoke(app(ClientInvoicingService::class), $agreement, Carbon::parse($through));
+    }
+
+    private function widenPeriodFromLines(ClientInvoice $invoice): void
+    {
+        $method = new \ReflectionMethod(ClientInvoicingService::class, 'updateInvoicePeriodFromLines');
+        $method->invoke(app(ClientInvoicingService::class), $invoice->refresh());
     }
 
     private function hoursIn(ClientAgreement $agreement, string $through): float

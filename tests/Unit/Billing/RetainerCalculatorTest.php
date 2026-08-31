@@ -50,6 +50,35 @@ class RetainerCalculatorTest extends TestCase
         ]));
     }
 
+    /**
+     * An agreement carrying no retainer price charges nothing for one.
+     *
+     * With both the period override and the monthly amount unset, the fee this
+     * returns is the fee the retainer line on the invoice asks for. Reading an
+     * absent price as anything but zero would invent a charge; reading it as
+     * zero is what makes "no retainer recorded" and "no retainer billed" the
+     * same statement.
+     */
+    public function test_an_agreement_with_no_retainer_price_bills_no_retainer_fee(): void
+    {
+        $unpriced = new ClientAgreement([
+            'starts_on' => '2026-01-01',
+            'billing_cadence' => BillingCadence::Monthly->value,
+        ]);
+        $cycle = (new BillingCycleResolver)->cycleContaining($unpriced, Carbon::parse('2026-01-15'));
+
+        $calculator = new RetainerCalculator;
+
+        $this->assertNull($unpriced->retainer_amount);
+        $this->assertNull($unpriced->retainer_fee, 'No period override either');
+        $this->assertSame(0.0, $calculator->cycleRetainerFee($unpriced, $cycle, ['retainer_multiplier' => 1.0]));
+
+        // The priced alternative, so the assertion above is pinned to the null
+        // rather than to the multiplier.
+        $priced = $this->agreement(['monthly_retainer_fee' => 1500]);
+        $this->assertSame(1500.0, $calculator->cycleRetainerFee($priced, $cycle, ['retainer_multiplier' => 1.0]));
+    }
+
     public function test_cycle_period_multiplier_respects_termination_date(): void
     {
         $agreement = $this->agreement([

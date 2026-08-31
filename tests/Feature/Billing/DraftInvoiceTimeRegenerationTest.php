@@ -544,6 +544,134 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             ->exists());
     }
 
+    /**
+     * A cadence draft with neither a cycle nor a service period fails closed.
+     *
+     * The cycle columns are the preferred anchor and the service period is the
+     * compatibility path for drafts migrated from before they existed. With
+     * both null there is nothing left to say which period the draft covers, so
+     * the edit is refused rather than regenerated against a guessed range -
+     * which would silently move the client's charge to another month.
+     */
+    public function test_a_cadence_draft_without_a_service_period_fails_closed(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 120]);
+        $invoice = $this->generateJuly($agreement);
+        $originalMinutes = $entry->fresh()?->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill([
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => null,
+            'service_period_end' => null,
+        ])->save();
+        $entry->refresh();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry),
+                    'minutes' => 180,
+                ],
+            );
+            $this->fail('A cadence draft with no period must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('no billing period to regenerate', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+    }
+
+    /**
+     * A cadence draft missing only its period *end* fails closed.
+     *
+     * The sibling above nulls both service-period columns, which cannot prove
+     * anything about either one: the refusal reads
+     * `service_period_start === null || service_period_end === null`, so with
+     * both null, deleting either half leaves the other still throwing. This
+     * gives the draft a real start and removes only the end, so the assertion
+     * depends on the end check and nothing else.
+     *
+     * The cycle columns stay null because a draft that names its cycle is
+     * regenerated from that instead and never reaches the period branch at all.
+     */
+    public function test_a_cadence_draft_with_no_period_end_fails_closed(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 120]);
+        $invoice = $this->generateJuly($agreement);
+        $originalMinutes = $entry->fresh()?->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill([
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => '2026-07-01',
+            'service_period_end' => null,
+        ])->save();
+        $entry->refresh();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry),
+                    'minutes' => 180,
+                ],
+            );
+            $this->fail('A cadence draft with no period end must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('no billing period to regenerate', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+    }
+
+    /**
+     * A generated draft that names no agreement fails closed.
+     *
+     * Regeneration reprices the draft against its agreement's terms. A null
+     * `client_agreement_id` resolves to no agreement at all, and the composer
+     * that follows drops its project scoping when handed one - so continuing
+     * would rebuild the invoice with every project's work on it. The lookup
+     * refuses instead, and the client's existing charge is left alone.
+     */
+    public function test_a_generated_draft_without_an_agreement_fails_closed(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 120]);
+        $invoice = $this->generateJuly($agreement);
+        $originalMinutes = $entry->fresh()?->minutes;
+        $originalTotal = (int) $invoice->total_amount;
+        $invoice->forceFill(['client_agreement_id' => null])->save();
+        $entry->refresh();
+
+        try {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry),
+                    'minutes' => 180,
+                ],
+            );
+            $this->fail('A generated draft with no agreement must not commit a time edit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('does not belong to an available agreement', $exception->getMessage());
+        }
+
+        $this->assertSame($originalMinutes, $entry->fresh()?->minutes);
+        $this->assertSame($originalTotal, (int) $invoice->refresh()->total_amount);
+    }
+
     public function test_duplicate_generated_drafts_fail_before_the_owning_invoice_is_rebuilt(): void
     {
         $agreement = $this->agreement();
