@@ -89,8 +89,15 @@ final class UnpricedAgreementRefusalTest extends TestCase
 
         $unpriced = $this->agreement(null);
 
+        // The whole message, not a fragment. The refusal has to name *which*
+        // agreement - an operator reading it mid-run has no other way to find
+        // the row - and it has to say what to do about it, so asserting only
+        // the first clause lets the actionable half be dropped silently.
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('states no hourly rate');
+        $this->expectExceptionMessage(
+            "Agreement {$unpriced->public_id} states no hourly rate, so hourly work on it cannot be priced. "
+            .'Set the rate - zero if the work is genuinely at no charge - before billing against it.',
+        );
         $unpriced->hourlyRateAmountOrFail();
     }
 

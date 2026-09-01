@@ -30,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * @property string $status
  * @property string $billing_cadence
+ * @property string $public_id
+ * @property int|null $hourly_rate_amount
  * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $terminated_at
  * @property CarbonImmutable|null $starts_on
@@ -343,7 +345,11 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             );
         }
 
-        return (int) $this->hourly_rate_amount;
+        // No cast. The column is declared `int|null` above and cast to
+        // `integer` by the model, so after the null check it is already an int -
+        // and a redundant cast is a mutation the suite cannot distinguish,
+        // which is a gap in the gate rather than a safeguard.
+        return $this->hourly_rate_amount;
     }
 
     /** The engine's name for the hourly rate, in whole currency units. */
