@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -16,8 +18,9 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  */
 #[Fillable(['public_id', 'workspace_id', 'user_id', 'role'])]
 #[Hidden(['id', 'workspace_id', 'user_id'])]
-class WorkspaceMembership extends Pivot
+class WorkspaceMembership extends Pivot implements WorkspaceOwned
 {
+    use BelongsToWorkspace;
     use HasPublicId;
 
     public $incrementing = true;

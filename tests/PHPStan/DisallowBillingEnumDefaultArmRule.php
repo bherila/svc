@@ -7,6 +7,7 @@ namespace Tests\PHPStan;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Match_;
 use PHPStan\Analyser\Scope;
+use PHPStan\Reflection\ReflectionProvider;
 use PHPStan\Rules\Rule;
 use PHPStan\Rules\RuleError;
 use PHPStan\Rules\RuleErrorBuilder;
@@ -51,26 +52,16 @@ use PHPStan\Type\TypeCombinator;
  */
 final class DisallowBillingEnumDefaultArmRule implements Rule
 {
+    /** Every enum in this domain namespace represents a billing decision. */
+    private const BILLING_NAMESPACE = 'App\Support\Billing\\';
+
     /**
-     * The enums whose cases are billing decisions.
-     *
-     * Named rather than discovered by namespace. A rule that swept
-     * `App\Support\Billing\*` would silently take in every enum added there
-     * later, including ones where a default is the right answer - and the point
-     * of this rule is that absorbing an unnamed case should be a decision
-     * somebody made on purpose.
-     *
-     * @var list<string>
+     * @param  list<string>  $billingNamespaces
      */
-    private const BILLING_ENUMS = [
-        'App\Support\Billing\BillingCadence',
-        'App\Support\Billing\ChargeCadence',
-        'App\Support\Billing\FirstCycleProration',
-        'App\Support\Billing\InvoiceKind',
-        'App\Support\Billing\InvoiceLineType',
-        'App\Support\Billing\InvoiceStatus',
-        'App\Support\Billing\SubcontractorBillingMode',
-    ];
+    public function __construct(
+        private readonly ReflectionProvider $reflection,
+        private readonly array $billingNamespaces = [self::BILLING_NAMESPACE],
+    ) {}
 
     public function getNodeType(): string
     {
@@ -124,17 +115,35 @@ final class DisallowBillingEnumDefaultArmRule implements Rule
         foreach ($type->getEnumCases() as $case) {
             $name = $case->getClassName();
 
-            if (in_array($name, self::BILLING_ENUMS, true)) {
+            if ($this->isBillingEnum($name)) {
                 return $name;
             }
         }
 
         foreach ($type->getObjectClassNames() as $name) {
-            if (in_array($name, self::BILLING_ENUMS, true)) {
+            if ($this->isBillingEnum($name)) {
                 return $name;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Namespace discovery is deliberate: adding a billing enum must place it
+     * under this rule without requiring a second registration edit. Reflection
+     * keeps ordinary value objects in the same namespace out of scope.
+     */
+    private function isBillingEnum(string $class): bool
+    {
+        foreach ($this->billingNamespaces as $namespace) {
+            if (str_starts_with($class, $namespace)
+                && $this->reflection->hasClass($class)
+                && $this->reflection->getClass($class)->isEnum()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

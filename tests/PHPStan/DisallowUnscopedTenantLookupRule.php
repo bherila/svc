@@ -30,41 +30,38 @@ use PHPStan\Rules\RuleErrorBuilder;
  *
  * ## Only the static forms, deliberately
  *
- * `Model::find()`, `::findOrFail()`, `::findOr()` and `::whereKey()` are the
- * forms that are *always* unscoped, because a static call has nothing before it
- * to have been constrained. That makes every diagnostic a true positive and
- * every fix mechanical: start from a scoped query instead.
+ * `Model::find()`, `::findOrFail()`, `::findOr()` and `::findMany()` are the
+ * forms that are *always* unscoped and execute immediately, because a static
+ * call has nothing before it to have been constrained. That makes every
+ * diagnostic a true positive and every fix mechanical: start from a scoped
+ * query instead.
  *
- * `Model::query()->find($id)` is not flagged, and neither is
- * `$builder->find($id)`. Both can be perfectly scoped - `$workspace->invoices()
- * ->find($id)` is the correct shape - and telling a scoped chain from an
- * unscoped one means following the receiver back through arbitrary
- * intermediate calls and knowing which of them constrain a tenant. #123
- * anticipates exactly that ("the stretch rules need deeper PHPStan reflection
- * and type inference to avoid false positives"), and a rule that cried wolf on
- * `$workspace->invoices()->find()` would be turned off within a week. The
- * chained form is left to review and to #167's runtime sweep.
+ * `Model::whereKey($id)` is also not flagged: it returns a deferred builder, so
+ * `Model::whereKey($id)->where('workspace_id', $workspaceId)->first()` executes
+ * one correctly scoped query. The same is true of `Model::query()->find($id)`
+ * and `$builder->find($id)`. Telling a scoped chain from an unscoped one means
+ * following the receiver back through arbitrary intermediate calls and knowing
+ * which of them constrain a tenant. #123 anticipates exactly that ("the stretch
+ * rules need deeper PHPStan reflection and type inference to avoid false
+ * positives"), and a rule that cried wolf on valid builder chains would be
+ * switched off rather than obeyed. Those forms are left to review and to
+ * #167's runtime sweep.
  *
  * @implements Rule<StaticCall>
  */
 final class DisallowUnscopedTenantLookupRule implements Rule
 {
     /**
-     * Lookups that resolve a row by primary key and nothing else.
-     *
-     * `whereKey()` is included even though it returns a builder rather than a
-     * model: it is the same claim - "this id is the row I want" - and the
-     * scoping it is missing cannot be recovered by what follows, because
-     * anything added afterwards narrows a set that already spans every tenant.
+     * Lookups that immediately resolve rows by primary key and nothing else.
      *
      * @var list<string>
      */
-    private const KEY_LOOKUPS = ['find', 'findorfail', 'findor', 'findmany', 'wherekey', 'wherekeynot'];
+    private const KEY_LOOKUPS = ['find', 'findorfail', 'findor', 'findmany'];
 
     /**
-     * The trait that makes a model a tenant's.
+     * The contract that marks a model as a tenant's.
      */
-    private const TENANT_TRAIT = 'App\Models\Concerns\BelongsToWorkspace';
+    private const TENANT_CONTRACT = 'App\Contracts\WorkspaceOwned';
 
     public function __construct(private readonly ReflectionProvider $reflection) {}
 
@@ -104,12 +101,11 @@ final class DisallowUnscopedTenantLookupRule implements Rule
     }
 
     /**
-     * Whether the class uses the tenant trait, directly or through a parent.
+     * Whether the class carries the tenant ownership contract.
      *
-     * Resolved through reflection rather than by name, because the trait can
-     * arrive through a base class - `getTraits(true)` walks the hierarchy - and
-     * a rule that only saw direct users would let a new base class turn it off
-     * silently for everything beneath it.
+     * The contract covers workspace-owned models that do not use the common
+     * trait, including pivot and import-ledger models. Interfaces are inherited,
+     * so a tenant model subclass cannot silently fall out of the rule either.
      */
     private function belongsToAWorkspace(string $class): bool
     {
@@ -117,12 +113,6 @@ final class DisallowUnscopedTenantLookupRule implements Rule
             return false;
         }
 
-        foreach ($this->reflection->getClass($class)->getTraits(true) as $trait) {
-            if ($trait->getName() === self::TENANT_TRAIT) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->reflection->getClass($class)->implementsInterface(self::TENANT_CONTRACT);
     }
 }

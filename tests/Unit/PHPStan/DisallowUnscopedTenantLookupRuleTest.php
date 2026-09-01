@@ -20,8 +20,8 @@ final class DisallowUnscopedTenantLookupRuleTest extends RuleTestCase
      * Both halves are asserted because the allowed shapes are what decide
      * whether the rule survives contact with the codebase: one that flagged
      * `$workspace->clientCompanies()->find()` would be switched off rather than
-     * obeyed. The expectation list being exactly three long is the assertion
-     * that the other four call sites pass.
+     * obeyed. The expectation list being exactly six long is the assertion
+     * that the allowed call sites pass.
      */
     public function test_it_rejects_key_lookups_that_carry_no_workspace(): void
     {
@@ -30,9 +30,12 @@ final class DisallowUnscopedTenantLookupRuleTest extends RuleTestCase
             ."where('workspace_id', ...) - and resolve the key inside it.";
 
         $this->analyse([__DIR__.'/../../Fixtures/PHPStan/tenant/Lookups.php'], [
-            [$message('ClientInvoice', 'find'), 24],
-            [$message('ClientInvoice', 'findOrFail'), 29],
-            [$message('ClientCompany', 'whereKey'), 34],
+            [$message('ClientInvoice', 'find'), 27],
+            [$message('ClientInvoice', 'findOrFail'), 32],
+            [$message('ExternalImportRun', 'find'), 38],
+            [$message('WorkspaceMembership', 'find'), 43],
+            [$message('ClientProjectMembership', 'find'), 48],
+            [$message('TenantInvoiceSubclass', 'find'), 54],
         ]);
     }
 }

@@ -6,8 +6,11 @@ namespace Tests\Fixtures\PHPStan\tenant;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientProjectMembership;
+use App\Models\ExternalImportRun;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceMembership;
 
 /**
  * Both sides of the tenant-lookup rule.
@@ -29,9 +32,26 @@ final class Lookups
         return ClientInvoice::findOrFail($id);
     }
 
-    public function unscopedKey(int $id): mixed
+    /** Refused even without the common trait: the ownership contract decides. */
+    public function unscopedImportRun(int $id): ?ExternalImportRun
     {
-        return ClientCompany::whereKey($id)->first();
+        return ExternalImportRun::find($id);
+    }
+
+    public function unscopedWorkspaceMembership(int $id): ?WorkspaceMembership
+    {
+        return WorkspaceMembership::find($id);
+    }
+
+    public function unscopedProjectMembership(int $id): ?ClientProjectMembership
+    {
+        return ClientProjectMembership::find($id);
+    }
+
+    /** Refused through inherited ownership as well. */
+    public function unscopedSubclass(int $id): ?TenantInvoiceSubclass
+    {
+        return TenantInvoiceSubclass::find($id);
     }
 
     /** Allowed: the id is resolved inside a query that names the workspace. */
@@ -57,4 +77,14 @@ final class Lookups
     {
         return ClientInvoice::where('workspace_id', $workspace->id)->get();
     }
+
+    /** Allowed: whereKey() is deferred and the executed query is scoped. */
+    public function deferredKeyThenScoped(Workspace $workspace, int $id): mixed
+    {
+        return ClientCompany::whereKey($id)
+            ->where('workspace_id', $workspace->id)
+            ->first();
+    }
 }
+
+final class TenantInvoiceSubclass extends ClientInvoice {}

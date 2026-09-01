@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -11,8 +13,10 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $status
  * @property list<string> $result_public_ids
  */
-class AgentMutationReceipt extends Model
+class AgentMutationReceipt extends Model implements WorkspaceOwned
 {
+    use BelongsToWorkspace;
+
     protected function casts(): array
     {
         return ['result_public_ids' => 'array', 'completed_at' => 'immutable_datetime'];

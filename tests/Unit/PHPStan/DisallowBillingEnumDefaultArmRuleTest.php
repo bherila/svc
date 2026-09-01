@@ -11,7 +11,10 @@ final class DisallowBillingEnumDefaultArmRuleTest extends RuleTestCase
 {
     protected function getRule(): Rule
     {
-        return new DisallowBillingEnumDefaultArmRule;
+        return new DisallowBillingEnumDefaultArmRule(
+            self::createReflectionProvider(),
+            ['App\Support\Billing\\', 'Tests\Fixtures\PHPStan\enums\\'],
+        );
     }
 
     /**
@@ -27,8 +30,12 @@ final class DisallowBillingEnumDefaultArmRuleTest extends RuleTestCase
         $message = static fn (string $enum): string => "A default arm on a match over {$enum} silently absorbs any case added later; "
             .'name every case explicitly so a new one fails to compile instead.';
 
-        $this->analyse([__DIR__.'/../../Fixtures/PHPStan/enums/Matches.php'], [
+        $this->analyse([
+            __DIR__.'/../../Fixtures/PHPStan/enums/FutureBillingEnum.php',
+            __DIR__.'/../../Fixtures/PHPStan/enums/Matches.php',
+        ], [
             [$message('BillingCadence'), 18],
+            [$message('FutureBillingEnum'), 18],
             [$message('InvoiceKind'), 32],
         ]);
     }

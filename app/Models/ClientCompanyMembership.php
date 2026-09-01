@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  */
 #[Fillable(['public_id', 'client_company_id', 'user_id', 'role', 'access_scope'])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'user_id'])]
-class ClientCompanyMembership extends Pivot
+class ClientCompanyMembership extends Pivot implements WorkspaceOwned
 {
     use BelongsToWorkspace;
     use HasPublicId;

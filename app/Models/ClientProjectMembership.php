@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -12,8 +14,9 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 /** @property ProjectRole $role */
 #[Fillable(['public_id', 'workspace_id', 'client_project_id', 'user_id', 'role'])]
 #[Hidden(['id', 'workspace_id', 'client_project_id', 'user_id'])]
-class ClientProjectMembership extends Pivot
+class ClientProjectMembership extends Pivot implements WorkspaceOwned
 {
+    use BelongsToWorkspace;
     use HasPublicId;
 
     public $incrementing = true;
