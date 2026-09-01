@@ -53,6 +53,23 @@
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
             ],
         },
+        // The `default => $attributes` arm of the importer's target-type map.
+        // Every `write` spec in `ImporterRegistry` names a type the match
+        // handles - the only unlisted ones (`attachment`,
+        // `stripe_payment_reference`) belong to `planned_copy` and
+        // `planned_reference` specs, which never reach `attributes()`. So no
+        // test can route an unhandled type here without inventing a spec that
+        // does not exist, and the arm is a guard against a future mapping
+        // rather than live behaviour.
+        //
+        // Named per method. A default arm anywhere it decides something stays
+        // live, and `DisallowBillingEnumDefaultArmRule` refuses them outright
+        // on the billing enums.
+        MatchArmRemoval: {
+            ignore: [
+                "App\\Services\\ExternalImport\\ExternalImportService::attributes",
+            ],
+        },
         // `select(DB::raw(1))` inside a `WHERE EXISTS` subquery. The value is
         // never read - EXISTS asks whether a row comes back, not what is in it -
         // so `SELECT 0` and `SELECT 1` are the same query and no test can tell
@@ -65,6 +82,20 @@
             ignore: [
                 "App\\Services\\Billing\\UndatedAgreementAuditor::eligibleAgreement",
                 "App\\Services\\Billing\\UndatedAgreementAuditor::billedLines",
+                // The `paid_amount => ... : 0` fallback in the importer's
+                // invoice map. Whatever it produces is unobservable: the
+                // payment reconciliation pass later in the same run recomputes
+                // the column as
+                // `min($total, max((int) $invoice->paid_amount, max(0, $paidFromPayments)))`,
+                // whose inner `max(0, ...)` and outer `max(...)` clamp any
+                // negative back to zero before a test - or a reader - can see
+                // it. So `: 0` and `: -1` write the same row.
+                //
+                // Named per method. The literal is left in place rather than
+                // removed because it states the intent for a status carrying no
+                // payments, and the reconciliation is a separate concern that
+                // could stop running over this column.
+                "App\\Services\\ExternalImport\\ExternalImportService::attributes",
             ],
         },
     },

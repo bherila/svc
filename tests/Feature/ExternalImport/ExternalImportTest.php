@@ -209,6 +209,120 @@ class ExternalImportTest extends TestCase
     }
 
     /**
+     * A charged source invoice with no due date gets the one `issue()` states.
+     *
+     * #149: a collectible invoice with a null `due_date` sits in collectible
+     * balances and in no overdue figure, because SQL answers false for a null
+     * rather than unknown. `InvoiceLifecycleService::issue()` defaults a null
+     * due date to the issue date, but returns early for an invoice that is
+     * already charged - so an imported issued or paid row never passes through
+     * the transition that would have dated it, and keeps its null permanently.
+     *
+     * The importer therefore applies the same default. That is the native
+     * contract rather than an invented date, and it is what stops the population
+     * the backfill repairs from growing again with the next import.
+     *
+     * A draft is deliberately left null: it is owed by nobody, is not
+     * collectible, and will pass through `issue()` in the ordinary way if it is
+     * ever issued. Dating it here would state a term the source never stated.
+     */
+    public function test_a_charged_invoice_with_no_due_date_is_dated_from_its_issue_date(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (71, 11, NULL, 'SYN-ISSUED', 'issued', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (72, 11, NULL, 'SYN-STATED', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (73, 11, NULL, 'SYN-DRAFT', 'draft', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (74, 11, NULL, 'SYN-UNDATED', 'issued', NULL, NULL, '100.00', 'USD', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $due = fn (string $number): ?string => ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', $number)
+            ->sole()
+            ->due_date?->format('Y-m-d');
+
+        $this->assertSame('2026-01-10', $due('SYN-ISSUED'), 'A charged row with no due date takes its issue date.');
+        $this->assertSame('2026-02-10', $due('SYN-STATED'), 'A stated due date is never overwritten.');
+        $this->assertNull($due('SYN-DRAFT'), 'A draft is owed by nobody and states no term.');
+        $this->assertNull($due('SYN-UNDATED'), 'With no issue date there is nothing defensible to use.');
+    }
+
+    /**
+     * A draft promoted by payment reconciliation is dated too.
+     *
+     * `importedDueDate()` decides against the *source* status, but the same run
+     * later promotes a source draft to `partially_paid` when imported payments
+     * cover part of its total. Without dating it there, the importer still
+     * creates the undated collectible rows #149 is about - by a later route,
+     * and invisibly, because nothing in the invoice mapping is wrong.
+     */
+    public function test_a_draft_promoted_by_a_payment_is_dated_from_its_issue_date(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (91, 11, NULL, 'SYN-PROMOTED', 'draft', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec('CREATE TABLE client_invoice_payments (client_invoice_payment_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, amount TEXT, payment_date TEXT, status TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoice_payments VALUES (1, 91, '40.00', '2026-01-20', 'succeeded', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', 'SYN-PROMOTED')
+            ->sole();
+
+        $this->assertSame('partially_paid', $invoice->status, 'The payment should promote the draft.');
+        $this->assertSame('2026-01-10', $invoice->due_date?->format('Y-m-d'), 'A promoted invoice is charged, so it takes its issue date.');
+    }
+
+    /**
+     * A source status the destination does not recognise becomes a draft.
+     *
+     * The importer allowlists the five statuses this schema has and falls back
+     * to `draft` for anything else. That fallback matters more than it looks:
+     * `is_visible_to_client`, `paid_amount` and `balance_amount` are all derived
+     * from the same value, so letting an unrecognised status through would make
+     * an invoice visible to a client and carry a balance under a status no query
+     * in the system matches - collectible by nothing, overdue by nothing, and
+     * invisible to every figure that reads a known status.
+     *
+     * Untested until now, and reachable: the source schema is the predecessor's,
+     * not this one's, so a status this port never modelled is a source change
+     * away rather than a corruption.
+     */
+    public function test_an_unrecognised_source_status_falls_back_to_draft(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (81, 11, NULL, 'SYN-UNKNOWN', 'awaiting_countersignature', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', 'SYN-UNKNOWN')
+            ->sole();
+
+        $this->assertSame('draft', $invoice->status);
+        $this->assertFalse((bool) $invoice->is_visible_to_client, 'An unknown status must not expose the invoice to the client.');
+        // Nothing paid, whole total owed - both derived from the same resolved
+        // status, so both belong in the same assertion.
+        $this->assertSame(0, (int) $invoice->paid_amount);
+        $this->assertSame(10000, (int) $invoice->balance_amount);
+        // A draft, so the due-date default does not apply either - it states no
+        // term because nobody has been charged.
+        $this->assertNull($invoice->due_date);
+    }
+
+    /**
      * A row imported by an earlier pass and deleted at the source afterwards.
      *
      * Filtering it out of the read means its ledger item is never examined, so

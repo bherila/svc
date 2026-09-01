@@ -7,6 +7,7 @@ use App\Models\ExternalImportFailure;
 use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\SubcontractorBillingMode;
@@ -701,7 +702,7 @@ final class ExternalImportService
             'proposal_item' => $attributes + ['client_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'description' => $row['description'] ?? 'External proposal item', 'quantity' => $row['quantity'] ?? '1', 'unit_amount' => self::minorUnits($row['amount'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'one_time', 'sort_order' => (int) ($row['sort_order'] ?? 0)],
             'agreement' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_project_id' => null, 'source_proposal_id' => $this->internalId($destinationName, 'client_proposals', $proposal), 'title' => $row['title'] ?? 'External agreement', 'status' => self::sourceDate($row['termination_date'] ?? null) !== null ? 'terminated' : (self::sourceDate($row['active_date'] ?? null) !== null ? 'active' : 'draft'), 'starts_on' => self::sourceDate($row['active_date'] ?? null), 'ends_on' => self::sourceDate($row['termination_date'] ?? null), 'agreement_text' => $row['agreement_text'] ?? null, 'is_visible_to_client' => (bool) ($row['is_visible_to_client'] ?? false), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'hourly_rate_amount' => self::nullableMinorUnits($row['hourly_rate'] ?? null), 'retainer_amount' => self::nullableMinorUnits($row['monthly_retainer_fee'] ?? $row['retainer_fee'] ?? null), 'retainer_minutes' => self::minutesFromDecimal($row['monthly_retainer_hours'] ?? $row['retainer_hours'] ?? null), 'billing_cadence' => $row['billing_cadence'] ?? 'monthly', 'activated_at' => self::sourceTimestamp($row['active_date'] ?? null), 'signed_at' => self::sourceTimestamp($row['client_company_signed_date'] ?? null), 'signed_by_user_id' => $this->internalId($destinationName, 'users', $this->resolveParentId('users', (string) ($row['client_company_signed_user_id'] ?? ''), $ledgerItems, $queryCache)), 'signer_name' => $row['client_company_signed_name'] ?? null, 'signer_title' => $row['client_company_signed_title'] ?? null, 'terminated_at' => self::sourceTimestamp($row['termination_date'] ?? null), 'catch_up_threshold_minutes' => self::minutesFromDecimal($row['catch_up_threshold_hours'] ?? null), 'period_retainer_minutes' => self::minutesFromDecimal($row['retainer_hours'] ?? null), 'period_retainer_amount' => self::nullableMinorUnits($row['retainer_fee'] ?? null), 'rollover_months' => isset($row['rollover_months']) ? (int) $row['rollover_months'] : null, 'initial_rollover_minutes' => self::minutesFromDecimal($row['initial_rollover_hours'] ?? null), 'bill_overage_interim' => isset($row['bill_overage_interim']) ? (bool) $row['bill_overage_interim'] : null, 'first_cycle_proration' => $row['first_cycle_proration'] ?? null, 'agreement_link' => $row['agreement_link'] ?? null],
             'agreement_recurring_item' => $attributes + ['client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'description' => $row['description'] ?? 'External recurring item', 'amount' => self::minorUnits($row['amount'] ?? null), 'currency' => self::sourceCurrency($row['currency'] ?? null), 'cadence' => $row['charge_cadence'] ?? 'monthly', 'anchor_month' => $row['anchor_month'] ?? null, 'anchor_day' => $row['anchor_day'] ?? 1, 'effective_on' => self::sourceDate($row['start_date'] ?? null), 'expires_on' => self::sourceDate($row['end_date'] ?? null), 'is_taxable' => (bool) ($row['is_taxable'] ?? false), 'is_active' => ! isset($row['deleted_at'])],
-            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => in_array($row['status'] ?? 'draft', ['draft', 'issued', 'partially_paid', 'paid', 'void'], true) ? ($row['status'] ?? 'draft') : 'draft', 'issue_date' => self::sourceDate($row['issue_date'] ?? null), 'due_date' => self::sourceDate($row['due_date'] ?? null), 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => ($row['status'] ?? '') === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => ($row['status'] ?? '') === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => ($row['status'] ?? 'draft') !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => self::sourceDate($row['cycle_start'] ?? null), 'cycle_end' => self::sourceDate($row['cycle_end'] ?? null), 'paid_on' => self::sourceDate($row['paid_date'] ?? null), 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null, 'starting_unused_hours' => $row['starting_unused_hours'] ?? null, 'starting_negative_hours' => $row['starting_negative_hours'] ?? null],
+            'invoice' => $attributes + ['client_company_id' => $this->internalId($destinationName, 'client_companies', $company), 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'invoice_number' => $this->invoiceNumber($row, $workspaceId, $destinationName), 'status' => self::importedInvoiceStatus($row), 'issue_date' => self::sourceDate($row['issue_date'] ?? null), 'due_date' => self::importedDueDate($row), 'service_period_start' => $row['period_start'] ?? null, 'service_period_end' => $row['period_end'] ?? null, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'subtotal_amount' => self::minorUnits($row['invoice_total'] ?? null), 'total_amount' => self::minorUnits($row['invoice_total'] ?? null), 'paid_amount' => self::importedInvoiceStatus($row) === 'paid' ? self::minorUnits($row['invoice_total'] ?? null) : 0, 'balance_amount' => self::importedInvoiceStatus($row) === 'paid' ? 0 : self::minorUnits($row['invoice_total'] ?? null), 'notes' => $row['notes'] ?? null, 'is_visible_to_client' => self::importedInvoiceStatus($row) !== 'draft', 'invoice_kind' => $row['invoice_kind'] ?? null, 'cycle_start' => self::sourceDate($row['cycle_start'] ?? null), 'cycle_end' => self::sourceDate($row['cycle_end'] ?? null), 'paid_on' => self::sourceDate($row['paid_date'] ?? null), 'retainer_hours_included' => $row['retainer_hours_included'] ?? null, 'hours_worked' => $row['hours_worked'] ?? null, 'rollover_hours_used' => $row['rollover_hours_used'] ?? null, 'unused_hours_balance' => $row['unused_hours_balance'] ?? null, 'negative_hours_balance' => $row['negative_hours_balance'] ?? null, 'hours_billed_at_rate' => $row['hours_billed_at_rate'] ?? null, 'starting_unused_hours' => $row['starting_unused_hours'] ?? null, 'starting_negative_hours' => $row['starting_negative_hours'] ?? null],
             'invoice_line' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'description' => $row['description'] ?? 'External invoice line', 'type' => $row['line_type'] ?? 'adjustment', 'quantity' => self::invoiceLineQuantity($row['quantity'] ?? null), 'unit_amount' => self::minorUnits($row['unit_price'] ?? null), 'tax_amount' => 0, 'total_amount' => self::minorUnits($row['line_total'] ?? null), 'sort_order' => (int) ($row['sort_order'] ?? 0), 'line_date' => self::sourceDate($row['line_date'] ?? null), 'hours' => $row['hours'] ?? null, 'client_agreement_id' => $this->internalId($destinationName, 'client_agreements', $agreement), 'client_agreement_recurring_item_id' => $this->internalId($destinationName, 'client_agreement_recurring_items', $recurring)],
             'invoice_payment' => $attributes + ['client_invoice_id' => $this->internalId($destinationName, 'client_invoices', $invoice), 'status' => 'succeeded', 'amount' => self::minorUnits($row['amount'] ?? null), 'refunded_amount' => 0, 'currency' => self::sourceCurrency($row['currency'] ?? null), 'received_on' => self::sourceDate($row['payment_date'] ?? null), 'method' => $row['payment_method'] ?? 'external', 'reference' => $row['stripe_payment_intent_id'] ?? null, 'notes' => $row['notes'] ?? null, 'provider' => ($row['stripe_payment_intent_id'] ?? null) ? 'stripe' : null, 'provider_payment_identifier' => $row['stripe_payment_intent_id'] ?? null, 'external_finance_transaction_uuid' => null],
             'invoice_email_delivery' => $attributes + [
@@ -1624,6 +1625,13 @@ final class ExternalImportService
                 'paid_amount' => $paid,
                 'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
                 'is_visible_to_client' => $status !== 'draft' ? true : (bool) $invoice->is_visible_to_client,
+                // A draft promoted here is charged for the first time, and
+                // `importedDueDate()` decided against the *source* status
+                // before this ran - so without this the importer still creates
+                // the undated collectible rows #149 is about, just by a later
+                // route. The rule is the same one `issue()` states: a charged
+                // invoice with no due date takes its issue date.
+                'due_date' => $invoice->due_date ?? ($status !== 'draft' ? $invoice->issue_date : null),
                 'updated_at' => $this->clock->now(),
             ]);
         }
@@ -2274,6 +2282,89 @@ final class ExternalImportService
         $text = self::sourceTimestamp($value);
 
         return $text === null ? null : substr($text, 0, 10);
+    }
+
+    /**
+     * The status an imported invoice lands with.
+     *
+     * The destination models five statuses; the source is the predecessor's
+     * schema and can carry others. Anything unrecognised becomes a draft, which
+     * is the safe answer - a status no query in this system matches would leave
+     * the invoice collectible by nothing and overdue by nothing.
+     *
+     * Resolved once and read by everything derived from it. It used to be
+     * allowlisted for `status` while `is_visible_to_client`, `paid_amount` and
+     * `balance_amount` each re-read the *raw* source value - so an unrecognised
+     * status stored a draft that was nonetheless exposed to the client and
+     * carried a balance. One value read two ways is the same shape as the null
+     * defects this epic keeps finding: the disagreement is silent, and every
+     * reader looks locally correct.
+     *
+     * Public so {@see RestoreAgreementVerifier::comparableColumns()} can mirror
+     * it by *calling* it. That file's own comment says its expectations "mirror
+     * the importer's defaults exactly", and a copy of a default is a copy that
+     * can drift - which is precisely what happened when this allowlist stopped
+     * being the raw source value.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function importedInvoiceStatus(array $row): string
+    {
+        // `is_string` rather than a cast. The strict check already proves the
+        // value is one of the listed strings when it matches, so a `(string)`
+        // here converts nothing and no test can tell it from its own absence -
+        // a mutant the gate cannot kill is a gap in the gate, not a safeguard.
+        $status = $row['status'] ?? null;
+
+        return is_string($status) && in_array($status, ['draft', 'issued', 'partially_paid', 'paid', 'void'], true)
+            ? $status
+            : 'draft';
+    }
+
+    /**
+     * The due date an imported invoice should carry (#149).
+     *
+     * A charged invoice never passes through
+     * {@see InvoiceLifecycleService::issue()} - that
+     * transition returns early for one that is already charged - so a source row
+     * with no due date used to keep its null permanently. A collectible invoice
+     * with a null due date then sits in collectible balances and in no overdue
+     * figure, because SQL answers false for a null rather than unknown, and the
+     * two reported numbers disagree with nothing to say why.
+     *
+     * So the importer applies the same default `issue()` states: a missing due
+     * date becomes the issue date. That is not an invented date - it is the
+     * native lifecycle contract, applied to rows that arrive already past the
+     * transition that would have applied it.
+     *
+     * A draft is left alone. It has been charged to nobody, is not collectible,
+     * and will pass through `issue()` in the ordinary way if it is ever issued -
+     * dating it here would state a term the source never stated for an invoice
+     * nobody owes.
+     *
+     * If the source states neither date there is nothing defensible to use, and
+     * the null is preserved rather than guessed at. `svc:billing:audit-undated-
+     * collectible-invoices` is where such rows surface.
+     *
+     * Public for the same reason as {@see importedInvoiceStatus()}: the restore
+     * verifier has to derive the same default, and calling it is the only way
+     * that stays true.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function importedDueDate(array $row): ?string
+    {
+        $due = self::sourceDate($row['due_date'] ?? null);
+
+        if ($due !== null) {
+            return $due;
+        }
+
+        // The resolved status, not the raw one: an unrecognised status lands as
+        // a draft, and a draft states no term.
+        return in_array(self::importedInvoiceStatus($row), ['issued', 'partially_paid', 'paid'], true)
+            ? self::sourceDate($row['issue_date'] ?? null)
+            : null;
     }
 
     private static function minorUnits(mixed $value): int
