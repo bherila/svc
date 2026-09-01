@@ -227,6 +227,75 @@ final class DeriveTimeEntryRatesTest extends TestCase
         $this->assertSame('EUR', $entry->currency);
     }
 
+    /**
+     * A null project scope means company-wide, and reaches every project.
+     *
+     * Isolating for `client_agreements.client_project_id`, one of #143's named
+     * readers. The resolver admits an agreement whose project matches the
+     * entry's *or* whose project is null, so the null is what makes a
+     * company-wide agreement apply to work on a project it never names.
+     *
+     * Only the project scope varies: both agreements are active, both cover the
+     * work date, and both carry a rate. The scoped one names a different
+     * project and must not win; the null one must. Reading the null as "no
+     * project, so no match" would leave every company-wide agreement unable to
+     * price anything - which is how most of them are written.
+     */
+    public function test_an_agreement_with_no_project_covers_work_on_any_project(): void
+    {
+        $other = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Some other project',
+        ]);
+        // The other project's agreement starts *later*, so it would win the
+        // ordering if the project scope were not read at all. Without that the
+        // test passes against a resolver that ignores the column entirely and
+        // falls through to the id tie-break.
+        $elsewhere = $this->agreement(11100, '2026-02-01', null);
+        $elsewhere->forceFill(['client_project_id' => $other->id])->save();
+        $companyWide = $this->agreement(22200, '2026-01-01', null);
+        $companyWide->forceFill(['client_project_id' => null])->save();
+
+        $entry = $this->entry('2026-02-10');
+
+        $this->artisan('svc:billing:derive-time-rates', ['--workspace' => $this->workspace->public_id])
+            ->assertSuccessful();
+
+        $this->assertSame(22200, $entry->refresh()->billing_rate_amount);
+    }
+
+    /**
+     * A null end date means the term is open, not that it has closed.
+     *
+     * Isolating for `client_agreements.ends_on`. The resolver admits an
+     * agreement whose `ends_on` is null *or* falls on or after the work date,
+     * so the null is what keeps an open-ended agreement in force indefinitely.
+     *
+     * Only the end date varies: both agreements start on the same day, are
+     * active, and carry a rate. The dated one expired before the work; the
+     * open-ended one is still running. Answering *false* for the null here -
+     * which a bare `ends_on >= workedOn` does, because SQL says false rather
+     * than unknown - would silently strand every open-ended agreement, the
+     * ordinary way a retainer is written.
+     */
+    public function test_an_agreement_with_no_end_date_is_still_in_force(): void
+    {
+        // The expired agreement starts later, so it would win the ordering if
+        // `ends_on` were not read - the same trap as the test above.
+        $expired = $this->agreement(11100, '2026-02-01', '2026-02-28');
+        $openEnded = $this->agreement(22200, '2026-01-01', null);
+        $openEnded->forceFill(['ends_on' => null])->save();
+
+        $entry = $this->entry('2026-06-10');
+
+        $this->artisan('svc:billing:derive-time-rates', ['--workspace' => $this->workspace->public_id])
+            ->assertSuccessful();
+
+        $this->assertSame(22200, $entry->refresh()->billing_rate_amount);
+        $this->assertNotSame($expired->hourly_rate_amount, $entry->refresh()->billing_rate_amount);
+    }
+
     private function agreement(int $hourlyRate, string $startsOn, ?string $endsOn): ClientAgreement
     {
         return ClientAgreement::query()->create([

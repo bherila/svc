@@ -6,8 +6,6 @@ use App\Console\Commands\Billing\BackfillBillingLedgerCommand;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Engagement\TimeSheetController;
-use App\Models\ClientTimeEntry;
-use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
@@ -165,8 +163,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
-        'client_agreements.client_project_id => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
-        'client_agreements.ends_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
+        'client_agreements.client_project_id => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_project_covers_work_on_any_project',
+        'client_agreements.ends_on => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_end_date_is_still_in_force',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
         'client_agreements.hourly_rate_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
@@ -220,7 +218,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_source => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
         'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_a_task_do_not_recombine',
         'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
@@ -233,10 +231,11 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
-        'client_time_entries.subcontractor_billing_mode => reader_in:App\Models\ClientTimeEntry::scopeRetainerBillable',
-        'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_null_billing_mode_is_read_as_ordinary_consultant_time',
+        'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused',
+        'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_cost_with_no_mode_is_excluded_from_the_retainer',
         'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
-        'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\AgentApi\TimeEntryMutationService::approvalRate',
+        'client_time_entries.subcontractor_cost_currency => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
         'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
         'client_time_entries.subcontractor_cost_metadata => reader_in:App\Services\Billing\AllocationService::canMerge',
     ];
@@ -477,11 +476,21 @@ final class NullSemanticsRegistryTest extends TestCase
             // Was cited against the generic derive-rate test, where setting this
             // to the entry's own project leaves every assertion unchanged - so
             // it proved neither that null means company-wide nor that a
-            // project-specific agreement outranks a company-wide one. The
-            // specificity ordering lives in the resolver and is unpinned.
+            // project-specific agreement outranks a company-wide one.
+            //
+            // #143's test settles the first half: a company-wide agreement
+            // prices work on a project it never names, against a rival scoped
+            // to a different project. The rival is given the *later* start
+            // date on purpose, so it would win the ordering if the column were
+            // not read at all - without that the test passes against a resolver
+            // that ignores project scope entirely and falls through to the id
+            // tie-break, which the first draft of it did.
+            //
+            // The specificity ordering - a project-specific agreement
+            // outranking a company-wide one - is still unpinned.
             'client_project_id' => [
-                'reader_in' => AgreementBillingRateResolver::class,
-                'reads' => 'resolve',
+                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'method' => 'test_an_agreement_with_no_project_covers_work_on_any_project',
             ],
             // Proposal acceptance is idempotent only through this column: it
             // asks the proposal's `agreements()` relationship whether one
@@ -522,7 +531,17 @@ final class NullSemanticsRegistryTest extends TestCase
             // work date leaves every assertion unchanged - so the citation could
             // not distinguish "null means open-ended" from "this field is
             // unused". Demoted to the reader that actually clips on it.
-            'ends_on' => ['reader_in' => AgreementBillingRateResolver::class, 'reads' => 'resolve'],
+            // An open term, not a closed one. The resolver admits `ends_on IS
+            // NULL OR ends_on >= worked_on`, so answering false for the null -
+            // which a bare comparison does, since SQL says false rather than
+            // unknown - would strand every open-ended agreement, which is how
+            // an ordinary retainer is written. Pinned against a rival that
+            // expired before the work and starts later, so the column has to be
+            // read for the open-ended one to win.
+            'ends_on' => [
+                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'method' => 'test_an_agreement_with_no_end_date_is_still_in_force',
+            ],
             'agreement_text' => 'PENDING-AUDIT',
             // Unpriced, which is not free - in the rate lookup, which refuses
             // rather than stamping a rate. Four other readers disagree and
@@ -682,17 +701,38 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => AllocationServiceTest::class,
                 'method' => 'test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
             ],
-            // Both cited a fixture that nulls the pair, while production refuses
-            // on `amount === null || currency === ''`. Because that is an OR,
-            // deleting either half left the cited test green on the other's
-            // null, so neither column was ever isolated. Named readers until a
-            // test nulls one at a time.
+            // Both once cited a fixture that nulls the pair, while production
+            // refuses on `amount === null || currency === ''`. Because that is
+            // an OR, deleting either half left the cited test green on the
+            // other's null, so neither column was ever isolated. #143 replaced
+            // that fixture with one test per column, each holding the sibling
+            // non-null so only its own column can decide the refusal - verified
+            // by deleting each half of the OR in turn and watching exactly one
+            // test fail.
+            //
+            // The composer's reader stays a named reader: it refuses the same
+            // pair, but on an entry that has already been approved, so the
+            // approval guard above it means no such row can reach it in a test
+            // without writing an impossible fixture.
             'subcontractor_cost_amount' => [
-                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                [
+                    'covered_by' => AgentTimeBillingWorkflowTest::class,
+                    'method' => 'test_flat_hourly_time_with_a_currency_but_no_amount_is_refused',
+                ],
+                // The retainer scope reads it too, and reads it differently: a
+                // cost with no mode is excluded fail-closed rather than
+                // refused. Isolated with the mode held null on both rows.
+                [
+                    'covered_by' => RetainerDrawConsistencyTest::class,
+                    'method' => 'test_a_cost_with_no_mode_is_excluded_from_the_retainer',
+                ],
                 ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
             ],
             'subcontractor_cost_currency' => [
-                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                [
+                    'covered_by' => AgentTimeBillingWorkflowTest::class,
+                    'method' => 'test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
+                ],
                 ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
             ],
             // Also part of the fragment signature. #153 replaced the json
@@ -728,7 +768,14 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
                     'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
                 ],
-                ['reader_in' => TimeEntryMutationService::class, 'reads' => 'approvalRate'],
+                // The branch that discards a stated rate. #143 pins it with a
+                // pair differing *only* in the source - both carry the same
+                // stored amount - so the citation cannot be satisfied by the
+                // `billing_rate_amount !== null` half of the same condition.
+                [
+                    'covered_by' => AgentTimeBillingWorkflowTest::class,
+                    'method' => 'test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
+                ],
                 // Third reader, added by #153: provenance survives
                 // recombination, so an `explicit` rate is never replaced by one
                 // re-resolved from the agreement. Not a second citation - that
@@ -754,16 +801,21 @@ final class NullSemanticsRegistryTest extends TestCase
                 'method' => 'test_entries_that_merely_look_alike_are_never_merged',
             ],
             // Consultant time, not "unknown": null draws on the retainer pool
-            // and is invoiceable at the client rate - the pinned branch. The
-            // retainer scope reaches that reading only for an entry with no
-            // subcontractor cost; a cost-bearing entry with no mode is excluded
-            // fail-closed by the same scope, and nothing pins that half (#143).
+            // and is invoiceable at the client rate. The mode-consistency test
+            // covers the three stated modes; #143 added the isolating half,
+            // which varies only the mode at a null cost - the earlier fixture
+            // varied the mode on a cost-bearing pair and passed with the
+            // null-mode requirement deleted from the scope entirely, because
+            // the cost excluded the row on its own.
             'subcontractor_billing_mode' => [
                 [
                     'covered_by' => RetainerDrawConsistencyTest::class,
                     'method' => 'test_each_subcontractor_mode_has_one_consistent_billing_path',
                 ],
-                ['reader_in' => ClientTimeEntry::class, 'reads' => 'scopeRetainerBillable'],
+                [
+                    'covered_by' => RetainerDrawConsistencyTest::class,
+                    'method' => 'test_a_null_billing_mode_is_read_as_ordinary_consultant_time',
+                ],
             ],
         ],
     ];

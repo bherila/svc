@@ -122,6 +122,66 @@ final class RetainerDrawConsistencyTest extends TestCase
         $this->assertNotContains($direct->id, $invoiceableIds, 'Direct time is tracked but never billed by us.');
     }
 
+    /**
+     * A null billing mode means ordinary consultant time, and is read as such.
+     *
+     * Isolating for `client_time_entries.subcontractor_billing_mode`. The
+     * admitting condition is `mode = retainer OR (mode IS NULL AND cost IS
+     * NULL)`, so proving the mode column is read means varying *only* the mode
+     * and holding the cost at null - otherwise the cost's null is what decides
+     * the outcome and the mode is never consulted.
+     *
+     * That is not a hypothetical distinction. The first version of this test
+     * varied the mode on a *cost-bearing* pair and passed while the null-mode
+     * requirement was deleted from the scope entirely, because the non-null
+     * cost excluded the row on its own. The check below is the one that fails
+     * when the mode stops being read.
+     */
+    public function test_a_null_billing_mode_is_read_as_ordinary_consultant_time(): void
+    {
+        $project = $this->project('Modeless');
+        $consultant = $this->entry($project, '2024-02-10', 60);
+        $consultant->forceFill(['subcontractor_billing_mode' => null])->save();
+        $direct = $this->entry($project, '2024-02-11', 60);
+        $direct->forceFill(['subcontractor_billing_mode' => SubcontractorBillingMode::Direct])->save();
+
+        $retainerIds = ClientTimeEntry::query()->retainerBillable()->pluck('id')->all();
+
+        // Same cost - none - so only the mode separates them.
+        $this->assertContains($consultant->id, $retainerIds, 'Time with no subcontractor at all is our own, and draws on the retainer.');
+        $this->assertNotContains($direct->id, $retainerIds, 'Direct time is the client\'s own arrangement and draws on nothing of ours.');
+
+        // The in-memory contract answers the same way, so a replay proof and a
+        // query cannot disagree about the same row.
+        $this->assertTrue($consultant->fresh()?->isAgreementRateBillable());
+        $this->assertFalse($direct->fresh()?->isAgreementRateBillable());
+    }
+
+    /**
+     * A cost with no mode states a payment on unknown terms, and is excluded.
+     *
+     * The conjunction's other half, isolating
+     * `client_time_entries.subcontractor_cost_amount` in this reader: the mode
+     * is null on both rows, so only the cost decides. A row saying money was
+     * paid to someone but not on what terms cannot be priced, and drawing it
+     * against the retainer would consume capacity the client did not buy.
+     */
+    public function test_a_cost_with_no_mode_is_excluded_from_the_retainer(): void
+    {
+        $project = $this->project('Modeless cost');
+        $free = $this->entry($project, '2024-02-12', 60);
+        $free->forceFill(['subcontractor_billing_mode' => null])->save();
+        $costed = $this->entry($project, '2024-02-13', 60, subcontractorCost: 9000);
+        $costed->forceFill(['subcontractor_billing_mode' => null])->save();
+
+        $retainerIds = ClientTimeEntry::query()->retainerBillable()->pluck('id')->all();
+
+        $this->assertContains($free->id, $retainerIds);
+        $this->assertNotContains($costed->id, $retainerIds);
+        $this->assertTrue($free->fresh()?->isAgreementRateBillable());
+        $this->assertFalse($costed->fresh()?->isAgreementRateBillable());
+    }
+
     public function test_retainer_mode_draws_on_capacity_at_the_agreement_rate(): void
     {
         $project = $this->project('Retainer subcontractor');

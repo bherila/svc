@@ -187,6 +187,129 @@ final class AgentTimeBillingWorkflowTest extends TestCase
         }
     }
 
+    /**
+     * A flat-hourly entry with no snapshotted amount is refused.
+     *
+     * Isolating for `client_time_entries.subcontractor_cost_amount`, which
+     * #143 names as one of the two columns no existing citation covered.
+     * Production refuses on
+     * `$amount === null || trim((string) $currency) === ''`, and because that
+     * is an OR, a fixture nulling the pair proves neither half: delete either
+     * guard and the test stays green on the other's null. So the currency is
+     * present here and only the amount is missing.
+     *
+     * The refusal matters because flat-hourly time bills at the
+     * subcontractor's own cost. With no amount there is no number to bill, and
+     * approving anyway would put an entry into the invoicing path that no
+     * later stage can price.
+     */
+    public function test_flat_hourly_time_with_a_currency_but_no_amount_is_refused(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->time($owner, $workspace, $company, $project, true);
+        $entry->update([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+            'subcontractor_cost_amount' => null,
+            'subcontractor_cost_currency' => 'USD',
+        ]);
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_APPROVE]);
+
+        $this->withHeader('Idempotency-Key', 'flat-hourly-no-amount')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve",
+            ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]],
+        )->assertUnprocessable();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+    }
+
+    /**
+     * A flat-hourly entry with an amount but no currency is refused.
+     *
+     * The mirror of the test above, and the half that isolates
+     * `client_time_entries.subcontractor_cost_currency`. An amount without a
+     * currency is not a price: the invoice would carry a bare integer whose
+     * denomination is whatever the reader assumes, and the workspace default
+     * is not a safe substitute for a subcontractor's own contracted currency.
+     *
+     * Empty string as well as null, because the production guard trims, and a
+     * column that arrived from the importer as `''` reads as "stated" to a
+     * plain null check while carrying no more information than a null.
+     */
+    public function test_flat_hourly_time_with_an_amount_but_no_currency_is_refused(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_APPROVE]);
+        $path = "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve";
+
+        foreach ([null, '', '   '] as $index => $currency) {
+            $entry = $this->time($owner, $workspace, $company, $project, true);
+            $entry->update([
+                'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+                'subcontractor_cost_amount' => 8000,
+                'subcontractor_cost_currency' => $currency,
+            ]);
+
+            $this->withHeader('Idempotency-Key', 'flat-hourly-no-currency-'.$index)->postJson(
+                $path,
+                ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]],
+            )->assertUnprocessable();
+
+            $this->assertSame('draft', $entry->fresh()?->status);
+        }
+    }
+
+    /**
+     * A stored rate that is not marked explicit is replaced, not kept.
+     *
+     * Isolating for `client_time_entries.billing_rate_source`. Approval keeps a
+     * rate the operator typed - `billing_rate_source === 'explicit'` and an
+     * amount present - and otherwise resolves the agreement rate over the top.
+     * So a null source on a row that *does* carry an amount silently discards
+     * that amount and bills the agreement rate instead.
+     *
+     * Only the source varies between the two entries here. Both carry the same
+     * stored amount, so the assertion cannot pass by way of the
+     * `billing_rate_amount !== null` half of the same condition - which is the
+     * failure mode #143 exists to prevent, and which a fixture varying both
+     * would have walked straight into.
+     *
+     * The importer is why this is not hypothetical: it carries rate amounts
+     * across without a provenance marker, so the migrated rows are exactly the
+     * ones whose stated rate this branch throws away.
+     */
+    public function test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $this->agreement($workspace, $company, null, 20000, '2026-01-01');
+
+        $unmarked = $this->time($owner, $workspace, $company, $project, true);
+        $unmarked->update(['billing_rate_amount' => 33000, 'billing_rate_source' => null]);
+        $marked = $this->time($owner, $workspace, $company, $project, true);
+        $marked->update(['billing_rate_amount' => 33000, 'billing_rate_source' => 'explicit']);
+
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_APPROVE]);
+        $path = "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve";
+
+        foreach ([$unmarked, $marked] as $index => $entry) {
+            $this->withHeader('Idempotency-Key', 'provenance-'.$index)->postJson(
+                $path,
+                ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]],
+            )->assertOk();
+        }
+
+        // The agreement rate won where the provenance was absent, and the
+        // operator's number survived where it was stated.
+        $this->assertDatabaseHas('client_time_entries', [
+            'id' => $unmarked->id, 'status' => 'approved', 'billing_rate_amount' => 20000, 'billing_rate_source' => 'agreement',
+        ]);
+        $this->assertDatabaseHas('client_time_entries', [
+            'id' => $marked->id, 'status' => 'approved', 'billing_rate_amount' => 33000, 'billing_rate_source' => 'explicit',
+        ]);
+    }
+
     public function test_contributor_cannot_supply_authoritative_rate_or_cost_fields(): void
     {
         config(['agent_api.writes_enabled' => true]);
