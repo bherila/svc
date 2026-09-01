@@ -87,7 +87,21 @@ final class BackfillInvoiceDueDatesCommand extends Command
                     // would act on approval nobody gave for it.
                     $result = $repairer->repair($workspace, apply: true, expected: $preview->eligible);
                 } catch (EligibleSetChanged $changed) {
-                    $this->error("{$workspace->slug}: {$changed->getMessage()}");
+                    // In JSON mode this is the whole output, for the same
+                    // reason the warning is suppressed there: a consumer of the
+                    // advertised format must not be handed prose.
+                    if ($format === 'json') {
+                        $this->line((string) json_encode([
+                            'applied' => false,
+                            'aborted' => [
+                                'workspace' => $workspace->slug,
+                                'approved' => $changed->approved,
+                                'found' => $changed->found,
+                            ],
+                        ]));
+                    } else {
+                        $this->error("{$workspace->slug}: {$changed->getMessage()}");
+                    }
 
                     return self::FAILURE;
                 }

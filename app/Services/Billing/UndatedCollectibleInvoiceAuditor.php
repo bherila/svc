@@ -136,6 +136,28 @@ final class UndatedCollectibleInvoiceAuditor
     }
 
     /**
+     * Every invoice that has been charged to somebody, settled or not.
+     *
+     * Wider than {@see collectible()} by design, and the difference is what the
+     * repair uses. This counts the discrepancy *today*; a paid invoice with no
+     * due date shows up in neither figure and looks harmless - but
+     * `InvoiceLifecycleService::refreshStatus()` moves it back to
+     * `partially_paid` or `issued` after a refund, at which point it is
+     * collectible and undated and the defect is back.
+     *
+     * So the audit measures, and the repair prevents. A draft stays out of
+     * both: it is owed by nobody and will pass through `issue()` in the
+     * ordinary way, which states the due date itself.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    public function charged(?Workspace $workspace = null): Builder
+    {
+        return $this->invoices($workspace)
+            ->whereIn('status', [...self::COLLECTIBLE_STATUSES, 'paid']);
+    }
+
+    /**
      * @return Builder<ClientInvoice>
      */
     private function invoices(?Workspace $workspace): Builder

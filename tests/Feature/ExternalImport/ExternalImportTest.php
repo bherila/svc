@@ -252,6 +252,36 @@ class ExternalImportTest extends TestCase
     }
 
     /**
+     * A draft promoted by payment reconciliation is dated too.
+     *
+     * `importedDueDate()` decides against the *source* status, but the same run
+     * later promotes a source draft to `partially_paid` when imported payments
+     * cover part of its total. Without dating it there, the importer still
+     * creates the undated collectible rows #149 is about - by a later route,
+     * and invisibly, because nothing in the invoice mapping is wrong.
+     */
+    public function test_a_draft_promoted_by_a_payment_is_dated_from_its_issue_date(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (91, 11, NULL, 'SYN-PROMOTED', 'draft', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec('CREATE TABLE client_invoice_payments (client_invoice_payment_id INTEGER PRIMARY KEY, client_invoice_id INTEGER, amount TEXT, payment_date TEXT, status TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoice_payments VALUES (1, 91, '40.00', '2026-01-20', 'succeeded', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', 'SYN-PROMOTED')
+            ->sole();
+
+        $this->assertSame('partially_paid', $invoice->status, 'The payment should promote the draft.');
+        $this->assertSame('2026-01-10', $invoice->due_date?->format('Y-m-d'), 'A promoted invoice is charged, so it takes its issue date.');
+    }
+
+    /**
      * A source status the destination does not recognise becomes a draft.
      *
      * The importer allowlists the five statuses this schema has and falls back

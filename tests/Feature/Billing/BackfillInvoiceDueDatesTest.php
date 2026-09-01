@@ -96,18 +96,22 @@ final class BackfillInvoiceDueDatesTest extends TestCase
     }
 
     /**
-     * Only the collectible set is repaired, and each exclusion has a reason.
+     * Every charged invoice is dated; a draft and a stated date are left alone.
      *
-     * A draft is owed by nobody, a paid invoice has no balance, and a
-     * partially-paid invoice settled to zero is collectible by status while
-     * owing nothing - so none of them is in the set whose two figures disagree,
-     * and dating them would state a term for an invoice nobody is chasing.
+     * The repair is deliberately wider than the audit. A *paid* invoice with no
+     * due date is in neither reported figure and looks harmless - until
+     * `InvoiceLifecycleService::refreshStatus()` moves it back to
+     * `partially_paid` after a refund, when it is collectible and undated and
+     * the whole defect is back. The audit measures what disagrees today; the
+     * repair covers what can disagree at all.
      *
-     * An invoice that already has a due date is untouched for the obvious
-     * reason, asserted because overwriting one would replace a stated term with
-     * a derived one and no other test here would notice.
+     * A draft stays out: it is owed by nobody, and `issue()` states its due date
+     * in the ordinary way if it is ever issued - dating it here would state a
+     * term nobody has been given. And an invoice that already states a due date
+     * is never overwritten, asserted because replacing a stated term with a
+     * derived one is the one way this repair could destroy information.
      */
-    public function test_it_leaves_every_invoice_outside_the_collectible_set_alone(): void
+    public function test_it_dates_every_charged_invoice_but_no_draft(): void
     {
         $draft = $this->invoice(status: 'draft', balance: 50000, issueDate: '2026-01-15');
         $paid = $this->invoice(status: 'paid', balance: 0, issueDate: '2026-01-16');
@@ -115,21 +119,44 @@ final class BackfillInvoiceDueDatesTest extends TestCase
         $alreadyDated = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-18');
         $alreadyDated->forceFill(['due_date' => '2026-02-28'])->save();
 
-        // One minor unit is a balance. The boundary is `> 0`, not "a
-        // meaningful amount", and an invoice owing a cent is as collectible as
-        // one owing a thousand - it appears in the same figure and is missing
-        // from the same one.
+        // One minor unit is a balance. The boundary is `> 0`, not "a meaningful
+        // amount", and an invoice owing a cent is as collectible as one owing a
+        // thousand.
         $owesOneUnit = $this->invoice(status: 'issued', balance: 1, issueDate: '2026-01-19');
 
         $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
 
-        $this->assertSame(1, $result->eligible);
-        $this->assertSame(1, $result->repaired);
+        $this->assertSame(3, $result->eligible);
+        $this->assertSame(3, $result->repaired);
+
+        // Charged, so dated - including the two a refund could reopen.
+        $this->assertSame('2026-01-16', $paid->refresh()->due_date?->format('Y-m-d'));
+        $this->assertSame('2026-01-17', $settled->refresh()->due_date?->format('Y-m-d'));
         $this->assertSame('2026-01-19', $owesOneUnit->refresh()->due_date?->format('Y-m-d'));
+
+        // Not charged, or already stated.
         $this->assertNull($draft->refresh()->due_date);
-        $this->assertNull($paid->refresh()->due_date);
-        $this->assertNull($settled->refresh()->due_date);
         $this->assertSame('2026-02-28', $alreadyDated->refresh()->due_date?->format('Y-m-d'));
+    }
+
+    /**
+     * A refund cannot reopen an undated invoice into the collectible set.
+     *
+     * The end-to-end form of the test above: date a paid invoice, then move it
+     * back to collectible the way a refund does, and confirm it arrives with a
+     * due date rather than recreating the defect.
+     */
+    public function test_a_repaired_paid_invoice_stays_dated_when_a_refund_reopens_it(): void
+    {
+        $paid = $this->invoice(status: 'paid', balance: 0, issueDate: '2026-01-16');
+
+        app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
+
+        // What a partial refund leaves behind.
+        $paid->forceFill(['status' => 'partially_paid', 'paid_amount' => 20000, 'balance_amount' => 30000])->save();
+
+        $this->assertSame('2026-01-16', $paid->refresh()->due_date?->format('Y-m-d'));
+        $this->assertSame(0, app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace)->eligible);
     }
 
     /** The repair is scopeable, so a tenant-facing caller cannot reach another. */

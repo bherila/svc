@@ -117,7 +117,7 @@ final class UndatedCollectibleInvoiceRepairer
      */
     private function repairable(Workspace $workspace): Builder
     {
-        return $this->auditor->collectible($workspace)
+        return $this->auditor->charged($workspace)
             ->whereNull('due_date')
             ->whereNotNull('issue_date');
     }
@@ -129,7 +129,7 @@ final class UndatedCollectibleInvoiceRepairer
      */
     private function undatable(Workspace $workspace): Builder
     {
-        return $this->auditor->collectible($workspace)
+        return $this->auditor->charged($workspace)
             ->whereNull('due_date')
             ->whereNull('issue_date');
     }

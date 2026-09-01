@@ -1625,6 +1625,13 @@ final class ExternalImportService
                 'paid_amount' => $paid,
                 'balance_amount' => ClientInvoice::balanceOwed($total, $paid),
                 'is_visible_to_client' => $status !== 'draft' ? true : (bool) $invoice->is_visible_to_client,
+                // A draft promoted here is charged for the first time, and
+                // `importedDueDate()` decided against the *source* status
+                // before this ran - so without this the importer still creates
+                // the undated collectible rows #149 is about, just by a later
+                // route. The rule is the same one `issue()` states: a charged
+                // invoice with no due date takes its issue date.
+                'due_date' => $invoice->due_date ?? ($status !== 'draft' ? $invoice->issue_date : null),
                 'updated_at' => $this->clock->now(),
             ]);
         }
