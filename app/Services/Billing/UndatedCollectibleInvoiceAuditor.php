@@ -81,12 +81,7 @@ final class UndatedCollectibleInvoiceAuditor
      */
     public function count(?Workspace $workspace = null): UndatedCollectibleInvoiceCounts
     {
-        // The summary's own definition, both halves. Balance rather than status
-        // alone, because a partially-paid invoice settled to zero is collectible
-        // by status and owed by nobody.
-        $collectible = $this->invoices($workspace)
-            ->whereIn('status', self::COLLECTIBLE_STATUSES)
-            ->where('balance_amount', '>', 0);
+        $collectible = $this->collectible($workspace);
 
         $undated = (clone $collectible)->whereNull('due_date');
 
@@ -116,6 +111,28 @@ final class UndatedCollectibleInvoiceAuditor
             undatedBalances: $this->balances($undated),
             wouldBecomeOverdueBalances: $this->balances($wouldBecomeOverdue),
         );
+    }
+
+    /**
+     * The set the summary calls collectible, as one definition.
+     *
+     * Public because the repair reads it. #149's repair and the audit that
+     * justified it have to size the same population - a repair that writes to a
+     * set the audit never counted is not the repair that was approved - and the
+     * only way to guarantee that is for there to be one predicate rather than
+     * two that agree today.
+     *
+     * The summary's own definition, both halves. Balance rather than status
+     * alone, because a partially-paid invoice settled to zero is collectible by
+     * status and owed by nobody.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    public function collectible(?Workspace $workspace = null): Builder
+    {
+        return $this->invoices($workspace)
+            ->whereIn('status', self::COLLECTIBLE_STATUSES)
+            ->where('balance_amount', '>', 0);
     }
 
     /**

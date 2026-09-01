@@ -209,6 +209,49 @@ class ExternalImportTest extends TestCase
     }
 
     /**
+     * A charged source invoice with no due date gets the one `issue()` states.
+     *
+     * #149: a collectible invoice with a null `due_date` sits in collectible
+     * balances and in no overdue figure, because SQL answers false for a null
+     * rather than unknown. `InvoiceLifecycleService::issue()` defaults a null
+     * due date to the issue date, but returns early for an invoice that is
+     * already charged - so an imported issued or paid row never passes through
+     * the transition that would have dated it, and keeps its null permanently.
+     *
+     * The importer therefore applies the same default. That is the native
+     * contract rather than an invented date, and it is what stops the population
+     * the backfill repairs from growing again with the next import.
+     *
+     * A draft is deliberately left null: it is owed by nobody, is not
+     * collectible, and will pass through `issue()` in the ordinary way if it is
+     * ever issued. Dating it here would state a term the source never stated.
+     */
+    public function test_a_charged_invoice_with_no_due_date_is_dated_from_its_issue_date(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (71, 11, NULL, 'SYN-ISSUED', 'issued', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (72, 11, NULL, 'SYN-STATED', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (73, 11, NULL, 'SYN-DRAFT', 'draft', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+        $pdo->exec("INSERT INTO client_invoices VALUES (74, 11, NULL, 'SYN-UNDATED', 'issued', NULL, NULL, '100.00', 'USD', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $due = fn (string $number): ?string => ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', $number)
+            ->sole()
+            ->due_date?->format('Y-m-d');
+
+        $this->assertSame('2026-01-10', $due('SYN-ISSUED'), 'A charged row with no due date takes its issue date.');
+        $this->assertSame('2026-02-10', $due('SYN-STATED'), 'A stated due date is never overwritten.');
+        $this->assertNull($due('SYN-DRAFT'), 'A draft is owed by nobody and states no term.');
+        $this->assertNull($due('SYN-UNDATED'), 'With no issue date there is nothing defensible to use.');
+    }
+
+    /**
      * A row imported by an earlier pass and deleted at the source afterwards.
      *
      * Filtering it out of the read means its ledger item is never examined, so
