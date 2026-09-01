@@ -2293,9 +2293,15 @@ final class ExternalImportService
      * defects this epic keeps finding: the disagreement is silent, and every
      * reader looks locally correct.
      *
+     * Public so {@see RestoreAgreementVerifier::comparableColumns()} can mirror
+     * it by *calling* it. That file's own comment says its expectations "mirror
+     * the importer's defaults exactly", and a copy of a default is a copy that
+     * can drift - which is precisely what happened when this allowlist stopped
+     * being the raw source value.
+     *
      * @param  array<string, mixed>  $row
      */
-    private static function importedInvoiceStatus(array $row): string
+    public static function importedInvoiceStatus(array $row): string
     {
         // `is_string` rather than a cast. The strict check already proves the
         // value is one of the listed strings when it matches, so a `(string)`
@@ -2333,9 +2339,13 @@ final class ExternalImportService
      * the null is preserved rather than guessed at. `svc:billing:audit-undated-
      * collectible-invoices` is where such rows surface.
      *
+     * Public for the same reason as {@see importedInvoiceStatus()}: the restore
+     * verifier has to derive the same default, and calling it is the only way
+     * that stays true.
+     *
      * @param  array<string, mixed>  $row
      */
-    private static function importedDueDate(array $row): ?string
+    public static function importedDueDate(array $row): ?string
     {
         $due = self::sourceDate($row['due_date'] ?? null);
 

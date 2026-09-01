@@ -43,9 +43,16 @@ final class RestoreAgreementVerifier
         return [
             'client_invoices' => [
                 'invoice_number' => fn (array $r): mixed => $r['invoice_number'] ?? null,
-                'status' => fn (array $r): mixed => $r['status'] ?? null,
+                // Both derived by calling the importer rather than restating
+                // it. `status` is allowlisted - an unrecognised source status
+                // lands as a draft - and `due_date` takes the issue date on a
+                // charged row with none, which is the contract `issue()` states
+                // (#149). Reading the raw source value here would report the
+                // importer's own default as drift and refuse a declared restore
+                // over a difference nothing had made.
+                'status' => fn (array $r): mixed => ExternalImportService::importedInvoiceStatus($r),
                 'issue_date' => fn (array $r): mixed => self::date($r['issue_date'] ?? null),
-                'due_date' => fn (array $r): mixed => self::date($r['due_date'] ?? null),
+                'due_date' => fn (array $r): mixed => self::date(ExternalImportService::importedDueDate($r)),
                 'service_period_start' => fn (array $r): mixed => self::date($r['period_start'] ?? null),
                 'service_period_end' => fn (array $r): mixed => self::date($r['period_end'] ?? null),
                 'subtotal_amount' => fn (array $r): mixed => self::minor($r['invoice_total'] ?? null),

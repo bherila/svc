@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
+use App\Support\Billing\EligibleSetChanged;
 use App\Support\Billing\UndatedCollectibleInvoiceRepairCounts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -50,23 +51,38 @@ final class UndatedCollectibleInvoiceRepairer
     ) {}
 
     /**
-     * Set each repairable invoice's due date to its issue date.
+     * Set each repairable invoice's due date to its issue date, in one workspace.
      *
-     * Passing null repairs across every workspace, which is the operator
-     * reading; anything tenant-facing must pass its own workspace.
+     * The workspace is required, unlike on the auditor beside it, and the
+     * asymmetry is deliberate: an unscoped *read* is the operator's view of
+     * every tenant at once, while an unscoped *write* is a single statement
+     * mutating billing records across every tenant, with no way to validate one
+     * or roll the correction out gradually. A caller wanting every workspace
+     * iterates them and is told what happened in each.
      *
      * `$apply` false counts without writing, so the same call that reports is
      * the one that acts - a dry run cannot drift from the real thing when it is
      * the same code path with one branch flipped.
+     *
+     * `$expected`, when given, is the count an operator approved. If the
+     * eligible set has changed under the lock since then the repair aborts
+     * rather than writing rows nobody agreed to - an undated paid invoice
+     * becoming partially paid mid-prompt is enough to change it.
+     *
+     * @throws EligibleSetChanged when `$expected` no longer matches
      */
-    public function repair(?Workspace $workspace = null, bool $apply = false): UndatedCollectibleInvoiceRepairCounts
+    public function repair(Workspace $workspace, bool $apply = false, ?int $expected = null): UndatedCollectibleInvoiceRepairCounts
     {
-        return DB::transaction(function () use ($workspace, $apply): UndatedCollectibleInvoiceRepairCounts {
+        return DB::transaction(function () use ($workspace, $apply, $expected): UndatedCollectibleInvoiceRepairCounts {
             // Locked before counting, so the number reported is the number
             // written. Without this an invoice could be issued between the count
             // and the update and be repaired without ever being counted, or
             // counted and then paid.
             $eligible = $this->repairable($workspace)->lockForUpdate()->count();
+
+            if ($apply && $expected !== null && $expected !== $eligible) {
+                throw new EligibleSetChanged($expected, $eligible);
+            }
 
             if (! $apply) {
                 return new UndatedCollectibleInvoiceRepairCounts(
@@ -99,7 +115,7 @@ final class UndatedCollectibleInvoiceRepairer
      *
      * @return Builder<ClientInvoice>
      */
-    private function repairable(?Workspace $workspace): Builder
+    private function repairable(Workspace $workspace): Builder
     {
         return $this->auditor->collectible($workspace)
             ->whereNull('due_date')
@@ -111,7 +127,7 @@ final class UndatedCollectibleInvoiceRepairer
      *
      * @return Builder<ClientInvoice>
      */
-    private function undatable(?Workspace $workspace): Builder
+    private function undatable(Workspace $workspace): Builder
     {
         return $this->auditor->collectible($workspace)
             ->whereNull('due_date')

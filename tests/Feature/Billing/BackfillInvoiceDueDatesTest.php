@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\UndatedCollectibleInvoiceRepairer;
+use App\Support\Billing\EligibleSetChanged;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,7 +48,7 @@ final class BackfillInvoiceDueDatesTest extends TestCase
     {
         $invoice = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
 
-        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
 
         $this->assertSame(1, $result->eligible);
         $this->assertSame(1, $result->repaired);
@@ -66,7 +67,7 @@ final class BackfillInvoiceDueDatesTest extends TestCase
     {
         $invoice = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
 
-        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair();
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace);
 
         $this->assertSame(1, $result->eligible);
         $this->assertSame(0, $result->repaired);
@@ -86,7 +87,7 @@ final class BackfillInvoiceDueDatesTest extends TestCase
     {
         $undatable = $this->invoice(status: 'issued', balance: 50000, issueDate: null);
 
-        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
 
         $this->assertSame(0, $result->repaired);
         $this->assertSame(1, $result->skippedWithoutAnIssueDate);
@@ -120,7 +121,7 @@ final class BackfillInvoiceDueDatesTest extends TestCase
         // from the same one.
         $owesOneUnit = $this->invoice(status: 'issued', balance: 1, issueDate: '2026-01-19');
 
-        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
 
         $this->assertSame(1, $result->eligible);
         $this->assertSame(1, $result->repaired);
@@ -176,10 +177,16 @@ final class BackfillInvoiceDueDatesTest extends TestCase
 
         $this->artisan('svc:billing:backfill-invoice-due-dates', ['--apply' => true, '--force' => true, '--format' => 'json'])
             ->expectsOutput(json_encode([
-                'eligible' => 1,
-                'repaired' => 1,
-                'skipped_without_an_issue_date' => 1,
                 'applied' => true,
+                'totals' => ['eligible' => 1, 'repaired' => 1, 'skipped' => 1],
+                'workspaces' => [
+                    'dues' => [
+                        'eligible' => 1,
+                        'repaired' => 1,
+                        'skipped_without_an_issue_date' => 1,
+                        'applied' => true,
+                    ],
+                ],
             ]))
             ->assertSuccessful();
     }
@@ -195,7 +202,7 @@ final class BackfillInvoiceDueDatesTest extends TestCase
     {
         $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
 
-        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true);
 
         $this->assertSame(0, $result->skippedWithoutAnIssueDate);
         $this->assertFalse($result->leavesAnUndatedRemainder());
@@ -213,10 +220,105 @@ final class BackfillInvoiceDueDatesTest extends TestCase
         $invoice = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
 
         $this->artisan('svc:billing:backfill-invoice-due-dates', ['--apply' => true])
-            ->expectsConfirmation('Set the due date to the issue date on 1 collectible invoice(s)?', 'no')
+            ->expectsConfirmation('Set the due date to the issue date on 1 collectible invoice(s) in dues?', 'no')
             ->assertSuccessful();
 
         $this->assertNull($invoice->refresh()->due_date);
+    }
+
+    /**
+     * The repair cannot be run across every tenant in one statement.
+     *
+     * An unscoped *read* is the operator's view of every workspace at once; an
+     * unscoped *write* is a single update mutating billing records in every
+     * tenant, with no way to validate one client first and no bound on a
+     * mistake. So the workspace is required, and the command walks them.
+     */
+    public function test_the_command_walks_workspaces_and_reports_each(): void
+    {
+        $mine = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+
+        $other = Workspace::query()->create(['name' => 'Second', 'slug' => 'second-dues']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Second Client', 'slug' => 'second-dues-client',
+        ]);
+        $theirs = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-16', workspace: $other, company: $otherCompany);
+
+        $this->artisan('svc:billing:backfill-invoice-due-dates', ['--apply' => true, '--force' => true])
+            ->assertSuccessful();
+
+        $this->assertSame('2026-01-15', $mine->refresh()->due_date?->format('Y-m-d'));
+        $this->assertSame('2026-01-16', $theirs->refresh()->due_date?->format('Y-m-d'));
+    }
+
+    /** `--workspace` bounds the repair to one tenant. */
+    public function test_the_workspace_option_bounds_the_repair(): void
+    {
+        $mine = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+
+        $other = Workspace::query()->create(['name' => 'Third', 'slug' => 'third-dues']);
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $other->id, 'name' => 'Third Client', 'slug' => 'third-dues-client',
+        ]);
+        $theirs = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-16', workspace: $other, company: $otherCompany);
+
+        $this->artisan('svc:billing:backfill-invoice-due-dates', [
+            '--workspace' => 'dues', '--apply' => true, '--force' => true,
+        ])->assertSuccessful();
+
+        $this->assertSame('2026-01-15', $mine->refresh()->due_date?->format('Y-m-d'));
+        $this->assertNull($theirs->refresh()->due_date, 'A named workspace must not reach another.');
+    }
+
+    public function test_an_unknown_workspace_is_refused(): void
+    {
+        $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+
+        $this->artisan('svc:billing:backfill-invoice-due-dates', ['--workspace' => 'no-such-workspace'])
+            ->expectsOutputToContain('No workspace matches')
+            ->assertFailed();
+    }
+
+    /**
+     * A run with nothing repairable still reports the undatable remainder.
+     *
+     * The case an operator most needs told: every affected invoice lacks an
+     * issue date, so the repair can do nothing and the run looks clean while
+     * the problem it was called for is entirely unaddressed.
+     */
+    public function test_an_all_undatable_population_is_warned_about_not_reported_as_clean(): void
+    {
+        $this->invoice(status: 'issued', balance: 50000, issueDate: null);
+
+        $this->artisan('svc:billing:backfill-invoice-due-dates')
+            ->doesntExpectOutputToContain('No collectible invoice is missing a due date')
+            ->expectsOutputToContain('carry no issue date either')
+            ->assertSuccessful();
+    }
+
+    /**
+     * The count the operator approved is the count that gets written.
+     *
+     * The preview's transaction closes before the prompt is answered, so the
+     * eligible set can move underneath it - a paid invoice refunded to
+     * partially paid is enough. Writing the larger set would act on approval
+     * nobody gave for it.
+     */
+    public function test_a_changed_eligible_set_aborts_rather_than_writing(): void
+    {
+        $first = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+        $second = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-16');
+
+        try {
+            app(UndatedCollectibleInvoiceRepairer::class)->repair($this->workspace, apply: true, expected: 1);
+            $this->fail('A repair approved for one invoice must not write two.');
+        } catch (EligibleSetChanged $changed) {
+            $this->assertSame(1, $changed->approved);
+            $this->assertSame(2, $changed->found);
+        }
+
+        $this->assertNull($first->refresh()->due_date);
+        $this->assertNull($second->refresh()->due_date);
     }
 
     private function invoice(
