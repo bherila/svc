@@ -161,6 +161,52 @@ final class BackfillInvoiceDueDatesTest extends TestCase
         $this->assertSame('2026-01-15', $invoice->refresh()->due_date?->format('Y-m-d'));
     }
 
+    /**
+     * The JSON payload an operator or a script reads.
+     *
+     * Asserted key by key and value by value, because this is the only form the
+     * repair reports in when it is not being watched - a missing or renamed key
+     * is a silent failure for whatever consumes it, and the counts are the whole
+     * point of the run.
+     */
+    public function test_the_json_output_reports_every_count(): void
+    {
+        $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+        $this->invoice(status: 'issued', balance: 50000, issueDate: null);
+
+        $this->artisan('svc:billing:backfill-invoice-due-dates', ['--apply' => true, '--force' => true, '--format' => 'json'])
+            ->expectsOutput(json_encode([
+                'eligible' => 1,
+                'repaired' => 1,
+                'skipped_without_an_issue_date' => 1,
+                'applied' => true,
+            ]))
+            ->assertSuccessful();
+    }
+
+    /**
+     * Nothing left undated means nothing left undated.
+     *
+     * The boundary is `> 0`, and the sibling test only ever asserts the true
+     * side. Without this, reporting a remainder for a run that left none would
+     * pass - and that flag is what decides whether #149's option (2) is needed.
+     */
+    public function test_a_clean_run_reports_no_undated_remainder(): void
+    {
+        $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-15');
+
+        $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
+
+        $this->assertSame(0, $result->skippedWithoutAnIssueDate);
+        $this->assertFalse($result->leavesAnUndatedRemainder());
+        $this->assertSame([
+            'eligible' => 1,
+            'repaired' => 1,
+            'skipped_without_an_issue_date' => 0,
+            'applied' => true,
+        ], $result->toArray());
+    }
+
     /** Declining the confirmation writes nothing. */
     public function test_the_command_writes_nothing_when_the_confirmation_is_declined(): void
     {

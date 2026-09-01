@@ -283,6 +283,10 @@ class ExternalImportTest extends TestCase
 
         $this->assertSame('draft', $invoice->status);
         $this->assertFalse((bool) $invoice->is_visible_to_client, 'An unknown status must not expose the invoice to the client.');
+        // Nothing paid, whole total owed - both derived from the same resolved
+        // status, so both belong in the same assertion.
+        $this->assertSame(0, (int) $invoice->paid_amount);
+        $this->assertSame(10000, (int) $invoice->balance_amount);
         // A draft, so the due-date default does not apply either - it states no
         // term because nobody has been charged.
         $this->assertNull($invoice->due_date);

@@ -82,6 +82,20 @@
             ignore: [
                 "App\\Services\\Billing\\UndatedAgreementAuditor::eligibleAgreement",
                 "App\\Services\\Billing\\UndatedAgreementAuditor::billedLines",
+                // The `paid_amount => ... : 0` fallback in the importer's
+                // invoice map. Whatever it produces is unobservable: the
+                // payment reconciliation pass later in the same run recomputes
+                // the column as
+                // `min($total, max((int) $invoice->paid_amount, max(0, $paidFromPayments)))`,
+                // whose inner `max(0, ...)` and outer `max(...)` clamp any
+                // negative back to zero before a test - or a reader - can see
+                // it. So `: 0` and `: -1` write the same row.
+                //
+                // Named per method. The literal is left in place rather than
+                // removed because it states the intent for a status carrying no
+                // payments, and the reconciliation is a separate concern that
+                // could stop running over this column.
+                "App\\Services\\ExternalImport\\ExternalImportService::attributes",
             ],
         },
     },

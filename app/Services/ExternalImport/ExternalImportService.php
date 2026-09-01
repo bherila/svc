@@ -2297,10 +2297,14 @@ final class ExternalImportService
      */
     private static function importedInvoiceStatus(array $row): string
     {
-        $status = $row['status'] ?? 'draft';
+        // `is_string` rather than a cast. The strict check already proves the
+        // value is one of the listed strings when it matches, so a `(string)`
+        // here converts nothing and no test can tell it from its own absence -
+        // a mutant the gate cannot kill is a gap in the gate, not a safeguard.
+        $status = $row['status'] ?? null;
 
-        return in_array($status, ['draft', 'issued', 'partially_paid', 'paid', 'void'], true)
-            ? (string) $status
+        return is_string($status) && in_array($status, ['draft', 'issued', 'partially_paid', 'paid', 'void'], true)
+            ? $status
             : 'draft';
     }
 
