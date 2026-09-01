@@ -9,7 +9,7 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "bherila/auth-laravel": "^0.9",
         "bherila/mcp-laravel-bridge": "^0.1.0",
         "dompdf/dompdf": "^3.1",
