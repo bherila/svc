@@ -63,6 +63,25 @@ describe('client list', () => {
         expect(within(row).getByText('3')).toBeInTheDocument();
     });
 
+    it('offers the appearance selector on the workspace client list', () => {
+        render(<ClientIndex {...props()} />);
+
+        expect(
+            screen.getByRole('combobox', { name: 'Appearance' }),
+        ).toBeInTheDocument();
+    });
+
+    // The marker that opts this screen into the legacy slate bridge. Pinned
+    // because the bridge is opt-in: losing the attribute is silent, and the
+    // screen would simply stop responding to a dark root.
+    it('opts into the operator appearance bridge', () => {
+        render(<ClientIndex {...props()} />);
+
+        expect(screen.getByRole('main')).toHaveAttribute(
+            'data-appearance-bridge',
+        );
+    });
+
     it('links each company to its detail screen inside this workspace', () => {
         render(<ClientIndex {...props()} />);
 

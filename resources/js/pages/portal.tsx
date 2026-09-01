@@ -199,7 +199,10 @@ export default function Portal({ company }: { company: PortalCompany }) {
     return (
         <>
             <Head title={`${company.name} portal`} />
-            <main className="min-h-screen bg-slate-950 text-white">
+            <main
+                className="min-h-screen bg-slate-950 text-white"
+                style={{ colorScheme: 'dark' }}
+            >
                 <div className="mx-auto max-w-5xl px-6 py-8">
                     <header className="flex items-center justify-between border-b border-white/10 pb-6">
                         <div>

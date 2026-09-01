@@ -1,4 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
+import { AppearanceSelector } from '@/components/appearance-selector';
 import {
     Select,
     SelectContent,
@@ -95,7 +96,7 @@ export default function ClientContextLayout({
     );
 
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen" data-appearance-bridge>
             <div className="border-b">
                 <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-3">
                     <Select
@@ -139,6 +140,9 @@ export default function ClientContextLayout({
                     >
                         All clients
                     </Link>
+                    <div className="ml-auto">
+                        <AppearanceSelector />
+                    </div>
                 </div>
 
                 <nav

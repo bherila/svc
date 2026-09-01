@@ -1,8 +1,34 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <script>
+            (() => {
+                let stored = null;
+
+                try {
+                    stored = localStorage.getItem('svc:appearance');
+                } catch {
+                    // Storage can be unavailable in hardened browser modes.
+                }
+
+                const appearance = ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
+                let systemIsDark = false;
+
+                try {
+                    systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                } catch {
+                    // An unavailable media query falls back to the light system default.
+                }
+
+                const isDark = appearance === 'dark' || (appearance === 'system' && systemIsDark);
+
+                document.documentElement.classList.toggle('dark', isDark);
+                document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+            })();
+        </script>
 
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
