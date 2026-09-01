@@ -982,6 +982,42 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertSame(20.0, (float) $q2->hours_billed_at_rate);
     }
 
+    /** Skipping an earlier cycle must not stop a later valid candidate being summed. */
+    public function test_an_excluded_cycleless_invoice_does_not_hide_a_later_matching_one(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        $this->entry($project, '2024-01-15', 1800);
+        $q1 = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $q1);
+        $q1->forceFill(['status' => 'issued', 'cycle_start' => null, 'cycle_end' => null])->save();
+
+        $this->entry($project, '2024-04-15', 1800);
+        $q2April = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-04-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $q2April);
+        $this->assertSame(20.0, (float) $q2April->hours_billed_at_rate);
+        $q2April->forceFill(['status' => 'issued', 'cycle_start' => null, 'cycle_end' => null])->save();
+
+        $this->entry($project, '2024-05-15', 1200);
+        $q2May = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-05-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $q2May);
+        $this->assertSame(10.0, (float) $q2May->hours_billed_at_rate);
+    }
+
     /** A charged row with neither date pair cannot safely belong to any cycle. */
     public function test_a_fully_unplaceable_charged_interim_refuses_future_billing(): void
     {
