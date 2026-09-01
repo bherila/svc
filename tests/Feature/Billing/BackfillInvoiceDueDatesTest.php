@@ -114,10 +114,17 @@ final class BackfillInvoiceDueDatesTest extends TestCase
         $alreadyDated = $this->invoice(status: 'issued', balance: 50000, issueDate: '2026-01-18');
         $alreadyDated->forceFill(['due_date' => '2026-02-28'])->save();
 
+        // One minor unit is a balance. The boundary is `> 0`, not "a
+        // meaningful amount", and an invoice owing a cent is as collectible as
+        // one owing a thousand - it appears in the same figure and is missing
+        // from the same one.
+        $owesOneUnit = $this->invoice(status: 'issued', balance: 1, issueDate: '2026-01-19');
+
         $result = app(UndatedCollectibleInvoiceRepairer::class)->repair(apply: true);
 
-        $this->assertSame(0, $result->eligible);
-        $this->assertSame(0, $result->repaired);
+        $this->assertSame(1, $result->eligible);
+        $this->assertSame(1, $result->repaired);
+        $this->assertSame('2026-01-19', $owesOneUnit->refresh()->due_date?->format('Y-m-d'));
         $this->assertNull($draft->refresh()->due_date);
         $this->assertNull($paid->refresh()->due_date);
         $this->assertNull($settled->refresh()->due_date);

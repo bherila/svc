@@ -252,6 +252,43 @@ class ExternalImportTest extends TestCase
     }
 
     /**
+     * A source status the destination does not recognise becomes a draft.
+     *
+     * The importer allowlists the five statuses this schema has and falls back
+     * to `draft` for anything else. That fallback matters more than it looks:
+     * `is_visible_to_client`, `paid_amount` and `balance_amount` are all derived
+     * from the same value, so letting an unrecognised status through would make
+     * an invoice visible to a client and carry a balance under a status no query
+     * in the system matches - collectible by nothing, overdue by nothing, and
+     * invisible to every figure that reads a known status.
+     *
+     * Untested until now, and reachable: the source schema is the predecessor's,
+     * not this one's, so a status this port never modelled is a source change
+     * away rather than a corruption.
+     */
+    public function test_an_unrecognised_source_status_falls_back_to_draft(): void
+    {
+        $workspace = Workspace::create(['name' => 'Synthetic Workspace', 'slug' => 'synthetic-workspace']);
+        $pdo = new PDO('sqlite:'.$this->sourcePath);
+        $pdo->exec('CREATE TABLE client_invoices (client_invoice_id INTEGER PRIMARY KEY, client_company_id INTEGER, client_agreement_id INTEGER, invoice_number TEXT, status TEXT, issue_date TEXT, due_date TEXT, invoice_total TEXT, currency TEXT, notes TEXT)');
+        $pdo->exec("INSERT INTO client_invoices VALUES (81, 11, NULL, 'SYN-UNKNOWN', 'awaiting_countersignature', '2026-01-10', NULL, '100.00', 'USD', NULL)");
+
+        $summary = app(ExternalImportService::class)->run('external', $workspace->slug, true);
+        $this->assertSame(0, $summary['counts']['failed']);
+
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('invoice_number', 'SYN-UNKNOWN')
+            ->sole();
+
+        $this->assertSame('draft', $invoice->status);
+        $this->assertFalse((bool) $invoice->is_visible_to_client, 'An unknown status must not expose the invoice to the client.');
+        // A draft, so the due-date default does not apply either - it states no
+        // term because nobody has been charged.
+        $this->assertNull($invoice->due_date);
+    }
+
+    /**
      * A row imported by an earlier pass and deleted at the source afterwards.
      *
      * Filtering it out of the read means its ledger item is never examined, so

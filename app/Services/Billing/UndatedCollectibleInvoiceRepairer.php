@@ -66,8 +66,7 @@ final class UndatedCollectibleInvoiceRepairer
             // written. Without this an invoice could be issued between the count
             // and the update and be repaired without ever being counted, or
             // counted and then paid.
-            $repairable = $this->repairable($workspace)->lockForUpdate();
-            $eligible = (clone $repairable)->count();
+            $eligible = $this->repairable($workspace)->lockForUpdate()->count();
 
             if (! $apply) {
                 return new UndatedCollectibleInvoiceRepairCounts(

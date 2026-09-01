@@ -53,6 +53,23 @@
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
             ],
         },
+        // The `default => $attributes` arm of the importer's target-type map.
+        // Every `write` spec in `ImporterRegistry` names a type the match
+        // handles - the only unlisted ones (`attachment`,
+        // `stripe_payment_reference`) belong to `planned_copy` and
+        // `planned_reference` specs, which never reach `attributes()`. So no
+        // test can route an unhandled type here without inventing a spec that
+        // does not exist, and the arm is a guard against a future mapping
+        // rather than live behaviour.
+        //
+        // Named per method. A default arm anywhere it decides something stays
+        // live, and `DisallowBillingEnumDefaultArmRule` refuses them outright
+        // on the billing enums.
+        MatchArmRemoval: {
+            ignore: [
+                "App\\Services\\ExternalImport\\ExternalImportService::attributes",
+            ],
+        },
         // `select(DB::raw(1))` inside a `WHERE EXISTS` subquery. The value is
         // never read - EXISTS asks whether a row comes back, not what is in it -
         // so `SELECT 0` and `SELECT 1` are the same query and no test can tell
