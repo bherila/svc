@@ -9,6 +9,7 @@ const listeners = new Set<() => void>();
 let appearance: Appearance | undefined;
 let systemMedia: MediaQueryList | null = null;
 let systemMediaListener: (() => void) | null = null;
+let storageListener: ((event: StorageEvent) => void) | null = null;
 
 export function isAppearance(value: string | null): value is Appearance {
     return value === 'light' || value === 'dark' || value === 'system';
@@ -66,6 +67,41 @@ function stopSystemListener(): void {
     systemMediaListener = null;
 }
 
+function stopStorageListener(): void {
+    if (typeof window !== 'undefined' && storageListener !== null) {
+        window.removeEventListener('storage', storageListener);
+    }
+
+    storageListener = null;
+}
+
+function syncStorageListener(): void {
+    if (typeof window === 'undefined' || listeners.size === 0) {
+        stopStorageListener();
+
+        return;
+    }
+
+    if (storageListener !== null) {
+        return;
+    }
+
+    storageListener = (event): void => {
+        if (event.key !== storageKey && event.key !== null) {
+            return;
+        }
+
+        const next = isAppearance(event.newValue)
+            ? event.newValue
+            : serverAppearance;
+        appearance = next;
+        applyAppearance(next);
+        syncSystemListener();
+        listeners.forEach((listener) => listener());
+    };
+    window.addEventListener('storage', storageListener);
+}
+
 function syncSystemListener(): void {
     const shouldListen =
         typeof window !== 'undefined' &&
@@ -105,12 +141,14 @@ function subscribe(listener: () => void): () => void {
     listeners.add(listener);
     applyAppearance(getAppearanceSnapshot());
     syncSystemListener();
+    syncStorageListener();
 
     return () => {
         listeners.delete(listener);
 
         if (listeners.size === 0) {
             stopSystemListener();
+            stopStorageListener();
         }
     };
 }
@@ -140,5 +178,6 @@ export function useAppearance(): readonly [
 /** Reset module state only after mounted consumers have been cleaned up. */
 export function resetAppearanceStoreForTests(): void {
     stopSystemListener();
+    stopStorageListener();
     appearance = undefined;
 }

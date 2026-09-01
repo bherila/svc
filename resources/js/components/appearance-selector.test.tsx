@@ -157,3 +157,20 @@ test('shares one preference and one system listener across consumers', async () 
     expect(screen.getAllByLabelText('Appearance')[1]).toHaveValue('dark');
     expect(media.removeEventListener).toHaveBeenCalledTimes(1);
 });
+
+test('reconciles appearance changes made in another tab', () => {
+    render(<AppearanceSelector />);
+
+    act(() => {
+        window.dispatchEvent(
+            new StorageEvent('storage', {
+                key: 'svc:appearance',
+                newValue: 'dark',
+            }),
+        );
+    });
+
+    expect(screen.getByLabelText('Appearance')).toHaveValue('dark');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+});
