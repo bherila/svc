@@ -35,7 +35,7 @@ type Workspace = {
 };
 
 const inputClass =
-    'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-cyan-600';
+    'w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-card-foreground outline-none focus:border-cyan-600 focus-visible:ring-2 focus-visible:ring-cyan-600/50';
 const buttonClass =
     'rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50';
 

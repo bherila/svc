@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { AppearanceSelector } from '@/components/appearance-selector';
@@ -34,6 +34,7 @@ import {
 import ClientContextLayout from '@/layouts/client-context-layout';
 import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
+import type { ClientContext } from '@/types/navigation';
 import type {
     Capacity,
     Month,
@@ -186,6 +187,7 @@ export default function TimeSheet({
     months,
     approval_limit: approvalLimit,
 }: TimeSheetProps) {
+    const clientContext = usePage().props.clientContext as ClientContext | null;
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
@@ -312,7 +314,7 @@ export default function TimeSheet({
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <AppearanceSelector />
+                            {clientContext === null && <AppearanceSelector />}
                             {companies.length > 1 && (
                                 <Select
                                     value={company?.id ?? ''}

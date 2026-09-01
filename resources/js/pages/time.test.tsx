@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TimeSheet from '@/pages/time';
+import type { ClientContext } from '@/types/navigation';
 import type {
     CompanyOption,
     TimeEntry,
@@ -13,17 +15,27 @@ const inertia = vi.hoisted(() => ({
     get: vi.fn(),
     patch: vi.fn(),
     post: vi.fn(),
+    visit: vi.fn(),
 }));
+
+let clientContext: ClientContext | null = null;
 
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
+    Link: ({ href, children }: { href: string; children: ReactNode }) => (
+        <a href={href}>{children}</a>
+    ),
     router: inertia,
     // The sheet renders inside the client chrome on the company tab and bare
     // on the workspace-wide route. A null context is the latter, which keeps
     // these tests about the sheet's own controls - the chrome has its own
     // tests in `client-context-layout.test.tsx`.
-    usePage: () => ({ props: { clientContext: null } }),
+    usePage: () => ({ props: { clientContext } }),
 }));
+
+beforeEach(() => {
+    clientContext = null;
+});
 
 function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     return {
@@ -95,6 +107,35 @@ function props({
 }
 
 describe('time sheet controls', () => {
+    it('renders one appearance selector on the workspace-wide route', () => {
+        render(<TimeSheet {...props()} />);
+
+        expect(
+            screen.getAllByRole('combobox', { name: 'Appearance' }),
+        ).toHaveLength(1);
+    });
+
+    it('renders one appearance selector on the client-scoped route', () => {
+        clientContext = {
+            workspace: {
+                id: 'workspace-1',
+                name: 'Synthetic Workspace',
+            },
+            companies: [
+                { id: 'company-1', name: 'Synthetic Client' },
+                { id: 'company-2', name: 'Another Synthetic Client' },
+            ],
+            current_company_id: 'company-1',
+            can_manage: true,
+        };
+
+        render(<TimeSheet {...props()} />);
+
+        expect(
+            screen.getAllByRole('combobox', { name: 'Appearance' }),
+        ).toHaveLength(1);
+    });
+
     it.each([
         ['flat_hourly', 'Subcontractor · billed separately'],
         ['retainer', 'Subcontractor · retainer'],

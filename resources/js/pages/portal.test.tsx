@@ -55,4 +55,5 @@ test('the customer portal does not opt into the operator appearance bridge', () 
     expect(document.querySelectorAll('[data-appearance-bridge]')).toHaveLength(
         0,
     );
+    expect(screen.getByRole('main')).toHaveStyle({ colorScheme: 'dark' });
 });

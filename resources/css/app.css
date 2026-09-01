@@ -146,38 +146,38 @@
  * element carrying the utility (`<main class="bg-slate-100 text-slate-950">`),
  * which a descendant selector alone would skip. */
 @layer utilities {
-    .dark [data-appearance-bridge].bg-white,
-    .dark [data-appearance-bridge] .bg-white {
+    :where(.dark [data-appearance-bridge]).bg-white,
+    :where(.dark [data-appearance-bridge]) .bg-white {
         background-color: var(--card);
     }
 
-    .dark [data-appearance-bridge].bg-slate-50,
-    .dark [data-appearance-bridge] .bg-slate-50,
-    .dark [data-appearance-bridge].bg-slate-100,
-    .dark [data-appearance-bridge] .bg-slate-100 {
+    :where(.dark [data-appearance-bridge]).bg-slate-50,
+    :where(.dark [data-appearance-bridge]) .bg-slate-50,
+    :where(.dark [data-appearance-bridge]).bg-slate-100,
+    :where(.dark [data-appearance-bridge]) .bg-slate-100 {
         background-color: var(--muted);
     }
 
-    .dark [data-appearance-bridge].border-slate-200,
-    .dark [data-appearance-bridge] .border-slate-200,
-    .dark [data-appearance-bridge].border-slate-300,
-    .dark [data-appearance-bridge] .border-slate-300 {
+    :where(.dark [data-appearance-bridge]).border-slate-200,
+    :where(.dark [data-appearance-bridge]) .border-slate-200,
+    :where(.dark [data-appearance-bridge]).border-slate-300,
+    :where(.dark [data-appearance-bridge]) .border-slate-300 {
         border-color: var(--border);
     }
 
-    .dark [data-appearance-bridge].text-slate-950,
-    .dark [data-appearance-bridge] .text-slate-950,
-    .dark [data-appearance-bridge].text-slate-800,
-    .dark [data-appearance-bridge] .text-slate-800 {
+    :where(.dark [data-appearance-bridge]).text-slate-950,
+    :where(.dark [data-appearance-bridge]) .text-slate-950,
+    :where(.dark [data-appearance-bridge]).text-slate-800,
+    :where(.dark [data-appearance-bridge]) .text-slate-800 {
         color: var(--foreground);
     }
 
-    .dark [data-appearance-bridge].text-slate-400,
-    .dark [data-appearance-bridge] .text-slate-400,
-    .dark [data-appearance-bridge].text-slate-500,
-    .dark [data-appearance-bridge] .text-slate-500,
-    .dark [data-appearance-bridge].text-slate-600,
-    .dark [data-appearance-bridge] .text-slate-600 {
+    :where(.dark [data-appearance-bridge]).text-slate-400,
+    :where(.dark [data-appearance-bridge]) .text-slate-400,
+    :where(.dark [data-appearance-bridge]).text-slate-500,
+    :where(.dark [data-appearance-bridge]) .text-slate-500,
+    :where(.dark [data-appearance-bridge]).text-slate-600,
+    :where(.dark [data-appearance-bridge]) .text-slate-600 {
         color: var(--muted-foreground);
     }
 }

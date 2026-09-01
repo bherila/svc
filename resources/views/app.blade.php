@@ -6,10 +6,24 @@
 
         <script>
             (() => {
-                const stored = localStorage.getItem('svc:appearance');
+                let stored = null;
+
+                try {
+                    stored = localStorage.getItem('svc:appearance');
+                } catch {
+                    // Storage can be unavailable in hardened browser modes.
+                }
+
                 const appearance = ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
-                const isDark = appearance === 'dark'
-                    || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                let systemIsDark = false;
+
+                try {
+                    systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                } catch {
+                    // An unavailable media query falls back to the light system default.
+                }
+
+                const isDark = appearance === 'dark' || (appearance === 'system' && systemIsDark);
 
                 document.documentElement.classList.toggle('dark', isDark);
                 document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
