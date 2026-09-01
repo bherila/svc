@@ -163,8 +163,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
-        'client_agreements.client_project_id => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
-        'client_agreements.ends_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
+        'client_agreements.client_project_id => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_project_covers_work_on_any_project',
+        'client_agreements.ends_on => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_end_date_is_still_in_force',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
         'client_agreements.hourly_rate_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
@@ -476,11 +476,21 @@ final class NullSemanticsRegistryTest extends TestCase
             // Was cited against the generic derive-rate test, where setting this
             // to the entry's own project leaves every assertion unchanged - so
             // it proved neither that null means company-wide nor that a
-            // project-specific agreement outranks a company-wide one. The
-            // specificity ordering lives in the resolver and is unpinned.
+            // project-specific agreement outranks a company-wide one.
+            //
+            // #143's test settles the first half: a company-wide agreement
+            // prices work on a project it never names, against a rival scoped
+            // to a different project. The rival is given the *later* start
+            // date on purpose, so it would win the ordering if the column were
+            // not read at all - without that the test passes against a resolver
+            // that ignores project scope entirely and falls through to the id
+            // tie-break, which the first draft of it did.
+            //
+            // The specificity ordering - a project-specific agreement
+            // outranking a company-wide one - is still unpinned.
             'client_project_id' => [
-                'reader_in' => AgreementBillingRateResolver::class,
-                'reads' => 'resolve',
+                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'method' => 'test_an_agreement_with_no_project_covers_work_on_any_project',
             ],
             // Proposal acceptance is idempotent only through this column: it
             // asks the proposal's `agreements()` relationship whether one
@@ -521,7 +531,17 @@ final class NullSemanticsRegistryTest extends TestCase
             // work date leaves every assertion unchanged - so the citation could
             // not distinguish "null means open-ended" from "this field is
             // unused". Demoted to the reader that actually clips on it.
-            'ends_on' => ['reader_in' => AgreementBillingRateResolver::class, 'reads' => 'resolve'],
+            // An open term, not a closed one. The resolver admits `ends_on IS
+            // NULL OR ends_on >= worked_on`, so answering false for the null -
+            // which a bare comparison does, since SQL says false rather than
+            // unknown - would strand every open-ended agreement, which is how
+            // an ordinary retainer is written. Pinned against a rival that
+            // expired before the work and starts later, so the column has to be
+            // read for the open-ended one to win.
+            'ends_on' => [
+                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'method' => 'test_an_agreement_with_no_end_date_is_still_in_force',
+            ],
             'agreement_text' => 'PENDING-AUDIT',
             // Unpriced, which is not free - in the rate lookup, which refuses
             // rather than stamping a rate. Four other readers disagree and
