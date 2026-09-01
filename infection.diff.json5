@@ -40,6 +40,19 @@
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
             ],
         },
+        // `(string) $expected` and `(string) $stored` in the restore
+        // comparator. Both arrive as `mixed` - a source row column and a
+        // destination row column - so the strict lane requires the casts, and
+        // the comparison they feed is a string identity that coerces the same
+        // values without them. No test can distinguish either.
+        //
+        // Named per method. A `(string)` anywhere it changes a comparison stays
+        // live, including elsewhere in this same class.
+        CastString: {
+            ignore: [
+                "App\\Services\\ExternalImport\\RestoreAgreementVerifier::same",
+            ],
+        },
         // Rounding a `decimal:4` column to *more* places cannot change a
         // value: the storage has already discarded anything finer, so
         // `round($x, 5)` and `round($x, 4)` are the same number for every row
