@@ -136,7 +136,7 @@ final class RestoreAgreementVerifier
                     continue;
                 }
 
-                if (! self::same($derive($arr), $destination[$column])) {
+                if (! self::same($derive($arr), $destination[$column], "{$destinationTable}.{$column}", $key)) {
                     $drift[$column] = ($drift[$column] ?? 0) + 1;
                 }
             }
@@ -150,7 +150,54 @@ final class RestoreAgreementVerifier
         ];
     }
 
-    private static function same(mixed $expected, mixed $stored): bool
+    /**
+     * Columns the importer may have made unique before storing.
+     *
+     * `ExternalImportService::invoiceNumber()` appends `-<source key>-<16 hex>`
+     * when the number it is about to write already exists in the workspace, so
+     * a source that legitimately repeats a number - a draft regenerated and the
+     * old one soft-deleted - lands with two distinct ones. Comparing the raw
+     * source value against that can only ever report drift.
+     *
+     * This is the third instance of one shape: the verifier restating a value
+     * the importer transforms. `status` and `due_date` were the other two, and
+     * both were fixed by *calling* the importer. That is not available here,
+     * because the suffix depends on what was already in the destination when
+     * the row was written rather than on the row itself - so the stored value
+     * is normalised instead, and only after an exact comparison has already
+     * failed. A number that matches outright is never touched.
+     *
+     * @var list<string>
+     */
+    private const DISAMBIGUATED_COLUMNS = ['client_invoices.invoice_number'];
+
+    /**
+     * The suffix shape, with the tag left open and the hash captured.
+     *
+     * The tag has changed: rows imported under the `legacy` source key carry
+     * `-legacy-`, and the current code writes `-external-`. Matching the shape
+     * rather than either literal means a ledger written under one key still
+     * verifies after the key is renamed - which is exactly what a declared
+     * restore is for.
+     *
+     * The `[0-9a-f]{16}` bound is not what rejects a wrong hash - the equality
+     * check below does that, and would do it against `.+` too. It is here to
+     * state the shape being matched and to keep the pattern from backtracking
+     * over an arbitrary tail. Deliberately redundant, and noted so the next
+     * reader does not take its survival under mutation for a gap.
+     *
+     * The hash is captured rather than merely shaped, because shape alone is
+     * not proof. A source number that legitimately ends in
+     * `-legacy-0123456789abcdef` and is later shortened at the source would
+     * have its real tail stripped and the drift hidden. So the captured hash
+     * has to be the one the importer would have derived from *this* row.
+     */
+    private const DISAMBIGUATION_SUFFIX = '/^(.*)(-[a-z0-9_]+-([0-9a-f]{16}))$/';
+
+    /** The destination column's width, which bounds a disambiguated number. */
+    private const INVOICE_NUMBER_LIMIT = 80;
+
+    private static function same(mixed $expected, mixed $stored, ?string $qualified = null, ?string $sourceKey = null): bool
     {
         if ($expected === null) {
             // The source column is empty where the destination holds a value.
@@ -172,7 +219,56 @@ final class RestoreAgreementVerifier
             return $expected === substr((string) $stored, 0, 10);
         }
 
-        return (string) $expected === (string) $stored;
+        $expectedText = (string) $expected;
+        $storedText = (string) $stored;
+
+        if ($expectedText === $storedText) {
+            return true;
+        }
+
+        // Only now, and only for a column the importer is allowed to
+        // disambiguate. Checking first would let a genuinely changed number
+        // pass whenever it happened to end in the suffix shape.
+        if ($qualified !== null && $sourceKey !== null && in_array($qualified, self::DISAMBIGUATED_COLUMNS, true)) {
+            return self::isDisambiguationOf($expectedText, $storedText, $sourceKey);
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the stored value is what the importer would have written for a
+     * collision on this exact source row.
+     *
+     * Two things have to hold, and neither is implied by the other.
+     *
+     * The hash must be the one derived from this row's source key, so a source
+     * number that merely *looks* suffixed cannot have a real tail stripped off
+     * it and its drift hidden.
+     *
+     * And the base must allow for truncation. `invoiceNumber()` cuts the base
+     * to fit the suffix inside the column, so a long colliding number is stored
+     * as a *prefix* plus the suffix and can never equal the full source value.
+     * Comparing only the untruncated form reported exactly the legitimate
+     * disambiguation this method exists to accept.
+     */
+    private static function isDisambiguationOf(string $expected, string $stored, string $sourceKey): bool
+    {
+        if (preg_match(self::DISAMBIGUATION_SUFFIX, $stored, $matches) !== 1) {
+            return false;
+        }
+
+        [, $base, $suffix, $hash] = $matches;
+
+        if ($hash !== substr(hash('sha256', $sourceKey), 0, 16)) {
+            return false;
+        }
+
+        // `mb_substr`, because the importer truncates with `Str::substr`.
+        // Cutting on bytes where it cut on characters would disagree on any
+        // number carrying one, and report drift on a row it had accepted.
+        return $base === $expected
+            || $base === mb_substr($expected, 0, self::INVOICE_NUMBER_LIMIT - mb_strlen($suffix));
     }
 
     private static function date(mixed $value): ?string
