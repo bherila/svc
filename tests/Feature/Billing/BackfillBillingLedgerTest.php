@@ -88,6 +88,69 @@ final class BackfillBillingLedgerTest extends TestCase
     }
 
     /**
+     * A skipped table is left entirely alone, and the rest still repair.
+     *
+     * Not a waiver, and the distinction is the whole point.
+     * `--accept-drift` says "this difference is acceptable";
+     * `--skip-table` says "do not read this table". Nothing about the skipped
+     * rows is declared trustworthy - they are not consulted, nothing is written
+     * from them, and whatever they were going to fill stays empty with the
+     * source still holding it.
+     *
+     * Reached from a real run: the fingerprint guard refused two milestone
+     * tasks whose source rows had moved since import, and that failed a run
+     * which would otherwise have repaired 1364 rows across four other tables.
+     * The tempting move there is to waive the guard. This leaves it intact
+     * everywhere it still runs, and leaves a hole an operator can see rather
+     * than a check they turned off.
+     */
+    public function test_a_skipped_table_is_left_alone_while_the_others_repair(): void
+    {
+        [$invoice, $line, $agreement, $task] = $this->buildDestination();
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+            '--skip-table' => ['client_tasks'],
+        ])->assertSuccessful();
+
+        // The four tables that were read are repaired as usual.
+        $this->assertSame('1.5000', (string) $invoice->refresh()->hours_billed_at_rate);
+        $this->assertSame('1.7500', (string) $line->refresh()->hours);
+        $this->assertSame(60, $agreement->refresh()->catch_up_threshold_minutes);
+
+        // The skipped one is untouched - both the milestone price and, more to
+        // the point, the financial link the guard exists to protect.
+        $task->refresh();
+        $this->assertNull($task->milestone_price_amount);
+        $this->assertNull($task->client_invoice_line_id);
+
+        // And it can still be repaired later, once its rows are reconciled.
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+        ])->assertSuccessful();
+        $this->assertSame(18750, $task->refresh()->milestone_price_amount);
+    }
+
+    public function test_an_unknown_table_name_is_refused_rather_than_ignored(): void
+    {
+        $this->buildDestination();
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+            '--skip-table' => ['client_taskz'],
+        ])
+            ->expectsOutputToContain('There is no source table named client_taskz')
+            ->assertFailed();
+
+        // A typo must not silently read everything, which is how a skip option
+        // quietly stops skipping.
+        $this->assertNull(ClientTask::query()->sole()->milestone_price_amount);
+    }
+
+    /**
      * The repair now writes a link between two tenant-owned financial rows, so
      * the mapping it resolves has to name a row this workspace owns. A source
      * key is the same integer in every tenant imported from one predecessor,
