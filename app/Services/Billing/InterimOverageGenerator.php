@@ -410,10 +410,6 @@ final class InterimOverageGenerator
     }
 
     /**
-     * Hours already billed interim inside a cycle, so the cadence invoice can
-     * show them as reconciled rather than charge for them again.
-     */
-    /**
      * Give back the work an uncharged interim draft is holding.
      *
      * An interim draft pivot-links its overage entries the moment it is
@@ -485,19 +481,29 @@ final class InterimOverageGenerator
         );
     }
 
-    public function interimOverageHoursForCycle(ClientAgreement $agreement, BillingCycle $cycle): float
-    {
-        return round((float) ClientInvoice::query()
-            ->where('workspace_id', $agreement->workspace_id)
-            ->where('client_agreement_id', $agreement->id)
-            ->where('invoice_kind', InvoiceKind::InterimOverage->value)
-            ->whereDate('cycle_start', $cycle->start->toDateString())
-            ->whereDate('cycle_end', $cycle->end->toDateString())
+    /**
+     * Hours already billed interim inside a cycle, so the cadence invoice can
+     * show them as reconciled rather than charge for them again.
+     */
+    public function interimOverageHoursForCycle(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        BillingCycle $cycle,
+    ): float {
+        $candidates = $this->cycleInvoices(
+            $company,
+            $agreement,
+            InvoiceKind::InterimOverage,
+            $cycle,
+            Unattributable::Include,
+        )
             // Only what was actually charged. A draft has billed nothing, so
             // counting it tells the cadence invoice those hours are settled and
             // the client is never charged for them at all.
             ->whereIn('status', InvoiceStatus::charged())
-            ->sum('hours_billed_at_rate'), 4);
+            ->get();
+
+        return $this->attributableInterimHours($candidates, $cycle);
     }
 
     /**
@@ -639,7 +645,7 @@ final class InterimOverageGenerator
         $candidates = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
             ->where(function (Builder $window) use ($periodStart): void {
                 $window
-                    ->whereDate('service_period_start', '<', $periodStart->toDateString())
+                    ->whereDate('service_period_start', '<=', $periodStart->toDateString())
                     ->orWhereNull('service_period_start');
             })
             ->where(function (Builder $window) use ($periodStart): void {
@@ -651,6 +657,14 @@ final class InterimOverageGenerator
             ->lockForUpdate()
             ->get();
 
+        return $this->attributableInterimHours($candidates, $cycle);
+    }
+
+    /**
+     * @param  Collection<int, ClientInvoice>  $candidates
+     */
+    private function attributableInterimHours(Collection $candidates, BillingCycle $cycle): float
+    {
         $hours = 0.0;
 
         foreach ($candidates as $invoice) {

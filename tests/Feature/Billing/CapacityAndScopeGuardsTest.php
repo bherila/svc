@@ -1001,6 +1001,77 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertSame(0.0, $this->alreadyBilledInterimHours($agreement, '2024-05-01'));
     }
 
+    /** A one-sided charged row beginning now is not invisible to both guards. */
+    public function test_a_one_sided_interim_starting_on_the_period_is_already_billed(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        $current = $this->invoice($agreement);
+        $current->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => '2024-02-01',
+            'service_period_end' => null,
+        ])->save();
+
+        $this->assertSame(5.0, $this->alreadyBilledInterimHours($agreement, '2024-02-01'));
+    }
+
+    /** Cadence reconciliation applies the same placement rule as interim sums. */
+    public function test_cadence_reconciliation_counts_only_attributable_cycleless_interims(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        foreach ([
+            ['2024-01-01', '2024-01-31', '5'],
+            ['2024-04-01', '2024-04-30', '7'],
+        ] as [$serviceStart, $serviceEnd, $hours]) {
+            $invoice = $this->invoice($agreement);
+            $invoice->forceFill([
+                'invoice_kind' => 'interim_overage',
+                'status' => 'issued',
+                'hours_billed_at_rate' => $hours,
+                'cycle_start' => null,
+                'cycle_end' => null,
+                'service_period_start' => $serviceStart,
+                'service_period_end' => $serviceEnd,
+            ])->save();
+        }
+
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-02-01'));
+
+        $this->assertSame(
+            5.0,
+            app(InterimOverageGenerator::class)->interimOverageHoursForCycle($this->company, $agreement, $cycle),
+        );
+    }
+
+    /** Cadence reconciliation also refuses a row no date can place. */
+    public function test_cadence_reconciliation_refuses_a_fully_unplaceable_interim(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $unplaceable = $this->invoice($agreement);
+        $unplaceable->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => null,
+            'service_period_end' => null,
+        ])->save();
+
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-02-01'));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('has neither cycle nor service-period dates');
+
+        app(InterimOverageGenerator::class)->interimOverageHoursForCycle($this->company, $agreement, $cycle);
+    }
+
     /** Either service-period boundary can place an otherwise cycle-less row. */
     public function test_cycleless_interims_use_each_known_service_period_boundary(): void
     {

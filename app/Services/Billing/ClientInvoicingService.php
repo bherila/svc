@@ -1101,7 +1101,7 @@ final class ClientInvoicingService
                 : $this->invoiceLedgerBuilder->summarizeLedgerForCycle($agreement, $ledger, $ledgerWorkCycle);
             $interimBilledHours = $workCycle->end->lt($activeDate)
                 ? 0.0
-                : $this->interimOverageGenerator->interimOverageHoursForCycle($agreement, $workCycle);
+                : $this->interimOverageGenerator->interimOverageHoursForCycle($company, $agreement, $workCycle);
 
             $entries = $this->unbilledEntriesBetween($company, $agreement, $periodStart, $periodEnd);
 
