@@ -649,6 +649,8 @@ final class InterimOverageGenerator
         $hours = 0.0;
 
         foreach ($candidates as $invoice) {
+            $canBelongToCycle = true;
+
             if ($invoice->cycle_start === null && $invoice->cycle_end === null) {
                 if ($invoice->service_period_start === null && $invoice->service_period_end === null) {
                     throw new RuntimeException(
@@ -656,13 +658,13 @@ final class InterimOverageGenerator
                     );
                 }
 
-                if ($invoice->service_period_start?->gt($cycle->end) === true
-                    || $invoice->service_period_end?->lt($cycle->start) === true) {
-                    continue;
-                }
+                $canBelongToCycle = $invoice->service_period_start?->gt($cycle->end) !== true
+                    && $invoice->service_period_end?->lt($cycle->start) !== true;
             }
 
-            $hours += (float) ($invoice->hours_billed_at_rate ?? 0);
+            if ($canBelongToCycle) {
+                $hours += (float) ($invoice->hours_billed_at_rate ?? 0);
+            }
         }
 
         return round($hours, 4);
