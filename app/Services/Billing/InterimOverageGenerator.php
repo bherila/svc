@@ -272,7 +272,9 @@ final class InterimOverageGenerator
             $plan = $splitter->allocateTimeEntries($entries, max(0.0, $entryHours - $overageHours), 0.0, 0.0);
 
             $billableFragments = array_merge($plan->catchUpFragments, $plan->billableCatchupFragments);
-            $rateAmount = (int) ($agreement->hourly_rate_amount ?? 0);
+            // A null rate refuses rather than billing at zero; see
+            // {@see ClientAgreement::hourlyRateAmountOrFail()}.
+            $rateAmount = $agreement->hourlyRateAmountOrFail();
             $overageMinutes = (int) round($overageHours * 60);
 
             $line = ClientInvoiceLine::query()->create([

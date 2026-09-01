@@ -1286,7 +1286,9 @@ final class ClientInvoicingService
         Carbon $lineDate,
         int &$sortOrder,
     ): ClientInvoiceLine {
-        $rateAmount = (int) ($agreement->hourly_rate_amount ?? 0);
+        // A null rate refuses rather than billing at zero; see
+        // {@see ClientAgreement::hourlyRateAmountOrFail()}.
+        $rateAmount = $agreement->hourlyRateAmountOrFail();
         $minutes = (int) round($hours * 60);
 
         return ClientInvoiceLine::query()->create([

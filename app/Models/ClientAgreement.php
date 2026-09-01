@@ -6,6 +6,7 @@ use App\Contracts\RetainerAgreementTerms;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Services\Billing\AgreementBillingRateResolver;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\FirstCycleProration;
 use Carbon\CarbonImmutable;
@@ -29,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * @property string $status
  * @property string $billing_cadence
+ * @property string $public_id
+ * @property int|null $hourly_rate_amount
  * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $terminated_at
  * @property CarbonImmutable|null $starts_on
@@ -307,6 +310,46 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
 
             $agreement->assertCatchUpThresholdFitsRetainer();
         });
+    }
+
+    /**
+     * The rate hourly work bills at, or a refusal.
+     *
+     * A null `hourly_rate_amount` is the absence of a price, not a price of
+     * zero, and the two are not interchangeable on an invoice. Four money paths
+     * used to read it as `(int) ($rate ?? 0)`, so an agreement whose rate was
+     * never set billed its hours at nothing - and said so on the invoice the
+     * client reads: "Deferred work items billed on agreement termination
+     * (12.5 hrs @ $0.00/hr)". The hours were stated and the charge was
+     * nothing, with no error anywhere to notice.
+     *
+     * {@see AgreementBillingRateResolver::resolve()}
+     * has always refused instead. This makes the other paths agree with the one
+     * that was already right, rather than the reverse.
+     *
+     * `DomainException` for the same reason the resolver uses it: this is a
+     * statement about the agreement's terms, not about the request.
+     *
+     * If some agreement genuinely should bill overage at no charge, that is a
+     * zero to be typed, not a null to be inferred from - otherwise "the rate is
+     * free" and "the rate was never set" are the same row forever.
+     *
+     * @throws DomainException when the agreement states no hourly rate
+     */
+    public function hourlyRateAmountOrFail(): int
+    {
+        if ($this->hourly_rate_amount === null) {
+            throw new DomainException(
+                "Agreement {$this->public_id} states no hourly rate, so hourly work on it cannot be priced. "
+                .'Set the rate - zero if the work is genuinely at no charge - before billing against it.',
+            );
+        }
+
+        // No cast. The column is declared `int|null` above and cast to
+        // `integer` by the model, so after the null check it is already an int -
+        // and a redundant cast is a mutation the suite cannot distinguish,
+        // which is a gap in the gate rather than a safeguard.
+        return $this->hourly_rate_amount;
     }
 
     /** The engine's name for the hourly rate, in whole currency units. */

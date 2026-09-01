@@ -28,6 +28,7 @@ use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
+use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
 use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
 use Tests\TestCase;
@@ -167,7 +168,9 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.ends_on => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_end_date_is_still_in_force',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
-        'client_agreements.hourly_rate_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
+        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_a_termination_line_is_refused_when_the_agreement_states_no_rate',
+        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_an_interim_overage_is_refused_when_the_agreement_states_no_rate',
+        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_cadence_overage_is_refused_when_the_agreement_states_no_rate',
         'client_agreements.initial_rollover_minutes => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_recorded_opening_rollover_grants_none',
         'client_agreements.period_retainer_amount => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
         'client_agreements.period_retainer_minutes => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
@@ -543,16 +546,38 @@ final class NullSemanticsRegistryTest extends TestCase
                 'method' => 'test_an_agreement_with_no_end_date_is_still_in_force',
             ],
             'agreement_text' => 'PENDING-AUDIT',
-            // Unpriced, which is not free - in the rate lookup, which refuses
-            // rather than stamping a rate. Four other readers disagree and
-            // coerce the null to zero, which prices deferred termination work
-            // and interim overage at nothing rather than refusing it.
+            // Unpriced, which is not free. The rate lookup always refused;
+            // three money paths coerced the null to zero and billed the hours
+            // at nothing - cadence overage, interim overage, and deferred work
+            // at termination, whose line said so in front of the client
+            // ("1.5 hrs @ $0.00/hr"). One column, two incompatible readings,
+            // and the silent one in the majority.
+            //
+            // Settled by refusing everywhere: `hourlyRateAmountOrFail()` states
+            // the contract once and the three paths read it. A genuinely free
+            // rate is still expressible - it is a zero to be typed, not a null
+            // to be inferred from.
+            //
+            // The replay repository keeps its `?? 0` on purpose and is not a
+            // reader of this branch: replay charges nothing, and its consumer
+            // treats a non-positive rate as "cannot prove this line".
             'hourly_rate_amount' => [
                 [
                     'covered_by' => DeriveTimeEntryRatesTest::class,
                     'method' => 'test_an_agreement_with_no_rate_prices_nothing',
                 ],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
+                [
+                    'covered_by' => UnpricedAgreementRefusalTest::class,
+                    'method' => 'test_a_termination_line_is_refused_when_the_agreement_states_no_rate',
+                ],
+                [
+                    'covered_by' => UnpricedAgreementRefusalTest::class,
+                    'method' => 'test_an_interim_overage_is_refused_when_the_agreement_states_no_rate',
+                ],
+                [
+                    'covered_by' => UnpricedAgreementRefusalTest::class,
+                    'method' => 'test_cadence_overage_is_refused_when_the_agreement_states_no_rate',
+                ],
             ],
             // No *monthly* retainer price, so the monthly branch bills no
             // retainer fee. It does not mean no fee: an agreement with
