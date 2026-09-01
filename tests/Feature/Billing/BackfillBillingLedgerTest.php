@@ -133,6 +133,40 @@ final class BackfillBillingLedgerTest extends TestCase
         $this->assertSame(18750, $task->refresh()->milestone_price_amount);
     }
 
+    /**
+     * A preflight failure in a skipped table does not roll back the rest.
+     *
+     * The first version of `--skip-table` only narrowed the repair loop, so
+     * restore verification and ledger resolution still walked every table and a
+     * problem in the skipped one failed the whole run anyway - the option kept
+     * half its promise. This is the half that was missing.
+     *
+     * A hard-deleted destination row is the same shape as the fingerprint
+     * refusal that motivated the option: an unrepairable row in one table
+     * stopping four other tables from being repaired.
+     */
+    public function test_a_preflight_failure_in_a_skipped_table_does_not_stop_the_rest(): void
+    {
+        [$invoice, , , $task] = $this->buildDestination();
+
+        // Gone from the destination entirely, which is fatal for this table.
+        DB::table('client_tasks')->where('id', $task->id)->delete();
+
+        $this->artisan('svc:billing:backfill-ledger', ['--workspace' => $this->workspacePublicId(), '--apply' => true])
+            ->assertFailed();
+        $this->assertNull($invoice->refresh()->hours_billed_at_rate, 'The failed run must leave everything alone.');
+
+        // Skipping that table takes it out of the preflight as well, so the
+        // other four repair.
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+            '--skip-table' => ['client_tasks'],
+        ])->assertSuccessful();
+
+        $this->assertSame('1.5000', (string) $invoice->refresh()->hours_billed_at_rate);
+    }
+
     public function test_an_unknown_table_name_is_refused_rather_than_ignored(): void
     {
         $this->buildDestination();
