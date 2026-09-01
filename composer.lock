@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "02985cb760198ffe79259567bef62c1d",
+    "content-hash": "da80798fb3da79b8c64f56f1460e3293",
     "packages": [
         {
             "name": "bherila/auth-laravel",
@@ -13385,7 +13385,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.3"
+        "php": "^8.4"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"
