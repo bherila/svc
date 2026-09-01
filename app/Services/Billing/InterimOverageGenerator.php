@@ -20,6 +20,7 @@ use App\Support\Billing\Unattributable;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use RuntimeException;
@@ -162,20 +163,12 @@ final class InterimOverageGenerator
                 throw new RuntimeException("A cadence invoice (#{$issuedCycleInvoice->invoice_number}) already exists for this cycle.");
             }
 
-            $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
-                ->whereDate('service_period_start', $periodStart->toDateString())
-                ->whereDate('service_period_end', $periodEnd->toDateString())
-                ->whereIn('status', InvoiceStatus::live())
-                ->when(
-                    $refreshInvoice instanceof ClientInvoice,
-                    fn (Builder $query): Builder => $query->whereKey($refreshInvoice->id),
-                )
-                ->lockForUpdate()
-                ->first();
-
-            if ($refreshInvoice instanceof ClientInvoice && ! $existingInvoice instanceof ClientInvoice) {
-                throw new RuntimeException('The interim draft no longer matches the agreement period and cycle it would regenerate.');
-            }
+            $existingInvoice = $this->selectSingleInterimInvoice(
+                $this->interimInvoiceCandidates($company, $agreement, $cycle, $periodStart, $periodEnd)
+                    ->lockForUpdate()
+                    ->get(),
+                $refreshInvoice,
+            );
 
             if ($existingInvoice instanceof ClientInvoice && $existingInvoice->isImmutable()) {
                 throw new RuntimeException("An issued interim invoice (#{$existingInvoice->invoice_number}) already exists for this period and cannot be modified.");
@@ -185,21 +178,12 @@ final class InterimOverageGenerator
             $this->assertImmediateLedgerSupportsInterimOverage($agreement, $immediateLedger, $cycle, $periodEnd);
 
             $cumulativeExcessHours = $this->cumulativeInterimExcessHoursThrough($agreement, $immediateLedger, $cycle, $periodEnd);
-            // Fail-closed on a missing service period, for the same reason as
-            // ClientInvoicingService::totalBilledOveragesThrough(): `<` answers
-            // false for a null, so a charged interim invoice whose period cannot
-            // be placed would drop out of this subtraction silently and the
-            // hours it already charged would be billed a second time. Counting
-            // it errs toward understating this invoice instead, which the
-            // cycle's cadence reconciliation recovers.
-            $alreadyBilledHours = (float) $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
-                ->where(function (Builder $window) use ($periodStart): void {
-                    $window
-                        ->whereDate('service_period_end', '<', $periodStart->toDateString())
-                        ->orWhereNull('service_period_end');
-                })
-                ->whereIn('status', InvoiceStatus::charged())
-                ->sum('hours_billed_at_rate');
+            $alreadyBilledHours = $this->alreadyBilledInterimHoursBeforePeriod(
+                $company,
+                $agreement,
+                $cycle,
+                $periodStart,
+            );
 
             // An existing draft still owns its time through the pivot, so
             // selecting unbilled entries before releasing it finds nothing and
@@ -395,11 +379,9 @@ final class InterimOverageGenerator
 
             // Only completed months, and never the cycle's own closing month.
             if ($periodEnd->lt($cycle->end) && $periodEnd->lte($today)) {
-                $existingInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
-                    ->whereDate('service_period_start', $periodStart->toDateString())
-                    ->whereDate('service_period_end', $periodEnd->toDateString())
-                    ->whereIn('status', InvoiceStatus::live())
-                    ->first();
+                $existingInvoice = $this->selectSingleInterimInvoice(
+                    $this->interimInvoiceCandidates($company, $agreement, $cycle, $periodStart, $periodEnd)->get(),
+                );
 
                 if ($existingInvoice instanceof ClientInvoice
                     && InvoiceStatus::hasChargedValue($existingInvoice->status)) {
@@ -455,7 +437,7 @@ final class InterimOverageGenerator
         // the rule everywhere else here: an unrecognised status is one this
         // code cannot show is safe to rewrite, and it may already have charged
         // someone.
-        $drafts = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle)
+        $drafts = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Exclude)
             ->where('status', InvoiceStatus::Draft->value)
             // Locked and rechecked. The cadence path holds the agreement, and
             // `InvoiceLifecycleService::issue()` locks the invoice and the
@@ -521,11 +503,11 @@ final class InterimOverageGenerator
     /**
      * Invoices of one kind belonging to a specific cycle of one agreement.
      *
-     * `cycle_start` and `cycle_end` are nullable, and SQL answers false for a
-     * null rather than unknown, so an invoice missing either was invisible to
-     * every caller here (#141). Generated rows always carry both - the
-     * generator writes them - so the exposure is imported and hand-edited data,
-     * which `ExternalImportService` passes through unchanged.
+     * `cycle_start` and `cycle_end` are nullable. A comparison with SQL `NULL`
+     * produces UNKNOWN, which a `WHERE` clause excludes, so an invoice missing
+     * either was invisible to every caller here (#141). Generated rows always
+     * carry both - the generator writes them - so the exposure is imported and
+     * hand-edited data, which `ExternalImportService` passes through unchanged.
      *
      * Whether that invisibility is safe depends entirely on what the caller is
      * asking, which is why this takes the answer rather than picking one. A
@@ -539,7 +521,7 @@ final class InterimOverageGenerator
      *   a sum of what has already been charged it is the #135 answer: dropping
      *   the row bills its hours again.
      * - **Anything that rewrites what it selects** passes
-     *   `Unattributable::Exclude`, the default. `releaseUnchargedInterimClaims()`
+     *   `Unattributable::Exclude`. `releaseUnchargedInterimClaims()`
      *   strips a draft's system-generated lines and zeroes its charge, so
      *   including a row that cannot be placed wipes a claim that was not this
      *   cycle's to wipe - a worse error than leaving it, which merely leaves a
@@ -557,7 +539,7 @@ final class InterimOverageGenerator
         ClientAgreement $agreement,
         InvoiceKind $kind,
         BillingCycle $cycle,
-        Unattributable $unattributable = Unattributable::Exclude,
+        Unattributable $unattributable,
     ): Builder {
         return ClientInvoice::query()
             ->where('workspace_id', $company->workspace_id)
@@ -593,6 +575,97 @@ final class InterimOverageGenerator
                 $side->orWhereNull($column);
             }
         });
+    }
+
+    /** @return Builder<ClientInvoice> */
+    private function interimInvoiceCandidates(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        BillingCycle $cycle,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+    ): Builder {
+        return $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
+            ->whereDate('service_period_start', $periodStart->toDateString())
+            ->whereDate('service_period_end', $periodEnd->toDateString())
+            ->whereIn('status', InvoiceStatus::live());
+    }
+
+    /**
+     * Choose a draft only after the complete matching set has been inspected.
+     *
+     * A legacy null-cycle draft and a later exact-cycle invoice can both match
+     * the widened query. Selecting an unordered `first()` lets the draft win
+     * and be reset even when another candidate is immutable. Duplicate mutable
+     * drafts are no safer to choose between, so every multi-row result requires
+     * repair before generation continues.
+     *
+     * @param  Collection<int, ClientInvoice>  $candidates
+     */
+    private function selectSingleInterimInvoice(
+        Collection $candidates,
+        ?ClientInvoice $refreshInvoice = null,
+    ): ?ClientInvoice {
+        if ($candidates->count() > 1) {
+            throw new RuntimeException('Multiple live interim invoices match this period; repair the duplicate rows before generation.');
+        }
+
+        $candidate = $candidates->first();
+
+        if ($refreshInvoice instanceof ClientInvoice
+            && (! $candidate instanceof ClientInvoice || $candidate->id !== $refreshInvoice->id)) {
+            throw new RuntimeException('The interim draft no longer matches the agreement period and cycle it would regenerate.');
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * Hours charged by earlier interim invoices that can belong to this cycle.
+     *
+     * A row with both cycle boundaries missing is not a wildcard forever. Its
+     * service-period dates are the remaining evidence: a Q1 period rules the
+     * row out of Q2, while a one-sided period remains fail-closed only for the
+     * cycles that boundary cannot exclude. If neither pair can place the row,
+     * continuing would silently subtract it from every future cycle, so billing
+     * stops for repair.
+     */
+    private function alreadyBilledInterimHoursBeforePeriod(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        BillingCycle $cycle,
+        Carbon $periodStart,
+    ): float {
+        $candidates = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
+            ->where(function (Builder $window) use ($periodStart): void {
+                $window
+                    ->whereDate('service_period_end', '<', $periodStart->toDateString())
+                    ->orWhereNull('service_period_end');
+            })
+            ->whereIn('status', InvoiceStatus::charged())
+            ->lockForUpdate()
+            ->get();
+
+        $hours = 0.0;
+
+        foreach ($candidates as $invoice) {
+            if ($invoice->cycle_start === null && $invoice->cycle_end === null) {
+                if ($invoice->service_period_start === null && $invoice->service_period_end === null) {
+                    throw new RuntimeException(
+                        "Interim invoice (#{$invoice->invoice_number}) has neither cycle nor service-period dates and must be repaired before billing can continue.",
+                    );
+                }
+
+                if ($invoice->service_period_start?->gt($cycle->end) === true
+                    || $invoice->service_period_end?->lt($cycle->start) === true) {
+                    continue;
+                }
+            }
+
+            $hours += (float) ($invoice->hours_billed_at_rate ?? 0);
+        }
+
+        return round($hours, 4);
     }
 
     /**

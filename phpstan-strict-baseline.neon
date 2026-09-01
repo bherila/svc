@@ -110,12 +110,6 @@ parameters:
 			path: app/Services/Billing/DeferredBillingAllocator.php
 
 		-
-			message: '#^Cannot access property \$id on App\\Models\\ClientInvoice\|null\.$#'
-			identifier: property.nonObject
-			count: 1
-			path: app/Services/Billing/InterimOverageGenerator.php
-
-		-
 			message: '#^Cannot cast mixed to int\.$#'
 			identifier: cast.int
 			count: 1

@@ -118,8 +118,9 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /**
-     * `service_period_end <= $end` is false for a null rather than unknown, so
-     * an invoice whose period could not be placed left the sum silently. The
+     * `service_period_end <= $end` produces UNKNOWN for SQL `NULL`, which a
+     * `WHERE` clause excludes, so an invoice whose period could not be placed
+     * left the sum silently. The
      * overage it had already charged was then invisible to the next period's
      * balance, which billed the same hours a second time.
      *
@@ -851,8 +852,9 @@ final class CapacityAndScopeGuardsTest extends TestCase
 
     /**
      * The interim path keeps its own already-billed sum, bounded by
-     * `service_period_end < period start` - false for a null, so a charged
-     * interim invoice whose period was lost would leave the subtraction and
+     * `service_period_end < period start` - UNKNOWN for SQL `NULL` and therefore
+     * excluded by a `WHERE` clause, so a charged interim invoice whose period
+     * was lost would leave the subtraction and
      * its hours would be billed a second time. The same fail-closed widening
      * as `totalBilledOveragesThrough`: a null period reads as already billed.
      */
@@ -947,6 +949,166 @@ final class CapacityAndScopeGuardsTest extends TestCase
             (float) $second->hours_billed_at_rate,
             "Only February's new excess: the unplaceable interim already charged January's",
         );
+    }
+
+    /**
+     * Missing cycle dates do not make a charged interim a wildcard forever.
+     * Its known January service period rules it out of April-June, so Q1's
+     * charge cannot suppress Q2's first interim invoice.
+     */
+    public function test_a_cycleless_q1_interim_does_not_reduce_q2_interim_overage(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        $this->entry($project, '2024-01-15', 1800);
+        $q1 = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $q1);
+        $this->assertSame(20.0, (float) $q1->hours_billed_at_rate);
+        $q1->forceFill(['status' => 'issued', 'cycle_start' => null, 'cycle_end' => null])->save();
+
+        $this->entry($project, '2024-04-15', 1800);
+        $q2 = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-04-01'),
+            $agreement,
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $q2);
+        $this->assertSame(20.0, (float) $q2->hours_billed_at_rate);
+    }
+
+    /** A charged row with neither date pair cannot safely belong to any cycle. */
+    public function test_a_fully_unplaceable_charged_interim_refuses_future_billing(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+
+        $this->entry($project, '2024-01-15', 1800);
+        $unplaceable = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $unplaceable);
+        $unplaceable->forceFill([
+            'status' => 'issued',
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => null,
+            'service_period_end' => null,
+        ])->save();
+
+        $this->entry($project, '2024-04-15', 1800);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('has neither cycle nor service-period dates');
+
+        app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-04-01'),
+            $agreement,
+        );
+    }
+
+    /**
+     * A widened lookup must inspect all rows before choosing one. The older
+     * null-cycle draft must not win `first()` and be reset while a newer exact
+     * invoice for the same period is immutable.
+     */
+    public function test_generation_refuses_a_null_cycle_draft_beside_an_exact_issued_invoice(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+
+        $draft = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement,
+        );
+        $this->assertInstanceOf(ClientInvoice::class, $draft);
+        $draft->forceFill(['cycle_start' => null, 'cycle_end' => null])->save();
+        $draftLineIds = $draft->lines()->pluck('client_invoice_lines.id')->all();
+        $draftHours = (float) $draft->hours_billed_at_rate;
+
+        $issued = $this->invoice($agreement);
+        $issued->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '7',
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+        ])->save();
+
+        try {
+            app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+                $this->company,
+                Carbon::parse('2024-01-01'),
+                $agreement,
+            );
+            $this->fail('Generation accepted duplicate live interim invoices.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Multiple live interim invoices match this period', $exception->getMessage());
+        }
+
+        $this->assertSame('draft', $draft->refresh()->status);
+        $this->assertNull($draft->cycle_start);
+        $this->assertNull($draft->cycle_end);
+        $this->assertSame($draftHours, (float) $draft->hours_billed_at_rate);
+        $this->assertSame($draftLineIds, $draft->lines()->pluck('client_invoice_lines.id')->all());
+        $this->assertSame('issued', $issued->refresh()->status);
+        $this->assertSame(7.0, (float) $issued->hours_billed_at_rate);
+    }
+
+    /** The cycle-wide ensure path also refuses before an issued-first row can hide a draft. */
+    public function test_cycle_ensure_refuses_multiple_live_candidates_even_when_issued_is_oldest(): void
+    {
+        $project = $this->project('Main');
+        $agreement = $this->quarterlyAgreement();
+        $this->entry($project, '2024-01-15', 1800);
+
+        $issued = $this->invoice($agreement);
+        $issued->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '7',
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+            'cycle_start' => '2024-01-01',
+            'cycle_end' => '2024-03-31',
+        ])->save();
+
+        $draft = $this->invoice($agreement);
+        $draft->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'draft',
+            'hours_billed_at_rate' => '3',
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+            'cycle_start' => null,
+            'cycle_end' => null,
+        ])->save();
+
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-01-15'));
+
+        try {
+            app(InterimOverageGenerator::class)->ensureInterimOveragesForCycle($this->company, $agreement, $cycle);
+            $this->fail('Cycle generation accepted duplicate live interim invoices.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Multiple live interim invoices match this period', $exception->getMessage());
+        }
+
+        $this->assertSame('issued', $issued->refresh()->status);
+        $this->assertSame(7.0, (float) $issued->hours_billed_at_rate);
+        $this->assertSame('draft', $draft->refresh()->status);
+        $this->assertSame(3.0, (float) $draft->hours_billed_at_rate);
     }
 
     /**
