@@ -1599,8 +1599,23 @@ final class ClientInvoicingService
             // settled grants capacity against money nobody has been asked for.
             ->whereIn('status', InvoiceStatus::charged())
             ->where(function (Builder $window) use ($periodEnd): void {
+                // `whereDate`, like every sibling query in this class. The
+                // column carries a `date` cast, which serialises to
+                // `Y-m-d H:i:s`, so a plain string comparison asks
+                // `'2024-02-29 00:00:00' <= '2024-02-29'` and answers false -
+                // dropping the invoice whose period ends exactly on the
+                // boundary out of the sum of what has already been charged, and
+                // charging its overage a second time (#140).
+                //
+                // Safe to widen at all three call sites because all three are
+                // in the monthly path: :748 and :887 are
+                // `generateMonthlyInvoiceForWorkPeriod`, and :1546 is
+                // `calculateCumulativeBalanceSnapshot`, which only that method
+                // calls. `generateNonMonthlyInvoiceForPeriod` subtracts interim
+                // hours separately and would double-count if this sum reached
+                // it - but it never calls this sum.
                 $window
-                    ->where('service_period_end', '<=', $periodEnd->toDateString())
+                    ->whereDate('service_period_end', '<=', $periodEnd->toDateString())
                     ->orWhereNull('service_period_end');
             })
             ->sum('hours_billed_at_rate');

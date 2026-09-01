@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -507,6 +508,75 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->generate('2024-02-01', '2024-02-29');
         $this->assertTrue($entry->refresh()->invoiceLines()->exists(), 'The entry must be re-linked, not orphaned');
         $this->assertSame(1, $entry->invoiceLines()->count(), 'And linked to exactly one line');
+    }
+
+    /**
+     * An invoice whose period ends exactly on the boundary counts as already
+     * billed.
+     *
+     * `totalBilledOveragesThrough()` bounded its sum with a plain string
+     * comparison while every sibling query in the class used `whereDate()`.
+     * `service_period_end` carries a `date` cast, which serialises to
+     * `Y-m-d H:i:s`, so the comparison asked `'2024-02-29 00:00:00' <=
+     * '2024-02-29'` and answered false: the invoice ending exactly on the
+     * period end dropped out of the sum of what the client had already been
+     * charged, and its overage could be charged again (#140).
+     *
+     * Three dates rather than one, because the on-boundary case is only
+     * meaningful against its neighbours. A day earlier must be included and a
+     * day later must not; before the fix the boundary row behaved like the day
+     * *after*, which is the wrong side. Asserting it alone would pass against a
+     * predicate that had simply been widened to include everything.
+     *
+     * The observable is the capacity the already-billed overage frees. The
+     * agreement carries ten retainer hours, the entry is fifteen, and five
+     * hours are already charged on the prior invoice - so when the sum sees
+     * that invoice those five hours come back as available capacity, and when
+     * it does not they are silently lost.
+     */
+    #[DataProvider('billedOverageBoundaries')]
+    public function test_a_period_ending_on_the_boundary_counts_as_already_billed(
+        string $priorPeriodEnd,
+        string $expectedUnusedHours,
+    ): void {
+        $agreement = $this->monthlyAgreement();
+        $this->entry('2024-02-14', 900);
+
+        $prior = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'PRIOR-'.uniqid(),
+            'status' => 'draft',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        // `forceFill`, because a charged status and a recorded overage are not
+        // things the create path lets a fixture state.
+        $prior->forceFill([
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5.0000',
+            'service_period_end' => $priorPeriodEnd,
+        ])->save();
+
+        $invoice = $this->generate('2024-02-01', '2024-02-29');
+
+        $this->assertSame($expectedUnusedHours, $invoice->unused_hours_balance);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function billedOverageBoundaries(): array
+    {
+        return [
+            'the day before the period end is inside the window' => ['2024-02-28', '5.0000'],
+            'the period end itself is inside the window' => ['2024-02-29', '5.0000'],
+            'the day after the period end is outside it' => ['2024-03-01', '0.0000'],
+        ];
     }
 
     private function generate(string $from, string $to, ?ClientAgreement $agreement = null): ClientInvoice

@@ -53,6 +53,20 @@
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
             ],
         },
+        // `select(DB::raw(1))` inside a `WHERE EXISTS` subquery. The value is
+        // never read - EXISTS asks whether a row comes back, not what is in it -
+        // so `SELECT 0` and `SELECT 1` are the same query and no test can tell
+        // them apart. The literal is there because that is how the other
+        // auditors write it, not because it means anything.
+        //
+        // Named per method. A decremented integer anywhere it is read stays
+        // live, including elsewhere in this same class.
+        DecrementInteger: {
+            ignore: [
+                "App\\Services\\Billing\\UndatedAgreementAuditor::eligibleAgreement",
+                "App\\Services\\Billing\\UndatedAgreementAuditor::billedLines",
+            ],
+        },
     },
     // Under Infection's generated coverage config, PHPUnit 12's isolated child
     // loses its CodeCoverage object. This test does not cover configured source.
