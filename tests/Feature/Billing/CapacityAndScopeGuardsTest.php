@@ -982,6 +982,68 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertSame(20.0, (float) $q2->hours_billed_at_rate);
     }
 
+    /** A known future start rules a cycle-less row out of an earlier period. */
+    public function test_a_future_starting_cycleless_interim_does_not_reduce_an_earlier_interim(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        $future = $this->invoice($agreement);
+        $future->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => null,
+            'cycle_end' => null,
+            'service_period_start' => '2024-06-01',
+            'service_period_end' => null,
+        ])->save();
+
+        $this->assertSame(0.0, $this->alreadyBilledInterimHours($agreement, '2024-05-01'));
+    }
+
+    /** Either service-period boundary can place an otherwise cycle-less row. */
+    public function test_cycleless_interims_use_each_known_service_period_boundary(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        foreach ([
+            [null, '2024-01-15', '5.1234'],
+            ['2024-01-20', null, '7.1111'],
+        ] as [$serviceStart, $serviceEnd, $hours]) {
+            $invoice = $this->invoice($agreement);
+            $invoice->forceFill([
+                'invoice_kind' => 'interim_overage',
+                'status' => 'issued',
+                'hours_billed_at_rate' => $hours,
+                'cycle_start' => null,
+                'cycle_end' => null,
+                'service_period_start' => $serviceStart,
+                'service_period_end' => $serviceEnd,
+            ])->save();
+        }
+
+        $this->assertSame(12.2345, $this->alreadyBilledInterimHours($agreement, '2024-02-01'));
+    }
+
+    /** One known cycle boundary is sufficient even when the period is absent. */
+    public function test_a_half_dated_cycle_does_not_require_service_period_repair(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+
+        $prior = $this->invoice($agreement);
+        $prior->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => null,
+            'cycle_end' => '2024-03-31',
+            'service_period_start' => null,
+            'service_period_end' => null,
+        ])->save();
+
+        $this->assertSame(5.0, $this->alreadyBilledInterimHours($agreement, '2024-02-01'));
+    }
+
     /** Skipping an earlier cycle must not stop a later valid candidate being summed. */
     public function test_an_excluded_cycleless_invoice_does_not_hide_a_later_matching_one(): void
     {
@@ -1472,6 +1534,22 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $method = new \ReflectionMethod(ClientInvoicingService::class, 'totalBilledOveragesThrough');
 
         return (float) $method->invoke(app(ClientInvoicingService::class), $agreement, Carbon::parse($through));
+    }
+
+    /** The interim-only subtraction, isolated from allocation and entry caps. */
+    private function alreadyBilledInterimHours(ClientAgreement $agreement, string $periodStart): float
+    {
+        $start = Carbon::parse($periodStart);
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, $start);
+        $method = new \ReflectionMethod(InterimOverageGenerator::class, 'alreadyBilledInterimHoursBeforePeriod');
+
+        return (float) $method->invoke(
+            app(InterimOverageGenerator::class),
+            $this->company,
+            $agreement,
+            $cycle,
+            $start,
+        );
     }
 
     private function widenPeriodFromLines(ClientInvoice $invoice): void

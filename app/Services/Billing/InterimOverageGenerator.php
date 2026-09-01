@@ -639,6 +639,11 @@ final class InterimOverageGenerator
         $candidates = $this->cycleInvoices($company, $agreement, InvoiceKind::InterimOverage, $cycle, Unattributable::Include)
             ->where(function (Builder $window) use ($periodStart): void {
                 $window
+                    ->whereDate('service_period_start', '<', $periodStart->toDateString())
+                    ->orWhereNull('service_period_start');
+            })
+            ->where(function (Builder $window) use ($periodStart): void {
+                $window
                     ->whereDate('service_period_end', '<', $periodStart->toDateString())
                     ->orWhereNull('service_period_end');
             })
