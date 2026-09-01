@@ -20,6 +20,8 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -132,7 +134,7 @@ final class InvoiceLineComposerTest extends TestCase
         try {
             app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
             $this->fail('A generated line from another workspace must stop the reset.');
-        } catch (\RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
         }
 
@@ -159,7 +161,7 @@ final class InvoiceLineComposerTest extends TestCase
         try {
             $invoice->recalculateTotals();
             $this->fail('A foreign line must not contribute to local invoice totals.');
-        } catch (\RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             $this->assertStringContainsString('line owned by another workspace', $exception->getMessage());
         }
 
@@ -194,7 +196,7 @@ final class InvoiceLineComposerTest extends TestCase
         try {
             app(InvoiceLineComposer::class)->resetSystemGeneratedLines($invoice);
             $this->fail('A milestone claim from another workspace must stop the reset.');
-        } catch (\RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             $this->assertStringContainsString('milestone allocation owned by another workspace', $exception->getMessage());
         }
 
@@ -304,7 +306,7 @@ final class InvoiceLineComposerTest extends TestCase
         $retainer = $this->line($invoice, 'prior_month_retainer', 0, 0);
         $overage = $this->line($invoice, 'additional_hours', 30000, 30000, 1);
 
-        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
             $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
             $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
         ], app(TimeEntrySplitter::class));
@@ -323,13 +325,147 @@ final class InvoiceLineComposerTest extends TestCase
         $this->assertSame($entry->id, $fragment->split_from_time_entry_id);
     }
 
+    /**
+     * A fragment naming another client's entry is not billed on this invoice.
+     *
+     * `split_from_time_entry_id` is unconstrained lineage - a row migrated from
+     * before #113's composite keys can name an entry belonging to someone else -
+     * and this resolved that id with `ClientTimeEntry::find()`, which reaches
+     * every workspace. Whatever row carried the id was attached to this invoice.
+     *
+     * Two entries, because the two halves fail differently and only one of them
+     * was ever going to be noticed:
+     *
+     * - The **foreign tenant's** entry is caught by the pivot's composite
+     *   foreign key. Unscoped, the insert raises rather than mis-attributing, so
+     *   #113 already contains that half - loudly, mid-invoice-run.
+     * - The **sibling client's** entry shares this workspace, so no foreign key
+     *   objects. Unscoped it is silently attached, and one client is invoiced
+     *   for work done for another client of the same firm. Verified by running
+     *   this test against the unscoped lookup with the foreign entry removed:
+     *   the line comes back holding one row instead of none.
+     *
+     * That second case is why the lookup names the company as well as the
+     * workspace. A workspace check alone reads as sufficient and is not.
+     *
+     * It raises rather than passing the fragment over, and the difference is
+     * money rather than tidiness: the line charging for these minutes was
+     * created by the caller before this ran, and `recalculateTotals()` sums each
+     * line's own `total_amount` without consulting the pivot. Skipping the link
+     * therefore billed the client for work the invoice could not show.
+     */
+    public function test_a_fragment_naming_another_clients_entry_is_refused(): void
+    {
+        $invoice = $this->invoice();
+        $line = $this->line($invoice, 'additional_hours', 30000, 30000);
+
+        $sibling = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Sibling Client', 'slug' => 'sibling-client',
+        ]);
+        $siblingEntry = $this->entryFor($sibling, $this->workspace, "Another client's work");
+
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign', 'slug' => 'foreign-composer']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreignWorkspace->id, 'name' => 'Foreign Client', 'slug' => 'foreign-composer-client',
+        ]);
+        $foreignEntry = $this->entryFor($foreignCompany, $foreignWorkspace, "Another tenant's work");
+
+        $this->expectException(RuntimeException::class);
+
+        try {
+            app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
+                $line->id => [
+                    new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
+                    new TimeEntryFragment($foreignEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
+                ],
+            ], app(TimeEntrySplitter::class));
+        } finally {
+            // Asserted in `finally` so they are checked on the throwing path
+            // rather than after it: neither entry is attached, and neither has
+            // been split, so the refusal leaves no partial lineage behind for
+            // the caller's transaction to roll back around.
+            $this->assertSame(0, $line->timeEntries()->count(), "Neither entry is this invoice's to bill");
+            $this->assertNull($siblingEntry->fresh()?->split_from_time_entry_id);
+            $this->assertNull($foreignEntry->fresh()?->split_from_time_entry_id);
+        }
+    }
+
+    /**
+     * The refusal is what keeps the charge and the work in step.
+     *
+     * The narrow version of this test asserts only that nothing is attached,
+     * which the old skipping behaviour also satisfied - it passed while the
+     * client was being billed. This one runs the real caller inside its own
+     * transaction and asserts the invoice carries no money afterwards, which
+     * only refusing can achieve.
+     */
+    public function test_an_unattributable_fragment_leaves_no_charge_behind(): void
+    {
+        $invoice = $this->invoice();
+
+        $sibling = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Sibling Two', 'slug' => 'sibling-two',
+        ]);
+        $siblingEntry = $this->entryFor($sibling, $this->workspace, "Another client's work");
+
+        try {
+            // The line is created *inside* the transaction because that is where
+            // production creates it - `generateInterimOverageInvoice` and both
+            // cadence paths build the line and link its fragments in one
+            // `DB::transaction`. Creating it outside would be testing a
+            // rollback that production never performs.
+            DB::transaction(function () use ($invoice, $siblingEntry): void {
+                $line = $this->line($invoice, 'additional_hours', 30000, 30000);
+
+                app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
+                    $line->id => [new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+                ], app(TimeEntrySplitter::class));
+
+                $invoice->recalculateTotals();
+            });
+            $this->fail('An unattributable fragment should not compose an invoice.');
+        } catch (RuntimeException) {
+            // Expected: the transaction unwound with it.
+        }
+
+        // The line is gone with the transaction, so there is no `total_amount`
+        // left to sum. Under the previous skipping behaviour the line survived
+        // at its full 30000 and the client owed it.
+        $this->assertSame(0, $invoice->lines()->count());
+        $this->assertSame(0, (int) $invoice->fresh()?->total_amount);
+    }
+
+    /** An approved, billable entry belonging to someone other than the subject. */
+    private function entryFor(ClientCompany $company, Workspace $workspace, string $description): ClientTimeEntry
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => $description.' project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => $this->user->id,
+            'worked_on' => '2026-03-14',
+            'minutes' => 60,
+            'description' => $description,
+            'is_billable' => true,
+            'is_deferred' => true,
+            'status' => 'approved',
+            'currency' => 'USD',
+        ]);
+    }
+
     public function test_an_entry_covered_by_one_line_is_not_split(): void
     {
         $entry = $this->entry(60);
         $invoice = $this->invoice();
         $line = $this->line($invoice, 'additional_hours', 30000, 30000);
 
-        app(InvoiceLineComposer::class)->linkAllFragmentsToLines([
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
             $line->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
         ], app(TimeEntrySplitter::class));
 

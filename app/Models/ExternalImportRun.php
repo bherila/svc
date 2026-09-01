@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -15,8 +17,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_high_water_marks', 'counts', 'fingerprints', 'started_at', 'completed_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'source_connection', 'source_identity_hash'])]
-class ExternalImportRun extends Model
+class ExternalImportRun extends Model implements WorkspaceOwned
 {
+    use BelongsToWorkspace;
     use HasPublicId;
 
     protected function casts(): array

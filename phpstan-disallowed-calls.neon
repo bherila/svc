@@ -31,3 +31,9 @@ services:
     -
         class: Tests\PHPStan\DisallowStatusNegationRule
         tags: [phpstan.rules.rule]
+    -
+        class: Tests\PHPStan\DisallowUnscopedTenantLookupRule
+        tags: [phpstan.rules.rule]
+    -
+        class: Tests\PHPStan\DisallowBillingEnumDefaultArmRule
+        tags: [phpstan.rules.rule]

@@ -428,9 +428,26 @@ class InvoiceLineComposer
     /**
      * Link all time entry fragments to their respective invoice lines, handling splits correctly.
      *
+     * The company is a parameter rather than something read off the fragments,
+     * because the fragments are where the doubt is. A fragment names the entry
+     * it came from, and `split_from_time_entry_id` is unconstrained lineage - a
+     * row migrated from before #113's composite keys can name an entry in
+     * another tenant, or in another client of this one. Resolving that id
+     * unscoped attaches that work to this invoice, and the caller is the only
+     * party that knows whose invoice it is.
+     *
+     * Both keys, not just the workspace: an entry belonging to a sibling client
+     * of the same tenant is as wrong on this invoice as one from another tenant,
+     * and only the first would be caught by a workspace check.
+     *
+     * An id this company cannot claim raises. It cannot be passed over, because
+     * the line charging for those minutes already exists by the time this runs.
+     *
      * @param  array<int, array<int, TimeEntryFragment>>  $fragmentsToLines
+     *
+     * @throws RuntimeException when a fragment names an entry this company does not own
      */
-    public function linkAllFragmentsToLines(array $fragmentsToLines, TimeEntrySplitter $splitter): void
+    public function linkAllFragmentsToLines(ClientCompany $company, array $fragmentsToLines, TimeEntrySplitter $splitter): void
     {
         $entrySplitPlan = [];
 
@@ -448,9 +465,34 @@ class InvoiceLineComposer
         }
 
         foreach ($entrySplitPlan as $entryId => $splits) {
-            $entry = ClientTimeEntry::find($entryId);
+            $entry = ClientTimeEntry::query()
+                ->where('workspace_id', $company->workspace_id)
+                ->where('client_company_id', $company->id)
+                ->find($entryId);
+
+            // Refused rather than skipped, and the earlier reasoning for
+            // skipping was wrong on a point of fact. It argued that stopping
+            // the run would leave the invoice half-composed; every caller runs
+            // inside `DB::transaction`, so a throw here unwinds the whole
+            // composition and writes nothing.
+            //
+            // Skipping was worse than doing nothing. The caller has already
+            // created the monetary line from these fragments - its quantity and
+            // `total_amount` cover the skipped minutes - and
+            // {@see ClientInvoice::recalculateTotals()} sums each line's own
+            // `total_amount` without ever consulting the pivot. So declining to
+            // link the entry removed the lineage and left the charge: the
+            // client was billed for minutes this invoice could not show the
+            // work for. Failing to attribute revenue must not silently keep it.
+            //
+            // `svc:billing:audit-tenant-foreign-keys` is still where such rows
+            // are meant to surface in bulk; this is the guard for the one that
+            // reaches a charge anyway.
             if (! $entry) {
-                continue;
+                throw new RuntimeException(sprintf(
+                    'Time entry %d is not this client company\'s, so the work behind an invoice line cannot be attributed.',
+                    $entryId,
+                ));
             }
 
             if (count($splits) == 1 && $splits[0]['minutes'] >= $entry->minutes_worked) {

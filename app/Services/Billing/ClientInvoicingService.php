@@ -895,7 +895,7 @@ final class ClientInvoicingService
                 ]);
             }
 
-            $this->invoiceLineComposer->linkAllFragmentsToLines($fragmentsToLines, $this->timeEntrySplitter);
+            $this->invoiceLineComposer->linkAllFragmentsToLines($company, $fragmentsToLines, $this->timeEntrySplitter);
 
             // A cadence charge is sold once per cycle, and "which cycle" is
             // derived from the work period - so a disjoint correction range
@@ -1170,7 +1170,7 @@ final class ClientInvoicingService
                 ]);
             }
 
-            $this->invoiceLineComposer->linkAllFragmentsToLines($fragmentsToLines, $this->timeEntrySplitter);
+            $this->invoiceLineComposer->linkAllFragmentsToLines($company, $fragmentsToLines, $this->timeEntrySplitter);
 
             if ($retainerFee > 0 || $retainerHours > 0) {
                 $this->createRetainerFeeLine($invoice, $agreement, $retainerHours, $retainerFee, $retainerStart, $retainerEnd, $sortOrder);

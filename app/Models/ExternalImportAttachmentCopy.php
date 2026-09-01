@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -26,8 +28,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_sha256',
     'destination_object_key_hash',
 ])]
-class ExternalImportAttachmentCopy extends Model
+class ExternalImportAttachmentCopy extends Model implements WorkspaceOwned
 {
+    use BelongsToWorkspace;
+
     protected function casts(): array
     {
         return [

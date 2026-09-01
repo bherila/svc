@@ -290,7 +290,7 @@ final class InterimOverageGenerator
                 'sort_order' => 1,
             ]);
 
-            $this->invoiceLineComposer->linkAllFragmentsToLines([$line->id => $billableFragments], $splitter);
+            $this->invoiceLineComposer->linkAllFragmentsToLines($company, [$line->id => $billableFragments], $splitter);
 
             $monthSummary = $this->invoiceLedgerBuilder->findLedgerMonth(
                 $immediateLedger,

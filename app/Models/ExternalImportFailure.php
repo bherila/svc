@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Contracts\WorkspaceOwned;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,8 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_table', 'source_key_hash', 'reason_code', 'redacted_context',
     'failure_fingerprint',
 ])]
-class ExternalImportFailure extends Model
+class ExternalImportFailure extends Model implements WorkspaceOwned
 {
+    public function workspaceId(): ?int
+    {
+        return $this->run?->workspaceId();
+    }
+
     protected function casts(): array
     {
         return ['redacted_context' => 'array'];
