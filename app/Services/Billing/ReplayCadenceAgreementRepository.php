@@ -51,6 +51,14 @@ final class ReplayCadenceAgreementRepository
                 monthlyFee: $agreement->retainerMonthlyFee(),
                 periodHoursOverride: $agreement->periodRetainerHoursOverride(),
                 periodFeeOverride: $agreement->periodRetainerFeeOverride(),
+                // Zero is right *here*, unlike the billing paths, and must
+                // stay: replay never charges anything. The consumer treats a
+                // non-positive rate as "cannot prove this line" and declines to
+                // make a claim - see
+                // {@see ReplayInvoiceSnapshot::sourceFreeOverageCapacityMinutes()},
+                // which returns null on `$hourlyRateAmount <= 0`. Refusing at
+                // load time instead would make an agreement that never billed
+                // hourly unreplayable.
                 hourlyRateAmount: (int) ($agreement->hourly_rate_amount ?? 0),
                 catchUpThresholdMinutes: (int) round($agreement->catch_up_threshold_hours * 60),
                 rolloverMonths: max(0, (int) ($agreement->rollover_months ?? 0)),

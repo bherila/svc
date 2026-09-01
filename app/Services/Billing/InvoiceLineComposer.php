@@ -274,7 +274,11 @@ class InvoiceLineComposer
             return;
         }
         $hours = round($totalMinutes / 60, 4);
-        $rateAmount = (int) ($agreement->hourly_rate_amount ?? 0);
+        // A null rate refuses rather than billing at zero; see
+        // {@see ClientAgreement::hourlyRateAmountOrFail()}. This line is the
+        // one that put the coercion in front of the client, describing itself
+        // as billed "@ $0.00/hr".
+        $rateAmount = $agreement->hourlyRateAmountOrFail();
 
         $line = ClientInvoiceLine::create([
             'workspace_id' => $invoice->workspace_id,
