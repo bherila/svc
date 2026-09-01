@@ -10,6 +10,7 @@ use App\Models\ClientProjectMembership;
 use App\Models\ExternalImportRun;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceInvoiceCounter;
 use App\Models\WorkspaceMembership;
 
 /**
@@ -54,6 +55,12 @@ final class Lookups
         return TenantInvoiceSubclass::find($id);
     }
 
+    /** Refused, and worse than a read: an unscoped delete leaves nothing behind. */
+    public function unscopedDestroy(int $id): int
+    {
+        return ClientInvoice::destroy($id);
+    }
+
     /** Allowed: the id is resolved inside a query that names the workspace. */
     public function scoped(Workspace $workspace, int $id): mixed
     {
@@ -76,6 +83,18 @@ final class Lookups
     public function scopedByColumn(Workspace $workspace): mixed
     {
         return ClientInvoice::where('workspace_id', $workspace->id)->get();
+    }
+
+    /**
+     * Allowed: the primary key *is* the workspace, so the key scopes it.
+     *
+     * The counter is keyed on `workspace_id`, so this call names one workspace
+     * and can reach no other. It is the one bare key lookup that carries a
+     * tenant by construction.
+     */
+    public function keyedByWorkspace(Workspace $workspace): ?WorkspaceInvoiceCounter
+    {
+        return WorkspaceInvoiceCounter::find($workspace->id);
     }
 
     /** Allowed: whereKey() is deferred and the executed query is scoped. */

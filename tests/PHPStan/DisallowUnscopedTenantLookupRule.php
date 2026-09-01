@@ -59,9 +59,28 @@ final class DisallowUnscopedTenantLookupRule implements Rule
     private const KEY_LOOKUPS = ['find', 'findorfail', 'findor', 'findmany'];
 
     /**
+     * Key operations that write rather than read.
+     *
+     * `destroy()` is the same unscoped claim as `find()` and a strictly worse
+     * outcome: it starts its own query, so it selects and deletes whatever row
+     * carries that id in any tenant, and unlike a mis-read there is nothing left
+     * afterwards to notice. Held apart from the lookups only so the diagnostic
+     * can say "deletes" rather than "looks up" - a message that describes a read
+     * would be read as a lesser problem than it is.
+     *
+     * @var list<string>
+     */
+    private const KEY_WRITES = ['destroy'];
+
+    /**
      * The contract that marks a model as a tenant's.
      */
     private const TENANT_CONTRACT = 'App\Contracts\WorkspaceOwned';
+
+    /**
+     * The column every tenant-owned model is scoped by.
+     */
+    private const TENANT_KEY = 'workspace_id';
 
     public function __construct(private readonly ReflectionProvider $reflection) {}
 
@@ -77,7 +96,10 @@ final class DisallowUnscopedTenantLookupRule implements Rule
             return [];
         }
 
-        if (! in_array(strtolower($node->name->name), self::KEY_LOOKUPS, true)) {
+        $method = strtolower($node->name->name);
+        $isWrite = in_array($method, self::KEY_WRITES, true);
+
+        if (! $isWrite && ! in_array($method, self::KEY_LOOKUPS, true)) {
             return [];
         }
 
@@ -87,14 +109,27 @@ final class DisallowUnscopedTenantLookupRule implements Rule
             return [];
         }
 
+        // A model whose primary key *is* the tenant column is already scoped by
+        // the key it was given: `WorkspaceInvoiceCounter::find($workspace->id)`
+        // names a workspace and can reach no other. Flagging it would make the
+        // rule wrong on the one shape where a bare key lookup is provably safe,
+        // and a rule that is wrong about a safe call gets suppressed rather than
+        // obeyed.
+        if ($this->keyedByTenant($class)) {
+            return [];
+        }
+
         $short = str_contains($class, '\\') ? substr($class, (int) strrpos($class, '\\') + 1) : $class;
+        $verb = $isWrite
+            ? 'deletes rows by key alone, so it can delete from any workspace'
+            : 'looks a row up by key alone, so it reaches every workspace';
 
         // The replacement names a shape rather than a method. Guessing the
         // relation - `$workspace->clientInvoices()` - would be wrong as often
         // as right, and a diagnostic that names something that does not exist
         // teaches the reader to stop reading them.
         return [RuleErrorBuilder::message(
-            "{$short}::{$node->name->name}() looks a row up by key alone, so it reaches every workspace; "
+            "{$short}::{$node->name->name}() {$verb}; "
             .'start from a query that already names the workspace - the workspace relation, or '
             ."where('workspace_id', ...) - and resolve the key inside it.",
         )->identifier('svc.unscopedTenantLookup')->build()];
@@ -114,5 +149,21 @@ final class DisallowUnscopedTenantLookupRule implements Rule
         }
 
         return $this->reflection->getClass($class)->implementsInterface(self::TENANT_CONTRACT);
+    }
+
+    /**
+     * Whether the model's primary key is the tenant column itself.
+     *
+     * Read from the declared default of `$primaryKey` rather than assumed, so a
+     * model that stops being workspace-keyed loses the exemption by editing the
+     * property. Eloquent's own default is `id`, which is what a model that never
+     * declares one gets - and that is exactly the unscoped case the rule exists
+     * for, so the fallback here has to be the flagging one.
+     */
+    private function keyedByTenant(string $class): bool
+    {
+        $defaults = $this->reflection->getClass($class)->getNativeReflection()->getDefaultProperties();
+
+        return ($defaults['primaryKey'] ?? 'id') === self::TENANT_KEY;
     }
 }

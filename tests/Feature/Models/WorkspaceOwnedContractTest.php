@@ -18,12 +18,30 @@ class WorkspaceOwnedContractTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * Every workspace-owned model is marked, wherever it lives.
+     *
+     * Enumerated recursively, and the namespace derived from the path rather
+     * than assumed to be the root. `File::files()` lists only direct children,
+     * so a model at `app/Models/Billing/Foo.php` was skipped silently - and a
+     * skipped model is not a gap in this test alone: the lookup rule keys off
+     * the same contract, so the model would also have been invisible to static
+     * analysis. A registry that quietly enumerates less than it claims is the
+     * failure this epic keeps finding, so it should not be reintroduced by the
+     * test written to prevent it.
+     */
     public function test_every_model_with_a_workspace_column_carries_the_ownership_contract(): void
     {
         $unmarked = [];
+        $scanned = 0;
 
-        foreach (File::files(app_path('Models')) as $file) {
-            $class = 'App\\Models\\'.$file->getFilenameWithoutExtension();
+        foreach (File::allFiles(app_path('Models')) as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relative = str_replace(['/', '.php'], ['\\', ''], $file->getRelativePathname());
+            $class = 'App\\Models\\'.$relative;
 
             if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
                 continue;
@@ -38,6 +56,8 @@ class WorkspaceOwnedContractTest extends TestCase
             /** @var Model $model */
             $model = $reflection->newInstance();
 
+            $scanned++;
+
             if (Schema::hasColumn($model->getTable(), 'workspace_id')
                 && ! $reflection->implementsInterface(WorkspaceOwned::class)) {
                 $unmarked[] = $class;
@@ -45,6 +65,39 @@ class WorkspaceOwnedContractTest extends TestCase
         }
 
         $this->assertSame([], $unmarked, 'Workspace-owned models missing the WorkspaceOwned contract: '.implode(', ', $unmarked));
+
+        // A floor, because the assertion above passes just as happily when the
+        // scan finds nothing at all - which is precisely how the non-recursive
+        // version hid a whole directory. The number is a floor rather than an
+        // equality so adding a model does not fail an unrelated branch.
+        $this->assertGreaterThanOrEqual(30, $scanned, 'The model scan found implausibly few models to check.');
+    }
+
+    /** The scan reaches a model in a subdirectory, not only the root. */
+    public function test_the_model_scan_descends_into_subdirectories(): void
+    {
+        $nested = app_path('Models/ContractScanFixture');
+        File::ensureDirectoryExists($nested);
+        File::put($nested.'/NestedScanProbe.php', <<<'PHP'
+            <?php
+
+            namespace App\Models\ContractScanFixture;
+
+            use Illuminate\Database\Eloquent\Model;
+
+            /** A probe for the recursive scan; carries no table of its own. */
+            final class NestedScanProbe extends Model {}
+            PHP);
+
+        try {
+            $found = collect(File::allFiles(app_path('Models')))
+                ->map(fn ($file) => 'App\\Models\\'.str_replace(['/', '.php'], ['\\', ''], $file->getRelativePathname()))
+                ->contains('App\\Models\\ContractScanFixture\\NestedScanProbe');
+
+            $this->assertTrue($found, 'A model below app/Models must be enumerated and namespaced from its path.');
+        } finally {
+            File::deleteDirectory($nested);
+        }
     }
 
     public function test_import_ledger_children_expose_their_run_workspace_ownership(): void
