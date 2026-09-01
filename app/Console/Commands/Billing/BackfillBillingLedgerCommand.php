@@ -42,7 +42,8 @@ final class BackfillBillingLedgerCommand extends Command
         {--source=external : Allowlisted read-only source key from config/external-import.php}
         {--workspace= : Required. Ledger rows imported into this workspace public id, and no other}
         {--apply : Write the repairs. Without it the command reports what would change and writes nothing}
-        {--accept-drift= : Comma-separated destination columns allowed to differ from the source, for a declared restore that kept being used}';
+        {--accept-drift= : Comma-separated destination columns allowed to differ from the source, for a declared restore that kept being used}
+        {--skip-table=* : Source tables to leave entirely alone, by name. Their rows are neither repaired nor allowed to fail the run}';
 
     protected $description = 'Restore invoice, line, agreement, and task columns dropped by an earlier import';
 
@@ -101,6 +102,20 @@ final class BackfillBillingLedgerCommand extends Command
      */
     private bool $skipRowFingerprint = false;
 
+    /**
+     * Source tables this run will not read at all.
+     *
+     * A property rather than a parameter because *every* stage has to honour
+     * it, preflight included. Threading it through only the repair loop was the
+     * first version, and it left the option promising more than it delivered:
+     * restore verification and ledger resolution both walk `SOURCE_KEYS`
+     * unconditionally, so a problem in a skipped table still rolled back every
+     * other table's repairs.
+     *
+     * @var list<string>
+     */
+    private array $skippedTables = [];
+
     public function handle(SourceGuard $guard): int
     {
         try {
@@ -152,6 +167,28 @@ final class BackfillBillingLedgerCommand extends Command
         // environment to learn which database the rows are being matched to.
         // SourceGuard normalises an empty declaration to null, so presence is
         // the whole test.
+        // Parsed before anything reads the source, because the preflight
+        // stages honour it too. A bad table name has to stop the run here,
+        // rather than after a verification that was already narrowed by it.
+        $skipped = $this->skippedTables();
+
+        if ($skipped === null) {
+            return self::INVALID;
+        }
+
+        $this->skippedTables = $skipped;
+
+        if ($skipped !== []) {
+            // Said out loud, and in the terms that matter: what is not being
+            // repaired, rather than what is being allowed through.
+            $this->components->warn(sprintf(
+                'Leaving %s alone. Rows in %s are neither read, repaired, nor able to fail this run - '.
+                'whatever they were going to fill stays empty, and the source still holds it.',
+                implode(', ', $skipped),
+                count($skipped) === 1 ? 'it' : 'them',
+            ));
+        }
+
         $declaredRestore = $source['declared_restore_of'] ?? null;
         if ($declaredRestore !== null) {
             $this->components->warn(sprintf(
@@ -190,12 +227,22 @@ final class BackfillBillingLedgerCommand extends Command
             if ($verdict === self::SUCCESS) {
                 $totals = [];
                 foreach ([
-                    'invoices' => fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun),
-                    'invoice lines' => fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun),
-                    'agreements' => fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun),
-                    'tasks' => fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun),
-                    'time entries' => fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun),
-                ] as $label => $step) {
+                    'invoices' => ['client_invoices', fn (): array => $this->backfillInvoices($legacy, $identityHash, $dryRun)],
+                    'invoice lines' => ['client_invoice_lines', fn (): array => $this->backfillInvoiceLines($legacy, $identityHash, $dryRun)],
+                    'agreements' => ['client_agreements', fn (): array => $this->backfillAgreements($legacy, $identityHash, $dryRun)],
+                    'tasks' => ['client_tasks', fn (): array => $this->backfillTasks($legacy, $identityHash, $dryRun)],
+                    'time entries' => ['client_time_entries', fn (): array => $this->backfillTimeEntries($legacy, $identityHash, $dryRun)],
+                ] as $label => [$table, $step]) {
+                    // A skipped table is not run at all, so it contributes no
+                    // repairs and no verdict. That is the whole distinction
+                    // from a waiver: nothing about this table's rows is being
+                    // declared acceptable, they are simply not being touched.
+                    if (in_array($table, $skipped, true)) {
+                        $this->components->twoColumnDetail($label, 'skipped, not read');
+
+                        continue;
+                    }
+
                     $result = $step();
                     $totals[$label] = $result;
                     $this->components->twoColumnDetail(
@@ -224,6 +271,68 @@ final class BackfillBillingLedgerCommand extends Command
     }
 
     /**
+     * The source tables to leave entirely alone, or null if one is not a table.
+     *
+     * Deliberately not a waiver. `--accept-drift` says "this difference is
+     * acceptable"; this says "do not read this table". Nothing about a skipped
+     * table's rows is declared trustworthy - they are not consulted, nothing is
+     * written from them, and whatever they were going to fill stays empty with
+     * the source still holding it.
+     *
+     * That distinction matters because the two are reached from the same place.
+     * When the fingerprint guard refuses a row that would have written a
+     * financial relationship, the tempting move is to waive the guard. Skipping
+     * the table instead keeps the guard intact everywhere it still runs, and
+     * leaves a hole an operator can see rather than a check they turned off.
+     *
+     * @return list<string>|null
+     */
+    private function skippedTables(): ?array
+    {
+        /** @var list<string> $named */
+        $named = (array) $this->option('skip-table');
+        $skipped = [];
+
+        foreach ($named as $table) {
+            $table = trim((string) $table);
+
+            if ($table === '') {
+                continue;
+            }
+
+            if (! array_key_exists($table, self::SOURCE_KEYS)) {
+                $this->error(sprintf(
+                    'There is no source table named %s. This command reads: %s.',
+                    $table,
+                    implode(', ', array_keys(self::SOURCE_KEYS)),
+                ));
+
+                return null;
+            }
+
+            $skipped[] = $table;
+        }
+
+        return array_values(array_unique($skipped));
+    }
+
+    /**
+     * The source tables this run will actually read.
+     *
+     * Every stage asks this rather than `SOURCE_KEYS` directly, so a skipped
+     * table is invisible to restore verification and ledger resolution as well
+     * as to the repair loop. Without that the option kept only half its promise:
+     * the repairs skipped the table, and a preflight failure in it still rolled
+     * back everything else.
+     *
+     * @return array<string, string>
+     */
+    private function tablesInPlay(): array
+    {
+        return array_diff_key(self::SOURCE_KEYS, array_flip($this->skippedTables));
+    }
+
+    /**
      * Whether every ledger row still names a destination row this can repair.
      */
     private function verdictForLedgerResolution(ConnectionInterface $legacy, string $identityHash, bool $lock): int
@@ -236,7 +345,7 @@ final class BackfillBillingLedgerCommand extends Command
         // unrepairable financial row would pass silently. Separate them here,
         // where the ledger can still be asked which of the two it is.
         $fatal = [];
-        foreach (self::SOURCE_KEYS as $table => $_) {
+        foreach ($this->tablesInPlay() as $table => $_) {
             $beyond = $this->ledgerTargetsBeyondRepair($table, $table, $identityHash, $lock);
             $removable = in_array($table, self::DELETED_IN_ORDINARY_USE, true);
 
@@ -569,7 +678,7 @@ final class BackfillBillingLedgerCommand extends Command
         // are still there, and that claim is no weaker for a table the verifier
         // has no columns for - an agreement or a task missing from the restore
         // is a ledger row this command would then quietly decline to repair.
-        foreach (self::SOURCE_KEYS as $table => $sourceKey) {
+        foreach ($this->tablesInPlay() as $table => $sourceKey) {
             $idMap = array_map(static fn (array $m): int => $m['id'], $this->idMap($table, $table, $identityHash));
             if ($idMap === []) {
                 // The ledger recorded nothing from this table, so there is

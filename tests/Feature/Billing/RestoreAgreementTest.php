@@ -153,6 +153,35 @@ final class RestoreAgreementTest extends TestCase
     }
 
     /**
+     * A skipped table is outside restore verification too, not only the repair.
+     *
+     * The sibling test above proves a ledger row missing from an uncompared
+     * table refuses the whole run. `--skip-table` has to reach that stage as
+     * well: its promise is that a skipped table can neither be repaired nor
+     * fail the run, and verification is one of the two places a table fails it.
+     *
+     * Narrowing only the repair loop was the first version of the option, and
+     * it kept half the promise - the repairs skipped the table, and this stage
+     * still rolled everything back because of it.
+     */
+    public function test_a_skipped_table_is_outside_restore_verification(): void
+    {
+        $this->scenario(ledgerAnAgreementTheSourceLacks: true);
+
+        $this->artisan('svc:billing:backfill-ledger', [
+            '--workspace' => $this->workspacePublicId(),
+            '--apply' => true,
+            '--skip-table' => ['client_agreements'],
+        ])->assertSuccessful();
+
+        $this->assertSame(
+            'cadence_period',
+            ClientInvoice::query()->sole()->invoice_kind,
+            'The tables that verified should still repair.',
+        );
+    }
+
+    /**
      * @param  array<string, string>  $driftInRestore
      * @param  list<array<string, mixed>>  $unledgeredSourceInvoices
      */
