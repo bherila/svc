@@ -30,7 +30,8 @@ final class AgentBillingScheduleReadService
         if ($active !== null) {
             $query->where('is_active', $active);
         }
-        $after = AgentApiCursor::decode($cursor);
+        $queryKey = 'billing_schedules|active='.($active === null ? 'any' : ($active ? 'true' : 'false'));
+        $after = AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey);
         if ($after !== null) {
             $query->where('id', '>', $after);
         }
@@ -43,7 +44,7 @@ final class AgentBillingScheduleReadService
 
         return [
             'data' => $data,
-            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $schedules->last()->getKey())],
+            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $schedules->last()->getKey(), $workspace->public_id, $queryKey)],
         ];
     }
 

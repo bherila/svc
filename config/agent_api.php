@@ -9,6 +9,7 @@ return [
     // Global MCP emergency stop and optional reviewed capability kill switches.
     'mcp_enabled' => (bool) env('AGENT_API_MCP_ENABLED', true),
     'mcp_feature_flags' => [],
+    'accept_legacy_cursors' => env('AGENT_API_ACCEPT_LEGACY_CURSORS', true),
     'mcp_max_body_bytes' => (int) env('AGENT_API_MCP_MAX_BODY_BYTES', 262_144),
     'mcp_session_ttl_seconds' => (int) env('AGENT_API_MCP_SESSION_TTL_SECONDS', 1800),
     'mcp_allowed_origins' => array_values(array_filter(array_map(

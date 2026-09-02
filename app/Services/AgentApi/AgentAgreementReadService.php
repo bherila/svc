@@ -27,13 +27,12 @@ final class AgentAgreementReadService
         $query = ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
             ->with('project')
-            ->orderByDesc('starts_on')
-            ->orderByDesc('id');
+            ->orderBy('id');
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
         }
 
-        return $this->page($query, $limit, $cursor);
+        return $this->page($query, $workspace, $status, $limit, $cursor);
     }
 
     /** @return array<string, mixed> */
@@ -60,9 +59,10 @@ final class AgentAgreementReadService
      * @param  Builder<ClientAgreement>  $query
      * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}}
      */
-    private function page($query, int $limit, ?string $cursor): array
+    private function page($query, Workspace $workspace, ?string $status, int $limit, ?string $cursor): array
     {
-        $after = AgentApiCursor::decode($cursor);
+        $queryKey = 'agreements|status='.($status ?? '');
+        $after = AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey);
         if ($after !== null) {
             $query->where('id', '>', $after);
         }
@@ -75,7 +75,7 @@ final class AgentAgreementReadService
 
         return [
             'data' => $data,
-            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $agreements->last()->getKey())],
+            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $agreements->last()->getKey(), $workspace->public_id, $queryKey)],
         ];
     }
 

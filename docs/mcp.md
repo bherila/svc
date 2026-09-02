@@ -121,10 +121,12 @@ idempotency, tenant isolation, persisted credential validation, request
 context selection, and safe time-entry mutations. `McpCapabilityRegistry`
 now drives tool discovery and registration, including required scope, policy
 reference, schemas, workspace requirement, rate-limit/audit classification,
-and global/per-capability configuration kill switches. The baseline does not
-yet provide a standalone MCP-client process smoke test, registry-backed
-resources/prompts, per-capability audit/metrics/rate limits, or account-bound
-cursor envelopes.
+and global/per-capability configuration kill switches. Cursor envelopes are
+encrypted and bound to the workspace and canonical filter query. A temporary
+legacy base64 cursor reader remains for existing REST/MCP clients and is
+controlled by `AGENT_API_ACCEPT_LEGACY_CURSORS`; newly emitted cursors never
+use it. The baseline does not yet provide a standalone MCP-client process
+smoke test, per-capability audit/metrics/rate limits, or resource templates.
 
 ## #187 disposition and related work
 

@@ -140,7 +140,7 @@ final class AgentReadService
             $query->where('name', 'like', '%'.$search.'%');
         }
 
-        $page = $this->page($query, $limit, $cursor);
+        $page = $this->page($query, $workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $project) {
             if (! $project instanceof ClientProject) {
@@ -179,7 +179,7 @@ final class AgentReadService
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
 
-        $page = $this->page($query, $limit, $cursor);
+        $page = $this->page($query, $workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $task) {
             if (! $task instanceof ClientTask) {
@@ -219,7 +219,7 @@ final class AgentReadService
         }
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
 
-        $page = $this->page($query, $limit, $cursor);
+        $page = $this->page($query, $workspace, 'time_entries|project_id='.($projectId ?? '').'|status='.($status ?? '').'|from='.($from ?? '').'|to='.($to ?? ''), $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $entry) {
             if (! $entry instanceof ClientTimeEntry) {
@@ -241,7 +241,7 @@ final class AgentReadService
         }
         $includeNotes = $this->access->isWorkspaceManager($user, $workspace);
 
-        $page = $this->page($query, $limit, $cursor);
+        $page = $this->page($query, $workspace, 'invoices|status='.($status ?? ''), $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $invoice) {
             if (! $invoice instanceof ClientInvoice) {
@@ -322,9 +322,9 @@ final class AgentReadService
      * @param  Builder<TModel>  $query
      * @return array{records:list<Model>,next_cursor:?string}
      */
-    private function page(Builder $query, int $limit, ?string $cursor): array
+    private function page(Builder $query, Workspace $workspace, string $queryKey, int $limit, ?string $cursor): array
     {
-        $after = AgentApiCursor::decode($cursor);
+        $after = AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey);
         if ($after !== null) {
             $query->where('id', '>', $after);
         }
@@ -334,7 +334,7 @@ final class AgentReadService
         if ($next !== null) {
             $last = $models->last();
             if ($last !== null) {
-                $nextCursor = AgentApiCursor::encode((int) $last->getKey());
+                $nextCursor = AgentApiCursor::encode((int) $last->getKey(), $workspace->public_id, $queryKey);
             }
         }
 
