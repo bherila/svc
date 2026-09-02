@@ -191,9 +191,9 @@ export function TimeEntryDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4">
+                <div className="grid grid-cols-1 gap-4">
                     {entry === null && (
-                        <div className="grid gap-1.5">
+                        <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="project">Project</Label>
                             <Select
                                 value={draft.project_id}
@@ -224,7 +224,7 @@ export function TimeEntryDialog({
                         entry filed against the wrong one was otherwise stuck
                         with it for good. */}
                     {project !== undefined && project.tasks.length > 0 && (
-                        <div className="grid gap-1.5">
+                        <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="task">Task</Label>
                             <Select
                                 value={
@@ -268,7 +268,7 @@ export function TimeEntryDialog({
                     )}
 
                     <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-1.5">
+                        <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="worked_on">Date</Label>
                             <Input
                                 id="worked_on"
@@ -285,7 +285,7 @@ export function TimeEntryDialog({
                         />
                     </div>
 
-                    <div className="grid gap-1.5">
+                    <div className="grid grid-cols-1 gap-1.5">
                         <Label htmlFor="description">Work performed</Label>
                         <Textarea
                             id="description"
@@ -329,7 +329,7 @@ export function TimeEntryDialog({
                     </div>
 
                     {draft.is_visible_to_client && (
-                        <div className="grid gap-1.5">
+                        <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="client_description">
                                 Client-facing description
                             </Label>

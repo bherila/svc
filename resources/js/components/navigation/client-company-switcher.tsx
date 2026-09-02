@@ -98,7 +98,15 @@ export function ClientCompanySwitcher({
     };
 
     return (
-        <div className="relative shrink-0" ref={container}>
+        // The floor lives on the wrapper, not on the button. Putting it on the
+        // button let the button overflow a wrapper that had already shrunk, so
+        // it painted over the section menu beside it rather than pushing it
+        // along - the row measured as fitting while a control sat underneath
+        // another one.
+        <div
+            className="relative max-w-56 min-w-20 shrink sm:min-w-0"
+            ref={container}
+        >
             <Button
                 variant="secondary"
                 size="sm"
@@ -107,7 +115,7 @@ export function ClientCompanySwitcher({
                 aria-haspopup="dialog"
                 aria-controls={open ? listId : undefined}
                 title={current?.name}
-                className="max-w-56"
+                className="w-full"
                 onClick={() => {
                     // Cleared as the popover opens rather than in an effect
                     // reacting to it: a filter left over from last time hides

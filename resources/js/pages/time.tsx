@@ -24,6 +24,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
@@ -65,7 +66,7 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
     }
 
     return (
-        <div className="grid gap-2">
+        <div className="grid grid-cols-1 gap-2">
             <div className="flex flex-wrap gap-3">
                 {capacity.map((row, index) => {
                     const over = row.over_hours > 0;
@@ -280,7 +281,7 @@ export default function TimeSheet({
             <Head title="Time" />
 
             <div>
-                <div className="mx-auto max-w-6xl px-6 py-10">
+                <div className={cn(SHELL_CONTAINER, 'py-8')}>
                     <header className="flex flex-wrap items-end justify-between gap-4">
                         <h1 className="text-3xl font-semibold tracking-tight">
                             Time
@@ -364,7 +365,7 @@ export default function TimeSheet({
                         </p>
                     )}
 
-                    <div className="mt-8 grid gap-8">
+                    <div className="mt-8 grid grid-cols-1 gap-8">
                         {months.map((month) => (
                             <MonthCard
                                 key={month.key}
@@ -491,7 +492,7 @@ function MonthCard({
                             <TableRow>
                                 <TableHead className="w-8" />
                                 <TableHead className="w-28">Date</TableHead>
-                                <TableHead>Work</TableHead>
+                                <TableHead className="min-w-64">Work</TableHead>
                                 <TableHead className="w-20 text-right">
                                     Hours
                                 </TableHead>
@@ -525,11 +526,20 @@ function MonthCard({
                                         <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                                             {formatDate(entry.worked_on)}
                                         </TableCell>
-                                        <TableCell>
-                                            <p className="font-medium">
+                                        {/*
+                                         * The one prose column. Table cells
+                                         * do not wrap by default, which is
+                                         * right for a date or an amount and
+                                         * wrong here: a description ran the
+                                         * table wider than the card and
+                                         * pushed Hours, State and Actions off
+                                         * the screen entirely.
+                                         */}
+                                        <TableCell className="max-w-0 whitespace-normal">
+                                            <p className="font-medium wrap-anywhere">
                                                 {entry.description}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">
+                                            <p className="text-xs wrap-anywhere text-muted-foreground">
                                                 {entry.project.name}
                                                 {entry.task !== null &&
                                                     ` · ${entry.task.title}`}

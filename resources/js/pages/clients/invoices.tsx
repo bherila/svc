@@ -1,6 +1,8 @@
 import { Head } from '@inertiajs/react';
 import { InvoiceTable } from '@/components/clients/invoice-table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
 
 /**
@@ -29,7 +31,9 @@ export default function ClientInvoices({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={`${company.name} invoices`} />
-            <main className="mx-auto grid max-w-5xl gap-6 px-6 py-8">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Invoices
                 </h1>

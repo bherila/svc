@@ -24,7 +24,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
 
 type InvoiceLine = {
@@ -137,8 +140,10 @@ export default function ClientInvoiceDetail({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
-            <main className="mx-auto grid max-w-6xl gap-6 p-6">
-                <header className="grid gap-1">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={backHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -149,7 +154,9 @@ export default function ClientInvoiceDetail({
                         <h1 className="text-2xl font-semibold">
                             {invoice.invoice_number ?? 'Unnumbered invoice'}
                         </h1>
-                        <Badge variant="outline">{invoice.status}</Badge>
+                        <Badge variant="outline">
+                            {statusLabel(invoice.status)}
+                        </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
@@ -246,7 +253,7 @@ export default function ClientInvoiceDetail({
                                 });
                             }}
                         >
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-amount">Amount</Label>
                                 <Input
                                     id="payment-amount"
@@ -257,7 +264,7 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
                                 <Input
                                     id="payment-method"
@@ -267,7 +274,7 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-reference">
                                     Reference
                                 </Label>
@@ -339,7 +346,9 @@ export default function ClientInvoiceDetail({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Description</TableHead>
+                                            <TableHead className="min-w-64">
+                                                Description
+                                            </TableHead>
                                             <TableHead>Type</TableHead>
                                             <TableHead>Date</TableHead>
                                             <TableHead>Quantity</TableHead>
@@ -351,7 +360,7 @@ export default function ClientInvoiceDetail({
                                     <TableBody>
                                         {lines.map((line) => (
                                             <TableRow key={line.id}>
-                                                <TableCell className="font-medium">
+                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
                                                 <TableCell>

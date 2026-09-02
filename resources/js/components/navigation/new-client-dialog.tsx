@@ -76,13 +76,13 @@ export function NewClientDialog({
                 </DialogHeader>
 
                 <form
-                    className="grid gap-4"
+                    className="grid grid-cols-1 gap-4"
                     onSubmit={(event) => {
                         event.preventDefault();
                         submit();
                     }}
                 >
-                    <div className="grid gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-client-name">Name</Label>
                         <Input
                             id="new-client-name"
@@ -93,7 +93,7 @@ export function NewClientDialog({
                         />
                     </div>
 
-                    <div className="grid gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-client-billing-email">
                             Billing email
                         </Label>

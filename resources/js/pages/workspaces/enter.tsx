@@ -1,5 +1,7 @@
 import { Head } from '@inertiajs/react';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 
 /**
  * Inside a workspace, not yet inside a client.
@@ -35,7 +37,7 @@ export default function WorkspaceEntry({
     return (
         <WorkspaceShell>
             <Head title="Choose a client" />
-            <main className="mx-auto max-w-2xl px-6 py-16 text-center">
+            <main className={cn(SHELL_CONTAINER, 'py-16 text-center')}>
                 <p className="text-sm text-muted-foreground">
                     {message(hasClients, canCreateClient)}
                 </p>

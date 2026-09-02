@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 
 type ManagedCompany = {
     id: string;
@@ -70,7 +72,7 @@ function ProjectAccess({
     }
 
     return (
-        <div className="grid gap-2">
+        <div className="grid grid-cols-1 gap-2">
             {assignable.map((member) => (
                 <AccessRow
                     key={member.id}
@@ -157,7 +159,7 @@ function CompanyForm({
 
     return (
         <form
-            className="grid gap-4"
+            className="grid grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
                 form.patch(`/workspaces/${workspaceId}/clients/${company.id}`, {
@@ -165,7 +167,7 @@ function CompanyForm({
                 });
             }}
         >
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="company-name">Name</Label>
                 <Input
                     id="company-name"
@@ -181,7 +183,7 @@ function CompanyForm({
                 )}
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="company-billing-email">Billing email</Label>
                 <Input
                     id="company-billing-email"
@@ -244,7 +246,7 @@ function ProjectForm({
 
     return (
         <form
-            className="grid gap-3 rounded-xl border p-4"
+            className="grid grid-cols-1 gap-3 rounded-xl border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
                 form.patch(
@@ -324,7 +326,7 @@ function ProjectForm({
                 </Button>
             </div>
 
-            <div className="grid gap-2 border-t pt-3">
+            <div className="grid grid-cols-1 gap-2 border-t pt-3">
                 <Label>Who can reach this project</Label>
                 <ProjectAccess
                     workspaceId={workspaceId}
@@ -348,7 +350,7 @@ function NewProjectForm({
 
     return (
         <form
-            className="grid gap-3"
+            className="grid grid-cols-1 gap-3"
             onSubmit={(event) => {
                 event.preventDefault();
                 form.post(
@@ -360,7 +362,7 @@ function NewProjectForm({
                 );
             }}
         >
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="new-project-name">New project</Label>
                 <Input
                     id="new-project-name"
@@ -399,7 +401,9 @@ export default function ClientManage({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={`${company.name} settings`} />
-            <main className="mx-auto grid max-w-4xl gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <h1 className="text-2xl font-semibold tracking-tight">
                     {company.name} settings
                 </h1>
@@ -419,7 +423,7 @@ export default function ClientManage({
                     <CardHeader>
                         <CardTitle>Projects</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-4">
+                    <CardContent className="grid grid-cols-1 gap-4">
                         {projects.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 This client has no projects yet.

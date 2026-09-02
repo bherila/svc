@@ -77,6 +77,69 @@ describe('client home', () => {
         ).not.toBeInTheDocument();
     });
 
+    /**
+     * A description clipped at one line is the half of the row worth reading
+     * thrown away. It was clipped: `truncate` on the description cell hid
+     * everything past the column, on the one screen whose job is to say what
+     * happened recently.
+     */
+    it('lets a long description wrap rather than clipping it', () => {
+        const description =
+            'Planning and implementation of the quarterly reporting pipeline, including the reconciliation pass we discussed on the call last week.';
+
+        render(
+            <ClientHome
+                {...props({
+                    recent_time: [
+                        {
+                            id: 'entry-1',
+                            worked_on: '2026-09-01',
+                            project: 'Synthetic Project',
+                            description,
+                            minutes: 150,
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        // The whole string is in the document, and nothing on its way up the
+        // tree is truncating it.
+        const cell = screen.getByText(description);
+
+        expect(cell).toBeInTheDocument();
+        expect(cell).not.toHaveClass('truncate');
+        expect(cell.closest('.truncate')).toBeNull();
+    });
+
+    /**
+     * The columns hold `partially_paid`; a client reading their own home screen
+     * should not be shown the database beside a figure they owe.
+     */
+    it('reads a stored status as words', () => {
+        render(
+            <ClientHome
+                {...props({
+                    latest_invoice: {
+                        id: 'invoice-1',
+                        invoice_number: 'SYN-123',
+                        status: 'partially_paid',
+                        currency: 'USD',
+                        issue_date: '2026-09-01',
+                        due_date: null,
+                        total_amount: 1000,
+                        paid_amount: 500,
+                        balance_amount: 500,
+                        href: '/invoice',
+                    },
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Partially paid')).toBeInTheDocument();
+        expect(screen.queryByText('partially_paid')).not.toBeInTheDocument();
+    });
+
     it('shows the empty states rather than nothing at all', () => {
         render(<ClientHome {...props()} />);
 

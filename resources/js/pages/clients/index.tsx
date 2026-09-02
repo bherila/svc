@@ -35,7 +35,7 @@ function RetainerMeter({ retainer }: { retainer: RetainerUsage }) {
     const over = retainer.over_minutes > 0;
 
     return (
-        <div className="grid gap-1">
+        <div className="grid grid-cols-1 gap-1">
             <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
                 <span className="font-medium tabular-nums">
                     {formatHours(retainer.used_minutes)} /{' '}
@@ -124,11 +124,11 @@ export default function ClientIndex({
         <>
             <Head title={`${workspace.name} clients`} />
             <main
-                className="mx-auto grid max-w-6xl gap-6 p-6"
+                className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6"
                 data-appearance-bridge
             >
                 <header className="flex flex-wrap items-end justify-between gap-3">
-                    <div className="grid gap-1">
+                    <div className="grid grid-cols-1 gap-1">
                         <Link
                             href="/app"
                             className="text-sm text-muted-foreground underline-offset-4 hover:underline"

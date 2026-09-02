@@ -10,7 +10,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
+import { cn } from '@/lib/utils';
 import type { CompanyAgreement } from '@/types/clients';
 
 type ProjectTask = {
@@ -60,8 +62,10 @@ export default function ClientProjectDetail({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={project.name} />
-            <main className="mx-auto grid max-w-5xl gap-6 p-6">
-                <header className="grid gap-1">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={`/workspaces/${workspace.id}/clients/${company.id}`}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -182,7 +186,7 @@ export default function ClientProjectDetail({
                     <CardHeader>
                         <CardTitle>Agreements scoped to this project</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-2">
+                    <CardContent className="grid grid-cols-1 gap-2">
                         {agreements.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 None. A company-wide agreement may still cover

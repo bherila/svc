@@ -17,6 +17,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 
 type TaskProject = { id: string; name: string };
 
@@ -63,7 +66,9 @@ export default function ClientTasks({
     return (
         <WorkspaceShell activeModule="tasks">
             <Head title={`${company.name} tasks`} />
-            <main className="mx-auto grid max-w-6xl gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <Card>
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -126,7 +131,9 @@ export default function ClientTasks({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Task</TableHead>
+                                            <TableHead className="min-w-64">
+                                                Task
+                                            </TableHead>
                                             <TableHead>Project</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Completed</TableHead>
@@ -140,7 +147,14 @@ export default function ClientTasks({
                                     <TableBody>
                                         {tasks.map((task) => (
                                             <TableRow key={task.id}>
-                                                <TableCell className="font-medium">
+                                                {/*
+                                                 * Wraps, unlike every other
+                                                 * cell here. A title is prose
+                                                 * and ran the table past the
+                                                 * card, taking the columns to
+                                                 * its right off the screen.
+                                                 */}
+                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {task.title}
                                                 </TableCell>
                                                 <TableCell>
@@ -148,7 +162,9 @@ export default function ClientTasks({
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">
-                                                        {task.status}
+                                                        {statusLabel(
+                                                            task.status,
+                                                        )}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { clientOption, workspaceNavigation } from '@/test/workspace-navigation';
 import type { RelyingApplication } from '@/types/auth';
@@ -304,6 +305,66 @@ describe('workspace shell', () => {
         expect(
             screen.queryByRole('link', { name: 'Invoices' }),
         ).not.toBeInTheDocument();
+    });
+
+    /**
+     * The bar and the page have to be drawn in the same column.
+     *
+     * They were not: the bar spanned the viewport while each page centred a
+     * column of whatever width it had picked, so on a wide screen the wordmark
+     * sat hard against the left edge and the account menu hard against the
+     * right, lining up with nothing below them. Asserted against the shared
+     * constant rather than a copied class string, so this fails if the two ever
+     * stop sharing one definition.
+     */
+    it('draws its row in the same column the page uses', () => {
+        navigation = workspaceNavigation();
+
+        render(
+            <WorkspaceShell activeModule="home">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        const row = screen.getByRole('banner').firstElementChild;
+
+        for (const token of SHELL_CONTAINER.split(' ')) {
+            expect(row).toHaveClass(token);
+        }
+    });
+
+    /**
+     * The row must not wrap, and the strip's fallback when squeezed was worse
+     * than wrapping: between the switcher and the account menu it collapsed to
+     * nothing, and a phone had no way to reach Invoices, Time or Tasks at all.
+     */
+    it('offers the same modules through the narrow-width menu', async () => {
+        navigation = workspaceNavigation();
+
+        render(
+            <WorkspaceShell activeModule="time">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        const trigger = screen.getByRole('button', {
+            name: 'Client sections',
+        });
+
+        // The trigger names where the reader is, so the bar still answers
+        // "which section" when the strip is not on screen.
+        expect(trigger).toHaveTextContent('Time');
+
+        await userEvent.click(trigger);
+
+        const menu = await screen.findAllByRole('menuitem');
+
+        expect(menu.map((item) => item.textContent)).toEqual([
+            'Client Home',
+            'Invoices',
+            'Time',
+            'Tasks',
+        ]);
     });
 
     it('renders nothing but the page off a workspace route', () => {
