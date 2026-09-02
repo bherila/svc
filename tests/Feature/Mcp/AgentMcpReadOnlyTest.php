@@ -12,6 +12,9 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Psr\Log\AbstractLogger;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
 final class AgentMcpReadOnlyTest extends TestCase
@@ -197,6 +200,67 @@ final class AgentMcpReadOnlyTest extends TestCase
 
         $this->assertTrue($limited['isError']);
         $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
+    }
+
+    public function test_mcp_capability_audit_event_contains_only_attribution_metadata(): void
+    {
+        $audit = new class extends AbstractLogger
+        {
+            /** @var list<array{level: mixed, message: string, context: array<string, mixed>}> */
+            public array $entries = [];
+
+            /** @param array<string, mixed> $context */
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->entries[] = [
+                    'level' => $level,
+                    'message' => (string) $message,
+                    'context' => $context,
+                ];
+            }
+        };
+        app()->instance(LoggerInterface::class, $audit);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Audited Workspace', 'slug' => 'audited-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'projects.list',
+                'arguments' => ['workspace_id' => $workspace->public_id, 'query' => 'must-not-be-audited'],
+            ],
+        ], $session)->assertOk()->assertJsonPath('result.isError', false);
+
+        $events = array_values(array_filter(
+            $audit->entries,
+            static fn (array $entry): bool => $entry['message'] === 'mcp.capability.executed',
+        ));
+        $this->assertCount(1, $events);
+        $event = $events[0];
+        $this->assertSame('info', $event['level']);
+        $this->assertSame([
+            'request_id',
+            'capability',
+            'rate_limit_bucket',
+            'outcome',
+            'duration_ms',
+            'subject_id',
+            'credential_fingerprint',
+            'client_fingerprint',
+        ], array_keys($event['context']));
+        $this->assertSame('projects.list', $event['context']['capability']);
+        $this->assertSame($user->public_id, $event['context']['subject_id']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $event['context']['credential_fingerprint']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $event['context']['client_fingerprint']);
+        $this->assertNotContains('must-not-be-audited', $event['context']);
+        $this->assertArrayNotHasKey('arguments', $event['context']);
+        $this->assertArrayNotHasKey('result', $event['context']);
+        $this->assertArrayNotHasKey('headers', $event['context']);
     }
 
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void
@@ -389,7 +453,16 @@ final class AgentMcpReadOnlyTest extends TestCase
         ]);
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)->assertOk()->json('result.tools');
-        $byName = collect($tools)->keyBy('name');
+        if (! is_array($tools)) {
+            throw new \LogicException('The MCP tool list must be an array.');
+        }
+        $byName = [];
+        foreach ($tools as $tool) {
+            if (! is_array($tool) || ! isset($tool['name']) || ! is_string($tool['name'])) {
+                throw new \LogicException('Every MCP tool must have a string name.');
+            }
+            $byName[$tool['name']] = $tool;
+        }
 
         $this->assertFalse($byName['time_entries.log']['annotations']['readOnlyHint']);
         $this->assertTrue($byName['time_entries.delete']['annotations']['destructiveHint']);
@@ -439,7 +512,8 @@ final class AgentMcpReadOnlyTest extends TestCase
         return ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC test', 'version' => '1']]];
     }
 
-    /** @param array<string, mixed> $message */
+    /** @param array<string, mixed> $message
+     * @return TestResponse<Response> */
     private function mcp(array $message, ?string $session = null): TestResponse
     {
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
