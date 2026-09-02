@@ -28,6 +28,12 @@ are the executable compatibility contract.
   namespaced by a SHA-256 digest of the bearer credential. A session cannot be
   found from a request using a different bearer credential.
 
+The initialize response advertises only tools, resources, resource templates,
+and prompts that are registered for the authenticated request. It does not
+advertise list-change notifications, resource subscriptions, server logging,
+completions, sampling, roots, or elicitation; direct resource subscription
+requests are rejected as unsupported.
+
 Production deploys the same routes from `main` to web1. The deployment keeps
 OAuth signing keys server-side in `storage/app/private/oauth`; it does not
 seed tenant data.

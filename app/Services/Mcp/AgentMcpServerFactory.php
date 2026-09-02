@@ -34,6 +34,7 @@ use Mcp\Schema\JsonRpc\Request as JsonRpcRequest;
 use Mcp\Schema\Request\GetPromptRequest;
 use Mcp\Schema\Request\ReadResourceRequest;
 use Mcp\Schema\ResourceTemplate;
+use Mcp\Schema\ServerCapabilities;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Handler\Request\CallToolHandler;
@@ -108,6 +109,12 @@ final class AgentMcpServerFactory
         $hasWriteTools = collect($exposedDefinitions)->contains(
             static fn (McpCapabilityDefinition $definition): bool => ! $definition->readOnly,
         );
+        $hasResources = collect($availableCapabilities)->contains(
+            static fn (McpCapabilityDefinition $definition): bool => in_array($definition->kind, [McpCapabilityKind::Resource, McpCapabilityKind::ResourceTemplate], true),
+        );
+        $hasPrompts = collect($availableCapabilities)->contains(
+            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Prompt,
+        );
         $schemaIds = [];
         foreach ($exposedDefinitions as $definition) {
             $schemaIds[$definition->name] = $definition->name;
@@ -124,6 +131,17 @@ final class AgentMcpServerFactory
             ->setInstructions($this->instructions($exposedToolNames, $hasWriteTools));
 
         $builder->setPaginationLimit(100)
+            ->setCapabilities(new ServerCapabilities(
+                tools: $exposedDefinitions !== [],
+                toolsListChanged: false,
+                resources: $hasResources,
+                resourcesSubscribe: false,
+                resourcesListChanged: false,
+                prompts: $hasPrompts,
+                promptsListChanged: false,
+                logging: false,
+                completions: false,
+            ))
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
             ->setLogger($logger)
@@ -146,6 +164,7 @@ final class AgentMcpServerFactory
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
             ))
+            ->addRequestHandler(new McpUnsupportedResourceSubscriptionHandler)
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),

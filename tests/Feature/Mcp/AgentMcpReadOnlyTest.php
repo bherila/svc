@@ -65,7 +65,17 @@ final class AgentMcpReadOnlyTest extends TestCase
             AgentApiScopes::BILLING_READ,
         ]);
 
-        $session = $this->initialize();
+        $initialization = $this->mcp($this->initializeMessage())->assertOk();
+        $capabilities = $initialization->json('result.capabilities');
+        $this->assertIsArray($capabilities);
+        $this->assertArrayHasKey('tools', $capabilities);
+        $this->assertArrayHasKey('resources', $capabilities);
+        $this->assertArrayNotHasKey('subscribe', $capabilities['resources']);
+        $this->assertArrayNotHasKey('listChanged', $capabilities['resources']);
+        $this->assertArrayNotHasKey('logging', $capabilities);
+        $this->assertArrayNotHasKey('completions', $capabilities);
+        $session = $initialization->headers->get('Mcp-Session-Id');
+        $this->assertIsString($session);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
         $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage'], array_column($tools, 'name'));
@@ -104,6 +114,16 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame("svc://workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}", $agreementResource['uri']);
         $this->assertSame('application/json', $agreementResource['mimeType']);
         $this->assertSame($agreement->public_id, json_decode($agreementResource['text'], true, flags: JSON_THROW_ON_ERROR)['data']['id']);
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 24,
+            'method' => 'resources/subscribe',
+            'params' => ['uri' => "svc://workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}"],
+        ], $session)
+            ->assertOk()
+            ->assertJsonPath('error.code', -32601)
+            ->assertJsonPath('error.message', 'Resource subscriptions are not supported.')
+            ->assertJsonMissingPath('result');
 
         $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'projects.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id]]], $session)
             ->assertOk()->json('result');
