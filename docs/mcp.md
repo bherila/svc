@@ -151,6 +151,8 @@ against a supplied short-lived bearer token. The concurrent CI smoke job starts
 Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
 the client through handshake, discovery, and `context.get`. The baseline does
 not yet provide per-capability audit/metrics/rate limits or resource templates.
+Incident containment, OAuth-connection revocation, recovery, and rollback are
+documented in [the MCP operational runbook](mcp-operations.md).
 
 ## #187 disposition and related work
 
