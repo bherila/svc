@@ -43,16 +43,45 @@ final class McpCapabilityRegistryTest extends TestCase
         (new McpCapabilityRegistry)->get('projects.list');
     }
 
-    private function definition(McpCapabilityKind $kind, string $name): McpCapabilityDefinition
+    public function test_it_rejects_definitions_without_required_production_metadata(): void
     {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP feature flag must be declared.');
+
+        (new McpCapabilityRegistry)->register($this->definition(McpCapabilityKind::Tool, 'projects.list', featureFlag: ''));
+    }
+
+    public function test_it_rejects_a_non_closed_root_schema(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP output schema must be a closed object.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::Tool,
+            'projects.list',
+            outputSchema: ['type' => 'object', 'additionalProperties' => true],
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $inputSchema
+     * @param  array<string, mixed>  $outputSchema
+     */
+    private function definition(
+        McpCapabilityKind $kind,
+        string $name,
+        array $inputSchema = ['type' => 'object', 'additionalProperties' => false],
+        array $outputSchema = ['type' => 'object', 'additionalProperties' => false],
+        string $featureFlag = 'mcp-projects-read',
+    ): McpCapabilityDefinition {
         return new McpCapabilityDefinition(
             kind: $kind,
             name: $name,
             title: 'List projects',
             description: 'Lists projects the principal can access.',
             handler: static fn (): array => [],
-            inputSchema: ['type' => 'object', 'additionalProperties' => false],
-            outputSchema: ['type' => 'object', 'additionalProperties' => false],
+            inputSchema: $inputSchema,
+            outputSchema: $outputSchema,
             requiredScopes: ['projects:read'],
             policyAbility: 'viewAny',
             requiresWorkspace: true,
@@ -61,7 +90,8 @@ final class McpCapabilityRegistryTest extends TestCase
             destructive: false,
             rateLimitBucket: 'mcp-read',
             auditClassification: 'read',
-            featureFlag: 'mcp-projects-read',
+            featureFlag: $featureFlag,
+            uri: $kind === McpCapabilityKind::Resource ? $name : null,
         );
     }
 }
