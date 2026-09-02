@@ -27,4 +27,4 @@ done
 
 MCP_SMOKE_URL=http://127.0.0.1:8088/api/v1/mcp \
 MCP_SMOKE_BEARER_TOKEN="$mcp_smoke_token" \
-composer mcp:smoke
+node scripts/mcp-smoke.mjs
