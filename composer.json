@@ -80,7 +80,7 @@
             "@php scripts/registry-manifest.php"
         ],
         "mcp:smoke": [
-            "@php scripts/mcp-smoke.php"
+            "node scripts/mcp-smoke.mjs"
         ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
