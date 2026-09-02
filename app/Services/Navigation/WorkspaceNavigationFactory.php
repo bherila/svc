@@ -96,6 +96,9 @@ final class WorkspaceNavigationFactory
                 // own portal login is not authority over it, so this stays
                 // false for a portal user standing on their own company.
                 manageCurrentClient: $manages && $currentIsOperated,
+                // The same membership `WorkspaceSearch` searches by, so the
+                // trigger appears exactly when the palette can answer.
+                search: $isMember,
             ),
             // No workspace settings screen exists yet. Kept in the contract so
             // the account menu has one authorized place to put it, rather than

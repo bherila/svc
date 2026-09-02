@@ -93,7 +93,8 @@ class WorkspaceNavigationTest extends TestCase
                 ->where('workspaceNavigation.clients.0.destinations.tasks', $base.'/tasks')
                 // No expense record exists yet (#75). Null hides the tab rather
                 // than offering a link to nothing.
-                ->where('workspaceNavigation.clients.0.destinations.expenses', null));
+                ->where('workspaceNavigation.clients.0.destinations.expenses', null)
+                ->where('workspaceNavigation.permissions.search', true));
     }
 
     /**
@@ -120,7 +121,11 @@ class WorkspaceNavigationTest extends TestCase
             ->where('workspaceNavigation.clients.0.destinations.home', "/portal/{$company->public_id}")
             ->where('workspaceNavigation.permissions.manage_workspace', false)
             ->where('workspaceNavigation.permissions.create_client', false)
-            ->where('workspaceNavigation.permissions.manage_current_client', false));
+            ->where('workspaceNavigation.permissions.manage_current_client', false)
+            // The palette searches the workspaces this person is a member of,
+            // and a portal user is a member of none - so the trigger would have
+            // promised a search that always came back empty.
+            ->where('workspaceNavigation.permissions.search', false));
 
         // No operator URL anywhere in the payload. `workspaces` is the first
         // segment of every one of them, and no key in the navigation contract

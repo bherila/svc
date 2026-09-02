@@ -93,7 +93,7 @@ export function WorkspaceNavbar({
                 )}
 
                 <div className="ms-auto flex shrink-0 items-center gap-1">
-                    <CommandPaletteTrigger />
+                    {navigation.permissions.search && <CommandPaletteTrigger />}
                     <AppearanceSelector />
                     <AccountMenu
                         workspaceSettingsHref={
