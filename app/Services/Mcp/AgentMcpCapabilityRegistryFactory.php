@@ -17,7 +17,7 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -28,6 +28,7 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->billingScheduleList($schedules));
         $registry->register($this->billingScheduleGet($schedules));
+        $registry->register($this->capacityLedgerGet($capacityLedger));
 
         return $registry;
     }
@@ -299,5 +300,73 @@ final class AgentMcpCapabilityRegistryFactory
             featureFlag: 'mcp.read.context',
             uri: 'svc://context',
         );
+    }
+
+    private function capacityLedgerGet(AgentMcpCapacityLedgerTools $tools): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Tool,
+            name: 'capacity_ledger.get',
+            title: 'Get capacity ledger',
+            description: 'Get a bounded trailing window of the computed agreement capacity ledger.',
+            handler: [$tools, 'get'],
+            inputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['workspace_id', 'agreement_id'],
+                'properties' => [
+                    'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+                    'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+                    'months' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 60, 'default' => 12],
+                ],
+            ],
+            outputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['data'],
+                'properties' => [
+                    'data' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'required' => ['agreement_id', 'through', 'months'],
+                        'properties' => [
+                            'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+                            'through' => ['type' => 'string', 'format' => 'date'],
+                            'months' => ['type' => 'array', 'maxItems' => 60, 'items' => $this->capacityLedgerMonth()],
+                        ],
+                    ],
+                ],
+            ],
+            requiredScopes: ['billing:read'],
+            policyAbility: 'AgentAccess::isWorkspaceManager',
+            requiresWorkspace: true,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.capacity_ledger',
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function capacityLedgerMonth(): array
+    {
+        $numbers = [
+            'retainer_hours', 'hours_worked', 'opening_retainer_hours', 'opening_rollover_hours',
+            'opening_expired_hours', 'opening_available_hours', 'hours_used_from_retainer',
+            'hours_used_from_rollover', 'unused_hours', 'excess_hours', 'negative_hours',
+            'remaining_rollover_hours',
+        ];
+        $properties = [
+            'period' => ['type' => 'string', 'pattern' => '^\\d{4}-\\d{2}$'],
+            'cycle_start' => ['type' => ['string', 'null'], 'format' => 'date'],
+            'bill_excess_immediately' => ['type' => 'boolean'],
+        ];
+        foreach ($numbers as $name) {
+            $properties[$name] = ['type' => 'number'];
+        }
+
+        return ['type' => 'object', 'additionalProperties' => false, 'required' => array_keys($properties), 'properties' => $properties];
     }
 }

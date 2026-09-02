@@ -59,7 +59,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -89,6 +89,12 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertOk()->json('result');
         $this->assertFalse($scheduleResponse['isError']);
         $this->assertSame($agreement->public_id, $scheduleResponse['structuredContent']['data']['agreement_id']);
+
+        $ledgerResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 6, 'method' => 'tools/call', 'params' => ['name' => 'capacity_ledger.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'months' => 1]]], $session)
+            ->assertOk()->json('result');
+        $this->assertFalse($ledgerResponse['isError']);
+        $this->assertSame($agreement->public_id, $ledgerResponse['structuredContent']['data']['agreement_id']);
+        $this->assertLessThanOrEqual(1, count($ledgerResponse['structuredContent']['data']['months']));
     }
 
     public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void

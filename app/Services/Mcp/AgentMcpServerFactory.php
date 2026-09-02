@@ -4,6 +4,7 @@ namespace App\Services\Mcp;
 
 use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
+use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpPrincipalResolver;
@@ -36,6 +37,7 @@ final class AgentMcpServerFactory
         private readonly AgentReadService $readService,
         private readonly AgentAgreementReadService $agreementReadService,
         private readonly AgentBillingScheduleReadService $billingScheduleReadService,
+        private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpPrincipalResolver $principals,
         private readonly AgentMcpWriteTools $writes,
@@ -56,8 +58,9 @@ final class AgentMcpServerFactory
         $contextResource = new AgentMcpContextResource($this->readService, $context);
         $agreements = new AgentMcpAgreementTools($this->agreementReadService, $this->accounts, $context);
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
+        $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $availableCapabilities = array_values(array_filter(
-            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $this->writes)->all(),
+            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $this->writes)->all(),
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(
                 $context,
                 $definition->requiredScopes,

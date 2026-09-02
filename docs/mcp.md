@@ -71,7 +71,7 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `context.get`, `operations.summary`, `projects.list`, `projects.get`,
 `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`, and
 `invoices.get`, `agreements.list`, `agreements.get`,
-`billing_schedules.list`, and `billing_schedules.get`.
+`billing_schedules.list`, `billing_schedules.get`, and `capacity_ledger.get`.
 
 Agreement tools require `billing:read` and an SVC workspace-manager role.
 They return only the existing directory's allowlisted, derived agreement DTO;
@@ -136,7 +136,7 @@ workflow remains unresolved:
 | Proposal | Current disposition |
 | --- | --- |
 | Agreement list/get with derived terms | Implemented; manager-only `agreements.list` / `agreements.get` |
-| Signed monthly capacity ledger | Accepted; absent from the baseline MCP |
+| Signed monthly capacity ledger | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder` |
 | Duplicate-time diagnostics | Accepted; absent from the baseline MCP |
 | Read-only `svc:billing:audit-*` operations | Accepted; absent from the baseline MCP |
 | Billing-schedule visibility | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get` |
