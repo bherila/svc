@@ -364,7 +364,7 @@ export default function ClientInvoiceDetail({
                                                     {line.description}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {line.type}
+                                                    {statusLabel(line.type)}
                                                 </TableCell>
                                                 <TableCell>
                                                     {line.line_date ?? '—'}
