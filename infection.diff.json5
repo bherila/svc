@@ -38,6 +38,12 @@
                 // strict lane will not accept the sum's `float|int|string`
                 // without the cast.
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
+                // The contract the three already-billed sums read (#144). The
+                // column is `numeric-string|null`, so the strict lane refuses
+                // the return without a cast, while the declared `float` return
+                // type coerces the same value with or without it. Verified by
+                // removing the cast: PHPStan fails, every test still passes.
+                "App\\Models\\ClientInvoice::billedOverageHoursOrFail",
             ],
         },
         // `(string) $expected` and `(string) $stored` in the restore
