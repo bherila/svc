@@ -140,6 +140,11 @@ export function CommandPalette() {
     const [open, setOpen] = useState(false);
     const [term, setTerm] = useState('');
     const [results, setResults] = useState<SearchResult[]>([]);
+    // Whether a question is outstanding - from the keystroke, not from the
+    // request. `isSearching` used to be set when the fetch went out, which
+    // left a 180 ms window on the first keystroke where the term was
+    // non-blank, no results had arrived and nothing was marked in flight: the
+    // palette said "Nothing matched." about a search it had not yet made.
     const [isSearching, setIsSearching] = useState(false);
     // One place closes the palette, and closing is what forgets the search.
     // Done here rather than in an effect watching `open` so that reopening
@@ -187,9 +192,6 @@ export function CommandPalette() {
         const id = ++requestId.current;
         const controller = new AbortController();
         const timer = window.setTimeout(() => {
-            // Inside the debounce, not before it: "Searching…" should describe
-            // a request that exists, not the pause before one is made.
-            setIsSearching(true);
             fetch(`/search?q=${encodeURIComponent(query)}`, {
                 headers: { Accept: 'application/json' },
                 signal: controller.signal,
@@ -255,7 +257,13 @@ export function CommandPalette() {
                     if (next.trim() === '') {
                         setResults([]);
                         setIsSearching(false);
+
+                        return;
                     }
+
+                    // Outstanding from here, through the debounce and the
+                    // request, until an answer for this term lands.
+                    setIsSearching(true);
                 }}
             />
             <CommandList>

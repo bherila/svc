@@ -8,8 +8,11 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Search\WorkspaceSearch;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -143,6 +146,63 @@ class SearchTest extends TestCase
     }
 
     /**
+     * Reaching a client is not reaching all of its invoices.
+     *
+     * `BillingRecordAccess::canViewInvoice()` is narrower than company
+     * reachability: an invoice needs lineage inside what the viewer holds, and
+     * one with no project lineage at all is refused outright. Scoping the
+     * search on company reachability alone therefore surfaced invoice numbers
+     * for records the reader is refused on the screen the row links to - which
+     * discloses that the record exists and what it is called.
+     */
+    public function test_a_scoped_member_does_not_find_invoices_they_cannot_open(): void
+    {
+        $member = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Billing', 'synthetic-billing', $member, 'member');
+        $company = $this->company($workspace, 'Ledger Synthetic Client', 'ledger-client');
+
+        $mine = $this->project($workspace, $company, 'Ledger Synthetic Mine');
+        $workspace->projectMemberships()->create([
+            'client_project_id' => $mine->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+        $other = $this->project($workspace, $company, 'Ledger Synthetic Other');
+
+        // Same client, so company reachability lets all three through; only the
+        // invoice rule tells them apart.
+        $reachable = $this->invoice($workspace, $company, 'LEDGER-MINE-001');
+        $this->line($workspace, $reachable, $mine);
+        $foreign = $this->invoice($workspace, $company, 'LEDGER-OTHER-001');
+        $this->line($workspace, $foreign, $other);
+        $this->invoice($workspace, $company, 'LEDGER-NOLINEAGE-001');
+
+        $body = (string) $this->actingAs($member)->getJson('/search?q=LEDGER-')->assertOk()->getContent();
+
+        $this->assertStringContainsString('LEDGER-MINE-001', $body, 'The control row');
+        $this->assertStringNotContainsString('LEDGER-OTHER-001', $body, 'Attributed to a project this member does not hold');
+        $this->assertStringNotContainsString('LEDGER-NOLINEAGE-001', $body, 'No lineage at all is refused, not permitted');
+    }
+
+    /**
+     * Cross-tenant task lineage is not asserted here, and that is deliberate.
+     *
+     * The defect Codex found was real: a clause of the form "in a workspace I
+     * manage OR naming a project I belong to" never constrains the row's own
+     * `workspace_id`, so another tenant's task naming this viewer's project
+     * would have matched. The fix was structural - every query in
+     * {@see WorkspaceSearch} is now scoped to one
+     * workspace, which makes the case unrepresentable rather than guarded.
+     *
+     * It has no test because the row cannot be built: #113's composite foreign
+     * key refuses it, and `RefreshDatabase` runs inside a transaction where
+     * SQLite ignores the pragma that would disable the check. A test that
+     * cannot construct its own fixture is not a guard, and writing one that
+     * quietly asserts something easier is how a suite comes to look complete
+     * while proving less than it claims.
+     */
+
+    /**
      * A portal user has client company memberships and no workspace
      * membership. They reach the palette's endpoint like any signed-in person
      * and must get nothing from it - the palette is operator navigation.
@@ -264,6 +324,22 @@ class SearchTest extends TestCase
             'client_project_id' => $project->id,
             'title' => $title,
             'status' => 'open',
+        ]);
+    }
+
+    private function line(Workspace $workspace, ClientInvoice $invoice, ClientProject $project): void
+    {
+        DB::table('client_invoice_lines')->insert([
+            'public_id' => (string) Str::uuid(),
+            'workspace_id' => $workspace->id,
+            'client_invoice_id' => $invoice->id,
+            'client_project_id' => $project->id,
+            'type' => 'retainer',
+            'description' => 'Synthetic line',
+            'quantity' => 1,
+            'unit_amount' => 0,
+            'total_amount' => 0,
+            'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { CommandPaletteTrigger } from '@/components/command-palette';
 import { todayIn } from '@/lib/time';
 
 type TimeEntry = {
@@ -621,6 +622,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                             </h1>
                         </div>
                         <div className="flex items-center gap-4">
+                            <CommandPaletteTrigger />
                             <AppearanceSelector />
                             <Link
                                 href={`/workspaces/${workspace.id}/clients`}
