@@ -61,6 +61,6 @@ Watch request volume, 401/403/429 and safe MCP error categories, handler
 duration, active-session/cache failures, OAuth revocation failures, and the
 per-capability feature-flag state. Alerts must use capability and request IDs,
 not tool arguments or results. The current application has global route
-throttling and capability kill switches; per-capability metrics and throttles
-are still tracked as hardening work and must be validated before general
-availability.
+throttling, credential-bound per-capability `mcp-read`/`mcp-write` buckets,
+and capability kill switches. Per-capability metrics remain hardening work and
+must be validated before general availability.
