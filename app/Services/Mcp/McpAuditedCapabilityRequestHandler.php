@@ -25,6 +25,7 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
     public function __construct(
         private RequestHandlerInterface $inner,
         private McpCapabilityRateLimiter $limiter,
+        private McpCapabilityResultLimiter $resultLimiter,
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByCapability,
@@ -56,6 +57,18 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
         }
         $started = hrtime(true);
         $response = $this->inner->handle($request, $session);
+        if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
+            $this->auditor->record(
+                $this->context,
+                $capability,
+                $metadata['rate_limit_bucket'],
+                $metadata['audit_classification'],
+                'result_too_large',
+                (int) ((hrtime(true) - $started) / 1_000_000),
+            );
+
+            return Error::forServerError('This operation produced an unexpectedly large response.', $request->getId());
+        }
         $this->auditor->record(
             $this->context,
             $capability,

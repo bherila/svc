@@ -20,8 +20,9 @@ are the executable compatibility contract.
   sampling, roots, or elicitation endpoint configured by SVC.
 - `AgentMcpController` runs the bridge's `StreamableHttpResponder` with DNS
   rebinding and protocol-version middleware. Maximum request size is
-  `AGENT_API_MCP_MAX_BODY_BYTES` (262144 by default). Responses are
-  `private, no-store`.
+  `AGENT_API_MCP_MAX_BODY_BYTES` (262144 by default); capability results are
+  bounded after serialization by `AGENT_API_MCP_MAX_RESULT_BYTES` (also 262144
+  by default). Responses are `private, no-store`.
 - Sessions use the Laravel cache via `Psr16SessionStore`, expire after
   `AGENT_API_MCP_SESSION_TTL_SECONDS` (1800 seconds by default), and are
   namespaced by a SHA-256 digest of the bearer credential. A session cannot be

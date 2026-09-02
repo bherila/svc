@@ -26,6 +26,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
     public function __construct(
         private RequestHandlerInterface $inner,
         private McpCapabilityRateLimiter $limiter,
+        private McpCapabilityResultLimiter $resultLimiter,
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByTool,
@@ -66,6 +67,14 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         }
         $started = hrtime(true);
         $response = $this->inner->handle($request, $session);
+        if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
+            $response = new Response($request->getId(), CallToolResult::error([
+                new TextContent('This operation produced an unexpectedly large response.'),
+            ]));
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'result_too_large', (int) ((hrtime(true) - $started) / 1_000_000));
+
+            return $response;
+        }
         $outcome = $response instanceof Error
             ? 'error'
             : ($response->result->isError ? 'rejected' : 'success');

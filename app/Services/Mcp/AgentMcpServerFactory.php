@@ -75,6 +75,7 @@ final class AgentMcpServerFactory
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $writes = $this->writes->forContext($context);
+        $resultLimiter = new McpCapabilityResultLimiter;
         $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
         $availableCapabilities = array_values(array_filter(
             $definitions,
@@ -132,6 +133,7 @@ final class AgentMcpServerFactory
                     'The SVC API returned a response that failed its output contract.',
                 ),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
+                $resultLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
@@ -139,6 +141,7 @@ final class AgentMcpServerFactory
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
+                $resultLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
@@ -153,6 +156,7 @@ final class AgentMcpServerFactory
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
+                $resultLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),

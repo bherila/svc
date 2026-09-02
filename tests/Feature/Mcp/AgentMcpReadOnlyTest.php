@@ -268,6 +268,45 @@ final class AgentMcpReadOnlyTest extends TestCase
         }
     }
 
+    public function test_mcp_capability_results_are_bounded_for_tools_resources_and_prompts(): void
+    {
+        config([
+            'agent_api.writes_enabled' => true,
+            'agent_api.mcp_max_result_bytes' => 1,
+        ]);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Result Bound Workspace', 'slug' => 'result-bound-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::IDENTITY_READ,
+            AgentApiScopes::PROJECTS_READ,
+            AgentApiScopes::TIME_READ,
+            AgentApiScopes::TIME_WRITE,
+        ]);
+        $session = $this->initialize();
+
+        $tool = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => $workspace->public_id]],
+        ], $session)->assertOk()->json('result');
+        $this->assertTrue($tool['isError']);
+        $this->assertSame('This operation produced an unexpectedly large response.', $tool['content'][0]['text']);
+
+        foreach ([
+            ['method' => 'resources/read', 'params' => ['uri' => 'svc://context']],
+            ['method' => 'prompts/get', 'params' => ['name' => 'log-time-across-projects', 'arguments' => []]],
+        ] as $index => $message) {
+            $this->mcp(['jsonrpc' => '2.0', 'id' => $index + 3, ...$message], $session)
+                ->assertOk()
+                ->assertJsonPath('error.code', -32000)
+                ->assertJsonPath('error.message', 'This operation produced an unexpectedly large response.')
+                ->assertJsonMissingPath('result');
+        }
+    }
+
     public function test_mcp_time_entry_collection_is_bounded_and_cursor_continuable_at_high_volume(): void
     {
         $user = User::factory()->create();
