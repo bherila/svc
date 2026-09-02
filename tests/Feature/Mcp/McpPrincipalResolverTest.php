@@ -33,15 +33,16 @@ final class McpPrincipalResolverTest extends TestCase
         $this->assertSame(['mcp:use', 'billing:read'], $resolved->scopes);
     }
 
-    public function test_it_rejects_expired_revoked_or_wrong_audience_credentials(): void
+    public function test_it_rejects_expired_revoked_wrong_audience_or_wrong_client_credentials(): void
     {
         foreach ([
-            ['expires_at' => now()->subSecond()],
-            ['revoked' => true],
-            ['resource_uri' => 'https://other.example/api/v1'],
-        ] as $overrides) {
+            [['expires_at' => now()->subSecond()], null],
+            [['revoked' => true], null],
+            [['resource_uri' => 'https://other.example/api/v1'], null],
+            [[], 'different-client'],
+        ] as [$overrides, $authenticatedClientId]) {
             $principal = AgentPrincipal::query()->findOrFail(User::factory()->create()->id);
-            $principal->withAccessToken($this->token($principal, $overrides));
+            $principal->withAccessToken($this->token($principal, $overrides, $authenticatedClientId));
             $request = Request::create('/api/v1/mcp', 'POST');
             $request->setUserResolver(fn (): AgentPrincipal => $principal);
 
@@ -54,8 +55,11 @@ final class McpPrincipalResolverTest extends TestCase
         }
     }
 
-    /** @param array<string, mixed> $overrides */
-    private function token(AgentPrincipal $principal, array $overrides = []): AccessToken
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return AccessToken<mixed>
+     */
+    private function token(AgentPrincipal $principal, array $overrides = [], ?string $authenticatedClientId = null): AccessToken
     {
         $token = new Token($overrides + [
             'id' => 'credential-'.Str::uuid(),
@@ -70,7 +74,7 @@ final class McpPrincipalResolverTest extends TestCase
 
         return new AccessToken([
             'oauth_access_token_id' => $token->id,
-            'oauth_client_id' => $token->client_id,
+            'oauth_client_id' => $authenticatedClientId ?? $token->client_id,
             'oauth_scopes' => $token->scopes,
         ]);
     }

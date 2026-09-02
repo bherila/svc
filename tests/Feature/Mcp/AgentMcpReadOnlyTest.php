@@ -12,6 +12,7 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Laravel\Passport\Token;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
@@ -388,6 +389,21 @@ final class AgentMcpReadOnlyTest extends TestCase
         ], $session)
             ->assertNotFound()
             ->assertJsonPath('error.message', 'Session not found or has expired.');
+    }
+
+    public function test_mcp_session_rechecks_credential_revocation_before_execution(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
+        $session = $this->initialize();
+        Token::query()->where('user_id', $user->id)->update(['revoked' => true]);
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/list',
+            'params' => [],
+        ], $session)->assertUnauthorized();
     }
 
     public function test_time_write_tools_are_absent_when_the_time_cutoff_is_disabled(): void
