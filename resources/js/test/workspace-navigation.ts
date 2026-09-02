@@ -45,6 +45,7 @@ export function workspaceNavigation(
             manage_workspace: true,
             create_client: true,
             manage_current_client: true,
+            search: true,
         },
         workspace_settings_href: null,
         ...overrides,

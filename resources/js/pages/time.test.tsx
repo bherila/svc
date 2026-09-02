@@ -8,6 +8,7 @@ import { workspaceNavigation } from '@/test/workspace-navigation';
 import type { WorkspaceNavigation } from '@/types/navigation';
 import type {
     CompanyOption,
+    Month,
     TimeEntry,
     TimeSheetProps,
 } from '@/types/time-sheet';
@@ -78,12 +79,41 @@ function company(canLogTime = true): CompanyOption {
     };
 }
 
+function quietMonth(key: string, label: string, unusedHours = 0): Month {
+    return {
+        key,
+        label,
+        total_minutes: 0,
+        billable_minutes: 0,
+        deferred_minutes: 0,
+        capacity:
+            unusedHours === 0
+                ? []
+                : [
+                      {
+                          agreement: 'Synthetic Monthly Retainer',
+                          cycle_start: `${key}-01`,
+                          available_hours: unusedHours,
+                          worked_hours: 0,
+                          unused_hours: unusedHours,
+                          over_hours: 0,
+                          carried_deficit_hours: 0,
+                          remaining_rollover: 0,
+                          pending_minutes: 0,
+                      },
+                  ],
+        entries: [],
+    };
+}
+
 function props({
     canLogTime = true,
     timeEntry = entry(),
+    months,
 }: {
     canLogTime?: boolean;
     timeEntry?: TimeEntry;
+    months?: Month[];
 } = {}): TimeSheetProps {
     return {
         workspace: {
@@ -95,7 +125,7 @@ function props({
         approval_limit: 50,
         filters: { company_id: 'company-1' },
         companies: [company(canLogTime)],
-        months: [
+        months: months ?? [
             {
                 key: '2026-08',
                 label: 'August 2026',
@@ -254,5 +284,102 @@ describe('time sheet controls', () => {
         expect(
             screen.queryByRole('button', { name: 'Log time' }),
         ).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * The sheet's window is twelve months, and a client worked for two of them
+ * produced ten full cards - heading, capacity strip, empty table - to scroll
+ * past before reaching anything worth reading.
+ */
+describe('months with nothing logged', () => {
+    it('folds a run of empty months into one block of rows', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        quietMonth('2026-07', 'July 2026', 30),
+                        quietMonth('2026-06', 'June 2026', 30),
+                    ],
+                })}
+            />,
+        );
+
+        const quiet = screen.getByRole('region', {
+            name: 'Months with no time logged',
+        });
+
+        expect(within(quiet).getAllByRole('listitem')).toHaveLength(2);
+        expect(within(quiet).getByText('July 2026')).toBeInTheDocument();
+
+        // No table, so no column headings to read past.
+        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+    });
+
+    /**
+     * Folded, never dropped. "Did I log anything in April" is a question this
+     * screen should answer, and a month that has silently disappeared cannot.
+     */
+    it('keeps an empty month in its place between two worked ones', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        {
+                            key: '2026-08',
+                            label: 'August 2026',
+                            total_minutes: 60,
+                            billable_minutes: 60,
+                            deferred_minutes: 0,
+                            capacity: [],
+                            entries: [entry()],
+                        },
+                        quietMonth('2026-07', 'July 2026'),
+                        {
+                            key: '2026-06',
+                            label: 'June 2026',
+                            total_minutes: 60,
+                            billable_minutes: 60,
+                            deferred_minutes: 0,
+                            capacity: [],
+                            entries: [entry({ id: 'entry-2' })],
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        const labels = screen
+            .getAllByText(/2026$/)
+            .map((element) => element.textContent);
+
+        expect(labels).toEqual(['August 2026', 'July 2026', 'June 2026']);
+    });
+
+    /**
+     * The one thing an empty month still says: a retainer that sold thirty
+     * hours and drew none is a fact about the engagement, not an absence of
+     * one.
+     */
+    it('reports the retainer an empty month left unused', () => {
+        render(
+            <TimeSheet
+                {...props({ months: [quietMonth('2026-07', 'July 2026', 30)] })}
+            />,
+        );
+
+        expect(
+            screen.getByText(/Nothing logged · 30\.00 h unused/),
+        ).toBeInTheDocument();
+    });
+
+    it('says only that nothing was logged when there is no retainer', () => {
+        render(
+            <TimeSheet
+                {...props({ months: [quietMonth('2026-07', 'July 2026')] })}
+            />,
+        );
+
+        expect(screen.getByText('Nothing logged')).toBeInTheDocument();
     });
 });

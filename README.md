@@ -20,7 +20,8 @@ The current alpha establishes:
   ledgers, and source-change detection;
 - an explicit product and integration boundary.
 
-See [the architecture](docs/architecture.md), [the product roadmap](docs/onboarding-import-plan.md),
+See [the architecture](docs/architecture.md), [the interface guide](docs/ui.md),
+[the product roadmap](docs/onboarding-import-plan.md),
 [the private file storage plan](docs/file-storage-plan.md), and
 [the external data import contract](docs/external-data-import.md).
 

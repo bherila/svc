@@ -47,7 +47,7 @@ final class WorkspaceNavigation
      *     workspace_id: string,
      *     current_client_id: string|null,
      *     clients: list<array{id: string, name: string, destinations: array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}}>,
-     *     permissions: array{manage_workspace: bool, create_client: bool, manage_current_client: bool},
+     *     permissions: array{manage_workspace: bool, create_client: bool, manage_current_client: bool, search: bool},
      *     workspace_settings_href: string|null,
      * }
      */

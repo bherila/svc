@@ -47,6 +47,13 @@ export type WorkspaceNavigation = {
         manage_workspace: boolean;
         create_client: boolean;
         manage_current_client: boolean;
+        /**
+         * Whether the command palette has anything to find. Search covers the
+         * workspaces this person is a member of, and a portal user is a member
+         * of none - so for them the trigger was a control that could never
+         * return a result.
+         */
+        search: boolean;
     };
     workspace_settings_href: string | null;
 };

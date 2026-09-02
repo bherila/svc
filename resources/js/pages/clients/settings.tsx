@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
 
@@ -167,7 +168,13 @@ function CompanyForm({
                 });
             }}
         >
-            <div className="grid grid-cols-1 gap-2">
+            {/*
+             * Sized to what goes in them. A name and an email stretched the
+             * full width of the page, which reads as a form nobody finished
+             * laying out - and makes the eye travel the whole line to check a
+             * value twenty characters long.
+             */}
+            <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-name">Name</Label>
                 <Input
                     id="company-name"
@@ -183,7 +190,7 @@ function CompanyForm({
                 )}
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-billing-email">Billing email</Label>
                 <Input
                     id="company-billing-email"
@@ -264,7 +271,7 @@ function ProjectForm({
                     }
                     className="max-w-xs"
                 />
-                <Badge variant="outline">{project.status}</Badge>
+                <Badge variant="outline">{statusLabel(project.status)}</Badge>
             </div>
 
             <Textarea
@@ -362,7 +369,7 @@ function NewProjectForm({
                 );
             }}
         >
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="new-project-name">New project</Label>
                 <Input
                     id="new-project-name"

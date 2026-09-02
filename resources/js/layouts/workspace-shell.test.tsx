@@ -367,6 +367,41 @@ describe('workspace shell', () => {
         ]);
     });
 
+    /**
+     * A control that can never answer is worse than a missing one: the palette
+     * searches the workspaces this person is a member of, and a portal user is
+     * deliberately a member of none, so on the client's own screen the trigger
+     * promised a search that would always come back empty.
+     */
+    it('offers search only to a viewer whose search can return something', () => {
+        navigation = workspaceNavigation({
+            permissions: {
+                manage_workspace: false,
+                create_client: false,
+                manage_current_client: false,
+                search: false,
+            },
+        });
+
+        render(
+            <WorkspaceShell activeModule="home">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        expect(
+            screen.queryByRole('button', { name: /Search/ }),
+        ).not.toBeInTheDocument();
+
+        // The controls that do mean something for every viewer stay.
+        expect(
+            screen.getByRole('combobox', { name: 'Appearance' }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('button', { name: 'Account and settings' }),
+        ).toBeInTheDocument();
+    });
+
     it('renders nothing but the page off a workspace route', () => {
         navigation = null;
 
@@ -415,6 +450,7 @@ describe('workspace shell', () => {
                 manage_workspace: false,
                 create_client: false,
                 manage_current_client: false,
+                search: true,
             },
         });
 
@@ -442,6 +478,7 @@ describe('workspace shell', () => {
                 manage_workspace: false,
                 create_client: false,
                 manage_current_client: false,
+                search: true,
             },
         });
 

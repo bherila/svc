@@ -366,27 +366,34 @@ export default function TimeSheet({
                     )}
 
                     <div className="mt-8 grid grid-cols-1 gap-8">
-                        {months.map((month) => (
-                            <MonthCard
-                                key={month.key}
-                                month={month}
-                                workspaceId={workspace.id}
-                                selected={selected}
-                                onToggle={(id) =>
-                                    setSelected((current) =>
-                                        current.includes(id)
-                                            ? current.filter(
-                                                  (value) => value !== id,
-                                              )
-                                            : [...current, id],
-                                    )
-                                }
-                                onEdit={openDialog}
-                                onDelete={setPendingDelete}
-                                onApprove={(entry) => approve([entry])}
-                                approving={approving}
-                            />
-                        ))}
+                        {groupMonths(months).map((group) =>
+                            group.kind === 'quiet' ? (
+                                <QuietMonths
+                                    key={group.key}
+                                    months={group.months}
+                                />
+                            ) : (
+                                <MonthCard
+                                    key={group.month.key}
+                                    month={group.month}
+                                    workspaceId={workspace.id}
+                                    selected={selected}
+                                    onToggle={(id) =>
+                                        setSelected((current) =>
+                                            current.includes(id)
+                                                ? current.filter(
+                                                      (value) => value !== id,
+                                                  )
+                                                : [...current, id],
+                                        )
+                                    }
+                                    onEdit={openDialog}
+                                    onDelete={setPendingDelete}
+                                    onApprove={(entry) => approve([entry])}
+                                    approving={approving}
+                                />
+                            ),
+                        )}
                     </div>
                 </div>
             </div>
@@ -445,6 +452,87 @@ export default function TimeSheet({
             </AlertDialog>
         </WorkspaceShell>
     );
+}
+
+/**
+ * A run of months nobody logged against, as one quiet block.
+ *
+ * The sheet's window is twelve months, and a client worked for two of them
+ * produced ten full cards - each with a heading, a capacity strip and an empty
+ * table - to scroll past before reaching anything. The window is still twelve
+ * months on purpose: "did I log anything in April" is a question this screen
+ * should answer, and a month that has silently dropped out cannot answer it.
+ * So an empty month keeps its row and loses its card.
+ *
+ * The unused figure comes along because it is the one thing an empty month
+ * still says: a retainer that sold thirty hours and drew none is a fact about
+ * the engagement, not an absence of one.
+ */
+function QuietMonths({ months }: { months: Month[] }) {
+    return (
+        <section
+            aria-label="Months with no time logged"
+            className="rounded-xl border border-border"
+        >
+            <ul className="divide-y divide-border">
+                {months.map((month) => {
+                    const unused = month.capacity.reduce(
+                        (total, row) => total + row.unused_hours,
+                        0,
+                    );
+
+                    return (
+                        <li
+                            key={month.key}
+                            className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-sm"
+                        >
+                            <span className="font-medium">{month.label}</span>
+                            <span className="text-muted-foreground tabular-nums">
+                                Nothing logged
+                                {month.capacity.length > 0 &&
+                                    ` · ${formatDecimalHours(unused)} h unused`}
+                            </span>
+                        </li>
+                    );
+                })}
+            </ul>
+        </section>
+    );
+}
+
+/**
+ * The months in order, with runs of empty ones folded together.
+ *
+ * Folded rather than filtered, and folded in place: an empty March between two
+ * worked months is still March, and moving it - or dropping it - would change
+ * what the sheet says about the year.
+ */
+type MonthGroup =
+    | { kind: 'logged'; month: Month }
+    | { kind: 'quiet'; key: string; months: Month[] };
+
+function groupMonths(months: Month[]): MonthGroup[] {
+    const groups: MonthGroup[] = [];
+
+    for (const month of months) {
+        if (month.entries.length > 0) {
+            groups.push({ kind: 'logged', month });
+
+            continue;
+        }
+
+        const last = groups.at(-1);
+
+        if (last?.kind === 'quiet') {
+            last.months.push(month);
+
+            continue;
+        }
+
+        groups.push({ kind: 'quiet', key: month.key, months: [month] });
+    }
+
+    return groups;
 }
 
 function MonthCard({

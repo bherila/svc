@@ -16,10 +16,20 @@ final class WorkspaceNavigationPermissions
         public readonly bool $manageWorkspace,
         public readonly bool $createClient,
         public readonly bool $manageCurrentClient,
+        /**
+         * Whether the command palette has anything to find.
+         *
+         * `WorkspaceSearch` searches the workspaces this person is a member of,
+         * and a portal user is deliberately a member of none - so the palette
+         * answers them with an empty list, correctly and always. Offering the
+         * trigger anyway put a control on the client's own screen that could
+         * never return a result.
+         */
+        public readonly bool $search,
     ) {}
 
     /**
-     * @return array{manage_workspace: bool, create_client: bool, manage_current_client: bool}
+     * @return array{manage_workspace: bool, create_client: bool, manage_current_client: bool, search: bool}
      */
     public function toArray(): array
     {
@@ -27,6 +37,7 @@ final class WorkspaceNavigationPermissions
             'manage_workspace' => $this->manageWorkspace,
             'create_client' => $this->createClient,
             'manage_current_client' => $this->manageCurrentClient,
+            'search' => $this->search,
         ];
     }
 }
