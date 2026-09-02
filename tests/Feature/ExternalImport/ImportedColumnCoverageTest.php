@@ -148,6 +148,30 @@ final class ImportedColumnCoverageTest extends TestCase
         return [];
     }
 
+    /**
+     * The least a source row must state for the importer to map it at all.
+     *
+     * This walk feeds an empty row to every target type, because what it is
+     * measuring is which destination columns the mapping writes - not what it
+     * writes into them. That works right up until a mapping refuses rather than
+     * defaults, and one does: an agreement with no `active_date` is rejected
+     * outright since #147, because every date the importer could substitute
+     * writes a different billing history.
+     *
+     * So the row is the minimum, not a fixture. Anything added here is a claim
+     * that the importer refuses without it, and the value itself must not matter
+     * to what this test asserts.
+     *
+     * @return array<string, mixed>
+     */
+    private static function minimumSourceRow(string $targetType): array
+    {
+        return match ($targetType) {
+            'agreement' => ['active_date' => '2024-01-01'],
+            default => [],
+        };
+    }
+
     public function test_every_imported_table_has_every_column_written(): void
     {
         $service = app(ExternalImportService::class);
@@ -169,7 +193,8 @@ final class ImportedColumnCoverageTest extends TestCase
 
             /** @var array<string, mixed> $mapped */
             $mapped = $attributes->invokeArgs($service, [
-                [], (string) $spec['target_type'], 1, [], '00000000-0000-4000-8000-000000000000',
+                self::minimumSourceRow((string) $spec['target_type']),
+                (string) $spec['target_type'], 1, [], '00000000-0000-4000-8000-000000000000',
                 $destination, 'test-identity-hash', &$queryCache, [],
             ]);
 

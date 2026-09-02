@@ -46,7 +46,7 @@ class RecurringItemBiller
 
             // An item accepted from a proposal carries no effective date; it
             // starts when the agreement it belongs to starts.
-            $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on ?? $cycleStart)->startOfDay();
+            $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on)->startOfDay();
             $itemEnd = $item->end_date !== null ? Carbon::instance($item->end_date)->startOfDay() : null;
 
             // Skip if item is entirely outside the cycle

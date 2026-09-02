@@ -260,6 +260,7 @@ final class RestoreAgreementTest extends TestCase
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
             'title' => 'Restore Agreement',
+            'starts_on' => '2024-01-01',
             'status' => 'active',
             'currency' => 'USD',
             'created_at' => now(),

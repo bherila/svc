@@ -50,7 +50,7 @@ class AgreementWorkflow
                 'source_proposal_id' => $sourceProposal?->id,
                 'title' => $attributes['title'],
                 'status' => 'draft',
-                'starts_on' => $attributes['starts_on'] ?? null,
+                'starts_on' => $attributes['starts_on'],
                 'ends_on' => $attributes['ends_on'] ?? null,
                 'agreement_text' => $attributes['agreement_text'] ?? null,
                 'is_visible_to_client' => $attributes['is_visible_to_client'] ?? false,

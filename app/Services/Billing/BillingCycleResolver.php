@@ -7,7 +7,6 @@ use App\Services\Billing\Balances\BillingCycle;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
-use RuntimeException;
 
 /**
  * Resolves billing cycles for a client agreement.
@@ -31,18 +30,12 @@ class BillingCycleResolver
     {
         $cadence = $agreement->effectiveBillingCadence();
 
-        // Activation does not currently require a start date, and every cycle
-        // here is measured from one. Without this the call died on a TypeError
-        // deep inside Carbon, which reads as a bug in the billing engine rather
-        // than as an agreement that is not ready to be billed.
-        $startsOn = $agreement->retainerStartsOn();
-        if ($startsOn === null) {
-            throw new RuntimeException(
-                'This agreement has no start date, so its billing cycles cannot be determined. Set one before generating invoices.'
-            );
-        }
-
-        $activeDate = Carbon::instance($startsOn)->startOfDay();
+        // Every cycle here is measured from the start date. That used to be a
+        // refusal - `starts_on` was nullable and this was the only reader that
+        // treated a null as fatal, while others treated the same null as in
+        // force. It is `NOT NULL` now (#147), so there is nothing left to
+        // refuse and the disagreement is gone with it.
+        $activeDate = Carbon::instance($agreement->retainerStartsOn())->startOfDay();
         $terminationDate = $agreement->retainerEndsOn()
             ? Carbon::instance($agreement->retainerEndsOn())->startOfDay()
             : null;
@@ -74,13 +67,11 @@ class BillingCycleResolver
     {
         $cadence = $agreement->effectiveBillingCadence();
         if ($cadence !== BillingCadence::Monthly) {
-            $startsOn = $agreement->retainerStartsOn();
-            if ($startsOn === null) {
-                throw new RuntimeException(
-                    'This agreement has no start date, so its billing cycle cannot be determined. Set one before generating invoices.'
-                );
-            }
-            $activeDate = Carbon::instance($startsOn)->startOfDay();
+            // This method used to answer a null start date two ways depending
+            // on cadence - fatal for a non-monthly agreement, an ordinary
+            // calendar cycle for a monthly one. `NOT NULL` (#147) removes the
+            // asymmetry rather than picking one of its two answers.
+            $activeDate = Carbon::instance($agreement->retainerStartsOn())->startOfDay();
             if (Carbon::instance($date)->startOfDay()->lt($activeDate)) {
                 throw new \InvalidArgumentException(
                     'Cannot resolve a cycle for a date before the agreement active_date.'

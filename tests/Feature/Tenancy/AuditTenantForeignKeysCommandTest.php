@@ -283,6 +283,7 @@ final class AuditTenantForeignKeysCommandTest extends TestCase
             'title' => 'Retainer',
             'status' => 'active',
             'currency' => 'USD',
+            'starts_on' => '2024-01-01',
         ]);
         ClientInvoice::query()->create([
             'workspace_id' => $workspace->id,
@@ -325,6 +326,7 @@ final class AuditTenantForeignKeysCommandTest extends TestCase
             'title' => 'Theirs',
             'status' => 'active',
             'currency' => 'USD',
+            'starts_on' => '2024-01-01',
         ]);
 
         ClientInvoice::query()->create([
@@ -351,7 +353,7 @@ final class AuditTenantForeignKeysCommandTest extends TestCase
         $this->bootProbeDatabase(self::PROBE);
 
         Artisan::call('migrate', ['--database' => self::PROBE, '--force' => true]);
-        Artisan::call('migrate:rollback', ['--database' => self::PROBE, '--step' => 3, '--force' => true]);
+        $this->rollbackProbeTo(self::PROBE, '2026_08_31_000000');
 
         $this->assertFalse(
             Schema::connection(self::PROBE)->hasColumn('client_company_memberships', 'workspace_id'),

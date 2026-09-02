@@ -22,9 +22,11 @@ final class AgreementBillingRateResolver
             ->where(function ($query) use ($entry): void {
                 $query->whereNull('client_project_id')->orWhere('client_project_id', $entry->client_project_id);
             })
-            ->where(function ($query) use ($workedOn): void {
-                $query->whereNull('starts_on')->orWhereDate('starts_on', '<=', $workedOn);
-            })
+            // No null branch: `starts_on` is `NOT NULL` (#147). It used to read
+            // `whereNull(...)->orWhereDate(...)`, which made an undated
+            // agreement price work the timesheet granted it no capacity for and
+            // that every date-based selector left out.
+            ->whereDate('starts_on', '<=', $workedOn)
             ->where(function ($query) use ($workedOn): void {
                 $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $workedOn);
             })
@@ -49,8 +51,8 @@ final class AgreementBillingRateResolver
                     return $leftOpen ? -1 : 1;
                 }
 
-                $leftStart = $left->starts_on?->format('Y-m-d') ?? '';
-                $rightStart = $right->starts_on?->format('Y-m-d') ?? '';
+                $leftStart = $left->starts_on->format('Y-m-d');
+                $rightStart = $right->starts_on->format('Y-m-d');
 
                 return $rightStart <=> $leftStart ?: $right->id <=> $left->id;
             });

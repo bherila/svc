@@ -1683,6 +1683,10 @@ class ClientDirectoryTest extends TestCase
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
             'currency' => 'USD',
+            // Before the spread, so a caller that cares still names its own.
+            // `starts_on` is NOT NULL since #147 and most of these fixtures are
+            // about listing and visibility rather than about a term.
+            'starts_on' => '2024-01-01',
             ...$attributes,
         ]);
     }

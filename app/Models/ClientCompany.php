@@ -90,7 +90,10 @@ class ClientCompany extends Model implements WorkspaceOwned
         return $this->agreements()
             ->where('workspace_id', $this->workspace_id)
             ->where('status', 'active')
-            ->where(fn ($query) => $query->whereNull('starts_on')->orWhere('starts_on', '<=', $today->toDateString()))
+            // `starts_on` is `NOT NULL` (#147), so there is no null branch to
+            // take. An undated agreement used to read as active here while the
+            // capacity query and the selectors treated it as not in force.
+            ->where('starts_on', '<=', $today->toDateString())
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhere('ends_on', '>=', $today->toDateString()))
             ->orderByDesc('starts_on')
             ->orderByDesc('id')

@@ -102,48 +102,35 @@ Three conditions have to hold together, and each alone overstates the population
 
 It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
 
-## Audit Undated Agreements
+## Audit Undated Agreements — retired
 
-Read-only. Counts agreements with no `starts_on` that can still price work, and
-the time entries and invoice lines they reach (#147).
+`svc:billing:audit-undated-agreements` was removed when #147 closed.
 
-```bash
-php artisan svc:billing:audit-undated-agreements                 # counts
-php artisan svc:billing:audit-undated-agreements --format=json   # machine-readable
+It existed to size a population before a decision: `client_agreements.starts_on`
+was nullable and the code had at least seven answers for what a null meant, two
+of them in direct conflict — `AgreementBillingRateResolver::resolve()` read a
+null as **in force** while `TimeSheetController::capacityByMonth` and every
+date-based selector read it as excluded, so an agreement could stamp its hourly
+rate onto approved time while contributing no capacity and being invisible to
+billing selection.
+
+The audit ran against both databases and both came back empty: 0 undated of 9 in
+production, 0 of 9 in the source. With the population known to be zero the
+contract could be chosen on its merits, and the one chosen removes the state
+rather than assigning it a meaning — `starts_on` is now `NOT NULL`. A command
+that counts a condition the schema forbids reports zero forever and tells an
+operator nothing, so it went with the ambiguity it was built to measure.
+
+What replaced it is the migration itself. `require_an_agreement_start_date`
+counts the undated rows before altering anything and refuses with that count
+rather than backfilling a date, because every candidate default rewrites what an
+agreement billed. If it refuses, the rows are found with:
+
+```sql
+SELECT id, status, billing_cadence FROM client_agreements WHERE starts_on IS NULL;
 ```
 
-`client_agreements.starts_on` is nullable and the code has at least seven answers
-for what a null means. Two contradict each other directly:
-`AgreementBillingRateResolver::resolve()` treats a null as **in force**
-(`whereNull('starts_on')->orWhereDate(...)`), while
-`TimeSheetController::capacityByMonth` writes `whereNotNull('starts_on')` and the
-date-based selectors drop it on a bare `starts_on <= date`. So an agreement can
-stamp its hourly rate onto approved time while contributing no capacity and being
-invisible to billing selection.
-
-**The entry figures are a bracket, not a number.** The resolver collects
-candidates and then *sorts* them, preferring a project-specific agreement over a
-company-wide one, so no query can say which one it picks. `entries_with_an_undated_candidate`
-is the upper bound — every entry an undated agreement could be selected for.
-`entries_with_no_other_candidate` is the lower bound — entries where nothing else
-is eligible, so the undated agreement is certainly the one chosen. Read them
-together; a single number in between would be wrong in one direction without
-saying which.
-
-A "not proven" result is **not** a clean bill of health, and the command says so
-in those words.
-
-**No fix is implied.** #147 proposes the contract *a null start date means the
-agreement is not yet in force*, which would make the resolver the wrong one — but
-if migrated hourly-only agreements use a null deliberately as a timeless rate,
-adopting it stops them pricing work they price correctly today. The repair there
-is to backfill an explicit historical start date, not to keep two meanings for the
-null, and `hourly_only` versus `with_retainer_terms` sizes that group. Decide the
-contract before changing any reader.
-
-It reports counts only — the status and cadence breakdowns are keyed by column
-values, which name states rather than records — so it is safe to run against real
-billing data and to paste into an issue. It always exits zero.
+Set each from the agreement itself and migrate again.
 
 ## Audit Undated Collectible Invoices
 

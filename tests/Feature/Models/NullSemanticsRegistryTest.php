@@ -5,8 +5,6 @@ namespace Tests\Feature\Models;
 use App\Console\Commands\Billing\BackfillBillingLedgerCommand;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Http\Controllers\Api\V1\AgentReadController;
-use App\Http\Controllers\Engagement\TimeSheetController;
-use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
@@ -181,9 +179,6 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created',
         'client_agreements.source_proposal_id => reader_in:App\Services\Engagement\ProposalWorkflow::accept',
-        'client_agreements.starts_on => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_start_date_reports_no_capacity',
-        'client_agreements.starts_on => reader_in:App\Http\Controllers\Engagement\TimeSheetController::capacityByMonth',
-        'client_agreements.starts_on => reader_in:App\Services\Billing\AgreementBillingRateResolver::resolve',
         'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
@@ -534,21 +529,16 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
             ],
-            // Three readers, and they do not agree with each other. The pinned
-            // one treats a null as "not ready" and reports no capacity. The rate
-            // resolver treats it as already in force (`whereNull OR <=`), and so
-            // does the active-agreement lookup. The timesheet capacity query
-            // uses `whereNotNull` and drops it. So an undated agreement can
-            // stamp its rate onto approved time while contributing no capacity -
-            // that disagreement is unresolved, not a settled meaning (#147).
-            'starts_on' => [
-                [
-                    'covered_by' => TimeSheetTest::class,
-                    'method' => 'test_an_agreement_with_no_start_date_reports_no_capacity',
-                ],
-                ['reader_in' => AgreementBillingRateResolver::class, 'reads' => 'resolve'],
-                ['reader_in' => TimeSheetController::class, 'reads' => 'capacityByMonth'],
-            ],
+            // `starts_on` is gone from this registry, not demoted in it. It had
+            // three entries here and seven readings in the code - the resolver
+            // and the active-agreement lookup treated a null as in force, the
+            // capacity query and the date selectors as excluded, the cycle
+            // resolver as fatal - and no citation can settle a disagreement
+            // between readers; it can only pin one of them. The column is
+            // `NOT NULL` since #147, so the state that had seven meanings can no
+            // longer occur, which is the only resolution that cannot drift back
+            // apart. `AgreementStartDateContractTest` holds the constraint in
+            // place, including at the three edges that could still write one.
             // Also cited against the derive-rate test, where any date after the
             // work date leaves every assertion unchanged - so the citation could
             // not distinguish "null means open-ended" from "this field is

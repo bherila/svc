@@ -99,13 +99,10 @@ final class AgreementSelector
     public function successorAgreementForGeneration(Collection $agreements, ClientAgreement $agreement): ?ClientAgreement
     {
         $startsOn = $agreement->starts_on;
-        if ($startsOn === null) {
-            return null;
-        }
 
         return $agreements->first(function (ClientAgreement $candidate) use ($agreement, $startsOn): bool {
+            // No null guard on either side: `starts_on` is `NOT NULL` (#147).
             if ($candidate->id === $agreement->id
-                || $candidate->starts_on === null
                 || $candidate->client_project_id !== $agreement->client_project_id) {
                 return false;
             }

@@ -13,7 +13,12 @@ interface RetainerAgreementTerms
 
     public function effectiveFirstCycleProration(): FirstCycleProration;
 
-    public function retainerStartsOn(): ?CarbonImmutable;
+    /**
+     * When the agreement takes effect. Never null (#147): the column behind
+     * `ClientAgreement` is `NOT NULL`, and every cycle, capacity figure and
+     * rate lookup in the engine is measured from this date.
+     */
+    public function retainerStartsOn(): CarbonImmutable;
 
     public function retainerEndsOn(): ?CarbonImmutable;
 

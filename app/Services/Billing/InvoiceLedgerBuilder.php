@@ -111,7 +111,7 @@ class InvoiceLedgerBuilder
         }
 
         if ($months !== []) {
-            $months = $this->withOpeningRollover($agreement, $activeDate, $months);
+            $months = $this->withOpeningRollover($agreement, $months);
         }
 
         return $this->rolloverCalculator->calculateMultipleMonths(
@@ -151,7 +151,7 @@ class InvoiceLedgerBuilder
      * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>  $months
      * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>
      */
-    private function withOpeningRollover(ClientAgreement $agreement, Carbon $activeDate, array $months): array
+    private function withOpeningRollover(ClientAgreement $agreement, array $months): array
     {
         $initialRolloverHours = $agreement->initial_rollover_hours;
 
@@ -159,9 +159,9 @@ class InvoiceLedgerBuilder
             return $months;
         }
 
-        $recordedStart = $agreement->active_date === null
-            ? $activeDate->copy()
-            : Carbon::parse($agreement->active_date);
+        // `active_date` is the engine's name for `starts_on`, which is
+        // `NOT NULL` (#147), so the walk's own start is no longer a fallback.
+        $recordedStart = Carbon::parse($agreement->active_date);
 
         $carrierKey = $recordedStart->startOfMonth()->subMonth()->format('Y-m');
 

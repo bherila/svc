@@ -24,11 +24,8 @@ function cadenceLabel(cadence: string | null): string {
 }
 
 function term(agreement: CompanyAgreement): string {
-    if (agreement.starts_on === null && agreement.ends_on === null) {
-        return 'No term recorded';
-    }
-
-    return `${agreement.starts_on ?? 'open'} → ${agreement.ends_on ?? 'open'}`;
+    // Only the end is open-ended. Every agreement states when it starts (#147).
+    return `${agreement.starts_on} → ${agreement.ends_on ?? 'open'}`;
 }
 
 /**

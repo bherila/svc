@@ -1185,7 +1185,7 @@ final class BackfillBillingLedgerTest extends TestCase
         ]);
         $agreement = ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
-            'title' => 'Retainer', 'status' => 'active', 'currency' => 'USD',
+            'title' => 'Retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01',
         ]);
         $invoice = ClientInvoice::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id,

@@ -35,7 +35,7 @@ type Agreement = {
     id: string;
     title: string;
     status: string;
-    starts_on: string | null;
+    starts_on: string;
     ends_on: string | null;
     agreement_text: string | null;
     currency: string;

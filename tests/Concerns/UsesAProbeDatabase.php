@@ -2,8 +2,11 @@
 
 namespace Tests\Concerns;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use SplFileInfo;
 
 /**
  * A throwaway database of the test's own, on whichever engine the suite is using.
@@ -61,6 +64,49 @@ trait UsesAProbeDatabase
         $this->probeIsFile = false;
         DB::statement('create database `'.$this->probeDatabase.'`');
         config(['database.connections.'.$connection => ['database' => $this->probeDatabase] + $default]);
+    }
+
+    /**
+     * Roll the probe back to the state just before a named migration.
+     *
+     * These tests reproduce a pre-migration schema, and the obvious way to do
+     * that - `--step` with a literal - encodes how many migrations happen to
+     * come after it today. Adding one anywhere later silently rolls back one
+     * migration too few, and the assertion that the old state was reproduced
+     * then fails in a test that has nothing to do with the change that broke
+     * it. #147 broke both of them exactly that way.
+     *
+     * So the count is derived from the migration list. The name is a prefix, so
+     * the timestamp alone is enough to identify one.
+     */
+    protected function rollbackProbeTo(string $connection, string $migration): void
+    {
+        Artisan::call('migrate:rollback', [
+            '--database' => $connection,
+            '--step' => $this->migrationsFrom($migration),
+            '--force' => true,
+        ]);
+    }
+
+    /** How many migrations run at or after the named one, itself included. */
+    private function migrationsFrom(string $migration): int
+    {
+        $names = array_map(
+            static fn (SplFileInfo $file): string => $file->getBasename('.php'),
+            File::files(database_path('migrations')),
+        );
+        sort($names);
+
+        $from = array_values(array_filter(
+            $names,
+            static fn (string $name): bool => str_starts_with($name, $migration),
+        ));
+
+        if ($from === []) {
+            $this->fail("No migration is named {$migration}, so the probe cannot be rolled back to before it.");
+        }
+
+        return count(array_filter($names, static fn (string $name): bool => $name >= $from[0]));
     }
 
     protected function dropProbeDatabase(): void

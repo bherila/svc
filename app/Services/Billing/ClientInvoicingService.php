@@ -2025,15 +2025,17 @@ final class ClientInvoicingService
     }
 
     /**
-     * An agreement with no start date is treated as starting at the epoch of the
-     * walk rather than failing: generation should surface an empty result, not
-     * an exception, for a half-configured agreement.
+     * Where the generation walk begins.
+     *
+     * This used to fall back to today for an agreement with no start date, so
+     * generation surfaced an empty result rather than an exception for a
+     * half-configured agreement. `starts_on` is `NOT NULL` (#147), so there is
+     * no such agreement and no fallback to disagree with the readers that
+     * treated the same null as *in force*.
      */
     private function agreementStart(ClientAgreement $agreement): Carbon
     {
-        return $agreement->starts_on === null
-            ? Carbon::instance($this->clock->today($agreement->workspace))
-            : Carbon::parse((string) $agreement->starts_on)->startOfDay();
+        return Carbon::parse((string) $agreement->starts_on)->startOfDay();
     }
 
     private function agreementEnd(ClientAgreement $agreement): ?Carbon

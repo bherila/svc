@@ -79,7 +79,7 @@ final readonly class ReplayRecurringItemIncidenceRepository
             foreach ($this->biller->linesForCycle($agreement, $cycleStart, $cycleEnd) as $lineData) {
                 $line = $this->biller->buildLine($lineData);
                 $item = $lineData['item'];
-                $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on ?? $cycleStart)
+                $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on)
                     ->startOfDay();
                 $contexts[$key][] = new ReplayRecurringItemIncidence(
                     companyId: $candidate['company_id'],
