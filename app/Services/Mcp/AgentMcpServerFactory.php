@@ -66,10 +66,8 @@ final class AgentMcpServerFactory
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $availableCapabilities = array_values(array_filter(
             $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $this->writes)->all(),
-            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->authorizer->allowsScopes(
-                $context,
-                $definition->requiredScopes,
-            ),
+            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
+                && $this->authorizer->allowsDiscovery($context, $definition),
         ));
         $availableNames = array_fill_keys(array_map(
             static fn (McpCapabilityDefinition $definition): string => $definition->name,

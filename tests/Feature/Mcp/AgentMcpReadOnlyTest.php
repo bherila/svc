@@ -163,6 +163,25 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertStringContainsString('Do not approve time', $guide);
     }
 
+    public function test_manager_only_read_capabilities_are_not_discovered_by_a_non_manager(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Member Workspace', 'slug' => 'member-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'member']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_READ]);
+
+        $session = $this->initialize();
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertOk()
+            ->json('result.tools');
+        $names = array_column($tools, 'name');
+
+        $this->assertNotContains('agreements.list', $names);
+        $this->assertNotContains('billing_schedules.list', $names);
+        $this->assertNotContains('capacity_ledger.get', $names);
+        $this->assertNotContains('billing.audit_unplaceable_invoices', $names);
+    }
+
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void
     {
         config(['agent_api.mcp_allowed_origins' => ['http://localhost']]);
