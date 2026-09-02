@@ -391,9 +391,24 @@ final class WorkspaceSearch
      */
     private function whereContains(Builder $query, SearchColumn $column, string $term): void
     {
-        $query->whereRaw(
-            $column->likeSql(),
-            ['%'.addcslashes($term, '%_\\').'%'],
-        );
+        $query->whereRaw($column->likeSql(), ['%'.self::escapeForLike($term).'%']);
+    }
+
+    /**
+     * Neutralises the LIKE wildcards, using the escape character
+     * {@see SearchColumn::likeSql()} declares.
+     *
+     * `addcslashes` is deliberately not used: it emits backslashes, and a
+     * backslash cannot be this query's escape character without breaking
+     * MariaDB's string literal. The escape character is escaped first so a
+     * caller typing `!` gets a literal `!` rather than a dangling escape that
+     * swallows the character after it.
+     *
+     * Public so a test can pin it against the SQL that consumes it; nothing
+     * else calls it.
+     */
+    public static function escapeForLike(string $term): string
+    {
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term);
     }
 }

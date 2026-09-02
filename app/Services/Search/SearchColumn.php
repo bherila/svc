@@ -19,20 +19,32 @@ enum SearchColumn
     case InvoiceNumber;
 
     /**
-     * `ESCAPE` is named explicitly because the drivers disagree without it.
-     * MySQL happens to treat a backslash as an escape inside LIKE; SQLite does
-     * not, so an unescaped `%` typed by a caller would be a wildcard on the
-     * driver the suite runs on and the guard would pass its own tests while
-     * doing nothing.
+     * The escape character, and why it is not a backslash.
+     *
+     * `ESCAPE` has to be named at all because the drivers disagree without it:
+     * MySQL happens to treat a backslash as an escape inside LIKE, SQLite does
+     * not, so an unescaped `%` typed by a caller is a wildcard on one of them
+     * and the guard passes its own tests while doing nothing.
+     *
+     * Naming a *backslash* then fails in the other direction, and worse. In
+     * MariaDB a backslash escapes the following character inside a string
+     * literal, so `ESCAPE '\'` is an unterminated string and the whole
+     * statement is a syntax error - every search 500s. SQLite has no such rule
+     * and accepts it, which is exactly the wrong way round for catching it:
+     * green on the suite's driver, broken on the server's.
+     *
+     * `!` is special to neither parser, so one spelling works on both. It is
+     * escaped in the search term like any other wildcard - see
+     * {@see WorkspaceSearch::escapeForLike()}.
      *
      * @return literal-string
      */
     public function likeSql(): string
     {
         return match ($this) {
-            self::Name => "name LIKE ? ESCAPE '\\'",
-            self::Title => "title LIKE ? ESCAPE '\\'",
-            self::InvoiceNumber => "invoice_number LIKE ? ESCAPE '\\'",
+            self::Name => "name LIKE ? ESCAPE '!'",
+            self::Title => "title LIKE ? ESCAPE '!'",
+            self::InvoiceNumber => "invoice_number LIKE ? ESCAPE '!'",
         };
     }
 }

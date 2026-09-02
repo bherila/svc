@@ -203,6 +203,27 @@ class SearchTest extends TestCase
             ->assertStatus(422);
     }
 
+    /**
+     * `!` is the LIKE escape character this query declares, so a caller typing
+     * one must still get a literal match rather than an escape that swallows
+     * the character after it.
+     */
+    public function test_the_escape_character_itself_is_matched_literally(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Bang', 'synthetic-bang', $manager, 'admin');
+        $this->company($workspace, 'Bang! Synthetic Client', 'bang-client');
+        $this->company($workspace, 'Bangless Synthetic Client', 'bangless-client');
+
+        $body = (string) $this->actingAs($manager)
+            ->getJson('/search?q='.urlencode('Bang!'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('Bang! Synthetic Client', $body);
+        $this->assertStringNotContainsString('Bangless Synthetic Client', $body);
+    }
+
     /** The endpoint is behind `auth`; an anonymous caller is redirected to sign in. */
     public function test_it_is_closed_to_anonymous_callers(): void
     {
