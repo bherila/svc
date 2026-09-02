@@ -6,11 +6,11 @@ use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpRequestContext;
-use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Services\Mcp\Registry\McpCapabilityDefinition;
+use App\Services\Mcp\Registry\McpCapabilityKind;
 use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
-use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
@@ -29,14 +29,13 @@ final class AgentMcpServerFactory
 {
     public function __construct(
         private readonly CacheRepository $cache,
-        private readonly AgentMcpToolCatalog $catalog,
+        private readonly AgentMcpCapabilityRegistryFactory $capabilities,
+        private readonly McpFeatureFlags $featureFlags,
         private readonly AgentReadService $readService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpPrincipalResolver $principals,
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpPrompts $prompts,
-        private readonly AgentMcpInputSchemaFactory $inputs,
-        private readonly AgentMcpOutputSchemaFactory $outputs,
         private readonly RequestArguments $requestArguments,
     ) {}
 
@@ -50,24 +49,24 @@ final class AgentMcpServerFactory
             $this->requestId($request),
         );
         $reads = new AgentMcpReadTools($this->readService, $this->accounts, $context);
-        $definitions = $this->catalog->definitions($reads, $this->writes);
+        $definitions = $this->capabilities->make($reads, $this->writes)->ofKind(McpCapabilityKind::Tool);
         $exposedDefinitions = array_values(array_filter(
             $definitions,
-            fn (ToolDefinition $definition): bool => $this->allowsAll(
+            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(
                 $context,
-                AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId()),
+                $definition->requiredScopes,
             ),
         ));
         $exposedToolNames = array_fill_keys(array_map(
-            static fn (ToolDefinition $definition): string => $definition->name,
+            static fn (McpCapabilityDefinition $definition): string => $definition->name,
             $exposedDefinitions,
         ), true);
         $hasWriteTools = collect($exposedDefinitions)->contains(
-            static fn (ToolDefinition $definition): bool => ! $definition->readOnly,
+            static fn (McpCapabilityDefinition $definition): bool => ! $definition->readOnly,
         );
         $schemaIds = [];
         foreach ($exposedDefinitions as $definition) {
-            $schemaIds[$definition->name] = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
+            $schemaIds[$definition->name] = $definition->name;
         }
         $builder = Server::builder()
             ->setServerInfo(
@@ -128,8 +127,8 @@ final class AgentMcpServerFactory
                 title: $definition->title,
                 description: $definition->description,
                 annotations: new ToolAnnotations(readOnlyHint: $definition->readOnly, destructiveHint: $definition->destructive, idempotentHint: $definition->idempotent, openWorldHint: false),
-                inputSchema: $this->inputs->for($definition),
-                outputSchema: $this->outputs->for($definition),
+                inputSchema: $definition->inputSchema,
+                outputSchema: $definition->outputSchema,
             );
         }
 

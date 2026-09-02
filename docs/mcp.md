@@ -112,10 +112,12 @@ tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,
 idempotency, tenant isolation, persisted credential validation, request
 context selection, and safe time-entry mutations. `McpCapabilityRegistry`
-defines the required production metadata contract but does not yet drive the
-legacy catalog. The baseline does not yet provide a standalone MCP-client
-process smoke test, registry-backed resources/prompts, per-capability
-audit/metrics/rate limits, or account-bound cursor envelopes.
+now drives tool discovery and registration, including required scope, policy
+reference, schemas, workspace requirement, rate-limit/audit classification,
+and global/per-capability configuration kill switches. The baseline does not
+yet provide a standalone MCP-client process smoke test, registry-backed
+resources/prompts, per-capability audit/metrics/rate limits, or account-bound
+cursor envelopes.
 
 ## #187 disposition and related work
 

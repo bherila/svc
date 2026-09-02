@@ -19,9 +19,13 @@ final readonly class McpCapabilityDefinition
         public string $name,
         public string $title,
         public string $description,
+        /** @var array{0: object|string, 1: string}|Closure */
         public array|Closure $handler,
+        /** @var array<string, mixed> */
         public array $inputSchema,
+        /** @var array<string, mixed> */
         public array $outputSchema,
+        /** @var list<string> */
         public array $requiredScopes,
         public ?string $policyAbility,
         public bool $requiresWorkspace,

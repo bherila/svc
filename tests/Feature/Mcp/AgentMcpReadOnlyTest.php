@@ -233,6 +233,24 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame(['projects.list', 'projects.get'], array_column($tools, 'name'));
     }
 
+    public function test_global_and_per_capability_kill_switches_remove_tools_from_discovery(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+
+        config(['agent_api.mcp_feature_flags' => ['projects.list' => false]]);
+        $session = $this->initialize();
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertOk()->json('result.tools');
+        $this->assertSame(['projects.get'], array_column($tools, 'name'));
+
+        config(['agent_api.mcp_enabled' => false]);
+        $session = $this->initialize();
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertOk()->json('result.tools');
+        $this->assertSame([], $tools);
+    }
+
     public function test_write_catalog_is_conditionally_registered_after_cutover(): void
     {
         config(['agent_api.writes_enabled' => true]);
