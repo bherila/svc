@@ -797,6 +797,46 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertJsonPath('error.message', 'Session not found or has expired.');
     }
 
+    public function test_mcp_session_preserves_compatible_per_call_authorized_workspace_selection(): void
+    {
+        $user = User::factory()->create();
+        $first = Workspace::query()->create(['name' => 'First MCP Workspace', 'slug' => 'first-mcp-workspace']);
+        $second = Workspace::query()->create(['name' => 'Second MCP Workspace', 'slug' => 'second-mcp-workspace']);
+        $projectIds = [];
+        foreach ([$first, $second] as $workspace) {
+            WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => $workspace->name.' Client',
+                'slug' => $workspace->slug.'-client',
+            ]);
+            $project = ClientProject::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'name' => $workspace->name.' Project',
+            ]);
+            $projectIds[$workspace->public_id] = $project->public_id;
+        }
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+
+        foreach ([$first, $second] as $index => $workspace) {
+            $response = $this->mcp([
+                'jsonrpc' => '2.0',
+                'id' => $index + 2,
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'projects.list',
+                    'arguments' => ['workspace_id' => $workspace->public_id],
+                ],
+            ], $session)->assertOk()->json('result');
+
+            $this->assertFalse($response['isError']);
+            $this->assertCount(1, $response['structuredContent']['data']);
+            $this->assertSame($projectIds[$workspace->public_id], $response['structuredContent']['data'][0]['id']);
+        }
+    }
+
     public function test_mcp_session_rechecks_credential_revocation_before_execution(): void
     {
         $user = User::factory()->create();
