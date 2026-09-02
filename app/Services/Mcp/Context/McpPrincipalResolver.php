@@ -6,7 +6,8 @@ use App\Models\AgentPrincipal;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
+use Laravel\Passport\AccessToken;
+use Laravel\Passport\Passport;
 use Laravel\Passport\Token;
 
 /** Resolves only facts authenticated by Passport; MCP arguments are excluded. */
@@ -22,15 +23,24 @@ final class McpPrincipalResolver
             throw new AuthenticationException('Unauthenticated MCP request.');
         }
 
-        $token = $subject->token();
+        $accessToken = $subject->token();
+        if (! $accessToken instanceof AccessToken
+            || ! is_string($accessToken->oauth_access_token_id)
+            || $accessToken->oauth_access_token_id === '') {
+            throw new AuthenticationException('Invalid MCP credential.');
+        }
+
+        // Passport's authenticated AccessToken is a lightweight claim object.
+        // Re-read its backing row so revocation, expiry, audience, and client
+        // changes made after discovery take effect before every MCP request.
+        $token = Passport::token()->newQuery()->find($accessToken->oauth_access_token_id);
         if (! $token instanceof Token
             || (bool) $token->revoked
-            || ! $token->expires_at instanceof Carbon
+            || $token->expires_at === null
             || $token->expires_at->isPast()
+            || (int) $token->user_id !== (int) $subject->id
             || ! is_string($token->client_id)
             || $token->client_id === ''
-            || ! is_string($token->id)
-            || $token->id === ''
             || ! hash_equals(OAuthResourceIndicator::resource(), (string) $token->getAttribute('resource_uri'))) {
             throw new AuthenticationException('Invalid MCP credential.');
         }
