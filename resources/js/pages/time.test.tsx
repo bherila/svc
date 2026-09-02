@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TimeSheet from '@/pages/time';
+import { sharedPageProps } from '@/test/shared-page-props';
 import type { ClientContext } from '@/types/navigation';
 import type {
     CompanyOption,
@@ -30,7 +31,7 @@ vi.mock('@inertiajs/react', () => ({
     // on the workspace-wide route. A null context is the latter, which keeps
     // these tests about the sheet's own controls - the chrome has its own
     // tests in `client-context-layout.test.tsx`.
-    usePage: () => ({ props: { clientContext } }),
+    usePage: () => ({ props: sharedPageProps({ clientContext }) }),
 }));
 
 beforeEach(() => {
