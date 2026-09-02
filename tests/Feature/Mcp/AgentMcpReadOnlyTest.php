@@ -278,6 +278,25 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertHeader('Cache-Control', 'no-store, private');
     }
 
+    public function test_mcp_session_cannot_be_reused_under_another_credential(): void
+    {
+        $firstUser = User::factory()->create();
+        $this->actingAsMcp($firstUser, [AgentApiScopes::MCP_USE]);
+        $session = $this->initialize();
+
+        $secondUser = User::factory()->create();
+        $this->actingAsMcp($secondUser, [AgentApiScopes::MCP_USE]);
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/list',
+            'params' => [],
+        ], $session)
+            ->assertNotFound()
+            ->assertJsonPath('error.message', 'Session not found or has expired.');
+    }
+
     public function test_time_write_tools_are_absent_when_the_time_cutoff_is_disabled(): void
     {
         config([
