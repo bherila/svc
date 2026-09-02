@@ -7,8 +7,14 @@ mcp_smoke_token="$(php -r '$credentials = json_decode($argv[1], true, flags: JSO
 PHP_CLI_SERVER_WORKERS=4 php artisan serve --host=127.0.0.1 --port=8088 > storage/logs/mcp-smoke-server.log 2>&1 &
 mcp_smoke_server_pid=$!
 cleanup() {
+    mcp_smoke_status=$?
+    if [ "$mcp_smoke_status" -ne 0 ]; then
+        tail -n 200 storage/logs/mcp-smoke-server.log >&2 || true
+    fi
     kill "$mcp_smoke_server_pid" 2>/dev/null || true
     wait "$mcp_smoke_server_pid" 2>/dev/null || true
+    trap - EXIT
+    exit "$mcp_smoke_status"
 }
 trap cleanup EXIT
 
