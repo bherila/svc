@@ -17,6 +17,7 @@ use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -111,13 +112,20 @@ final class AgentMcpServerFactory
             ->setContainer(app())
             ->setRegistry($registry)
             ->setReferenceHandler(new ReferenceHandler(app()))
-            ->addRequestHandler(new ValidatedCallToolHandler(
-                new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
-                $registry,
-                new SchemaValidator($logger),
-                $schemaIds,
-                $driftLogger,
-                'The SVC API returned a response that failed its output contract.',
+            ->addRequestHandler(new McpRateLimitedCallToolHandler(
+                new ValidatedCallToolHandler(
+                    new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
+                    $registry,
+                    new SchemaValidator($logger),
+                    $schemaIds,
+                    $driftLogger,
+                    'The SVC API returned a response that failed its output contract.',
+                ),
+                app(RateLimiter::class),
+                $context,
+                collect($exposedDefinitions)->mapWithKeys(
+                    static fn (McpCapabilityDefinition $definition): array => [$definition->name => $definition->rateLimitBucket],
+                )->all(),
             ))
             ->setLazyLoading(false);
 
