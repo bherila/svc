@@ -25,6 +25,6 @@ for mcp_smoke_attempt in {1..30}; do
     sleep 1
 done
 
-MCP_SMOKE_URL=http://127.0.0.1:8088/api/v1/mcp \
+MCP_SMOKE_URL=http://localhost:8088/api/v1/mcp \
 MCP_SMOKE_BEARER_TOKEN="$mcp_smoke_token" \
 node scripts/mcp-smoke.mjs
