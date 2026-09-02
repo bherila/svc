@@ -2,6 +2,13 @@
 
 namespace App\Services\Mcp;
 
+use App\Models\ClientTimeEntry;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Services\AgentApi\LogTimeEntriesAction;
+use App\Services\Mcp\Context\McpAccountContextResolver;
+use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Mcp\Capability\Attribute\Schema;
@@ -13,13 +20,57 @@ final class AgentMcpWriteTools
     public function __construct(
         private readonly InternalAgentApiTransport $api,
         private readonly RequestArguments $requestArguments,
+        private readonly LogTimeEntriesAction $logTime,
+        private readonly AgentTimeEntryPresenter $timeEntries,
+        private readonly McpAccountContextResolver $accounts,
+        private readonly ?McpRequestContext $requestContext = null,
     ) {}
+
+    public function forContext(McpRequestContext $context): self
+    {
+        return new self(
+            $this->api,
+            $this->requestArguments,
+            $this->logTime,
+            $this->timeEntries,
+            $this->accounts,
+            $context,
+        );
+    }
 
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
     public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/time-entries", ['entries' => $entries], $idempotency_key);
+        $context = $this->context('time:write');
+        $context = $this->accounts->resolve($context, $workspace_id);
+        $workspace = $context->workspace;
+        if (! $workspace instanceof Workspace) {
+            throw new \LogicException('MCP time logging requires a workspace context.');
+        }
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $ids = $this->logTime->run(
+            $actor,
+            $workspace,
+            $context->principal->clientId,
+            $idempotency_key,
+            $entries,
+        );
+        $entriesById = ClientTimeEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('public_id', $ids)
+            ->with('project')
+            ->get()
+            ->keyBy('public_id');
+
+        return ['data' => collect($ids)->map(function (string $id) use ($entriesById, $workspace): array {
+            $entry = $entriesById->get($id);
+            if (! $entry instanceof ClientTimeEntry) {
+                throw new ToolCallException('The SVC API request could not be completed.');
+            }
+
+            return $this->timeEntries->present($workspace, $entry);
+        })->values()->all()];
     }
 
     /** @return array<string, mixed> */
@@ -156,5 +207,15 @@ final class AgentMcpWriteTools
             return $response->json;
         }
         throw new ToolCallException($response->status === 403 ? 'This connection lacks the required permission.' : 'The SVC API request could not be completed.');
+    }
+
+    private function context(string $scope): McpRequestContext
+    {
+        $context = $this->requestContext ?? throw new \LogicException('MCP write tools require a request context.');
+        if (! $context->principal->hasScope($scope)) {
+            throw new ToolCallException('This connection lacks the required permission.');
+        }
+
+        return $context;
     }
 }

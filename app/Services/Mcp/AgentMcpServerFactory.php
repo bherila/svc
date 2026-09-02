@@ -64,8 +64,9 @@ final class AgentMcpServerFactory
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
+        $writes = $this->writes->forContext($context);
         $availableCapabilities = array_values(array_filter(
-            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $this->writes)->all(),
+            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all(),
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
                 && $this->authorizer->allowsDiscovery($context, $definition),
         ));

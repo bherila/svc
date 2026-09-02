@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
@@ -20,31 +20,18 @@ final class AgentTimeEntryMutationController extends Controller
     public function store(
         Request $request,
         Workspace $workspace,
-        TimeEntryMutationService $time,
+        LogTimeEntriesAction $logTime,
         AgentTimeEntryPresenter $presenter,
-        ProjectAccess $access,
         AgentMutationContextFactory $contexts,
-        AgentMutationExecutor $mutations,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $ids = $mutations->run(
+        $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,currency'], 'entries.*.project_id' => ['required', 'uuid'], 'entries.*.task_id' => ['nullable', 'uuid'], 'entries.*.worked_on' => ['required', 'date_format:Y-m-d'], 'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'], 'entries.*.description' => ['required', 'string', 'max:10000'], 'entries.*.is_billable' => ['sometimes', 'boolean'], 'entries.*.is_deferred' => ['sometimes', 'boolean'], 'entries.*.is_visible_to_client' => ['sometimes', 'boolean'], 'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'], 'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/']]);
+        $ids = $logTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
-            'time_entries.log',
             $context->idempotencyKey,
-            $request->all(),
-            function () use ($request, $workspace, $context, $time): array {
-                $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,currency'], 'entries.*.project_id' => ['required', 'uuid'], 'entries.*.task_id' => ['nullable', 'uuid'], 'entries.*.worked_on' => ['required', 'date_format:Y-m-d'], 'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'], 'entries.*.description' => ['required', 'string', 'max:10000'], 'entries.*.is_billable' => ['sometimes', 'boolean'], 'entries.*.is_deferred' => ['sometimes', 'boolean'], 'entries.*.is_visible_to_client' => ['sometimes', 'boolean'], 'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'], 'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/']]);
-                $ids = [];
-                foreach ($data['entries'] as $entry) {
-                    $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $entry['project_id'])->firstOrFail();
-                    $ids[] = $time->create($workspace, $project, $context->user, $entry)->public_id;
-                }
-
-                return $ids;
-            },
-            fn (array $ids) => $this->guardEditableTime($workspace, $context->user, $ids, $access),
+            $data['entries'],
         );
         $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
