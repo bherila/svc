@@ -125,8 +125,11 @@ and global/per-capability configuration kill switches. Cursor envelopes are
 encrypted and bound to the workspace and canonical filter query. A temporary
 legacy base64 cursor reader remains for existing REST/MCP clients and is
 controlled by `AGENT_API_ACCEPT_LEGACY_CURSORS`; newly emitted cursors never
-use it. The baseline does not yet provide a standalone MCP-client process
-smoke test, per-capability audit/metrics/rate limits, or resource templates.
+use it. `composer mcp:smoke` uses the pinned SDK's real streamable-HTTP client
+against a supplied short-lived bearer token. The concurrent CI smoke job starts
+Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
+the client through handshake, discovery, and `context.get`. The baseline does
+not yet provide per-capability audit/metrics/rate limits or resource templates.
 
 ## #187 disposition and related work
 
