@@ -47,9 +47,6 @@ use Inertia\Response;
  */
 class ClientDirectoryController extends Controller
 {
-    /** How many invoices the detail screen shows before it stops. */
-    private const RECENT_INVOICES = 20;
-
     public function __construct(private readonly AgreementReadPresenter $agreements) {}
 
     public function index(Request $request, Workspace $workspace, ProjectAccess $access): Response
