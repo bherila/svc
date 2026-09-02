@@ -353,9 +353,18 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertFalse($result['isError']);
         $this->assertSame('MCP work', $result['structuredContent']['data'][0]['description']);
 
+        $entry = $result['structuredContent']['data'][0];
+        $updated = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.update', 'arguments' => ['workspace_id' => $workspace->public_id, 'entry_id' => $entry['id'], 'expected_version' => $entry['version'], 'idempotency_key' => 'mcp-update-1', 'description' => 'MCP work revised']]], $session)->assertOk()->json('result');
+        $this->assertFalse($updated['isError']);
+        $this->assertSame('MCP work revised', $updated['structuredContent']['data']['description']);
+
+        $deleted = $this->mcp(['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.delete', 'arguments' => ['workspace_id' => $workspace->public_id, 'entry_id' => $entry['id'], 'expected_version' => $updated['structuredContent']['data']['version'], 'idempotency_key' => 'mcp-delete-1']]], $session)->assertOk()->json('result');
+        $this->assertFalse($deleted['isError']);
+        $this->assertSame($entry['id'], $deleted['structuredContent']['data']['deleted_id']);
+
         WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->delete();
 
-        $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-1', 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'MCP work']]]]], $session)->assertOk();
+        $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 6, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-1', 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'MCP work']]]]], $session)->assertOk();
         $this->assertNull($replay->json('result'));
         $this->assertIsArray($replay->json('error'));
         $this->assertDatabaseCount('client_time_entries', 1);
