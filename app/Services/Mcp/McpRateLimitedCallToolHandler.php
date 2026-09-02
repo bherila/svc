@@ -11,6 +11,7 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
+use Throwable;
 
 /**
  * Enforces reviewed per-capability MCP buckets before tool execution.
@@ -27,6 +28,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         private RequestHandlerInterface $inner,
         private McpCapabilityRateLimiter $limiter,
         private McpCapabilityResultLimiter $resultLimiter,
+        private McpCapabilityConcurrencyLimiter $concurrencyLimiter,
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByTool,
@@ -65,21 +67,48 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
 
             return $response;
         }
-        $started = hrtime(true);
-        $response = $this->inner->handle($request, $session);
-        if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
+        $lease = $this->concurrencyLimiter->acquire($this->context, $request->name);
+        if ($lease === McpCapabilityConcurrencyFailure::Limited) {
             $response = new Response($request->getId(), CallToolResult::error([
-                new TextContent('This operation produced an unexpectedly large response.'),
+                new TextContent('This operation is temporarily busy. Please retry later.'),
             ]));
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'result_too_large', (int) ((hrtime(true) - $started) / 1_000_000));
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'concurrency_limited', 0);
 
             return $response;
         }
-        $outcome = $response instanceof Error
-            ? 'error'
-            : ($response->result->isError ? 'rejected' : 'success');
-        $this->auditor->record($this->context, $request->name, $bucket, $classification, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
+        if ($lease === McpCapabilityConcurrencyFailure::Unavailable) {
+            $response = new Response($request->getId(), CallToolResult::error([
+                new TextContent('This operation is temporarily unavailable. Please retry later.'),
+            ]));
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'concurrency_unavailable', 0);
 
-        return $response;
+            return $response;
+        }
+        $started = hrtime(true);
+        try {
+            $response = $this->inner->handle($request, $session);
+            if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
+                $response = new Response($request->getId(), CallToolResult::error([
+                    new TextContent('This operation produced an unexpectedly large response.'),
+                ]));
+                $this->auditor->record($this->context, $request->name, $bucket, $classification, 'result_too_large', (int) ((hrtime(true) - $started) / 1_000_000));
+
+                return $response;
+            }
+            $outcome = $response instanceof Error
+                ? 'error'
+                : ($response->result->isError ? 'rejected' : 'success');
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
+
+            return $response;
+        } catch (Throwable) {
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'error', (int) ((hrtime(true) - $started) / 1_000_000));
+
+            return new Response($request->getId(), CallToolResult::error([
+                new TextContent('This operation is temporarily unavailable. Please retry later.'),
+            ]));
+        } finally {
+            $this->concurrencyLimiter->release($lease);
+        }
     }
 }

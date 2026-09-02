@@ -14,6 +14,7 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Token;
@@ -265,6 +266,33 @@ final class AgentMcpReadOnlyTest extends TestCase
                 ->assertJsonPath('error.code', -32000)
                 ->assertJsonPath('error.message', 'This operation is temporarily rate limited. Please retry later.')
                 ->assertJsonMissingPath('result');
+        }
+    }
+
+    public function test_mcp_capability_concurrency_limits_return_a_safe_tool_error(): void
+    {
+        config(['agent_api.mcp_concurrency_limit' => 1, 'agent_api.mcp_concurrency_lock_seconds' => 60]);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Concurrency Limited Workspace', 'slug' => 'concurrency-limited-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $credentialId = Token::query()->where('user_id', $user->id)->sole()->id;
+        $lock = Cache::lock('mcp:concurrency:'.hash('sha256', 'projects.list|'.$credentialId).':1', 60);
+        $this->assertTrue($lock->get());
+        $session = $this->initialize();
+
+        try {
+            $result = $this->mcp([
+                'jsonrpc' => '2.0',
+                'id' => 2,
+                'method' => 'tools/call',
+                'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => $workspace->public_id]],
+            ], $session)->assertOk()->json('result');
+
+            $this->assertTrue($result['isError']);
+            $this->assertSame('This operation is temporarily busy. Please retry later.', $result['content'][0]['text']);
+        } finally {
+            $lock->release();
         }
     }
 

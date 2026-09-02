@@ -19,6 +19,8 @@ use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Closure;
 use Illuminate\Cache\RateLimiter;
+use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Request;
@@ -76,6 +78,8 @@ final class AgentMcpServerFactory
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $writes = $this->writes->forContext($context);
         $resultLimiter = new McpCapabilityResultLimiter;
+        $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
+        $concurrencyLimiter = new McpCapabilityConcurrencyLimiter($cacheStore instanceof LockProvider ? $cacheStore : null);
         $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
         $availableCapabilities = array_values(array_filter(
             $definitions,
@@ -134,6 +138,7 @@ final class AgentMcpServerFactory
                 ),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $resultLimiter,
+                $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
@@ -142,6 +147,7 @@ final class AgentMcpServerFactory
                 new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $resultLimiter,
+                $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
@@ -157,6 +163,7 @@ final class AgentMcpServerFactory
                 new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $resultLimiter,
+                $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),

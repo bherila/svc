@@ -167,7 +167,10 @@ and prompt execution are centrally throttled by reviewed `mcp-read`
 credential and capability; the route's `throttle:60,1` remains the broad outer
 limit. A capability call
 fails closed with a safe retry-later error if its limiter backend is
-unavailable. The baseline does not yet provide dashboards, alerts, or resource
+unavailable. Capability execution is also limited to four concurrent requests
+per authenticated credential and capability, using 60-second cache-backed
+leases; a saturated or unavailable lock store returns a safe retry-later error.
+The baseline does not yet provide dashboards, alerts, or resource
 templates. Every tool call, resource read, and prompt retrieval also
 emits the metadata-only `mcp.capability.executed` audit event and a matching
 payload-free `McpCapabilityInvoked` application event for metrics integrations

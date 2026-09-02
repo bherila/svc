@@ -13,6 +13,8 @@ return [
         'mcp-read' => 120,
         'mcp-write' => 20,
     ],
+    'mcp_concurrency_limit' => (int) env('AGENT_API_MCP_CONCURRENCY_LIMIT', 4),
+    'mcp_concurrency_lock_seconds' => (int) env('AGENT_API_MCP_CONCURRENCY_LOCK_SECONDS', 60),
     'accept_legacy_cursors' => env('AGENT_API_ACCEPT_LEGACY_CURSORS', true),
     'mcp_max_body_bytes' => (int) env('AGENT_API_MCP_MAX_BODY_BYTES', 262_144),
     'mcp_max_result_bytes' => (int) env('AGENT_API_MCP_MAX_RESULT_BYTES', 262_144),
