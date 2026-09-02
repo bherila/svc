@@ -5,6 +5,7 @@ namespace Tests\Feature\Mcp;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Services\Mcp\Context\McpPrincipalResolver;
+use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -31,6 +32,11 @@ final class McpPrincipalResolverTest extends TestCase
         $this->assertStringStartsWith('credential-', $resolved->credentialId);
         $this->assertSame('trusted-client', $resolved->clientId);
         $this->assertSame(['mcp:use', 'billing:read'], $resolved->scopes);
+    }
+
+    public function test_interface_resolves_the_existing_passport_backed_implementation(): void
+    {
+        $this->assertInstanceOf(McpPrincipalResolver::class, app(McpPrincipalResolverInterface::class));
     }
 
     public function test_it_rejects_expired_revoked_wrong_subject_wrong_audience_or_wrong_client_credentials(): void

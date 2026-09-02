@@ -47,7 +47,10 @@ credential: a global, MCP-path-only guard rejects `access_token`, `token`,
 with a no-store 400 response. The current provider resolves `AgentPrincipal`,
 an OAuth-only view of the local `users` table; its memberships and project
 roles remain SVC data. OAuth Authorization Code with S256 PKCE is the
-documented client flow.
+documented client flow. `McpPrincipalResolverInterface` is currently bound to
+the local Passport-backed `McpPrincipalResolver`, retaining a narrow adapter
+seam for a future shared resource server without introducing a separate MCP
+credential system.
 
 The current route also has Laravel's `throttle:60,1` limiter. Browser requests
 with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native

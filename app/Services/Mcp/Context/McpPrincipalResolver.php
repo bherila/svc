@@ -11,7 +11,7 @@ use Laravel\Passport\Passport;
 use Laravel\Passport\Token;
 
 /** Resolves only facts authenticated by Passport; MCP arguments are excluded. */
-final class McpPrincipalResolver
+final class McpPrincipalResolver implements McpPrincipalResolverInterface
 {
     /**
      * @throws AuthenticationException

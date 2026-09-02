@@ -9,7 +9,7 @@ use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
-use App\Services\Mcp\Context\McpPrincipalResolver;
+use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use App\Services\Mcp\Registry\McpCapabilityKind;
@@ -57,7 +57,7 @@ final class AgentMcpServerFactory
         private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpAuthorizer $authorizer,
-        private readonly McpPrincipalResolver $principals,
+        private readonly McpPrincipalResolverInterface $principals,
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpPrompts $prompts,
         private readonly RequestArguments $requestArguments,
