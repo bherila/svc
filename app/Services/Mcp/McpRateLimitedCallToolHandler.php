@@ -44,18 +44,21 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         if (! $request instanceof CallToolRequest) {
             return $this->inner->handle($request, $session);
         }
+        $capability = array_key_exists($request->name, $this->metadataByTool)
+            ? $request->name
+            : 'mcp.unknown_tool';
         $metadata = $this->metadataByTool[$request->name] ?? [
             'rate_limit_bucket' => 'mcp-unknown',
             'audit_classification' => 'mcp.unknown',
         ];
         $bucket = $metadata['rate_limit_bucket'];
         $classification = $metadata['audit_classification'];
-        $decision = $this->limiter->consume($this->context, $request->name, $bucket);
+        $decision = $this->limiter->consume($this->context, $capability, $bucket);
         if ($decision === McpCapabilityRateLimitDecision::RateLimited) {
             $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily rate limited. Please retry later.'),
             ]));
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limited', 0);
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'rate_limited', 0);
 
             return $response;
         }
@@ -63,16 +66,16 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
             $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily unavailable. Please retry later.'),
             ]));
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limit_unavailable', 0);
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'rate_limit_unavailable', 0);
 
             return $response;
         }
-        $lease = $this->concurrencyLimiter->acquire($this->context, $request->name);
+        $lease = $this->concurrencyLimiter->acquire($this->context, $capability);
         if ($lease === McpCapabilityConcurrencyFailure::Limited) {
             $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily busy. Please retry later.'),
             ]));
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'concurrency_limited', 0);
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'concurrency_limited', 0);
 
             return $response;
         }
@@ -80,7 +83,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
             $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily unavailable. Please retry later.'),
             ]));
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'concurrency_unavailable', 0);
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'concurrency_unavailable', 0);
 
             return $response;
         }
@@ -91,18 +94,18 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
                 $response = new Response($request->getId(), CallToolResult::error([
                     new TextContent('This operation produced an unexpectedly large response.'),
                 ]));
-                $this->auditor->record($this->context, $request->name, $bucket, $classification, 'result_too_large', (int) ((hrtime(true) - $started) / 1_000_000));
+                $this->auditor->record($this->context, $capability, $bucket, $classification, 'result_too_large', (int) ((hrtime(true) - $started) / 1_000_000));
 
                 return $response;
             }
             $outcome = $response instanceof Error
                 ? 'error'
                 : ($response->result->isError ? 'rejected' : 'success');
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
+            $this->auditor->record($this->context, $capability, $bucket, $classification, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
 
             return $response;
         } catch (Throwable) {
-            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'error', (int) ((hrtime(true) - $started) / 1_000_000));
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'error', (int) ((hrtime(true) - $started) / 1_000_000));
 
             return new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily unavailable. Please retry later.'),

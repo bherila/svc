@@ -296,10 +296,19 @@ final class AgentReadService
             return $query;
         }
 
-        return $query->whereHas('project', function (Builder $projects) use ($user): void {
-            $projects->where(fn (Builder $assigned) => $assigned->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
-                ->orWhere(fn (Builder $clientVisible) => $this->portalAccess
-                    ->constrainProjectQuery($clientVisible->where('is_visible_to_client', true), $user));
+        return $query->where(function (Builder $tasks) use ($user): void {
+            $tasks->where(function (Builder $assigned) use ($user): void {
+                $assigned->whereHas('project', fn (Builder $projects) => $projects
+                    ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
+                    ->where(function (Builder $visibility) use ($user): void {
+                        $visibility->whereDoesntHave('project.clientCompany.portalUsers', fn (Builder $users) => $users->whereKey($user->id))
+                            ->orWhere('is_visible_to_client', true);
+                    });
+            })->orWhere(function (Builder $clientVisible) use ($user): void {
+                $clientVisible->where('is_visible_to_client', true)
+                    ->whereHas('project', fn (Builder $projects) => $this->portalAccess
+                        ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
+            });
         });
     }
 

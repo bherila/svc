@@ -18,7 +18,7 @@ final class McpAuthorizer
 {
     public function __construct(private readonly AgentAccess $access) {}
 
-    public function allowsDiscovery(McpRequestContext $context, McpCapabilityDefinition $definition): bool
+    public function allowsDiscovery(McpRequestContext $context, McpCapabilityDefinition $definition, ?bool $hasManagedWorkspace = null): bool
     {
         if (! $this->allowsScopes($context, $definition->requiredScopes)) {
             return false;
@@ -29,7 +29,7 @@ final class McpAuthorizer
         // policy used by the backing read services, before advertising it.
         // Object-specific policies remain enforced by their scoped reads.
         return $definition->policyAbility !== 'AgentAccess::isWorkspaceManager'
-            || $this->hasManagedWorkspace($context);
+            || ($hasManagedWorkspace ?? $this->hasManagedWorkspace($context));
     }
 
     /** @param list<string> $requiredScopes */
@@ -44,7 +44,7 @@ final class McpAuthorizer
         return true;
     }
 
-    private function hasManagedWorkspace(McpRequestContext $context): bool
+    public function hasManagedWorkspace(McpRequestContext $context): bool
     {
         $subject = $context->principal->subject;
 

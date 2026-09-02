@@ -247,8 +247,8 @@ jobs:
 
   deploy:
     name: Deploy empty alpha to web1
-    needs: [ci, mariadb]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' }}
+    needs: [ci, mariadb, mcp-smoke]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
     permissions:

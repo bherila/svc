@@ -85,10 +85,18 @@ final class AgentMcpServerFactory
         $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
         $concurrencyLimiter = new McpCapabilityConcurrencyLimiter($cacheStore instanceof LockProvider ? $cacheStore : null);
         $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $agreementResource, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
+        $hasManagerCapabilities = false;
+        foreach ($definitions as $definition) {
+            if ($definition->policyAbility === 'AgentAccess::isWorkspaceManager') {
+                $hasManagerCapabilities = true;
+                break;
+            }
+        }
+        $hasManagedWorkspace = $hasManagerCapabilities ? $this->authorizer->hasManagedWorkspace($context) : null;
         $availableCapabilities = array_values(array_filter(
             $definitions,
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
-                && $this->authorizer->allowsDiscovery($context, $definition),
+                && $this->authorizer->allowsDiscovery($context, $definition, $hasManagedWorkspace),
         ));
         $availableNames = array_fill_keys(array_map(
             static fn (McpCapabilityDefinition $definition): string => $definition->name,
@@ -193,12 +201,12 @@ final class AgentMcpServerFactory
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),
-                static function (JsonRpcRequest $request): string {
+                function (JsonRpcRequest $request) use ($definitions): string {
                     if (! $request instanceof GetPromptRequest) {
                         throw new LogicException('MCP prompt audit handler received an invalid request.');
                     }
 
-                    return $request->name;
+                    return $this->promptCapabilityKey($definitions, $request->name);
                 },
             ))
             ->setLazyLoading(false);
@@ -313,6 +321,18 @@ final class AgentMcpServerFactory
         }
 
         return 'mcp.unknown_resource';
+    }
+
+    /** @param list<McpCapabilityDefinition> $definitions */
+    private function promptCapabilityKey(array $definitions, string $name): string
+    {
+        foreach ($definitions as $definition) {
+            if ($definition->kind === McpCapabilityKind::Prompt && $definition->name === $name) {
+                return $name;
+            }
+        }
+
+        return 'mcp.unknown_prompt';
     }
 
     /** @param array<string, true> $available */

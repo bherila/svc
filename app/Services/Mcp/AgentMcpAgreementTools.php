@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Exceptions\InvalidAgentApiCursor;
 use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -21,13 +22,17 @@ final class AgentMcpAgreementTools
     /** @return array<string, mixed> */
     public function list(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['draft', 'active', 'terminated', 'expired'])] ?string $status = null,
+        #[Schema(enum: ['draft', 'active', 'terminated', 'expired', 'paused'])] ?string $status = null,
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
     ): array {
         $context = $this->workspace($workspace_id);
 
-        return $this->agreements->list($context->principal->subject, $context->workspace, $status, $limit, $cursor);
+        try {
+            return $this->agreements->list($context->principal->subject, $context->workspace, $status, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */

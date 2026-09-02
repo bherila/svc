@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Exceptions\InvalidAgentApiCursor;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -51,7 +52,11 @@ final class AgentMcpReadTools
     ): array {
         $context = $this->workspace($workspace_id, 'projects:read');
 
-        return $this->reads->projects($context->principal->subject, $context->workspace, $limit, $cursor, $status, $query);
+        try {
+            return $this->reads->projects($context->principal->subject, $context->workspace, $limit, $cursor, $status, $query);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -71,7 +76,11 @@ final class AgentMcpReadTools
     ): array {
         $context = $this->workspace($workspace_id, 'tasks:read');
 
-        return $this->reads->tasks($context->principal->subject, $context->workspace, $project_id, $limit, $cursor);
+        try {
+            return $this->reads->tasks($context->principal->subject, $context->workspace, $project_id, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -94,7 +103,11 @@ final class AgentMcpReadTools
     ): array {
         $context = $this->workspace($workspace_id, 'time:read');
 
-        return $this->reads->timeEntries($context->principal->subject, $context->workspace, $project_id, $status, $from, $to, $limit, $cursor);
+        try {
+            return $this->reads->timeEntries($context->principal->subject, $context->workspace, $project_id, $status, $from, $to, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -106,7 +119,11 @@ final class AgentMcpReadTools
     ): array {
         $context = $this->workspace($workspace_id, 'billing:read');
 
-        return $this->reads->invoices($context->principal->subject, $context->workspace, $status, $limit, $cursor);
+        try {
+            return $this->reads->invoices($context->principal->subject, $context->workspace, $status, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */

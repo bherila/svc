@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Exceptions\InvalidAgentApiCursor;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -27,7 +28,11 @@ final class AgentMcpBillingScheduleTools
     ): array {
         $context = $this->workspace($workspace_id);
 
-        return $this->schedules->list($context->principal->subject, $context->workspace, $is_active, $limit, $cursor);
+        try {
+            return $this->schedules->list($context->principal->subject, $context->workspace, $is_active, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */

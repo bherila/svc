@@ -6,11 +6,14 @@ use App\Events\McpCapabilityInvoked;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Cache\RateLimiter;
@@ -570,6 +573,75 @@ final class AgentMcpReadOnlyTest extends TestCase
         }
     }
 
+    public function test_mcp_cursor_query_mismatch_is_a_tool_validation_error(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Cursor Workspace', 'slug' => 'cursor-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $cursor = AgentApiCursor::encode(1, $workspace->public_id, 'projects|status=active|search=');
+
+        $result = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'projects.list',
+                'arguments' => ['workspace_id' => $workspace->public_id, 'cursor' => $cursor],
+            ],
+        ], $session)->assertOk()->json('result');
+
+        $this->assertTrue($result['isError']);
+        $this->assertSame('The pagination cursor is not valid for this request.', $result['content'][0]['text']);
+    }
+
+    public function test_mcp_client_cannot_read_a_hidden_task_directly(): void
+    {
+        $client = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Portal Task Workspace', 'slug' => 'portal-task-workspace']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Portal Task Client', 'slug' => 'portal-task-client']);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Portal Task Project',
+            'is_visible_to_client' => true,
+        ]);
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $client->id, 'role' => 'client']);
+        $hidden = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => 'Hidden task must stay private',
+            'is_visible_to_client' => false,
+        ]);
+        $visible = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => 'Visible task',
+            'is_visible_to_client' => true,
+        ]);
+        $this->actingAsMcp($client, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_READ]);
+        $session = $this->initialize();
+
+        $hiddenResponse = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => ['name' => 'tasks.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'task_id' => $hidden->public_id]],
+        ], $session)->assertOk();
+        $this->assertSame(-32603, $hiddenResponse->json('error.code'));
+        $this->assertStringNotContainsString($hidden->title, $hiddenResponse->getContent());
+
+        $visibleResponse = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => ['name' => 'tasks.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'task_id' => $visible->public_id]],
+        ], $session)->assertOk();
+        $this->assertFalse($visibleResponse->json('result.isError'));
+        $this->assertSame($visible->title, $visibleResponse->json('result.structuredContent.data.title'));
+    }
+
     public function test_mcp_fails_closed_when_the_capability_rate_limiter_is_unavailable(): void
     {
         $user = User::factory()->create();
@@ -679,18 +751,26 @@ final class AgentMcpReadOnlyTest extends TestCase
             'method' => 'resources/read',
             'params' => ['uri' => $unknownResourceUri],
         ], $session)->assertOk()->assertJsonPath('error.code', -32002);
+        $unknownToolName = 'unknown.tool?credential=must-not-be-audited';
         $this->mcp([
             'jsonrpc' => '2.0',
             'id' => 7,
             'method' => 'tools/call',
-            'params' => ['name' => 'unknown.tool', 'arguments' => ['query' => 'must-not-be-audited']],
+            'params' => ['name' => $unknownToolName, 'arguments' => ['query' => 'must-not-be-audited']],
         ], $session)->assertOk()->assertJsonPath('error.code', -32601);
+        $unknownPromptName = 'unknown.prompt?credential=must-not-be-audited';
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 8,
+            'method' => 'prompts/get',
+            'params' => ['name' => $unknownPromptName, 'arguments' => []],
+        ], $session)->assertOk()->assertJsonPath('error.code', -32002);
 
         $events = array_values(array_filter(
             $audit->entries,
             static fn (array $entry): bool => $entry['message'] === 'mcp.capability.executed',
         ));
-        $this->assertCount(6, $events);
+        $this->assertCount(7, $events);
         $event = $events[0];
         $this->assertSame('info', $event['level']);
         $this->assertSame([
@@ -742,13 +822,21 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertStringNotContainsString($unknownResourceUri, json_encode($unknownResourceEvent['context'], JSON_THROW_ON_ERROR));
 
         $unknownEvent = $events[5];
-        $this->assertSame('unknown.tool', $unknownEvent['context']['capability']);
+        $this->assertSame('mcp.unknown_tool', $unknownEvent['context']['capability']);
         $this->assertSame('mcp-unknown', $unknownEvent['context']['rate_limit_bucket']);
         $this->assertSame('mcp.unknown', $unknownEvent['context']['audit_classification']);
         $this->assertSame('error', $unknownEvent['context']['outcome']);
         $this->assertArrayNotHasKey('arguments', $unknownEvent['context']);
+        $this->assertStringNotContainsString($unknownToolName, json_encode($unknownEvent['context'], JSON_THROW_ON_ERROR));
 
-        Event::assertDispatchedTimes(McpCapabilityInvoked::class, 6);
+        $unknownPromptEvent = $events[6];
+        $this->assertSame('mcp.unknown_prompt', $unknownPromptEvent['context']['capability']);
+        $this->assertSame('mcp-unknown', $unknownPromptEvent['context']['rate_limit_bucket']);
+        $this->assertSame('mcp.unknown', $unknownPromptEvent['context']['audit_classification']);
+        $this->assertSame('error', $unknownPromptEvent['context']['outcome']);
+        $this->assertStringNotContainsString($unknownPromptName, json_encode($unknownPromptEvent['context'], JSON_THROW_ON_ERROR));
+
+        Event::assertDispatchedTimes(McpCapabilityInvoked::class, 7);
         Event::assertDispatched(McpCapabilityInvoked::class, static fn (McpCapabilityInvoked $event): bool => $event->capability === 'projects.list'
             && $event->auditClassification === 'agent_api.read'
             && $event->subjectId === $user->public_id

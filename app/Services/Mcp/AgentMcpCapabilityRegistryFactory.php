@@ -89,7 +89,7 @@ final class AgentMcpCapabilityRegistryFactory
                 'required' => ['workspace_id'],
                 'properties' => [
                     'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
-                    'status' => ['type' => ['string', 'null'], 'enum' => ['draft', 'active', 'terminated', 'expired', null]],
+                    'status' => ['type' => ['string', 'null'], 'enum' => ['draft', 'active', 'terminated', 'expired', 'paused', null]],
                     'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25],
                     'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048],
                 ],

@@ -74,6 +74,23 @@ final class AgentMcpContractTest extends TestCase
         );
     }
 
+    public function test_agreement_status_schema_includes_paused(): void
+    {
+        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
+            app(AgentMcpReadTools::class),
+            app(AgentMcpContextResource::class),
+            app(AgentMcpAgreementTools::class),
+            app(AgentMcpAgreementResource::class),
+            app(AgentMcpBillingScheduleTools::class),
+            app(AgentMcpCapacityLedgerTools::class),
+            app(AgentMcpBillingAuditTools::class),
+            app(AgentMcpPrompts::class),
+            app(AgentMcpWriteTools::class),
+        );
+
+        $this->assertContains('paused', $registry->get('agreements.list')->inputSchema['properties']['status']['enum']);
+    }
+
     public function test_openapi_inventory_and_scopes_match_every_shipped_agent_route(): void
     {
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
