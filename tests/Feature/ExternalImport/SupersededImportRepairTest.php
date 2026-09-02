@@ -122,6 +122,7 @@ class SupersededImportRepairTest extends TestCase
 
         $this->assertFalse($preview->applied);
         $this->assertSame(1, $preview->eligibleLines);
+        $this->assertSame(0, $preview->retiredInvoices, 'A preview writes nothing');
         $this->assertSame(0, $preview->retiredLines, 'A preview writes nothing');
         $this->assertSame(0, $preview->survivorsNotReconciling, 'Reported as the write would leave it, not as it stands');
         $this->assertSame(2, DB::table('client_invoice_lines')->count());
@@ -182,6 +183,28 @@ class SupersededImportRepairTest extends TestCase
         $this->assertNull(ClientInvoice::query()->find($superseded->id));
     }
 
+    /**
+     * A preview does not count an invoice that is on its way out.
+     *
+     * The superseded invoice below does not add up - its line is short - so if
+     * the preview scanned the invoices it is about to delete, it would report a
+     * survivor that does not reconcile and send the operator hunting for a
+     * problem the repair is already removing.
+     */
+    public function test_a_preview_does_not_count_the_invoices_it_is_about_to_remove(): void
+    {
+        $workspace = $this->workspace();
+        $doomed = $this->invoice($workspace, 'SYNTH-202609-001', 375000, sourceKey: '70');
+        $this->line($workspace, $doomed, 100000, sourceKey: '71');
+        $this->sourceRows(deletedInvoiceKeys: ['70']);
+
+        $preview = $this->repairer()->repair($workspace, $this->source());
+
+        $this->assertSame(1, $preview->eligibleInvoices);
+        $this->assertSame(0, $preview->retiredInvoices, 'A preview writes nothing');
+        $this->assertSame(0, $preview->survivorsNotReconciling, 'The short invoice is leaving, so it is not a survivor');
+    }
+
     /** A database with nothing superseded and every invoice adding up says so. */
     public function test_it_is_clean_when_there_is_nothing_to_do(): void
     {
@@ -195,6 +218,9 @@ class SupersededImportRepairTest extends TestCase
         $this->assertTrue($counts->isClean());
         $this->assertSame(0, $counts->eligibleInvoices);
         $this->assertSame(0, $counts->eligibleLines);
+        $this->assertSame(0, $counts->retiredInvoices);
+        $this->assertSame(0, $counts->retiredLines);
+        $this->assertSame(0, $counts->skippedWithAPayment);
         $this->assertSame(0, $counts->survivorsNotReconciling);
     }
 

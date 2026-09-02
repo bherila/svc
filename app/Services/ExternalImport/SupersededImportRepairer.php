@@ -158,10 +158,9 @@ final class SupersededImportRepairer
             $deleted[] = $this->asKey($id);
         }
 
-        if ($deleted === []) {
-            return [];
-        }
-
+        // No early return for an empty $deleted: `whereIn` on an empty list
+        // already selects nothing, so the guard would only save a query while
+        // adding a branch no test can distinguish.
         $targets = [];
 
         foreach (DB::table('external_import_items')
@@ -231,17 +230,13 @@ final class SupersededImportRepairer
     private function retire(Workspace $workspace, array $invoiceIds, array $lineIds): array
     {
         return DB::transaction(function () use ($workspace, $invoiceIds, $lineIds): array {
-            // Links before the rows they point at. The time entries themselves
-            // stay - they are real work, and unlinking them returns them to
-            // uninvoiced, which is what they were before an invoice that should
-            // not exist claimed them.
-            if ($lineIds !== []) {
-                DB::table('client_invoice_line_time_entries')
-                    ->where('workspace_id', $workspace->id)
-                    ->whereIn('client_invoice_line_id', $lineIds)
-                    ->delete();
-            }
-
+            // The rows in `client_invoice_line_time_entries` go with their
+            // lines: that foreign key cascades on delete. Deleting them here
+            // as well would be a second statement no test can tell apart from
+            // the cascade doing its job - and the time entries themselves are
+            // untouched either way, which is the part that matters. They are
+            // real work, and they return to uninvoiced rather than staying
+            // claimed by an invoice that should not exist.
             $lines = $lineIds === [] ? 0 : DB::table('client_invoice_lines')
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('id', $lineIds)
@@ -270,12 +265,15 @@ final class SupersededImportRepairer
     {
         $off = 0;
 
-        foreach (DB::table('client_invoices')->where('workspace_id', $workspace->id)
-            ->whereNotIn('id', $pendingInvoiceIds ?: [0])->get(['id', 'subtotal_amount']) as $invoice) {
+        $surviving = DB::table('client_invoices')->where('workspace_id', $workspace->id)
+            ->when($pendingInvoiceIds !== [], fn (Builder $q): Builder => $q->whereNotIn('id', $pendingInvoiceIds))
+            ->get(['id', 'subtotal_amount']);
+
+        foreach ($surviving as $invoice) {
             $sum = (int) DB::table('client_invoice_lines')
                 ->where('workspace_id', $workspace->id)
                 ->where('client_invoice_id', $invoice->id)
-                ->whereNotIn('id', $pendingLineIds ?: [0])
+                ->when($pendingLineIds !== [], fn (Builder $q): Builder => $q->whereNotIn('id', $pendingLineIds))
                 ->sum('total_amount');
 
             if ($sum !== (int) $invoice->subtotal_amount) {
