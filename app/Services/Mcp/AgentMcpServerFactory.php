@@ -2,7 +2,10 @@
 
 namespace App\Services\Mcp;
 
-use App\Services\Authorization\AgentTokenScopes;
+use App\Services\AgentApi\AgentReadService;
+use App\Services\Mcp\Context\McpAccountContextResolver;
+use App\Services\Mcp\Context\McpPrincipalResolver;
+use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
@@ -11,6 +14,7 @@ use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
@@ -26,13 +30,14 @@ final class AgentMcpServerFactory
     public function __construct(
         private readonly CacheRepository $cache,
         private readonly AgentMcpToolCatalog $catalog,
-        private readonly AgentMcpReadTools $reads,
+        private readonly AgentReadService $readService,
+        private readonly McpAccountContextResolver $accounts,
+        private readonly McpPrincipalResolver $principals,
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpPrompts $prompts,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
         private readonly RequestArguments $requestArguments,
-        private readonly AgentTokenScopes $scopes,
     ) {}
 
     public function make(Request $request): Server
@@ -40,11 +45,16 @@ final class AgentMcpServerFactory
         $logger = new NullLogger;
         $driftLogger = app(LoggerInterface::class);
         $registry = new Registry(logger: $logger);
-        $definitions = $this->catalog->definitions($this->reads, $this->writes);
+        $context = new McpRequestContext(
+            $this->principals->resolve($request),
+            $this->requestId($request),
+        );
+        $reads = new AgentMcpReadTools($this->readService, $this->accounts, $context);
+        $definitions = $this->catalog->definitions($reads, $this->writes);
         $exposedDefinitions = array_values(array_filter(
             $definitions,
-            fn (ToolDefinition $definition): bool => $this->scopes->allowsAll(
-                $request,
+            fn (ToolDefinition $definition): bool => $this->allowsAll(
+                $context,
                 AgentApiResponseSchemaCatalog::scopesForOperation($definition->operationId()),
             ),
         ));
@@ -133,6 +143,27 @@ final class AgentMcpServerFactory
     private function hasTools(array $available, array $required): bool
     {
         return array_diff($required, array_keys($available)) === [];
+    }
+
+    /** @param list<string> $required */
+    private function allowsAll(McpRequestContext $context, array $required): bool
+    {
+        foreach ($required as $scope) {
+            if (! $context->principal->hasScope($scope)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function requestId(Request $request): string
+    {
+        $requestId = $request->header('X-Request-Id');
+
+        return is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,128}$/', $requestId) === 1
+            ? $requestId
+            : (string) Str::uuid();
     }
 
     /** @param array<string, true> $available */

@@ -44,19 +44,23 @@ with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native
 clients without an Origin are permitted. CORS exposes only MCP session and
 protocol headers.
 
-Tools presently take `workspace_id` arguments. That value is routed to the
-versioned Agent REST API, whose queries and policies determine whether the
-selected workspace and object are visible. `AgentAccess`, `ProjectAccess`,
-`PortalAccess`, `AgentTimeEntryQuery`, and `WorkspacePolicy`,
-`ClientCompanyPolicy`, and `ClientProjectPolicy` supply the applicable local
-membership, role, portal, and object checks. OAuth scopes are a ceiling, not
-a replacement for those checks.
+Tools presently take `workspace_id` arguments. It is only a selector: an
+immutable `McpRequestContext` resolves it through the authenticated
+principal's active workspace or portal memberships before materializing a
+workspace. `AgentAccess`, `ProjectAccess`, `PortalAccess`,
+`AgentTimeEntryQuery`, and `WorkspacePolicy`, `ClientCompanyPolicy`, and
+`ClientProjectPolicy` supply the applicable local membership, role, portal,
+and object checks. OAuth scopes are a ceiling, not a replacement for those
+checks.
 
 Current token scopes are `identity:read`, `projects:read`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
 `billing:write`, `billing:deliver`, and `mcp:use`. Discovery filters tools by
-the scopes declared for their corresponding Agent API operation. Execution
-again reaches the scoped REST route. `AGENT_API_WRITES_ENABLED` defaults to
+the scopes declared for their corresponding Agent API operation. The MCP
+principal resolver rereads the persisted Passport token on each request and
+rejects expired, revoked, wrong-subject, wrong-client, or wrong-audience
+credentials before discovery or execution. Read execution repeats scope
+checks before tenant and object lookup. `AGENT_API_WRITES_ENABLED` defaults to
 false; the independent `AGENT_API_TIME_ENTRY_WRITES_ENABLED` defaults to
 true and is an emergency cutoff for the three time-entry write tools.
 
@@ -78,9 +82,10 @@ scope. The broader write flag additionally enables `time_entries.approve`,
 The tool catalog is `AgentMcpToolCatalog`; `AgentMcpInputSchemaFactory` and
 `AgentMcpOutputSchemaFactory` derive public schemas from the checked-in
 OpenAPI response catalog. Inputs are validated before dispatch, output is
-validated after dispatch, and failures are mapped to safe MCP errors. Tools
-are thin adapters through `InternalAgentApiTransport` to the corresponding
-versioned REST workflow; they do not expose Eloquent models.
+validated after dispatch, and failures are mapped to safe MCP errors. Read
+tools and the REST controller both use `AgentReadService`, the single
+tenant-scoped query/presentation boundary; MCP does not invoke controllers or
+internal HTTP routes, and it does not expose Eloquent models.
 
 There are no MCP resources or resource templates today. Prompts are
 conditional: `log-time-across-projects` is advertised only when its required
@@ -105,10 +110,12 @@ explicit deprecation window.
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,
-idempotency, tenant isolation, and safe time-entry mutations. It does not
-yet provide a standalone MCP-client process smoke test, a central capability
-registry spanning tools/resources/prompts, an MCP-specific request context,
-per-capability audit/metrics/rate limits, or account-bound cursor envelopes.
+idempotency, tenant isolation, persisted credential validation, request
+context selection, and safe time-entry mutations. `McpCapabilityRegistry`
+defines the required production metadata contract but does not yet drive the
+legacy catalog. The baseline does not yet provide a standalone MCP-client
+process smoke test, registry-backed resources/prompts, per-capability
+audit/metrics/rate limits, or account-bound cursor envelopes.
 
 ## #187 disposition and related work
 

@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Mcp;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
@@ -11,7 +10,6 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
-use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 final class AgentMcpReadOnlyTest extends TestCase
@@ -25,7 +23,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP Client', 'slug' => 'mcp-client']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP Project']);
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+        $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::IDENTITY_READ,
             AgentApiScopes::PROJECTS_READ,
@@ -54,7 +52,7 @@ final class AgentMcpReadOnlyTest extends TestCase
     public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void
     {
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
 
         $initialization = $this->mcp($this->initializeMessage())->assertOk();
         $instructions = $initialization->json('result.instructions');
@@ -69,7 +67,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame([], $limitedPrompts);
 
         config(['agent_api.writes_enabled' => true]);
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+        $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::IDENTITY_READ,
             AgentApiScopes::PROJECTS_READ,
@@ -115,7 +113,7 @@ final class AgentMcpReadOnlyTest extends TestCase
     {
         config(['agent_api.mcp_allowed_origins' => ['http://localhost']]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::PROJECTS_READ]);
+        $this->actingAsMcp($user, [AgentApiScopes::PROJECTS_READ]);
 
         $this->mcp($this->initializeMessage())->assertForbidden();
         $this->options('/api/v1/mcp', [], [
@@ -138,7 +136,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         ])->assertNoContent()->assertHeaderMissing('Access-Control-Allow-Origin');
 
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
         $this->withHeader('Origin', 'https://unapproved.example')
             ->postJson('/api/v1/mcp', $this->initializeMessage(), ['Mcp-Protocol-Version' => '2025-06-18'])
             ->assertForbidden()
@@ -149,7 +147,7 @@ final class AgentMcpReadOnlyTest extends TestCase
     {
         config(['agent_api.mcp_allowed_origins' => ['https://approved.example']]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
 
         $this->withHeaders([
             'Origin' => 'https://approved.example',
@@ -164,7 +162,7 @@ final class AgentMcpReadOnlyTest extends TestCase
     {
         config(['agent_api.mcp_allowed_origins' => []]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
 
         $this->mcp($this->initializeMessage())->assertOk()->assertHeader('Mcp-Session-Id');
     }
@@ -186,7 +184,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'agent_api.time_entry_writes_enabled' => false,
         ]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+        $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::TIME_WRITE,
         ]);
@@ -203,7 +201,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'agent_api.time_entry_writes_enabled' => true,
         ]);
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+        $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::TASKS_WRITE,
             AgentApiScopes::TIME_WRITE,
@@ -227,7 +225,7 @@ final class AgentMcpReadOnlyTest extends TestCase
     public function test_tool_discovery_omits_operations_outside_the_current_token_scopes(): void
     {
         $user = User::factory()->create();
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
@@ -243,7 +241,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP write client', 'slug' => 'mcp-write-client']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP write project']);
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), [
+        $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::TASKS_WRITE,
             AgentApiScopes::TIME_WRITE,

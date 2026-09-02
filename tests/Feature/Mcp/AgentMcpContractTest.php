@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Mcp;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -20,7 +19,6 @@ use App\Support\AgentApi\AgentApiVersion;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
-use Laravel\Passport\Passport;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
@@ -277,7 +275,7 @@ final class AgentMcpContractTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 
     private function initialize(): string

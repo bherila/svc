@@ -8,7 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ProjectRole;
-use Illuminate\Http\Request;
+use Closure;
 
 final class AgentCapabilities
 {
@@ -20,17 +20,16 @@ final class AgentCapabilities
     public function __construct(
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
-        private readonly AgentTokenScopes $scopes,
     ) {}
 
     /**
      * @return array{capabilities:list<string>,project_capabilities:list<array{project_id:string,role:string,capabilities:list<string>}>}
      */
-    public function forWorkspace(Request $request, User|AgentPrincipal $user, Workspace $workspace): array
+    public function forWorkspace(User|AgentPrincipal $user, Workspace $workspace, Closure $allowsScope): array
     {
         $projectEntries = [];
         $workspaceCapabilities = [];
-        $canDiscloseProjects = $this->scopes->allows($request, AgentApiScopes::PROJECTS_READ);
+        $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
 
         $projects = ClientProject::query()
             ->where('workspace_id', $workspace->id)
@@ -40,7 +39,7 @@ final class AgentCapabilities
             ->filter(fn (ClientProject $project): bool => $this->access->canViewProject($user, $project));
 
         foreach ($projects as $project) {
-            $capabilities = $this->forProject($request, $user, $project);
+            $capabilities = $this->forProject($user, $project, $allowsScope);
             $workspaceCapabilities = [...$workspaceCapabilities, ...$capabilities];
             if ($canDiscloseProjects) {
                 $role = $this->projects->projectRole($user, $project)?->value;
@@ -53,9 +52,9 @@ final class AgentCapabilities
         }
 
         if ($this->access->isWorkspaceManager($user, $workspace)) {
-            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($request)];
+            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope)];
         }
-        if ($this->scopes->allows($request, AgentApiScopes::BILLING_READ)
+        if ($allowsScope(AgentApiScopes::BILLING_READ)
             && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
             $workspaceCapabilities[] = 'billing:read';
         }
@@ -67,31 +66,31 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function forProject(Request $request, User|AgentPrincipal $user, ClientProject $project): array
+    private function forProject(User|AgentPrincipal $user, ClientProject $project, Closure $allowsScope): array
     {
         $capabilities = [];
         $role = $this->projects->projectRole($user, $project);
         $client = $this->access->isCompanyMember($user, $project->clientCompany);
 
-        if ($this->scopes->allows($request, AgentApiScopes::PROJECTS_READ)) {
+        if ($allowsScope(AgentApiScopes::PROJECTS_READ)) {
             $capabilities[] = 'projects:read';
         }
-        if ($this->scopes->allows($request, AgentApiScopes::TASKS_READ)) {
+        if ($allowsScope(AgentApiScopes::TASKS_READ)) {
             $capabilities[] = 'tasks:read';
         }
-        if ($this->writesEnabled() && $this->scopes->allows($request, AgentApiScopes::TASKS_WRITE)
+        if ($this->writesEnabled() && $allowsScope(AgentApiScopes::TASKS_WRITE)
             && ($role?->canManageTasks() ?? false)) {
             $capabilities[] = 'tasks:write';
         }
-        if ($this->scopes->allows($request, AgentApiScopes::TIME_READ)
+        if ($allowsScope(AgentApiScopes::TIME_READ)
             && ($client || in_array($role, [ProjectRole::Owner, ProjectRole::Manager, ProjectRole::Contributor], true))) {
             $capabilities[] = 'time:read';
         }
-        if ($this->timeEntryWritesEnabled() && $this->scopes->allows($request, AgentApiScopes::TIME_WRITE)
+        if ($this->timeEntryWritesEnabled() && $allowsScope(AgentApiScopes::TIME_WRITE)
             && in_array($role, [ProjectRole::Owner, ProjectRole::Manager, ProjectRole::Contributor], true)) {
             $capabilities[] = 'time:write';
         }
-        if ($this->writesEnabled() && $this->scopes->allows($request, AgentApiScopes::TIME_APPROVE)
+        if ($this->writesEnabled() && $allowsScope(AgentApiScopes::TIME_APPROVE)
             && ($role?->canApproveTime() ?? false)) {
             $capabilities[] = 'time:approve';
         }
@@ -100,7 +99,7 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function managerCapabilities(Request $request): array
+    private function managerCapabilities(Closure $allowsScope): array
     {
         $mapping = [
             AgentApiScopes::PROJECTS_READ => 'projects:read',
@@ -122,7 +121,7 @@ final class AgentCapabilities
 
         $capabilities = [];
         foreach ($mapping as $scope => $capability) {
-            if ($this->scopes->allows($request, $scope)) {
+            if ($allowsScope($scope)) {
                 $capabilities[] = $capability;
             }
         }
