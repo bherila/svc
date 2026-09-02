@@ -51,7 +51,7 @@ class OAuthLoginController extends Controller
         // JS bundle, so what exists is not readable by anyone who downloads it.
         ProviderApplications::remember($request, $identity->apps);
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended(route('workspaces.index'));
     }
 
     public function logout(Request $request, OAuthClient $oauth): RedirectResponse

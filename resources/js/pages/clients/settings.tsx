@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 
 type ManagedCompany = {
     id: string;
@@ -133,7 +133,8 @@ function AccessRow({
 /**
  * The shape of the client record, edited from the client's own tab.
  *
- * Manage is a tab rather than a parallel admin section, so an operator never
+ * Client settings is reached from the client, not from a parallel admin
+ * section, so an operator never
  * has to leave the client they are working in to change it - and there is no
  * second copy of these fields elsewhere to drift out of step.
  *
@@ -396,9 +397,12 @@ export default function ClientManage({
     assignable: AssignableMember[];
 }) {
     return (
-        <ClientContextLayout active="manage">
-            <Head title={`Manage ${company.name}`} />
+        <WorkspaceShell activeModule="home">
+            <Head title={`${company.name} settings`} />
             <main className="mx-auto grid max-w-4xl gap-6 p-6">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                    {company.name} settings
+                </h1>
                 <Card>
                     <CardHeader>
                         <CardTitle>Client</CardTitle>
@@ -438,6 +442,6 @@ export default function ClientManage({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

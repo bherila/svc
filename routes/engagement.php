@@ -4,18 +4,22 @@ use App\Http\Controllers\Engagement\AgreementController;
 use App\Http\Controllers\Engagement\ProposalController;
 use App\Http\Controllers\Engagement\TimeEntryController;
 use App\Http\Controllers\Engagement\TimeSheetController;
+use App\Http\Controllers\WorkspaceModuleRedirectController;
+use App\Http\Middleware\ResolveWorkspaceNavigation;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth'])->group(function (): void {
-    Route::get('/workspaces/{workspace}/time', TimeSheetController::class)
-        ->name('svc.engagement.time-entries.index');
-
-    // The same sheet as a tab of one client. Named `clients.*` so it picks up
-    // the company switcher, and bound by route rather than query string:
-    // inside the client context the company is not a filter the page chooses,
-    // it is where the operator already is.
+    // The sheet is a tab of one client, and only that. The company is not a
+    // filter the page chooses, it is where the operator already is - so it is
+    // bound by route, and the page carries no picker of its own.
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/time', TimeSheetController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
         ->name('clients.time');
+
+    // The workspace-wide sheet's URL, kept working.
+    Route::get('/workspaces/{workspace}/time', WorkspaceModuleRedirectController::class)
+        ->defaults('module', 'time')
+        ->name('svc.engagement.time-entries.index');
     Route::post('/workspaces/{workspace}/projects/{clientProject}/time-entries', [TimeEntryController::class, 'store'])
         ->name('svc.engagement.time-entries.store');
     Route::patch('/workspaces/{workspace}/time-entries/{timeEntry}', [TimeEntryController::class, 'update'])

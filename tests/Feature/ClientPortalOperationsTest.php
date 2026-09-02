@@ -103,24 +103,41 @@ class ClientPortalOperationsTest extends TestCase
         $this->invoice($workspace, $company, 'INV-SYNTH-HIDDEN', 'issued', false);
         $this->invoice($workspace, $otherCompany, 'INV-OTHER', 'paid', true);
 
+        // Home is a glance: the latest invoice the client may see, the
+        // agreement in force, and the one proposal waiting on them.
         $this->actingAs($clientUser)
             ->get("/portal/{$company->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('portal')
-                ->has('company.proposals', 2)
-                ->where('company.proposals.0.status', 'accepted')
-                ->where('company.proposals.1.title', 'Visible sent proposal')
-                ->has('company.agreements', 1)
-                ->where('company.agreements.0.title', 'Visible synthetic agreement')
-                ->has('company.invoices', 3)
-                ->where('company.invoices.0.status', 'paid')
-                ->where('company.invoices.0.total_amount', 10000)
-                ->where('company.invoices.0.balance_amount', 0)
-                ->where('company.invoices.0.pdf_url', "/workspaces/{$workspace->public_id}/invoices/".ClientInvoice::query()->where('invoice_number', 'INV-SYNTH-3')->value('public_id').'/pdf')
-                ->has('company.projects', 1)
-                ->where('company.projects.0.name', 'Visible synthetic project')
-                ->has('company.projects.0.tasks', 1));
+                ->component('clients/home')
+                ->where('latest_invoice.invoice_number', 'INV-SYNTH-3')
+                ->where('latest_invoice.status', 'paid')
+                ->where('latest_invoice.total_amount', 10000)
+                ->where('latest_invoice.balance_amount', 0)
+                ->where('engagement.agreement_title', 'Visible synthetic agreement')
+                // Only what is waiting on someone. An accepted proposal is
+                // history, and history belongs in the record rather than in the
+                // line that says what needs attention.
+                ->where('engagement.proposal_title', 'Visible sent proposal'));
+
+        // And the modules hold the full lists, under the same three refusals:
+        // another company's, a draft, and one the operator did not disclose.
+        $this->actingAs($clientUser)
+            ->get("/portal/{$company->public_id}/invoices")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/invoices')
+                ->has('invoices', 3));
+
+        $this->actingAs($clientUser)
+            ->get("/portal/{$company->public_id}/tasks")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/tasks')
+                ->where('audience', 'client')
+                ->has('projects', 1)
+                ->where('projects.0.name', 'Visible synthetic project')
+                ->has('tasks', 1));
 
         $this->actingAs($admin)->get("/portal/{$company->public_id}")->assertOk();
         $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertForbidden();
@@ -246,26 +263,39 @@ class ClientPortalOperationsTest extends TestCase
             'status' => 'approved',
         ]);
 
-        $response = $this->actingAs($clientUser)
-            ->get("/portal/{$company->public_id}")
-            ->assertOk();
+        // Every client-reachable screen, not just the first one. Each is its
+        // own query, and a condition remembered on one and forgotten on another
+        // is exactly the shape this scan exists to catch. Each surface brings
+        // its own control string, so none of them can pass by being empty.
+        $surfaces = [
+            '' => 'Visible sent proposal',
+            '/invoices' => 'INV-VIS-1',
+            '/time' => 'Client Facing Summary',
+            '/tasks' => 'Visible synthetic project',
+        ];
 
-        $this->assertInertiaPayloadOmits($response, [
-            'Internal Project Name',
-            'Internal Task Title',
-            'Internal Only Task Title',
-            'Hidden Draft Proposal Title',
-            'Internal Proposal Title',
-            'Other Company Proposal Title',
-            'Internal Agreement Title',
-            'Other Company Agreement Title',
-            'INV-HIDDEN-1',
-            'INV-DRAFT-1',
-            'INV-OTHER-1',
-            'Internal Note Never Shown',
-            'Hidden Time Description',
-            'billing_rate_amount',
-        ], 'Visible sent proposal');
+        foreach ($surfaces as $suffix => $control) {
+            $response = $this->actingAs($clientUser)
+                ->get("/portal/{$company->public_id}{$suffix}")
+                ->assertOk();
+
+            $this->assertInertiaPayloadOmits($response, [
+                'Internal Project Name',
+                'Internal Task Title',
+                'Internal Only Task Title',
+                'Hidden Draft Proposal Title',
+                'Internal Proposal Title',
+                'Other Company Proposal Title',
+                'Internal Agreement Title',
+                'Other Company Agreement Title',
+                'INV-HIDDEN-1',
+                'INV-DRAFT-1',
+                'INV-OTHER-1',
+                'Internal Note Never Shown',
+                'Hidden Time Description',
+                'billing_rate_amount',
+            ], $control);
+        }
     }
 
     public function test_the_portal_names_only_columns_that_exist(): void

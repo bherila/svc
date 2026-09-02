@@ -3,107 +3,81 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClientAgreement;
-use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ClientProposalItem;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
+use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
+use App\Services\Authorization\PortalInvoiceQuery;
+use App\Support\Engagement\AgreementTermsPayload;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/**
+ * The client's own copy of their client screens.
+ *
+ * Same shell and same pages as the operator sees, and deliberately not the same
+ * queries. Sharing the presentation is what makes the two surfaces feel like
+ * one application; sharing the reads is how an external user ends up looking at
+ * a draft invoice or an unapproved time entry, so every method here goes
+ * through an adapter that is fail-closed on the tenant, the company, the
+ * operator's visibility decision and the record's lifecycle - and narrowed
+ * again for a project-scoped portal user.
+ *
+ * Read-only throughout, with one exception: accepting a proposal, which is the
+ * client's own act and lives on its own page rather than inline beside
+ * everything else.
+ */
 class ClientPortalController extends Controller
 {
-    public function __construct(private readonly PortalAccess $portalAccess) {}
+    public function __construct(
+        private readonly PortalAccess $portalAccess,
+        private readonly PortalInvoiceQuery $invoices,
+    ) {}
 
     /**
-     * The invoices this company's portal may show, as a query.
+     * Client Home, for the client.
      *
-     * Three conditions, and each is load-bearing. The workspace and company
-     * bound it to this tenant and this client; `is_visible_to_client` is the
-     * operator's own decision about disclosure; and the status list keeps a
-     * draft out - a draft is working arithmetic, and showing a client a figure
-     * nobody has committed to invites an argument about a number that was
-     * never sent.
-     *
-     * Shared between the list and the detail rather than restated, because a
-     * detail screen that admitted one invoice the list would not is the whole
-     * bug: the client never sees the row, and reaches it by id.
-     *
-     * @return Builder<ClientInvoice>
+     * What this replaced loaded the company's entire visible record - projects,
+     * tasks, time, proposals, agreements, invoices and attachments - and drew a
+     * card for each. It grew with the engagement, so the longer someone had been
+     * a client the less their own screen told them. This is bounded, and every
+     * section links to the module holding the rest.
      */
-    private function visibleInvoices(ClientCompany $clientCompany, ?User $viewer): Builder
+    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home): Response
     {
-        $invoices = ClientInvoice::query()
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('is_visible_to_client', true)
-            ->whereIn('status', ['issued', 'partially_paid', 'paid']);
+        Gate::authorize('viewPortal', $clientCompany);
 
-        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
-
-        // Null is the whole company - an owner, an admin, or a client whose
-        // access is company-scoped. A project-scoped client is a different
-        // question, and the invoice list ignored it: they were shown, and could
-        // open, every invoice the company had, including for work on projects
-        // their own portal deliberately hides.
-        if ($visibleProjectIds === null) {
-            return $invoices;
-        }
-
-        if ($visibleProjectIds === []) {
-            return $invoices->whereRaw('1 = 0');
-        }
-
-        // The same rule the operator side applies: every project the invoice
-        // names must be one they see, and an invoice naming none is not theirs
-        // to read. A mixed invoice is refused rather than partly rendered,
-        // because its totals and its PDF describe the whole document.
-        return $invoices
-            ->whereNotExists(fn (QueryBuilder $line): QueryBuilder => $line
-                ->select(DB::raw('1'))
-                ->from('client_invoice_lines')
-                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
-                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
-                ->whereNotNull('client_invoice_lines.client_project_id')
-                ->whereNotIn('client_invoice_lines.client_project_id', $visibleProjectIds))
-            ->whereExists(fn (QueryBuilder $line): QueryBuilder => $line
-                ->select(DB::raw('1'))
-                ->from('client_invoice_lines')
-                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
-                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
-                ->whereIn('client_invoice_lines.client_project_id', $visibleProjectIds));
+        return Inertia::render('clients/home', $home->for($clientCompany, $this->viewer($request))->toArray());
     }
 
     /**
      * One invoice, for the client it was sent to.
      *
-     * Read-only, like everything a client can reach. The lines are the point:
-     * the list says what is owed and this says what for, which is the question
-     * a client actually opens a portal to answer.
+     * The lines are the point: the list says what is owed and this says what
+     * for, which is the question a client actually opens a portal to answer.
      *
-     * Line rows are narrowed to what belongs on an invoice a client is looking
-     * at - description, quantity, hours and money. The internal agreement and
-     * recurring-item keys the model already hides are not reintroduced here by
-     * a hand-built array.
+     * Resolved through the same query the list uses, so an invoice the client
+     * cannot see is not found rather than merely unlinked. Line rows are
+     * narrowed to what belongs on an invoice a client is looking at; the
+     * internal agreement and recurring-item keys the model already hides are
+     * not reintroduced here by a hand-built array.
      */
     public function invoice(Request $request, ClientCompany $clientCompany, ClientInvoice $clientInvoice): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
-        // Resolved through the same query the list uses, so an invoice the
-        // client cannot see is not found rather than merely unlinked.
-        $viewer = $request->user();
-        $viewer = $viewer instanceof User ? $viewer : null;
-
-        $invoice = $this->visibleInvoices($clientCompany, $viewer)
+        $invoice = $this->invoices->visibleTo($clientCompany, $this->viewer($request))
             ->whereKey($clientInvoice->getKey())
             ->first();
 
@@ -121,6 +95,7 @@ class ClientPortalController extends Controller
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
             ],
+            'home_href' => route('portal.show', $clientCompany, absolute: false),
             'invoice' => [
                 'id' => $invoice->public_id,
                 'invoice_number' => $invoice->invoice_number,
@@ -149,213 +124,330 @@ class ClientPortalController extends Controller
         ]);
     }
 
-    public function show(ClientCompany $clientCompany): Response
-    {
+    /**
+     * The agreement this client is engaged under.
+     *
+     * Three refusals before it renders: a draft is a document nobody agreed to,
+     * an agreement the operator has not made client-visible is not theirs to
+     * read, and one scoped to a project belongs to whoever holds that project.
+     * All three were conditions of the wall of cards this replaces; they are
+     * asserted here because a detail route is reachable by id whether or not
+     * anything linked to it.
+     */
+    public function agreement(
+        Request $request,
+        ClientCompany $clientCompany,
+        ClientAgreement $clientAgreement,
+    ): Response {
         Gate::authorize('viewPortal', $clientCompany);
 
-        $workspace = $clientCompany->workspace;
-        // The portal is a web surface; an agent principal never reaches it.
-        $viewer = request()->user();
-        $viewer = $viewer instanceof User ? $viewer : null;
-        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $viewer);
+        abort_unless(
+            (int) $clientAgreement->workspace_id === (int) $clientCompany->workspace_id
+                && (int) $clientAgreement->client_company_id === (int) $clientCompany->id
+                && $clientAgreement->is_visible_to_client
+                && $clientAgreement->status !== 'draft'
+                && $this->withinScope($clientCompany, $request, $clientAgreement->client_project_id),
+            404,
+        );
 
-        $clientCompany->load(['projects' => function ($query) use ($clientCompany, $visibleProjectIds): void {
-            $query->where('workspace_id', $clientCompany->workspace_id)
-                ->where('is_visible_to_client', true)
-                ->when($visibleProjectIds !== null, fn ($scoped) => $scoped->whereIn('id', $visibleProjectIds))
-                ->with(['tasks' => fn ($taskQuery) => $taskQuery
-                    ->where('workspace_id', $clientCompany->workspace_id)
-                    ->where('is_visible_to_client', true)]);
-        }]);
-
-        $proposals = ClientProposal::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('is_visible_to_client', true)
-            ->whereIn('status', ['sent', 'accepted'])
-            // Proposals and agreements carry a project too, so a user narrowed
-            // to one project must not read another's rates, retainer or terms -
-            // nor accept a proposal that was never theirs.
-            ->when(
-                $visibleProjectIds !== null,
-                fn ($query) => $query->where(fn ($scope) => $scope
-                    ->whereNull('client_project_id')
-                    ->orWhereIn('client_project_id', $visibleProjectIds ?? [])),
-            )
-            ->with(['items' => fn ($query) => $query->orderBy('sort_order')->orderBy('id')])
-            ->latest('id')
+        $items = $clientAgreement->recurringItems()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
             ->get();
 
-        $agreements = ClientAgreement::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('is_visible_to_client', true)
-            ->where('status', '!=', 'draft')
-            ->when(
-                $visibleProjectIds !== null,
-                fn ($query) => $query->where(fn ($scope) => $scope
-                    ->whereNull('client_project_id')
-                    ->orWhereIn('client_project_id', $visibleProjectIds ?? [])),
-            )
-            ->latest('id')
-            ->get();
-
-        $invoices = $this->visibleInvoices($clientCompany, $viewer)->latest('id')->get();
-
-        $visibleRecords = [
-            'proposal' => $proposals->pluck('public_id')->all(),
-            'agreement' => $agreements->pluck('public_id')->all(),
-            'invoice' => $invoices->pluck('public_id')->all(),
-        ];
-        $attachments = ClientAttachment::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
-            ->where(function ($query) use ($visibleRecords): void {
-                foreach ($visibleRecords as $type => $recordPublicIds) {
-                    $query->orWhere(function ($recordQuery) use ($type, $recordPublicIds): void {
-                        $recordQuery->where('record_type', $type)->whereIn('record_public_id', $recordPublicIds);
-                    });
-                }
-            })
-            ->get()
-            ->groupBy(fn (ClientAttachment $attachment): string => $attachment->record_type.':'.$attachment->record_public_id);
-        $attachmentPayload = fn (string $type, string $recordPublicId): array => ($attachments->get($type.':'.$recordPublicId) ?? collect())
-            ->map(fn (ClientAttachment $attachment): array => [
-                'id' => $attachment->public_id,
-                'name' => $attachment->original_filename,
-                'media_type' => $attachment->media_type,
-                'bytes' => $attachment->bytes,
-                'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
-            ])->values()->all();
-
-        $timeByProject = ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('is_visible_to_client', true)
-            // Visibility is the worker's intent; approval is the gate. An entry
-            // is created as a draft, so filtering on visibility alone showed
-            // clients work nobody had approved - and work later rejected.
-            ->approved()
-            ->whereIn('client_project_id', $clientCompany->projects->pluck('id'))
-            ->orderByDesc('worked_on')
-            ->orderByDesc('id')
-            ->get()
-            ->groupBy('client_project_id');
-
-        $projectPayload = [];
-
-        foreach ($clientCompany->projects as $project) {
-            $taskPayload = [];
-
-            foreach ($project->tasks as $task) {
-                $taskPayload[] = [
-                    'id' => $task->public_id,
-                    'title' => $task->title,
-                    'description' => $task->description,
-                    'status' => $task->status,
-                ];
-            }
-
-            $projectPayload[] = [
-                'id' => $project->public_id,
-                'name' => $project->name,
-                'description' => $project->description,
-                'status' => $project->status,
-                'tasks' => $taskPayload,
-                // Read-only. Rates, costs, and internal descriptions never cross this line;
-                // no client-reachable route writes time.
-                'time_entries' => ($timeByProject->get($project->id) ?? collect())
-                    ->map(fn (ClientTimeEntry $entry): array => [
-                        'id' => $entry->public_id,
-                        'worked_on' => $entry->worked_on->toDateString(),
-                        'minutes' => $entry->minutes,
-                        // No fallback to the internal description. A row without a
-                        // client-safe description has not been cleared for the
-                        // client, and the internal note may say anything.
-                        'description' => $entry->client_visible_description,
-                    ])->values()->all(),
-            ];
-        }
-
-        $proposalPayload = [];
-        foreach ($proposals as $proposal) {
-            $items = [];
-            foreach ($proposal->items as $item) {
-                $items[] = [
-                    'id' => $item->public_id,
-                    'description' => $item->description,
-                    'quantity' => $item->quantity,
-                    'unit_amount' => $item->unit_amount,
-                    'cadence' => $item->cadence,
-                ];
-            }
-            $proposalPayload[] = [
-                'id' => $proposal->public_id,
-                'title' => $proposal->title,
-                'summary' => $proposal->summary,
-                'terms' => $proposal->terms,
-                'currency' => $proposal->currency,
-                'valid_until' => $proposal->valid_until?->toDateString(),
-                'status' => $proposal->status,
-                'sent_at' => $proposal->sent_at?->toISOString(),
-                'accepted_at' => $proposal->accepted_at?->toISOString(),
-                'attachments' => $attachmentPayload('proposal', $proposal->public_id),
-                'items' => $items,
-            ];
-        }
-
-        $agreementPayload = [];
-        foreach ($agreements as $agreement) {
-            $agreementPayload[] = [
-                'id' => $agreement->public_id,
-                'title' => $agreement->title,
-                'status' => $agreement->status,
-                'starts_on' => $agreement->starts_on->toDateString(),
-                'ends_on' => $agreement->ends_on?->toDateString(),
-                'agreement_text' => $agreement->agreement_text,
-                'currency' => $agreement->currency,
-                'hourly_rate_amount' => $agreement->hourly_rate_amount,
-                'retainer_amount' => $agreement->retainer_amount,
-                'retainer_minutes' => $agreement->retainer_minutes,
-                'billing_cadence' => $agreement->billing_cadence,
-                'rollover_policy' => $agreement->rollover_policy,
-                'signed_at' => $agreement->signed_at?->toISOString(),
-                'signer_name' => $agreement->signer_name,
-                'signer_title' => $agreement->signer_title,
-                'attachments' => $attachmentPayload('agreement', $agreement->public_id),
-            ];
-        }
-
-        $invoicePayload = [];
-        foreach ($invoices as $invoice) {
-            $invoicePayload[] = [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'service_period_start' => $invoice->service_period_start?->toDateString(),
-                'service_period_end' => $invoice->service_period_end?->toDateString(),
-                'currency' => $invoice->currency,
-                'subtotal_amount' => $invoice->subtotal_amount,
-                'tax_amount' => $invoice->tax_amount,
-                'total_amount' => $invoice->total_amount,
-                'paid_amount' => $invoice->paid_amount,
-                'balance_amount' => $invoice->balance_amount,
-                'status' => $invoice->status,
-                'pdf_url' => "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf",
-                'attachments' => $attachmentPayload('invoice', $invoice->public_id),
-            ];
-        }
-
-        return Inertia::render('portal', [
+        return Inertia::render('clients/agreement', [
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
-                'proposals' => $proposalPayload,
-                'agreements' => $agreementPayload,
-                'invoices' => $invoicePayload,
-                'projects' => $projectPayload,
             ],
+            'home_href' => route('portal.show', $clientCompany, absolute: false),
+            'audience' => 'client',
+            'agreement' => AgreementTermsPayload::for(
+                $clientAgreement,
+                // The project an agreement is scoped to is named only to a
+                // reader who holds it, and a client reaching this one already
+                // does - so there is nothing here they could not otherwise see.
+                null,
+            ) + [
+                // Internal engine behaviour: what the biller does when a term
+                // is unstated. Sent as null rather than omitted so both
+                // audiences share one payload shape, and the page renders none
+                // of it for a client.
+                'rollover_policy' => null,
+                'catch_up_threshold_minutes' => null,
+                'first_cycle_proration' => null,
+                'bill_overage_interim' => null,
+                'activated_at' => null,
+                'terminated_at' => null,
+                'signer_name' => $clientAgreement->signer_name,
+                'signer_title' => $clientAgreement->signer_title,
+            ],
+            'recurring_items' => $items->map(fn ($item): array => [
+                'id' => $item->public_id,
+                'description' => $item->description,
+                'cadence' => $item->cadence,
+                'quantity' => $item->quantity === null ? null : (float) $item->quantity,
+                'amount' => $item->amount === null ? null : (int) $item->amount,
+                'currency' => $item->currency,
+                'effective_on' => $item->effective_on?->toDateString(),
+                'expires_on' => $item->expires_on?->toDateString(),
+                'is_active' => (bool) $item->is_active,
+            ])->values()->all(),
         ]);
+    }
+
+    /**
+     * One proposal, and the decision on it.
+     *
+     * The acceptance form used to sit on the portal's home screen among cards
+     * for everything else the client had. Signing your name is a decision, and
+     * a decision offered beside ten other things is one taken without reading
+     * it - so it has its own page, reached from one line on Home saying
+     * something is waiting.
+     */
+    public function proposal(
+        Request $request,
+        ClientCompany $clientCompany,
+        ClientProposal $clientProposal,
+    ): Response {
+        Gate::authorize('viewPortal', $clientCompany);
+
+        abort_unless(
+            (int) $clientProposal->workspace_id === (int) $clientCompany->workspace_id
+                && (int) $clientProposal->client_company_id === (int) $clientCompany->id
+                && $clientProposal->is_visible_to_client
+                && in_array($clientProposal->status, ['sent', 'accepted'], true)
+                && $this->withinScope($clientCompany, $request, $clientProposal->client_project_id),
+            404,
+        );
+
+        $items = $clientProposal->items()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $clientProposal->setRelation('items', $items);
+
+        return Inertia::render('clients/proposal', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'home_href' => route('portal.show', $clientCompany, absolute: false),
+            'proposal' => [
+                'id' => $clientProposal->public_id,
+                'title' => $clientProposal->title,
+                'summary' => $clientProposal->summary,
+                'terms' => $clientProposal->terms,
+                'status' => $clientProposal->status,
+                'currency' => $clientProposal->currency,
+                'valid_until' => $clientProposal->valid_until?->toDateString(),
+                'sent_at' => $clientProposal->sent_at?->toISOString(),
+                'accepted_at' => $clientProposal->accepted_at?->toISOString(),
+                'total_amount' => $clientProposal->totalAmount(),
+            ],
+            'items' => $items->map(fn (ClientProposalItem $item): array => [
+                'id' => $item->public_id,
+                'description' => $item->description,
+                // A string rather than a float: quantities are decimals in the
+                // column, and rendering one through a float is how rounding
+                // reaches a signature.
+                'quantity' => (string) $item->quantity,
+                'unit_amount' => (int) $item->unit_amount,
+                'cadence' => $item->cadence,
+            ])->values()->all(),
+            // Offered only for a proposal still awaiting an answer. The action
+            // behind it authorizes independently, because a form nobody
+            // rendered is not an authorization check.
+            'accept_href' => $clientProposal->status === 'sent'
+                ? route('svc.engagement.proposals.accept', [$clientCompany, $clientProposal], absolute: false)
+                : null,
+        ]);
+    }
+
+    /**
+     * Every invoice this client may see.
+     *
+     * Client Home carries the latest one and links here. Both resolve through
+     * the same query, so the list cannot show a row the detail refuses - nor
+     * refuse one the detail would serve.
+     */
+    public function invoices(Request $request, ClientCompany $clientCompany): Response
+    {
+        Gate::authorize('viewPortal', $clientCompany);
+
+        $invoices = $this->invoices->visibleTo($clientCompany, $this->viewer($request))
+            ->orderByDesc('issue_date')
+            ->orderByDesc('id')
+            ->get();
+
+        return Inertia::render('clients/invoices', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'invoice_base_href' => route('portal.invoices', $clientCompany, absolute: false),
+            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
+                'id' => $invoice->public_id,
+                'invoice_number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'issue_date' => $invoice->issue_date?->toDateString(),
+                'due_date' => $invoice->due_date?->toDateString(),
+                'total_amount' => (int) $invoice->total_amount,
+                'paid_amount' => (int) $invoice->paid_amount,
+                'balance_amount' => (int) $invoice->balance_amount,
+            ])->values()->all(),
+        ]);
+    }
+
+    /**
+     * The work done, as the client may read it.
+     *
+     * Its own screen rather than the operator's time sheet, and deliberately.
+     * That sheet is a working tool - it logs, approves, and shows how much of a
+     * retainer is left; this is a statement of work done. Sharing one component
+     * would mean either handing a client the capacity strip or taking the
+     * operator's tool away.
+     *
+     * Three conditions, each load-bearing. Approval is the gate, not visibility:
+     * an entry is created as a draft, so filtering on the visibility flag alone
+     * showed clients work nobody had approved - and work later rejected. And a
+     * row with no client-safe description was never cleared for the client at
+     * all, whatever the flag says; the internal note is never the fallback.
+     */
+    public function time(Request $request, ClientCompany $clientCompany): Response
+    {
+        Gate::authorize('viewPortal', $clientCompany);
+
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $this->viewer($request));
+
+        $projects = $this->visibleProjects($clientCompany, $visibleProjectIds);
+        $projectNames = $projects->pluck('name', 'id');
+
+        $entries = ClientTimeEntry::query()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('is_visible_to_client', true)
+            ->approved()
+            ->whereNotNull('client_visible_description')
+            ->whereIn('client_project_id', $projects->pluck('id')->all())
+            ->orderByDesc('worked_on')
+            ->orderByDesc('id')
+            ->get();
+
+        return Inertia::render('portal/time', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'entries' => $entries->map(fn (ClientTimeEntry $entry): array => [
+                'id' => $entry->public_id,
+                'worked_on' => $entry->worked_on->toDateString(),
+                'project' => $projectNames[$entry->client_project_id] ?? null,
+                // Read-only. Rates, costs and internal descriptions never cross
+                // this line; no client-reachable route writes time.
+                'description' => $entry->client_visible_description,
+                'minutes' => (int) $entry->minutes,
+            ])->values()->all(),
+        ]);
+    }
+
+    /** The tasks this client may see, with the project as a filter. */
+    public function tasks(Request $request, ClientCompany $clientCompany): Response
+    {
+        Gate::authorize('viewPortal', $clientCompany);
+
+        $visibleProjectIds = $this->portalAccess->visibleProjectIds($clientCompany, $this->viewer($request));
+        $projects = $this->visibleProjects($clientCompany, $visibleProjectIds);
+
+        // A stale or unreachable project falls back to every visible one,
+        // rather than to an empty list that reads as "there are no tasks".
+        $requested = $request->query('project');
+        $selected = is_string($requested) && $requested !== ''
+            ? $projects->firstWhere('public_id', $requested)
+            : null;
+
+        $scope = $selected === null ? $projects : collect([$selected]);
+        $projectNames = $projects->pluck('name', 'id');
+
+        $tasks = ClientTask::query()
+            ->where('workspace_id', $clientCompany->workspace_id)
+            ->whereIn('client_project_id', $scope->pluck('id')->all())
+            ->where('is_visible_to_client', true)
+            ->orderBy('status')
+            ->orderBy('title')
+            ->get();
+
+        return Inertia::render('clients/tasks', [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            // The "client sees" column is a statement about disclosure, which
+            // is meaningless on the copy of this screen the client is reading.
+            'audience' => 'client',
+            'filters' => ['project_id' => $selected?->public_id],
+            'projects' => $projects->map(fn (ClientProject $project): array => [
+                'id' => $project->public_id,
+                'name' => $project->name,
+            ])->values()->all(),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => [
+                'id' => $task->public_id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'project' => $projectNames[$task->client_project_id] ?? null,
+                'is_visible_to_client' => true,
+                'completed_at' => $task->completed_at?->toDateString(),
+            ])->values()->all(),
+        ]);
+    }
+
+    /**
+     * The projects behind every module here.
+     *
+     * Client-visible, and narrowed again for a project-scoped user. One place,
+     * because "which projects" is the question every one of these screens is
+     * really asking and three copies of it is three chances to forget a
+     * condition.
+     *
+     * @param  list<int>|null  $visibleProjectIds  null is the whole company
+     * @return Collection<int, ClientProject>
+     */
+    private function visibleProjects(ClientCompany $company, ?array $visibleProjectIds): Collection
+    {
+        return ClientProject::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->where('is_visible_to_client', true)
+            ->when($visibleProjectIds !== null, fn (Builder $query): Builder => $query
+                ->whereIn('id', $visibleProjectIds ?? []))
+            ->orderBy('name')
+            ->get();
+    }
+
+    /** The portal is a web surface; an agent principal never reaches it. */
+    private function viewer(Request $request): ?User
+    {
+        $viewer = $request->user();
+
+        return $viewer instanceof User ? $viewer : null;
+    }
+
+    /**
+     * Whether a record scoped to one project is this viewer's to read.
+     *
+     * A record naming no project belongs to the whole company and passes. One
+     * naming a project passes only for a viewer who holds it - proposals and
+     * agreements carry rates, retainers and terms, and a user narrowed to one
+     * project must not read another's, nor accept a proposal that was never
+     * theirs.
+     */
+    private function withinScope(ClientCompany $company, Request $request, ?int $projectId): bool
+    {
+        $visible = $this->portalAccess->visibleProjectIds($company, $this->viewer($request));
+
+        return $visible === null || $projectId === null || in_array($projectId, $visible, true);
     }
 }

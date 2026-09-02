@@ -1,32 +1,33 @@
 import type { Auth, RelyingApplication } from '@/types/auth';
-import type { ClientContext } from '@/types/navigation';
+import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
  * The shared props the chrome reads, in one place.
  *
- * `HandleInertiaRequests` shares these on every request, so a page test that
- * mocks `usePage` has to supply them or the layout it renders inside reads
- * `undefined`. Built here rather than restated in each test file because the
- * set grows: when the chrome started naming the signed-in person, every mock
- * that had only `clientContext` broke at once, and each would have been fixed
- * separately. One factory means the next addition is one edit.
+ * `HandleInertiaRequests` shares the identity and the sibling applications on
+ * every request, and `ResolveWorkspaceNavigation` adds the navbar's own payload
+ * on the routes that render one - so a page test that mocks `usePage` has to
+ * supply them or the shell it renders inside reads `undefined`. Built here
+ * rather than restated in each test file because the set grows: when the chrome
+ * started naming the signed-in person, every mock that had only the client
+ * context broke at once, and each would have been fixed separately.
  *
  * A page test that cares about a value passes it; everything else takes the
- * default, which is a signed-in operator inside no client.
+ * default, which is a signed-in operator inside no workspace.
  */
 export function sharedPageProps(
     overrides: {
-        clientContext?: ClientContext | null;
+        workspaceNavigation?: WorkspaceNavigation | null;
         auth?: Auth;
         applications?: RelyingApplication[];
     } = {},
 ): {
-    clientContext: ClientContext | null;
+    workspaceNavigation: WorkspaceNavigation | null;
     auth: Auth;
     applications: RelyingApplication[];
 } {
     return {
-        clientContext: overrides.clientContext ?? null,
+        workspaceNavigation: overrides.workspaceNavigation ?? null,
         auth: overrides.auth ?? {
             user: {
                 id: 1,

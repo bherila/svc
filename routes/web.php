@@ -6,12 +6,14 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
+use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
+use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ResolveWorkspaceNavigation;
 use BWH\Auth\Http\Controllers\OAuthDynamicClientRegistrationController;
 use BWH\Auth\Http\Controllers\OAuthMetadataController;
 use Illuminate\Support\Facades\Route;
@@ -33,7 +35,9 @@ Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])
 Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('oauth.callback');
 
 Route::middleware('auth')->group(function (): void {
-    Route::get('/app', DashboardController::class)->name('dashboard');
+    // Where signing in lands. One row per workspace and nothing else - the
+    // question this screen asks has exactly one answer per row.
+    Route::get('/app', WorkspaceSelectorController::class)->name('workspaces.index');
 
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
@@ -45,29 +49,74 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
 
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
+
+    // Opening a workspace, as its own step. Which client to open depends on
+    // this viewer at this moment, so the selector links here instead of
+    // guessing a destination it has no basis for.
+    Route::get('/workspaces/{workspace}', WorkspaceEntryController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.enter');
+
+    // Everything below renders the workspace shell, so the switcher and the
+    // module tabs are resolved once for the group rather than by a name test
+    // inside the Inertia middleware. Attaching it here is also what keeps the
+    // switcher's queries off the screens that show no switcher - the workspace
+    // selector, webhooks, PDFs and downloads.
+    // Operations is on its way out - every workflow it holds is moving to the
+    // client module that owns it - so it deliberately stays outside the shell
+    // rather than gaining a switcher it is about to lose.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->name('workspaces.operations');
-    Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
-        ->name('clients.show');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices', [ClientDirectoryController::class, 'invoices'])
-        ->name('clients.invoices');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
-        ->name('clients.tasks');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/manage', [ClientDirectoryController::class, 'manage'])
-        ->name('clients.manage');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
-        ->name('clients.agreement');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientDirectoryController::class, 'project'])
-        ->name('clients.project');
+
+    Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
+            ->name('clients.show');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices', [ClientDirectoryController::class, 'invoices'])
+            ->name('clients.invoices');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
+            ->name('clients.tasks');
+        // Client settings, not a tab. Editing the client record and its
+        // projects is administration of the client rather than one of its
+        // modules, so it is reached from the switcher and from Client Home.
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/settings', [ClientDirectoryController::class, 'manage'])
+            ->name('clients.settings');
+        // The tab this used to be. Kept so links and bookmarks survive the
+        // rename; it is not a tab any more, so nothing generates it.
+        Route::redirect(
+            '/workspaces/{workspace}/clients/{clientCompany}/manage',
+            '/workspaces/{workspace}/clients/{clientCompany}/settings',
+        )->name('clients.manage');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
+            ->name('clients.agreement');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}', [ClientDirectoryController::class, 'proposal'])
+            ->name('clients.proposal');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientDirectoryController::class, 'project'])
+            ->name('clients.project');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
+            ->name('clients.invoice');
+
+        Route::get('/portal/{clientCompany}', [ClientPortalController::class, 'show'])->name('portal.show');
+        Route::get('/portal/{clientCompany}/invoices', [ClientPortalController::class, 'invoices'])
+            ->name('portal.invoices');
+        Route::get('/portal/{clientCompany}/invoices/{clientInvoice}', [ClientPortalController::class, 'invoice'])
+            ->name('portal.invoice');
+        Route::get('/portal/{clientCompany}/time', [ClientPortalController::class, 'time'])
+            ->name('portal.time');
+        Route::get('/portal/{clientCompany}/tasks', [ClientPortalController::class, 'tasks'])
+            ->name('portal.tasks');
+        Route::get('/portal/{clientCompany}/agreements/{clientAgreement}', [ClientPortalController::class, 'agreement'])
+            ->name('portal.agreement');
+        Route::get('/portal/{clientCompany}/proposals/{clientProposal}', [ClientPortalController::class, 'proposal'])
+            ->name('portal.proposal');
+    });
+
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
         ->name('clients.update');
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
         ->name('projects.update');
     Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
         ->name('projects.access.update');
-    Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
-        ->name('clients.invoice');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
@@ -75,10 +124,6 @@ Route::middleware('auth')->group(function (): void {
         ->name('tasks.store');
     Route::patch('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'update'])
         ->name('tasks.update');
-
-    Route::get('/portal/{clientCompany}', [ClientPortalController::class, 'show'])->name('portal.show');
-    Route::get('/portal/{clientCompany}/invoices/{clientInvoice}', [ClientPortalController::class, 'invoice'])
-        ->name('portal.invoice');
 });
 
 require __DIR__.'/engagement.php';

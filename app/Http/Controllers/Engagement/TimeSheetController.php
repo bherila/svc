@@ -47,11 +47,7 @@ class TimeSheetController extends Controller
         AgentTimeEntryQuery $visible,
         AgreementSelector $selector,
         TimeEntryProjectChainGuard $projectChainGuard,
-        // Declared even though only one of the two routes supplies it: the
-        // binding is substituted from the signature, so without the parameter
-        // the route's company arrives as a raw id string and is silently
-        // ignored.
-        ?ClientCompany $clientCompany = null,
+        ClientCompany $clientCompany,
     ): Response {
         Gate::authorize('view', $workspace);
         $user = $request->user();
@@ -63,11 +59,15 @@ class TimeSheetController extends Controller
         // workspace but pointing at a visible parent satisfies the join - and
         // a task reaches the payload without passing any access check of its
         // own, on the strength of the project it names.
+        // One company: the one the route names. The sheet used to read every
+        // company in the workspace so the page could offer a selector of its
+        // own, which meant it paid for the whole tenant to render one client -
+        // and put a second, competing client picker under the navbar's.
         $companies = $workspace->clientCompanies()
+            ->whereKey($clientCompany->getKey())
             ->with([
                 'projects' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('name'),
             ])
-            ->orderBy('name')
             ->get();
 
         $isManager = $access->isWorkspaceManager($user, $workspace);
@@ -139,20 +139,21 @@ class TimeSheetController extends Controller
             'tasks' => fn ($query) => $query->where('workspace_id', $workspace->id)->orderBy('title'),
         ]);
 
-        // A company named in the route has to be one this member reaches, the
+        // The company named in the route has to be one this member reaches, the
         // same rule the directory applies (#157). The sheet's own project
         // filtering already empties the *content* for an unreachable client -
         // but the page still rendered, with that client's name in the chrome
         // and its id echoed back in `filters`, which is the disclosure. Found
         // by the route sweep rather than by review.
-        if ($clientCompany !== null) {
-            abort_unless(
-                $companies->contains(fn (ClientCompany $candidate): bool => (int) $candidate->id === (int) $clientCompany->id),
-                404,
-            );
-        }
+        //
+        // The projects filter above drops a company this viewer reaches nothing
+        // of, so surviving it is the check.
+        abort_unless(
+            $companies->contains(fn (ClientCompany $candidate): bool => (int) $candidate->id === (int) $clientCompany->id),
+            404,
+        );
 
-        $selectedCompany = $this->selectedCompany($request, $companies, $clientCompany);
+        $selectedCompany = $companies->first();
         $entries = $this->entries($visible, $user, $workspace, $selectedCompany, $visibleProjectIds);
         $invoicesByEntry = $this->invoicesByEntry($workspace, $entries);
 
@@ -206,35 +207,6 @@ class TimeSheetController extends Controller
             ])->values()->all(),
             'months' => $this->months($entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
         ]);
-    }
-
-    /** @param EloquentCollection<int, ClientCompany> $companies */
-    private function selectedCompany(
-        Request $request,
-        EloquentCollection $companies,
-        ?ClientCompany $routed = null,
-    ): ?ClientCompany {
-        // A company in the route wins over one in the query string, and is
-        // still resolved through the visible set rather than trusted: route
-        // binding proves the row exists, not that this member may see it. An
-        // id that survives binding but not this lookup falls back exactly as a
-        // stale query parameter does.
-        if ($routed !== null) {
-            return $companies->firstWhere('id', $routed->id) ?? $companies->first();
-        }
-
-        $requested = $request->query('company');
-
-        if (is_string($requested) && $requested !== '') {
-            // A stale, malformed or no-longer-visible id falls back rather
-            // than selecting nothing. The page independently falls back to the
-            // first company, so a null selection here rendered that company's
-            // name above "no time logged in the last twelve months" - a claim
-            // about a company whose entries were never fetched.
-            return $companies->firstWhere('public_id', $requested) ?? $companies->first();
-        }
-
-        return $companies->first();
     }
 
     /**

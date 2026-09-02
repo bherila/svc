@@ -19,15 +19,12 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Inertia\Inertia;
-use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
@@ -38,7 +35,7 @@ class InvoiceController extends Controller
         private readonly BillingRecordAccess $billingAccess,
     ) {}
 
-    public function index(Request $request, Workspace $workspace): JsonResponse|InertiaResponse
+    public function index(Request $request, Workspace $workspace): JsonResponse|RedirectResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
         // The company relation is constrained to this workspace. It is
@@ -79,47 +76,16 @@ class InvoiceController extends Controller
             return response()->json(['data' => $invoices]);
         }
 
-        // The workspace-wide list, above any one client - so it renders with no
-        // client chrome, the way the workspace time sheet does. Clicking an
-        // invoice drops into that client's context, which is where an invoice
-        // actually lives.
-        return Inertia::render('invoices/index', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
-            ],
-            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'total_amount' => (int) $invoice->total_amount,
-                'paid_amount' => (int) $invoice->paid_amount,
-                'balance_amount' => (int) $invoice->balance_amount,
-                'company' => [
-                    'id' => $invoice->clientCompany?->public_id,
-                    'name' => $invoice->clientCompany?->name,
-                ],
-                // Built here rather than in the page, because where a row leads
-                // depends on who is asking. A member goes to the client-scoped
-                // detail; a portal viewer would be refused there - that route
-                // authorizes on workspace membership - so they get the route
-                // that applies portal invoice authorization instead.
-                'href' => $isMember
-                    ? ($invoice->clientCompany === null
-                        ? null
-                        : route('clients.invoice', [
-                            'workspace' => $workspace,
-                            'clientCompany' => $invoice->clientCompany,
-                            'clientInvoice' => $invoice,
-                        ], false))
-                    : route('svc.billing.invoices.show', [
-                        'workspace' => $workspace,
-                        'clientInvoice' => $invoice,
-                    ], false),
-            ])->values()->all(),
+        // The workspace-wide screen is gone: an invoice lives inside one
+        // client, and a copy of the list with no client named around it was a
+        // second way to reach the same rows. The URL still resolves - through
+        // the same entry point as every other way into a workspace - and lands
+        // on the Invoices tab of the client this operator was last in. The JSON
+        // branch above is untouched: an API caller asked for the whole
+        // workspace and still gets it.
+        return redirect()->route('workspaces.enter', [
+            'workspace' => $workspace,
+            'module' => 'invoices',
         ]);
     }
 
@@ -146,12 +112,33 @@ class InvoiceController extends Controller
             : redirect()->back()->with('status', 'Invoice drafted.');
     }
 
-    public function show(Request $request, Workspace $workspace, ClientInvoice $clientInvoice): JsonResponse|View
+    /**
+     * One invoice, by its workspace-wide URL.
+     *
+     * The JSON is unchanged. The HTML now goes to the invoice's own screen
+     * inside its client, where the chrome says whose invoice it is and the
+     * lifecycle actions are - rather than to a standalone Blade page that had
+     * neither, reachable from a list that no longer exists.
+     */
+    public function show(Request $request, Workspace $workspace, ClientInvoice $clientInvoice): JsonResponse|RedirectResponse
     {
         $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
-        $invoice = $clientInvoice->load(['lines', 'payments', 'clientCompany']);
 
-        return $request->expectsJson() ? response()->json(['data' => $invoice]) : view('invoices.show', compact('invoice'));
+        if ($request->expectsJson()) {
+            return response()->json(['data' => $clientInvoice->load(['lines', 'payments', 'clientCompany'])]);
+        }
+
+        $company = $clientInvoice->clientCompany;
+
+        // Lineage rather than a constrained relation: a row migrated in from
+        // before the composite tenant keys can name a company of another
+        // tenant, and that is not a client screen to send anyone to.
+        abort_if(
+            $company === null || (int) $company->workspace_id !== (int) $workspace->id,
+            404,
+        );
+
+        return redirect()->route('clients.invoice', [$workspace, $company, $clientInvoice]);
     }
 
     public function issue(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse

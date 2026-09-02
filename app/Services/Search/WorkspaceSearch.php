@@ -182,14 +182,17 @@ final class WorkspaceSearch
         }
 
         // A task has no screen of its own, so it resolves to its client's Tasks
-        // tab. Inventing a per-task route here would be a link to a 404.
+        // tab, filtered to the project it belongs to. Inventing a per-task
+        // route here would be a link to a 404; landing on the unfiltered list
+        // would leave the reader to find the row they searched for.
         foreach ($tasks as $task) {
             $project = $task->project;
             $href = $base($project->client_company_id);
 
             if ($href !== null) {
                 $results[] = new SearchResult(SearchResultKind::Task, $task->public_id, $task->title,
-                    $project->name.' - '.$parents[(int) $project->client_company_id]->name, $href.'/tasks', $workspace->name);
+                    $project->name.' - '.$parents[(int) $project->client_company_id]->name,
+                    $href.'/tasks?project='.$project->public_id, $workspace->name);
             }
         }
 

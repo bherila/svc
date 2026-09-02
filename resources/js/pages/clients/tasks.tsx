@@ -16,7 +16,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 
 type TaskProject = { id: string; name: string };
 
@@ -42,19 +42,26 @@ const ALL_PROJECTS = 'all';
  */
 export default function ClientTasks({
     company,
+    audience,
     filters,
     projects,
     tasks,
 }: {
     company: { id: string; name: string };
+    /**
+     * Whether "client sees" is a column. It is a statement about disclosure,
+     * which means nothing on the copy of this screen the client is reading.
+     */
+    audience: 'operator' | 'client';
     filters: { project_id: string | null };
     projects: TaskProject[];
     tasks: CompanyTask[];
 }) {
     const selected = filters.project_id ?? ALL_PROJECTS;
+    const showsVisibility = audience === 'operator';
 
     return (
-        <ClientContextLayout active="tasks">
+        <WorkspaceShell activeModule="tasks">
             <Head title={`${company.name} tasks`} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <Card>
@@ -123,7 +130,11 @@ export default function ClientTasks({
                                             <TableHead>Project</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Completed</TableHead>
-                                            <TableHead>Client sees</TableHead>
+                                            {showsVisibility && (
+                                                <TableHead>
+                                                    Client sees
+                                                </TableHead>
+                                            )}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -143,11 +154,13 @@ export default function ClientTasks({
                                                 <TableCell>
                                                     {task.completed_at ?? '—'}
                                                 </TableCell>
-                                                <TableCell>
-                                                    {task.is_visible_to_client
-                                                        ? 'Yes'
-                                                        : 'No'}
-                                                </TableCell>
+                                                {showsVisibility && (
+                                                    <TableCell>
+                                                        {task.is_visible_to_client
+                                                            ? 'Yes'
+                                                            : 'No'}
+                                                    </TableCell>
+                                                )}
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -157,6 +170,6 @@ export default function ClientTasks({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }
