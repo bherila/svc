@@ -67,8 +67,8 @@ export default function ClientProposalDetail({
         <WorkspaceShell activeModule="home">
             <Head title={proposal.title} />
 
-            <main className="mx-auto grid max-w-3xl gap-6 px-6 py-8">
-                <header className="grid gap-1">
+            <main className="mx-auto grid max-w-3xl grid-cols-1 gap-6 px-6 py-8">
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -164,7 +164,7 @@ export default function ClientProposalDetail({
                                 form.post(acceptHref);
                             }}
                         >
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="signer-name">Your name</Label>
                                 <Input
                                     id="signer-name"
@@ -182,7 +182,7 @@ export default function ClientProposalDetail({
                                     </p>
                                 )}
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="signer-title">Your title</Label>
                                 <Input
                                     id="signer-title"

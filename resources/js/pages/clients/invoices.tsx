@@ -29,7 +29,7 @@ export default function ClientInvoices({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={`${company.name} invoices`} />
-            <main className="mx-auto grid max-w-5xl gap-6 px-6 py-8">
+            <main className="mx-auto grid max-w-5xl grid-cols-1 gap-6 px-6 py-8">
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Invoices
                 </h1>

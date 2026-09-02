@@ -141,9 +141,9 @@ export default function ClientHome({
         <WorkspaceShell activeModule="home">
             <Head title={company.name} />
 
-            <main className="mx-auto grid max-w-4xl gap-6 px-6 py-8">
+            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 px-6 py-8">
                 <header className="flex flex-wrap items-center justify-between gap-3">
-                    <h1 className="text-2xl font-semibold tracking-tight">
+                    <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                         {company.name}
                     </h1>
                     {settingsHref !== null && (
@@ -192,11 +192,11 @@ export default function ClientHome({
                 >
                     {latestInvoice !== null && (
                         <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
-                            <div className="grid gap-1">
-                                <div className="flex items-center gap-2">
+                            <div className="grid min-w-0 grid-cols-1 gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <Link
                                         href={latestInvoice.href}
-                                        className="font-medium underline-offset-4 hover:underline"
+                                        className="font-medium wrap-anywhere underline-offset-4 hover:underline"
                                     >
                                         {latestInvoice.invoice_number}
                                     </Link>

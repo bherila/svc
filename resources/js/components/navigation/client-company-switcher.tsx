@@ -98,7 +98,7 @@ export function ClientCompanySwitcher({
     };
 
     return (
-        <div className="relative shrink-0" ref={container}>
+        <div className="relative min-w-0 shrink" ref={container}>
             <Button
                 variant="secondary"
                 size="sm"
@@ -107,7 +107,7 @@ export function ClientCompanySwitcher({
                 aria-haspopup="dialog"
                 aria-controls={open ? listId : undefined}
                 title={current?.name}
-                className="max-w-56"
+                className="max-w-56 min-w-0 shrink"
                 onClick={() => {
                     // Cleared as the popover opens rather than in an effect
                     // reacting to it: a filter left over from last time hides

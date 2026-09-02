@@ -65,7 +65,7 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
     }
 
     return (
-        <div className="grid gap-2">
+        <div className="grid grid-cols-1 gap-2">
             <div className="flex flex-wrap gap-3">
                 {capacity.map((row, index) => {
                     const over = row.over_hours > 0;
@@ -364,7 +364,7 @@ export default function TimeSheet({
                         </p>
                     )}
 
-                    <div className="mt-8 grid gap-8">
+                    <div className="mt-8 grid grid-cols-1 gap-8">
                         {months.map((month) => (
                             <MonthCard
                                 key={month.key}

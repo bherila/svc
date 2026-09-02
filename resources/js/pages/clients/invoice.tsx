@@ -137,8 +137,8 @@ export default function ClientInvoiceDetail({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
-            <main className="mx-auto grid max-w-6xl gap-6 p-6">
-                <header className="grid gap-1">
+            <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6">
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={backHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -246,7 +246,7 @@ export default function ClientInvoiceDetail({
                                 });
                             }}
                         >
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-amount">Amount</Label>
                                 <Input
                                     id="payment-amount"
@@ -257,7 +257,7 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
                                 <Input
                                     id="payment-method"
@@ -267,7 +267,7 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-reference">
                                     Reference
                                 </Label>

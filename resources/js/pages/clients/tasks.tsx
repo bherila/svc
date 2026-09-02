@@ -63,7 +63,7 @@ export default function ClientTasks({
     return (
         <WorkspaceShell activeModule="tasks">
             <Head title={`${company.name} tasks`} />
-            <main className="mx-auto grid max-w-6xl gap-6 p-6">
+            <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6">
                 <Card>
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">

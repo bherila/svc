@@ -71,8 +71,8 @@ export default function PortalInvoice({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
-            <main className="mx-auto grid max-w-4xl gap-6 p-6">
-                <header className="grid gap-1">
+            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 p-6">
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"

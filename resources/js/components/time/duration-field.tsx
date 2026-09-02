@@ -53,7 +53,7 @@ export function DurationField({
     };
 
     return (
-        <div className="grid gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5">
             <Label htmlFor={id}>Duration</Label>
             <div className="flex items-center gap-1.5">
                 <Input

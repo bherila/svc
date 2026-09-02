@@ -26,8 +26,11 @@ import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
  *
  * The row never wraps. Wrapping turns one bar into two and moves the tabs to
  * where the reader has stopped looking; instead the tab strip scrolls, and the
- * two anchors - the wordmark and the switcher - are the parts that never shrink
- * away.
+ * two anchors - the wordmark and the switcher - are the parts that never leave.
+ * The switcher does narrow, though: on a phone, a client whose registered name
+ * runs to sixty characters would otherwise hold the row wider than the window
+ * and scroll every page sideways, so it truncates the name rather than the bar
+ * outgrowing the screen.
  */
 export function WorkspaceNavbar({
     navigation,

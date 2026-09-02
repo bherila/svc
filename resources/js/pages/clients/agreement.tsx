@@ -89,8 +89,8 @@ export default function ClientAgreementDetail({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={agreement.title} />
-            <main className="mx-auto grid max-w-5xl gap-6 p-6">
-                <header className="grid gap-1">
+            <main className="mx-auto grid max-w-5xl grid-cols-1 gap-6 p-6">
+                <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"

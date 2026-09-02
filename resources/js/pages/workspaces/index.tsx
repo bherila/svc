@@ -63,7 +63,7 @@ function NewWorkspaceDialog({
                 </DialogHeader>
 
                 <form
-                    className="grid gap-4"
+                    className="grid grid-cols-1 gap-4"
                     onSubmit={(event) => {
                         event.preventDefault();
 
@@ -86,7 +86,7 @@ function NewWorkspaceDialog({
                         );
                     }}
                 >
-                    <div className="grid gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-workspace-name">Name</Label>
                         <Input
                             id="new-workspace-name"

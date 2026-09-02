@@ -40,7 +40,7 @@ export default function PortalTime({
     return (
         <WorkspaceShell activeModule="time">
             <Head title={`${company.name} time`} />
-            <main className="mx-auto grid max-w-4xl gap-6 px-6 py-8">
+            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 px-6 py-8">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                     <h1 className="text-2xl font-semibold tracking-tight">
                         Time
