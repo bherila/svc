@@ -33,11 +33,13 @@ final class McpPrincipalResolverTest extends TestCase
         $this->assertSame(['mcp:use', 'billing:read'], $resolved->scopes);
     }
 
-    public function test_it_rejects_expired_revoked_wrong_audience_or_wrong_client_credentials(): void
+    public function test_it_rejects_expired_revoked_wrong_subject_wrong_audience_or_wrong_client_credentials(): void
     {
+        $otherUser = User::factory()->create();
         foreach ([
             [['expires_at' => now()->subSecond()], null],
             [['revoked' => true], null],
+            [['user_id' => $otherUser->id], null],
             [['resource_uri' => 'https://other.example/api/v1'], null],
             [[], 'different-client'],
         ] as [$overrides, $authenticatedClientId]) {
