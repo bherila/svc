@@ -9,7 +9,15 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Mcp\AgentMcpAgreementResource;
+use App\Services\Mcp\AgentMcpAgreementTools;
+use App\Services\Mcp\AgentMcpBillingAuditTools;
+use App\Services\Mcp\AgentMcpBillingScheduleTools;
+use App\Services\Mcp\AgentMcpCapabilityRegistryFactory;
+use App\Services\Mcp\AgentMcpCapacityLedgerTools;
+use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpInputSchemaFactory;
+use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpToolCatalog;
 use App\Services\Mcp\AgentMcpWriteTools;
@@ -44,6 +52,26 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertArrayHasKey($target, $schema['$defs'] ?? [], $definition->name);
             }
         }
+    }
+
+    public function test_context_resource_uses_the_canonical_context_response_contract(): void
+    {
+        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
+            app(AgentMcpReadTools::class),
+            app(AgentMcpContextResource::class),
+            app(AgentMcpAgreementTools::class),
+            app(AgentMcpAgreementResource::class),
+            app(AgentMcpBillingScheduleTools::class),
+            app(AgentMcpCapacityLedgerTools::class),
+            app(AgentMcpBillingAuditTools::class),
+            app(AgentMcpPrompts::class),
+            app(AgentMcpWriteTools::class),
+        );
+
+        $this->assertSame(
+            AgentApiResponseSchemaCatalog::forOperation('context.get'),
+            $registry->get('current-context')->outputSchema,
+        );
     }
 
     public function test_openapi_inventory_and_scopes_match_every_shipped_agent_route(): void

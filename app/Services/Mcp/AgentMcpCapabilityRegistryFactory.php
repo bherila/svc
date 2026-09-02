@@ -330,7 +330,7 @@ final class AgentMcpCapabilityRegistryFactory
             description: 'The authenticated SVC identity and authorized workspaces.',
             handler: [$resource, 'read'],
             inputSchema: ['type' => 'object', 'additionalProperties' => false],
-            outputSchema: ['type' => 'object', 'additionalProperties' => false],
+            outputSchema: AgentApiResponseSchemaCatalog::forOperation('context.get'),
             requiredScopes: ['identity:read'],
             policyAbility: 'AgentAccess::canViewWorkspace',
             requiresWorkspace: false,

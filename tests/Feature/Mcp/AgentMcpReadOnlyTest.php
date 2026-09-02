@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Token;
+use Mcp\Capability\Discovery\SchemaValidator;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
@@ -93,6 +95,12 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertOk()->json('result.contents.0');
         $this->assertSame('svc://context', $contextResource['uri']);
         $this->assertSame('application/json', $contextResource['mimeType']);
+        $contextData = json_decode($contextResource['text'], true, flags: JSON_THROW_ON_ERROR);
+        $contextErrors = (new SchemaValidator)->validateAgainstJsonSchema(
+            $contextData,
+            AgentApiResponseSchemaCatalog::forOperation('context.get'),
+        );
+        $this->assertSame([], $contextErrors, json_encode($contextErrors, JSON_THROW_ON_ERROR));
 
         $templates = $this->mcp(['jsonrpc' => '2.0', 'id' => 22, 'method' => 'resources/templates/list', 'params' => []], $session)
             ->assertOk()->json('result.resourceTemplates');
