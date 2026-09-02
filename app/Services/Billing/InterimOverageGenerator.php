@@ -684,7 +684,12 @@ final class InterimOverageGenerator
             }
 
             if ($canBelongToCycle) {
-                $hours += (float) ($invoice->hours_billed_at_rate ?? 0);
+                // Refuses on a null rather than contributing zero. This sum
+                // tells the cadence invoice what interim billing has already
+                // charged, so a row that reads as zero when it is actually
+                // unknown charges the client a second time for hours they have
+                // already paid for (#144).
+                $hours += $invoice->billedOverageHoursOrFail();
             }
         }
 

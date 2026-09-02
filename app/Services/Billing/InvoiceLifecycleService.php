@@ -64,6 +64,18 @@ final class InvoiceLifecycleService
                 'due_date' => $attributes['due_date'] ?? null,
                 'service_period_start' => $attributes['service_period_start'] ?? null,
                 'service_period_end' => $attributes['service_period_end'] ?? null,
+                // Zero, not null. Nothing on this path bills overage hours, and
+                // since #144 a null here means *unknown* rather than *none* -
+                // the figure is subtracted from what the next period charges,
+                // so a reader that cannot tell the two apart bills the same
+                // hours twice, and one that can must refuse. Leaving it unset
+                // made every scheduled and ad-hoc invoice unreadable the moment
+                // it was issued, which permanently stopped cadence generation
+                // for the agreement it belonged to.
+                //
+                // The sibling generators already write an explicit 0 for the
+                // same situation; this was the one creation path that did not.
+                'hours_billed_at_rate' => $attributes['hours_billed_at_rate'] ?? 0,
                 'currency' => $currency,
                 ...$totals,
                 'balance_amount' => $totals['total_amount'],

@@ -9,6 +9,7 @@ use App\Models\Concerns\IncrementsAgentRevision;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -153,6 +154,53 @@ class ClientInvoice extends Model implements WorkspaceOwned
      * a negative amount (an applied overpayment credit), both of which that
      * helper rejects by design for operator-entered lines.
      */
+    /**
+     * The overage hours this invoice has already charged, or a refusal.
+     *
+     * Three sums subtract this figure so the next period does not charge the
+     * same overage twice, and all three are `SUM(hours_billed_at_rate)`. SQL
+     * contributes nothing for a NULL, so a charged invoice with no recorded
+     * figure reads as *zero already billed* - and the client is charged again
+     * for hours they have already paid for.
+     *
+     * `service_period_end` was the previous instance of this shape (#135): a
+     * `<=` that answers false for a null dropped the whole row out of the
+     * window. This is the same outcome by a different route - the row is inside
+     * the window and the value it contributes vanishes.
+     *
+     * There is no fail-closed reading available, which is what makes this a
+     * refusal rather than a default. #135 could read a null period as "inside
+     * the window", turning a double charge into capacity credited a period
+     * early. Here the question is *how much* was billed: a null is not a
+     * quantity, coercing it to zero is exactly the current behaviour and
+     * exactly the defect, and `COALESCE` to anything else invents a number.
+     *
+     * The column is nullable and the importer passes the source value through,
+     * so a restored charged invoice can carry a null.
+     * `svc:billing:audit-missing-billed-overage` sizes that population and
+     * `svc:billing:backfill-ledger` repairs it from the source.
+     *
+     * @throws DomainException when a charged invoice records no billed-overage figure
+     */
+    public function billedOverageHoursOrFail(): float
+    {
+        if ($this->hours_billed_at_rate === null) {
+            throw new DomainException(
+                "Invoice {$this->invoice_number} is charged but records no billed-overage hours, so what it has "
+                .'already billed cannot be known and the next period cannot be priced without risking a second '
+                .'charge for the same hours. Restore the figure - `svc:billing:backfill-ledger` reads it from the '
+                .'import source - before billing this agreement again.',
+            );
+        }
+
+        // The cast is required by the strict analysis lane - the column is
+        // `numeric-string|null` - and is invisible to every test, because the
+        // declared return type coerces the same value without it. Named as an
+        // equivalent mutant in infection.diff.json5 rather than tested around,
+        // exactly like the three sums that read this method.
+        return (float) $this->hours_billed_at_rate;
+    }
+
     public function recalculateTotals(): void
     {
         $this->assertLineOwnership();

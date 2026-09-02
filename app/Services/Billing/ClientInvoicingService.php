@@ -1588,12 +1588,44 @@ final class ClientInvoicingService
      */
     private function totalBilledOveragesThrough(ClientAgreement $agreement, Carbon $periodEnd): float
     {
+        // Asked before the aggregate, because the aggregate cannot answer it.
+        // `SUM` contributes nothing for a NULL, so a charged invoice with no
+        // recorded figure is indistinguishable from one that billed zero - and
+        // this figure is subtracted from what the next period charges, so
+        // reading it low charges the client twice for the same hours (#144).
+        //
+        // The same window, built once and asked twice. A second predicate
+        // restating this one could drift from it, and then the check would be
+        // guarding a different set from the one being summed.
+        $window = $this->billedOverageWindow($agreement, $periodEnd);
+        $unknown = (clone $window)->whereNull('hours_billed_at_rate')->first();
+
+        if ($unknown instanceof ClientInvoice) {
+            // Raised through the invoice itself so the message names the row an
+            // operator has to repair, and so every reader of this column
+            // refuses in the same words.
+            $unknown->billedOverageHoursOrFail();
+        }
+
         // The cast is required by the strict analysis lane - the sum is
         // statically float|int|string - and is invisible to every test, because
         // the declared return type coerces the same value without it. It is
         // named as an equivalent mutant in infection.diff.json5 rather than
         // tested around.
-        return (float) ClientInvoice::query()
+        return (float) $window->sum('hours_billed_at_rate');
+    }
+
+    /**
+     * The already-billed overage window for an agreement, up to a period end.
+     *
+     * Extracted so {@see totalBilledOveragesThrough()} can ask the same set
+     * whether it is knowable before asking what it sums to.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    private function billedOverageWindow(ClientAgreement $agreement, Carbon $periodEnd): Builder
+    {
+        return ClientInvoice::query()
             ->where('workspace_id', $agreement->workspace_id)
             ->where('client_agreement_id', $agreement->id)
             // Charged, not merely non-void. A draft catch-up invoice may never
@@ -1619,8 +1651,7 @@ final class ClientInvoicingService
                 $window
                     ->whereDate('service_period_end', '<=', $periodEnd->toDateString())
                     ->orWhereNull('service_period_end');
-            })
-            ->sum('hours_billed_at_rate');
+            });
     }
 
     /**

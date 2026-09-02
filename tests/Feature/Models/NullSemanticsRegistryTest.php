@@ -28,6 +28,7 @@ use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
+use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
 use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
@@ -196,8 +197,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.cycle_start => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
-        'client_invoices.hours_billed_at_rate => reader_in:App\Services\Billing\ClientInvoicingService::totalBilledOveragesThrough',
-        'client_invoices.hours_billed_at_rate => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
+        'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
         'client_invoices.hours_worked => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
@@ -441,9 +442,27 @@ final class NullSemanticsRegistryTest extends TestCase
             // SQL aggregation contributes nothing for a null, so a restored
             // charged invoice with a null here reads as zero already billed and
             // its hours are sold a second time (#144).
+            //
+            // Settled by refusing. #135's fail-closed reading does not transfer:
+            // there the question was which side of a window a row falls on, and
+            // counting an unplaceable row as inside turns a double charge into
+            // capacity credited early. Here the question is *how much* was
+            // billed, a null is not a quantity, and coercing it to zero is
+            // exactly the defect. `billedOverageHoursOrFail()` states the
+            // contract once and both sums read it - the interim pair through
+            // their shared attribution helper.
+            //
+            // A zero is a figure and still sums to nothing; only a null stops
+            // the run. That distinction is what a `COALESCE` would erase.
             'hours_billed_at_rate' => [
-                ['reader_in' => ClientInvoicingService::class, 'reads' => 'totalBilledOveragesThrough'],
-                ['reader_in' => InterimOverageGenerator::class, 'reads' => 'interimOverageHoursForCycle'],
+                [
+                    'covered_by' => UnknownBilledOverageRefusalTest::class,
+                    'method' => 'test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
+                ],
+                [
+                    'covered_by' => UnknownBilledOverageRefusalTest::class,
+                    'method' => 'test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
+                ],
             ],
             'starting_unused_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
             'starting_negative_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
