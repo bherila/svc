@@ -5,7 +5,9 @@ namespace App\Services\Mcp;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
+use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
@@ -21,6 +23,8 @@ final class AgentMcpWriteTools
         private readonly InternalAgentApiTransport $api,
         private readonly RequestArguments $requestArguments,
         private readonly LogTimeEntriesAction $logTime,
+        private readonly UpdateTimeEntryAction $updateTime,
+        private readonly DeleteTimeEntryAction $deleteTime,
         private readonly AgentTimeEntryPresenter $timeEntries,
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
@@ -32,6 +36,8 @@ final class AgentMcpWriteTools
             $this->api,
             $this->requestArguments,
             $this->logTime,
+            $this->updateTime,
+            $this->deleteTime,
             $this->timeEntries,
             $this->accounts,
             $context,
@@ -95,13 +101,23 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('PATCH', "workspaces/{$workspace_id}/time-entries/{$entry_id}", $body, $idempotency_key);
+        $context = $this->workspaceContext($workspace_id, 'time:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $entry = $this->updateTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, $body);
+
+        return ['data' => $this->timeEntries->present($workspace, $entry)];
     }
 
     /** @return array<string, mixed> */
     public function timeEntriesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('DELETE', "workspaces/{$workspace_id}/time-entries/{$entry_id}", compact('expected_version'), $idempotency_key);
+        $context = $this->workspaceContext($workspace_id, 'time:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, $expected_version);
+
+        return ['data' => ['deleted_id' => $id]];
     }
 
     /** @param list<array{id: string, expected_version: string}> $entries
@@ -217,5 +233,25 @@ final class AgentMcpWriteTools
         }
 
         return $context;
+    }
+
+    private function workspaceContext(string $workspaceId, string $scope): McpRequestContext
+    {
+        $context = $this->accounts->resolve($this->context($scope), $workspaceId);
+        if (! $context->workspace instanceof Workspace) {
+            throw new \LogicException('MCP write tools require a workspace context.');
+        }
+
+        return $context;
+    }
+
+    private function workspace(McpRequestContext $context): Workspace
+    {
+        $workspace = $context->workspace;
+        if (! $workspace instanceof Workspace) {
+            throw new \LogicException('MCP write tools require a workspace context.');
+        }
+
+        return $workspace;
     }
 }

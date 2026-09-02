@@ -3,10 +3,8 @@
 namespace App\Services\AgentApi;
 
 use App\Models\ClientProject;
-use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Authorization\ProjectAccess;
 
 /**
  * The tenant-scoped, idempotent time-log workflow shared by REST and MCP.
@@ -18,7 +16,7 @@ final class LogTimeEntriesAction
     public function __construct(
         private readonly TimeEntryMutationService $time,
         private readonly AgentMutationExecutor $mutations,
-        private readonly ProjectAccess $access,
+        private readonly AgentEditableTimeEntryReplayGuard $replayGuard,
     ) {}
 
     /**
@@ -46,27 +44,7 @@ final class LogTimeEntriesAction
 
                 return $ids;
             },
-            fn (array $ids) => $this->guardReplay($workspace, $user, $ids),
+            fn (array $ids) => $this->replayGuard->assertAllowed($workspace, $user, $ids),
         );
-    }
-
-    /** @param list<string> $ids */
-    private function guardReplay(Workspace $workspace, User $user, array $ids): void
-    {
-        $entries = ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('public_id', $ids)
-            ->with('project')
-            ->get();
-        abort_unless($entries->count() === count($ids), 404);
-        $workspaceManager = $workspace->memberships()
-            ->where('user_id', $user->id)
-            ->whereIn('role', ['owner', 'admin'])
-            ->exists();
-        foreach ($entries as $entry) {
-            abort_unless($entry->user_id === $user->id || $workspaceManager, 403);
-            abort_unless($this->access->canView($user, $entry->project), 404);
-            abort_unless($this->access->canLogTime($user, $entry->project), 403);
-        }
     }
 }
