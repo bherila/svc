@@ -146,7 +146,16 @@ final class AgreementStartDateContractTest extends TestCase
     public function test_the_importer_refuses_a_source_agreement_with_no_start_date(array $row, string $because): void
     {
         $this->expectException(UnexpectedValueException::class);
-        $this->expectExceptionMessage('The source agreement states no start date');
+        // The whole message, not a fragment. An operator hitting this mid-import
+        // needs both halves: why no date could be substituted, and what to do
+        // instead. Asserting the first clause alone lets the actionable half be
+        // dropped silently.
+        $this->expectExceptionMessage(
+            'The source agreement states no start date, and there is no date this importer could supply that '
+            .'would not invent a term - which cycles exist, what capacity each period grants, and which '
+            .'agreement prices a given day are all read from it. Set the start date at the source and import '
+            .'again.',
+        );
 
         ExternalImportService::importedAgreementStart($row);
         $this->fail($because);
