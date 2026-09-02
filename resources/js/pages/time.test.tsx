@@ -130,6 +130,21 @@ describe('time sheet controls', () => {
         ).toHaveLength(payload === null ? 0 : 1);
     });
 
+    /**
+     * The route names the client and the navbar switches it. A second picker
+     * here is how a screen ends up showing one client's time under another
+     * client's name.
+     */
+    it('offers no client picker of its own', () => {
+        navigation = workspaceNavigation();
+
+        render(<TimeSheet {...props()} />);
+
+        expect(
+            screen.queryByRole('combobox', { name: /client/i }),
+        ).not.toBeInTheDocument();
+    });
+
     it.each([
         ['flat_hourly', 'Subcontractor · billed separately'],
         ['retainer', 'Subcontractor · retainer'],

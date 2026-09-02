@@ -76,7 +76,12 @@ class SearchTest extends TestCase
         $this->assertSame($base, $results['client']['href']);
         $this->assertSame("{$base}/projects/{$project->public_id}", $results['project']['href']);
         $this->assertSame("{$base}/invoices/{$invoice->public_id}", $results['invoice']['href']);
-        $this->assertSame("{$base}/tasks", $results['task']['href']);
+        // Filtered to the project the task belongs to, so the reader lands on
+        // the row they searched for rather than on the client's whole list.
+        $this->assertSame(
+            "{$base}/tasks?project={$project->public_id}",
+            $results['task']['href'],
+        );
     }
 
     /**

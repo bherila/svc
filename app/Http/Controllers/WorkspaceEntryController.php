@@ -66,7 +66,17 @@ class WorkspaceEntryController extends Controller
             ?? $this->onlyClient($context);
 
         if ($destination !== null) {
-            return redirect()->to($destination->destinations->home);
+            // A workspace-wide URL that became a client module says which one
+            // it meant, so the reader lands where they were going rather than
+            // on the client's home to click again. Anything unrecognised - or a
+            // module this client's route family does not serve - falls back to
+            // home rather than being trusted into a URL.
+            $module = $request->query('module');
+            $href = is_string($module)
+                ? $destination->destinations->toArray()[$module] ?? null
+                : null;
+
+            return redirect()->to(is_string($href) ? $href : $destination->destinations->home);
         }
 
         return Inertia::render('workspaces/enter', [

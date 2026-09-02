@@ -70,7 +70,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('time')
@@ -95,7 +95,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 // Newest first: the issued one was worked a day later.
@@ -116,7 +116,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -138,7 +138,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -163,7 +163,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -188,7 +188,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -213,7 +213,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -249,7 +249,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.invoice.status', 'draft')
@@ -464,7 +464,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.capacity', 1)
@@ -528,7 +528,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($member)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('companies.0.projects', 1)
@@ -559,7 +559,7 @@ class TimeSheetTest extends TestCase
         $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
 
         $this->actingAs($contributor)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('companies.0.projects.0.can_log_time', true));
@@ -573,7 +573,7 @@ class TimeSheetTest extends TestCase
             ->assertRedirect();
 
         $this->actingAs($viewer)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('companies.0.projects.0.can_log_time', false));
@@ -609,7 +609,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.key', '2026-07')
@@ -641,7 +641,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.capacity.0.available_hours', 1)
@@ -671,7 +671,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
     }
@@ -707,7 +707,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('companies', 1)
@@ -783,12 +783,12 @@ class TimeSheetTest extends TestCase
 
         // The manager, who can see all of it, still gets the strip.
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
 
         $this->actingAs($member)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.entries', 1)
@@ -885,7 +885,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
 
@@ -894,7 +894,7 @@ class TimeSheetTest extends TestCase
         $agreement->forceFill(['status' => 'active'])->save();
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
     }
@@ -921,7 +921,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string}>} $props */
@@ -937,23 +937,24 @@ class TimeSheetTest extends TestCase
     }
 
     /**
-     * A stale or unreadable `company` fell through as a null selection, and
-     * the page independently falls back to the first company - so it printed
-     * that company's name above "no time logged in the last twelve months",
-     * a claim about a company whose entries were never fetched.
+     * The workspace-wide sheet's URL still works, and resolves a client rather
+     * than picking one.
+     *
+     * It used to choose the alphabetically first company and render its name
+     * above whatever it had fetched. Now it goes through the same entry point
+     * every other way into a workspace does, so the reader lands on the client
+     * they last opened - on the module they asked for.
      */
-    public function test_an_unknown_company_filter_falls_back_to_a_visible_company(): void
+    public function test_the_old_workspace_wide_url_lands_on_this_clients_time(): void
     {
-        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60]);
-
-        $this->travelTo('2026-07-20');
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->assertRedirect("/workspaces/{$this->workspace->public_id}?module=time")
+            ->assertSessionMissing('errors');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time?company=not-a-real-company")
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('filters.company_id', $this->company->public_id)
-                ->has('months.0.entries', 1));
+            ->get("/workspaces/{$this->workspace->public_id}?module=time")
+            ->assertRedirect("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time");
     }
 
     /**
@@ -1053,7 +1054,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 $payload = (string) json_encode($page->toArray());
@@ -1094,7 +1095,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.entries', 2)
@@ -1149,7 +1150,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 $payload = (string) json_encode($page->toArray());
@@ -1226,7 +1227,7 @@ class TimeSheetTest extends TestCase
         $this->entry(['worked_on' => '2025-09-15', 'description' => 'Edge of the window']);
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months', 1)
@@ -1256,7 +1257,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string, capacity: list<array{agreement: string, cycle_start: string}>}>} $props */
@@ -1304,7 +1305,7 @@ class TimeSheetTest extends TestCase
         ]);
 
         $this->travelTo('2026-07-20');
-        $url = "/workspaces/{$this->workspace->public_id}/time";
+        $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
         // A viewer reads the project and none of its time.
         $this->actingAs($viewer)->get($url)->assertOk()
@@ -1348,7 +1349,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($viewer)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 $payload = (string) json_encode($page->toArray());
@@ -1372,7 +1373,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.capacity.0.pending_minutes', 60)
@@ -1521,7 +1522,7 @@ class TimeSheetTest extends TestCase
         $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
 
         $this->travelTo('2026-07-20');
-        $url = "/workspaces/{$this->workspace->public_id}/time";
+        $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
         // Consistent to begin with: the strip is there.
         $this->actingAs($this->manager)->get($url)->assertOk()
@@ -1559,7 +1560,7 @@ class TimeSheetTest extends TestCase
         $this->entry(['worked_on' => '2026-07-04', 'minutes' => 60, 'status' => 'approved']);
 
         $this->travelTo('2026-07-20');
-        $url = "/workspaces/{$this->workspace->public_id}/time";
+        $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
         $this->actingAs($this->manager)->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
@@ -1643,7 +1644,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.capacity', 1)
@@ -1672,7 +1673,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.capacity.0.pending_minutes', 60)
@@ -1708,7 +1709,7 @@ class TimeSheetTest extends TestCase
         });
 
         $this->actingAs($member)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk();
 
         $taskReads = array_filter(
@@ -1757,7 +1758,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-08-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
@@ -1799,7 +1800,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.capacity', 1)
@@ -1821,7 +1822,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months', 1)
@@ -1841,7 +1842,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 $payload = (string) json_encode($page->toArray());
@@ -1971,7 +1972,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-03-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
@@ -2009,7 +2010,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-02-25');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.key', '2026-02')
@@ -2051,7 +2052,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time?company={$this->company->public_id}")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.entries', 1)
@@ -2149,7 +2150,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string, capacity: list<array{agreement: string}>}>} $props */
@@ -2220,7 +2221,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-05-25');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
                 /** @var array{months: list<array{key: string, capacity: list<array{cycle_start: string, pending_minutes: int}>}>} $props */
@@ -2286,7 +2287,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-25');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.capacity', 1)
@@ -2311,7 +2312,7 @@ class TimeSheetTest extends TestCase
         // right at render and wrong by morning, and these pages are meant to
         // be left open; the browser reads the clock against this.
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
@@ -2342,7 +2343,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->actingAs($this->manager)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('approval_limit', ApproveTimeEntriesRequest::MAX_ENTRIES));
@@ -2476,7 +2477,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $response = $this->actingAs($member)
-            ->get("/workspaces/{$this->workspace->public_id}/time")
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk();
 
         $this->assertInertiaPayloadOmits($response, [
@@ -2509,7 +2510,7 @@ class TimeSheetTest extends TestCase
 
         $this->assertQueryCountIndependentOfRows(
             fn () => $this->actingAs($this->manager)
-                ->get("/workspaces/{$this->workspace->public_id}/time")
+                ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
                 ->assertOk(),
             function (): void {
                 for ($i = 0; $i < 27; $i++) {
@@ -2550,7 +2551,7 @@ class TimeSheetTest extends TestCase
 
         $this->assertQueriesNameOnlyRealIdentifiers(
             fn () => $this->actingAs($this->manager)
-                ->get("/workspaces/{$this->workspace->public_id}/time")
+                ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
                 ->assertOk(),
         );
     }

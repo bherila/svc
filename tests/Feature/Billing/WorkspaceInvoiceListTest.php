@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -44,14 +43,18 @@ class WorkspaceInvoiceListTest extends TestCase
         $this->invoice($workspace, $second, 'SYN-LIST-2');
 
         $this->actingAs($manager)
-            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->getJson("/workspaces/{$workspace->public_id}/invoices")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('invoices/index')
-                ->has('invoices', 2)
-                // Inside the workspace but not inside one client, so the
-                // switcher has options and no selection.
-                ->where('workspaceNavigation.current_client_id', null));
+            ->assertJsonCount(2, 'data');
+
+        // The screen is gone - an invoice lives inside one client, and a
+        // workspace-wide copy of the list named no client around the rows. The
+        // URL resolves through the same entry point as every other way into a
+        // workspace, and lands on the Invoices tab of a client this operator
+        // chose rather than one this list picked.
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
     }
 
     /**
@@ -89,11 +92,11 @@ class WorkspaceInvoiceListTest extends TestCase
         ]);
 
         $response = $this->actingAs($member)
-            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->getJson("/workspaces/{$workspace->public_id}/invoices")
             ->assertOk();
 
-        $response->assertInertia(fn (Assert $page) => $page->has('invoices', 1));
-        $this->assertInertiaPayloadOmits($response, [
+        $response->assertJsonCount(1, 'data');
+        $this->assertJsonPayloadOmits($response, [
             'THEIRS-LIST-9999',
             'Unreachable List Client',
         ], 'MINE-LIST-1');
@@ -126,31 +129,34 @@ class WorkspaceInvoiceListTest extends TestCase
         );
 
         $response = $this->actingAs($manager)
-            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->getJson("/workspaces/{$workspace->public_id}/invoices")
             ->assertOk();
 
-        $response->assertInertia(fn (Assert $page) => $page->has('invoices', 2));
-        $this->assertInertiaPayloadOmits(
+        $response->assertJsonCount(2, 'data');
+        $this->assertJsonPayloadOmits(
             $response,
             ['Foreign Lineage Client Name', 'Foreign Lineage Tenant'],
             'LOCAL-LINEAGE-1',
         );
 
-        // And it links nowhere, rather than to a client screen that would
-        // refuse the reader anyway.
-        $response->assertInertia(fn (Assert $page) => $page
-            ->where('invoices.0.href', null)
-            ->where('invoices.0.invoice_number', $stray->invoice_number));
+        // And it has no client screen to be opened on: the redirect that
+        // replaced the workspace-wide detail page refuses rather than sending
+        // the reader to another tenant's client.
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/invoices/{$stray->public_id}")
+            ->assertNotFound();
     }
 
     /**
-     * A portal viewer's rows lead somewhere they are allowed to go.
+     * A portal viewer's old bookmark lands somewhere they are allowed to go.
      *
-     * They reach this list through the non-member branch, and the client-scoped
-     * invoice screen authorizes on workspace membership - so linking there
-     * would hand every row a 403.
+     * They reach this URL through the non-member branch, and the client-scoped
+     * invoice screens authorize on workspace membership - so resolving them to
+     * the operator route would hand them a 403. The entry point hands each
+     * client the route family that viewer may actually use, so this lands on
+     * their own portal instead.
      */
-    public function test_a_portal_viewers_rows_link_to_a_route_that_admits_them(): void
+    public function test_a_portal_viewer_is_sent_to_their_own_invoices(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Portal', 'synthetic-portal', $manager);
@@ -166,11 +172,17 @@ class WorkspaceInvoiceListTest extends TestCase
         ]);
 
         $this->actingAs($client)
-            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->getJson("/workspaces/{$workspace->public_id}/invoices")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->has('invoices', 1)
-                ->where('invoices.0.href', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}"));
+            ->assertJsonCount(1, 'data');
+
+        $this->actingAs($client)
+            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
+
+        $this->actingAs($client)
+            ->get("/workspaces/{$workspace->public_id}?module=invoices")
+            ->assertRedirect("/portal/{$company->public_id}/invoices");
     }
 
     /**
@@ -269,11 +281,11 @@ class WorkspaceInvoiceListTest extends TestCase
         $member = $this->memberOf($workspace, $mine);
 
         $response = $this->actingAs($member)
-            ->get("/workspaces/{$workspace->public_id}/invoices")
+            ->getJson("/workspaces/{$workspace->public_id}/invoices")
             ->assertOk();
 
-        $response->assertInertia(fn (Assert $page) => $page->has('invoices', 1));
-        $this->assertInertiaPayloadOmits($response, [
+        $response->assertJsonCount(1, 'data');
+        $this->assertJsonPayloadOmits($response, [
             'SIB-THEIRS-9999',
             'SIB-MIXED-8888',
             'SIB-UNSCOPED-7777',

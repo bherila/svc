@@ -1,6 +1,20 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useState } from 'react';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Table,
     TableBody,
@@ -36,12 +50,32 @@ type InvoicePayment = {
 };
 
 /**
- * One invoice, read-only, inside the client it belongs to.
+ * What an operator may do to this invoice, as the server sees it.
+ *
+ * Nulls rather than booleans, because the answer is a URL and the browser
+ * should not be assembling one. Each is offered only where the invoice's status
+ * admits it, and each endpoint authorizes again: a button nobody rendered is
+ * not an authorization check.
+ */
+type InvoiceActions = {
+    issue: string | null;
+    send: string | null;
+    payment: string | null;
+    void: string | null;
+};
+
+/**
+ * One invoice, inside the client it belongs to.
  *
  * The Invoices tab stays marked while this is open, because a row's detail is
  * still that tab rather than somewhere else — the chrome keeps saying which
  * client this is, which is the whole reason the invoice hangs off the client
  * route instead of a workspace-wide one.
+ *
+ * The lifecycle actions live here too. They used to sit on a workspace-wide
+ * operations screen holding every client's everything, which meant issuing an
+ * invoice started by leaving the client you were looking at and finding it
+ * again in a longer list.
  *
  * Hours are shown beside quantity rather than instead of it. They are separate
  * columns on the line and can legitimately disagree: quantity is what was
@@ -49,19 +83,56 @@ type InvoicePayment = {
  * without the other.
  */
 export default function ClientInvoiceDetail({
-    workspace,
     company,
+    invoices_href: invoicesHref,
+    pdf_href: pdfHref,
+    actions,
     invoice,
     lines,
     payments,
 }: {
-    workspace: { id: string };
     company: { id: string; name: string };
+    invoices_href: string;
+    pdf_href: string;
+    actions: InvoiceActions;
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
     payments: InvoicePayment[];
 }) {
-    const backHref = `/workspaces/${workspace.id}/clients/${company.id}/invoices`;
+    const [paying, setPaying] = useState(false);
+    const [voiding, setVoiding] = useState(false);
+    const [amount, setAmount] = useState('');
+    const [method, setMethod] = useState('bank_transfer');
+    const [reference, setReference] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState<string | null>(null);
+
+    const post = (
+        href: string,
+        data: Record<string, string | number | null> = {},
+    ) => {
+        if (busy) {
+            return;
+        }
+
+        setBusy(true);
+        router.post(href, data, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setNotice(null);
+                setPaying(false);
+                setVoiding(false);
+            },
+            onError: (errors) =>
+                setNotice(
+                    Object.values(errors)[0] ??
+                        'That action could not be completed.',
+                ),
+            onFinish: () => setBusy(false),
+        });
+    };
+
+    const backHref = invoicesHref;
 
     return (
         <WorkspaceShell activeModule="invoices">
@@ -87,6 +158,132 @@ export default function ClientInvoiceDetail({
                         {invoice.due_date !== null &&
                             ` · due ${invoice.due_date}`}
                     </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            render={<a href={pdfHref}>View PDF</a>}
+                        />
+                        {actions.issue !== null && (
+                            <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => post(actions.issue ?? '')}
+                            >
+                                Issue
+                            </Button>
+                        )}
+                        {actions.send !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => post(actions.send ?? '')}
+                            >
+                                Send to client
+                            </Button>
+                        )}
+                        {actions.payment !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    // Pre-filled with what is still owed,
+                                    // because that is the payment being
+                                    // recorded almost every time - and typing
+                                    // a total again is how a digit goes
+                                    // missing.
+                                    setAmount(
+                                        (invoice.balance_amount / 100).toFixed(
+                                            2,
+                                        ),
+                                    );
+                                    setPaying(true);
+                                }}
+                            >
+                                Record payment
+                            </Button>
+                        )}
+                        {actions.void !== null && (
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setVoiding(true)}
+                            >
+                                Void
+                            </Button>
+                        )}
+                    </div>
+
+                    {notice !== null && (
+                        <p
+                            role="alert"
+                            className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                        >
+                            {notice}
+                        </p>
+                    )}
+
+                    {paying && (
+                        <form
+                            className="mt-3 grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                post(actions.payment ?? '', {
+                                    // Minor units, the way every amount in this
+                                    // system travels. Rounded rather than
+                                    // truncated: 12.34 is not exactly
+                                    // representable, and truncating it records
+                                    // a cent less than the client paid.
+                                    amount: Math.round(
+                                        Number.parseFloat(amount || '0') * 100,
+                                    ),
+                                    currency: invoice.currency,
+                                    method,
+                                    reference:
+                                        reference === '' ? null : reference,
+                                });
+                            }}
+                        >
+                            <div className="grid gap-2">
+                                <Label htmlFor="payment-amount">Amount</Label>
+                                <Input
+                                    id="payment-amount"
+                                    inputMode="decimal"
+                                    value={amount}
+                                    onChange={(event) =>
+                                        setAmount(event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="payment-method">Method</Label>
+                                <Input
+                                    id="payment-method"
+                                    value={method}
+                                    onChange={(event) =>
+                                        setMethod(event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="payment-reference">
+                                    Reference
+                                </Label>
+                                <Input
+                                    id="payment-reference"
+                                    value={reference}
+                                    onChange={(event) =>
+                                        setReference(event.target.value)
+                                    }
+                                />
+                            </div>
+                            <Button type="submit" disabled={busy}>
+                                Record
+                            </Button>
+                        </form>
+                    )}
                 </header>
 
                 <Card>
@@ -250,6 +447,38 @@ export default function ClientInvoiceDetail({
                     </CardContent>
                 </Card>
             </main>
+
+            <AlertDialog
+                open={voiding}
+                onOpenChange={(open: boolean) => setVoiding(open)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Void this invoice?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {invoice.invoice_number ?? 'This invoice'} stops
+                            being collectible, and the work on it returns to
+                            being unbilled.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel
+                            render={<Button variant="outline">Cancel</Button>}
+                        />
+                        <AlertDialogAction
+                            render={
+                                <Button
+                                    variant="destructive"
+                                    disabled={busy}
+                                    onClick={() => post(actions.void ?? '')}
+                                >
+                                    Void
+                                </Button>
+                            }
+                        />
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </WorkspaceShell>
     );
 }

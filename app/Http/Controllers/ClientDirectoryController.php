@@ -236,11 +236,37 @@ class ClientDirectoryController extends Controller
                 ->orderByDesc('id'),
         ]);
 
+        // The lifecycle actions, where the invoice is - rather than on a
+        // workspace-wide screen the operator had to leave the client to reach.
+        // Each is offered only where the invoice's own status admits it, and
+        // each authorizes again on the way in: an action nobody rendered is
+        // not an authorization check, and a status nobody rendered is not a
+        // state machine.
+        $manages = Gate::forUser($user)->allows('manage', $workspace);
+        $status = (string) $clientInvoice->status;
+        $base = "/workspaces/{$workspace->public_id}/invoices/{$clientInvoice->public_id}";
+
         return Inertia::render('clients/invoice', [
-            'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
+            ],
+            'invoices_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
+            'pdf_href' => $base.'/pdf',
+            'actions' => [
+                'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
+                'send' => $manages && in_array($status, InvoiceStatus::collectible(), true)
+                    ? $base.'/send'
+                    : null,
+                'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)
+                    ? $base.'/payments'
+                    : null,
+                // Voiding a paid invoice is a correction the service refuses,
+                // so it is not offered either.
+                'void' => $manages && in_array($status, [
+                    InvoiceStatus::Draft->value,
+                    ...InvoiceStatus::collectible(),
+                ], true) ? $base.'/void' : null,
             ],
             'invoice' => $this->invoicePayload($clientInvoice),
             'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [

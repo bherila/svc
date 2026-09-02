@@ -81,6 +81,12 @@ Route::middleware('auth')->group(function (): void {
         // modules, so it is reached from the switcher and from Client Home.
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/settings', [ClientDirectoryController::class, 'manage'])
             ->name('clients.settings');
+        // The tab this used to be. Kept so links and bookmarks survive the
+        // rename; it is not a tab any more, so nothing generates it.
+        Route::redirect(
+            '/workspaces/{workspace}/clients/{clientCompany}/manage',
+            '/workspaces/{workspace}/clients/{clientCompany}/settings',
+        )->name('clients.manage');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
             ->name('clients.agreement');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}', [ClientDirectoryController::class, 'proposal'])

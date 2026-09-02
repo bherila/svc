@@ -76,6 +76,13 @@ export type TimeSheetProps = {
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;
+    /**
+     * Which company the sheet actually read.
+     *
+     * The route names it and the navbar shows it, so the page renders nothing
+     * from this - it is the server stating what it resolved, which is the thing
+     * worth asserting when a route parameter silently does nothing.
+     */
     filters: { company_id: string | null };
     companies: CompanyOption[];
     months: Month[];

@@ -43,13 +43,20 @@ final class TenantRouteReachabilityTest extends TestCase
     /**
      * Routes that legitimately answer a member who reaches no client.
      *
-     * Deliberately empty. An entry here is a claim that a screen may disclose
-     * a client's record to someone with no relationship to that client, and it
-     * should have to be argued for in review rather than added quietly.
+     * An entry here is a claim that a screen may answer someone with no
+     * relationship to that client, and it should have to be argued for in
+     * review rather than added quietly.
+     *
+     * `clients.manage` is the one such claim. It is not a screen: it is the
+     * compatibility redirect left behind when the Manage tab became Client
+     * settings, and it rewrites the URL without reading anything. The reader
+     * arrives at `clients.settings`, which is in this sweep and refuses them.
+     * A redirect that discloses nothing but the shape of a URL the caller
+     * already typed is not a disclosure.
      *
      * @var list<string>
      */
-    private const EXEMPT = [];
+    private const EXEMPT = ['clients.manage'];
 
     public function test_every_client_scoped_get_route_refuses_an_unreachable_viewer(): void
     {

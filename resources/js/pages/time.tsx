@@ -16,13 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import {
     Table,
     TableBody,
     TableCell,
@@ -180,7 +173,6 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
 
 export default function TimeSheet({
     workspace,
-    filters,
     companies,
     months,
     approval_limit: approvalLimit,
@@ -202,13 +194,11 @@ export default function TimeSheet({
         );
     };
 
-    const company = useMemo(
-        () =>
-            companies.find(
-                (candidate) => candidate.id === filters.company_id,
-            ) ?? companies[0],
-        [companies, filters.company_id],
-    );
+    // The route names the client, and the server sends exactly that one. The
+    // page used to hold a second picker under the navbar's; two controls for
+    // one decision is how a screen ends up showing one client's time under
+    // another client's name.
+    const company = companies[0];
 
     const approvable = useMemo(
         () =>
@@ -297,43 +287,6 @@ export default function TimeSheet({
                         </h1>
 
                         <div className="flex items-center gap-2">
-                            {/*
-                             * Only the workspace-wide sheet still picks a
-                             * client here; inside the client tabs the company
-                             * is the route, and the navbar's switcher is the
-                             * one control that changes it.
-                             */}
-                            {companies.length > 1 && (
-                                <Select
-                                    value={company?.id ?? ''}
-                                    onValueChange={(value: string | null) => {
-                                        if (value === null) {
-                                            return;
-                                        }
-
-                                        router.get(
-                                            `/workspaces/${workspace.id}/time`,
-                                            { company: value },
-                                            { preserveState: false },
-                                        );
-                                    }}
-                                >
-                                    <SelectTrigger className="min-w-48">
-                                        <SelectValue placeholder="Choose a client" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {companies.map((candidate) => (
-                                            <SelectItem
-                                                key={candidate.id}
-                                                value={candidate.id}
-                                            >
-                                                {candidate.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            )}
-
                             {company?.projects.some(
                                 (project) => project.can_log_time,
                             ) && (
@@ -402,13 +355,6 @@ export default function TimeSheet({
                                 </Button>
                             </div>
                         </div>
-                    )}
-
-                    {company === undefined && (
-                        <p className="mt-10 text-muted-foreground">
-                            No clients yet. Add one before logging time against
-                            it.
-                        </p>
                     )}
 
                     {company !== undefined && months.length === 0 && (
