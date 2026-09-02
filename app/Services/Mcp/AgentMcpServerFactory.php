@@ -8,6 +8,7 @@ use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
+use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Mcp\Registry\McpCapabilityDefinition;
@@ -41,6 +42,7 @@ final class AgentMcpServerFactory
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
         private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly McpAccountContextResolver $accounts,
+        private readonly McpAuthorizer $authorizer,
         private readonly McpPrincipalResolver $principals,
         private readonly AgentMcpWriteTools $writes,
         private readonly AgentMcpPrompts $prompts,
@@ -64,7 +66,7 @@ final class AgentMcpServerFactory
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $availableCapabilities = array_values(array_filter(
             $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $this->writes)->all(),
-            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(
+            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->authorizer->allowsScopes(
                 $context,
                 $definition->requiredScopes,
             ),
@@ -166,18 +168,6 @@ final class AgentMcpServerFactory
     private function hasTools(array $available, array $required): bool
     {
         return array_diff($required, array_keys($available)) === [];
-    }
-
-    /** @param list<string> $required */
-    private function allowsAll(McpRequestContext $context, array $required): bool
-    {
-        foreach ($required as $scope) {
-            if (! $context->principal->hasScope($scope)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private function requestId(Request $request): string
