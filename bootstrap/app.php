@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RejectMcpQueryCredentials;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(RejectMcpQueryCredentials::class);
         $middleware->web(append: [
             EnforceOAuthResourceIndicator::class,
             HandleInertiaRequests::class,

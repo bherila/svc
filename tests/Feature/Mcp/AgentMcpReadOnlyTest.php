@@ -267,6 +267,17 @@ final class AgentMcpReadOnlyTest extends TestCase
             ));
     }
 
+    public function test_mcp_rejects_query_string_credentials_before_authentication(): void
+    {
+        $this->call('POST', '/api/v1/mcp?access_token=do-not-log-this', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18',
+        ], json_encode($this->initializeMessage(), JSON_THROW_ON_ERROR))
+            ->assertBadRequest()
+            ->assertJsonPath('message', 'MCP credentials must not be sent in the query string.')
+            ->assertHeader('Cache-Control', 'no-store, private');
+    }
+
     public function test_time_write_tools_are_absent_when_the_time_cutoff_is_disabled(): void
     {
         config([
