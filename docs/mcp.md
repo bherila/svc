@@ -137,7 +137,7 @@ workflow remains unresolved:
 | --- | --- |
 | Agreement list/get with derived terms | Implemented; manager-only `agreements.list` / `agreements.get` |
 | Signed monthly capacity ledger | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder` |
-| Duplicate-time diagnostics | Accepted; absent from the baseline MCP |
+| Duplicate-time diagnostics | Unresolved: no checked-in duplicate-time diagnostic query or approved matching semantics exists to reuse. It will not be inferred from raw time rows. |
 | Read-only `svc:billing:audit-*` operations | Implemented as aggregate-only, manager-scoped `billing.audit_unplaceable_invoices`, `billing.audit_undated_collectible_invoices`, and `billing.audit_missing_billed_overage` over the canonical billing auditors |
 | Billing-schedule visibility | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get` |
 | Imported-duplicate maintenance preview/execute | Unresolved and consequential; no implementation without explicit approval |

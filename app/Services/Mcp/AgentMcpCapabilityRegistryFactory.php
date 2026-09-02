@@ -17,7 +17,7 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -32,6 +32,8 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->unplaceableInvoicesAudit($billingAudits));
         $registry->register($this->undatedCollectibleInvoicesAudit($billingAudits));
         $registry->register($this->missingBilledOverageAudit($billingAudits));
+        $registry->register($this->logTimePrompt($prompts));
+        $registry->register($this->prepareInvoicePrompt($prompts));
 
         return $registry;
     }
@@ -349,6 +351,52 @@ final class AgentMcpCapabilityRegistryFactory
             rateLimitBucket: 'mcp-read',
             auditClassification: 'agent_api.read',
             featureFlag: 'mcp.read.capacity_ledger',
+        );
+    }
+
+    private function logTimePrompt(AgentMcpPrompts $prompts): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Prompt,
+            name: 'log-time-across-projects',
+            title: 'Log time across projects',
+            description: 'Guide an authorized client through bounded, retry-safe time logging.',
+            handler: [$prompts, 'logTimeAcrossProjects'],
+            inputSchema: ['type' => 'object', 'additionalProperties' => false],
+            outputSchema: ['type' => 'object', 'additionalProperties' => false, 'required' => ['user'], 'properties' => ['user' => ['type' => 'string', 'maxLength' => 4096]]],
+            requiredScopes: ['identity:read', 'projects:read', 'time:write'],
+            policyAbility: 'Agent API workflow policies',
+            requiresWorkspace: false,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.prompt',
+            featureFlag: 'mcp.prompt.log_time_across_projects',
+            requiredCapabilities: ['context.get', 'projects.list', 'time_entries.log'],
+        );
+    }
+
+    private function prepareInvoicePrompt(AgentMcpPrompts $prompts): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Prompt,
+            name: 'prepare-invoice-safely',
+            title: 'Prepare an invoice safely',
+            description: 'Guide an authorized client through reviewing and preparing an invoice draft.',
+            handler: [$prompts, 'prepareInvoiceSafely'],
+            inputSchema: ['type' => 'object', 'additionalProperties' => false],
+            outputSchema: ['type' => 'object', 'additionalProperties' => false, 'required' => ['user'], 'properties' => ['user' => ['type' => 'string', 'maxLength' => 4096]]],
+            requiredScopes: ['identity:read', 'projects:read', 'time:read', 'billing:read', 'billing:write'],
+            policyAbility: 'Agent API workflow policies',
+            requiresWorkspace: false,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.prompt',
+            featureFlag: 'mcp.prompt.prepare_invoice_safely',
+            requiredCapabilities: ['context.get', 'projects.get', 'time_entries.list', 'invoices.get', 'invoices.create_draft', 'invoices.update_draft'],
         );
     }
 

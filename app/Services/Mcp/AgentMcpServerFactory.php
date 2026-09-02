@@ -63,11 +63,19 @@ final class AgentMcpServerFactory
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $availableCapabilities = array_values(array_filter(
-            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->writes)->all(),
+            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $this->writes)->all(),
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(
                 $context,
                 $definition->requiredScopes,
             ),
+        ));
+        $availableNames = array_fill_keys(array_map(
+            static fn (McpCapabilityDefinition $definition): string => $definition->name,
+            $availableCapabilities,
+        ), true);
+        $availableCapabilities = array_values(array_filter(
+            $availableCapabilities,
+            static fn (McpCapabilityDefinition $definition): bool => array_diff($definition->requiredCapabilities, array_keys($availableNames)) === [],
         ));
         $exposedDefinitions = array_values(array_filter(
             $availableCapabilities,
@@ -94,30 +102,6 @@ final class AgentMcpServerFactory
                 websiteUrl: url('/'),
             )
             ->setInstructions($this->instructions($exposedToolNames, $hasWriteTools));
-
-        if ($this->hasTools($exposedToolNames, ['context.get', 'projects.list', 'time_entries.log'])) {
-            $builder->addPrompt(
-                handler: [$this->prompts, 'logTimeAcrossProjects'],
-                name: 'log-time-across-projects',
-                title: 'Log time across projects',
-                description: 'Safely discover SVC projects and log one or more completed time entries with retry-safe idempotency.',
-            );
-        }
-        if ($this->hasTools($exposedToolNames, [
-            'context.get',
-            'projects.get',
-            'time_entries.list',
-            'invoices.get',
-            'invoices.create_draft',
-            'invoices.update_draft',
-        ])) {
-            $builder->addPrompt(
-                handler: [$this->prompts, 'prepareInvoiceSafely'],
-                name: 'prepare-invoice-safely',
-                title: 'Prepare an invoice safely',
-                description: 'Build and review an invoice draft while preserving explicit confirmation for consequential actions.',
-            );
-        }
 
         $builder->setPaginationLimit(100)
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
@@ -158,6 +142,17 @@ final class AgentMcpServerFactory
                 title: $definition->title,
                 description: $definition->description,
                 mimeType: 'application/json',
+            );
+        }
+        foreach ($availableCapabilities as $definition) {
+            if ($definition->kind !== McpCapabilityKind::Prompt) {
+                continue;
+            }
+            $builder->addPrompt(
+                handler: $definition->handler,
+                name: $definition->name,
+                title: $definition->title,
+                description: $definition->description,
             );
         }
 

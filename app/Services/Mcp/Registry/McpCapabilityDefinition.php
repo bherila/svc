@@ -11,6 +11,7 @@ use Closure;
  * @param  array<string, mixed>  $inputSchema
  * @param  array<string, mixed>  $outputSchema
  * @param  list<string>  $requiredScopes
+ * @param  list<string>  $requiredCapabilities
  */
 final readonly class McpCapabilityDefinition
 {
@@ -38,5 +39,7 @@ final readonly class McpCapabilityDefinition
         public ?string $deprecatedSince = null,
         public ?string $replacement = null,
         public ?string $uri = null,
+        /** @var list<string> */
+        public array $requiredCapabilities = [],
     ) {}
 }
