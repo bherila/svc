@@ -1,6 +1,7 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { ChevronsUpDownIcon, LayoutGridIcon, SettingsIcon } from 'lucide-react';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { CommandPaletteTrigger } from '@/components/command-palette';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -200,6 +201,8 @@ export default function ClientContextLayout({
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+
+                    <CommandPaletteTrigger />
 
                     {/*
                      * The modules of the client named to the left, on the same

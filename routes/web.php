@@ -8,6 +8,7 @@ use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OAuthLoginController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -33,6 +34,14 @@ Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('
 
 Route::middleware('auth')->group(function (): void {
     Route::get('/app', DashboardController::class)->name('dashboard');
+
+    // What the command palette asks as you type. Throttled rather than
+    // debounced-and-trusted: the debounce lives in the browser and a browser
+    // is not where a rate limit belongs.
+    Route::get('/search', SearchController::class)
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->middleware('throttle:120,1')
+        ->name('search');
     Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
 
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
