@@ -17,16 +17,23 @@ use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
+use Closure;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use LogicException;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Schema\JsonRpc\Request as JsonRpcRequest;
+use Mcp\Schema\Request\GetPromptRequest;
+use Mcp\Schema\Request\ReadResourceRequest;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Handler\Request\CallToolHandler;
+use Mcp\Server\Handler\Request\GetPromptHandler;
+use Mcp\Server\Handler\Request\ReadResourceHandler;
 use Mcp\Server\Session\Psr16SessionStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -54,6 +61,7 @@ final class AgentMcpServerFactory
     {
         $logger = new NullLogger;
         $driftLogger = app(LoggerInterface::class);
+        $capabilityAuditor = new McpCapabilityAuditor($driftLogger);
         $registry = new Registry(logger: $logger);
         $context = new McpRequestContext(
             $this->principals->resolve($request),
@@ -123,15 +131,35 @@ final class AgentMcpServerFactory
                     'The SVC API returned a response that failed its output contract.',
                 ),
                 app(RateLimiter::class),
-                $driftLogger,
+                $capabilityAuditor,
                 $context,
-                collect($definitions)
-                    ->filter(static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool)
-                    ->mapWithKeys(static fn (McpCapabilityDefinition $definition): array => [$definition->name => [
-                        'rate_limit_bucket' => $definition->rateLimitBucket,
-                        'audit_classification' => $definition->auditClassification,
-                    ]])
-                    ->all(),
+                $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
+            ))
+            ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
+                new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),
+                $capabilityAuditor,
+                $context,
+                $this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
+                static function (JsonRpcRequest $request): string {
+                    if (! $request instanceof ReadResourceRequest) {
+                        throw new LogicException('MCP resource audit handler received an invalid request.');
+                    }
+
+                    return $request->uri;
+                },
+            ))
+            ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
+                new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
+                $capabilityAuditor,
+                $context,
+                $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),
+                static function (JsonRpcRequest $request): string {
+                    if (! $request instanceof GetPromptRequest) {
+                        throw new LogicException('MCP prompt audit handler received an invalid request.');
+                    }
+
+                    return $request->name;
+                },
             ))
             ->setLazyLoading(false);
 
@@ -190,6 +218,27 @@ final class AgentMcpServerFactory
         return is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,128}$/', $requestId) === 1
             ? $requestId
             : (string) Str::uuid();
+    }
+
+    /**
+     * @param  list<McpCapabilityDefinition>  $definitions
+     * @param  (Closure(McpCapabilityDefinition): string)|null  $key
+     * @return array<string, array{rate_limit_bucket: string, audit_classification: string}>
+     */
+    private function capabilityMetadata(array $definitions, McpCapabilityKind $kind, ?Closure $key = null): array
+    {
+        $metadata = [];
+        foreach ($definitions as $definition) {
+            if ($definition->kind !== $kind) {
+                continue;
+            }
+            $metadata[($key ?? static fn (McpCapabilityDefinition $definition): string => $definition->name)($definition)] = [
+                'rate_limit_bucket' => $definition->rateLimitBucket,
+                'audit_classification' => $definition->auditClassification,
+            ];
+        }
+
+        return $metadata;
     }
 
     /** @param array<string, true> $available */

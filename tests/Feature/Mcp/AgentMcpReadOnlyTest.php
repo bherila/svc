@@ -254,7 +254,12 @@ final class AgentMcpReadOnlyTest extends TestCase
         $user = User::factory()->create();
         $workspace = Workspace::query()->create(['name' => 'Audited Workspace', 'slug' => 'audited-workspace']);
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
-        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $this->actingAsMcp($user, [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::IDENTITY_READ,
+            AgentApiScopes::PROJECTS_READ,
+            AgentApiScopes::TIME_WRITE,
+        ]);
         $session = $this->initialize();
 
         $this->mcp([
@@ -270,6 +275,18 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->mcp([
             'jsonrpc' => '2.0',
             'id' => 3,
+            'method' => 'resources/read',
+            'params' => ['uri' => 'svc://context'],
+        ], $session)->assertOk();
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 4,
+            'method' => 'prompts/get',
+            'params' => ['name' => 'log-time-across-projects', 'arguments' => []],
+        ], $session)->assertOk();
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 5,
             'method' => 'tools/call',
             'params' => ['name' => 'unknown.tool', 'arguments' => ['query' => 'must-not-be-audited']],
         ], $session)->assertOk()->assertJsonPath('error.code', -32601);
@@ -278,7 +295,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             $audit->entries,
             static fn (array $entry): bool => $entry['message'] === 'mcp.capability.executed',
         ));
-        $this->assertCount(2, $events);
+        $this->assertCount(4, $events);
         $event = $events[0];
         $this->assertSame('info', $event['level']);
         $this->assertSame([
@@ -302,7 +319,19 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertArrayNotHasKey('result', $event['context']);
         $this->assertArrayNotHasKey('headers', $event['context']);
 
-        $unknownEvent = $events[1];
+        $resourceEvent = $events[1];
+        $this->assertSame('svc://context', $resourceEvent['context']['capability']);
+        $this->assertSame('agent_api.read', $resourceEvent['context']['audit_classification']);
+        $this->assertSame('success', $resourceEvent['context']['outcome']);
+        $this->assertArrayNotHasKey('uri', $resourceEvent['context']);
+
+        $promptEvent = $events[2];
+        $this->assertSame('log-time-across-projects', $promptEvent['context']['capability']);
+        $this->assertSame('agent_api.prompt', $promptEvent['context']['audit_classification']);
+        $this->assertSame('success', $promptEvent['context']['outcome']);
+        $this->assertArrayNotHasKey('arguments', $promptEvent['context']);
+
+        $unknownEvent = $events[3];
         $this->assertSame('unknown.tool', $unknownEvent['context']['capability']);
         $this->assertSame('mcp-unknown', $unknownEvent['context']['rate_limit_bucket']);
         $this->assertSame('mcp.unknown', $unknownEvent['context']['audit_classification']);
