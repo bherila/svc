@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { CommandPaletteTrigger } from '@/components/command-palette';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -138,6 +139,7 @@ export default function ClientIndex({
                             {workspace.name} clients
                         </h1>
                     </div>
+                    <CommandPaletteTrigger />
                     <AppearanceSelector />
                 </header>
 

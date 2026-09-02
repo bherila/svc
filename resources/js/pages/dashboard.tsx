@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { CommandPaletteTrigger } from '@/components/command-palette';
 
 type Task = {
     id: string;
@@ -197,6 +198,7 @@ export default function Dashboard({ workspaces }: { workspaces: Workspace[] }) {
                                     </div>
                                 </details>
                             )}
+                            <CommandPaletteTrigger />
                             <AppearanceSelector />
                             <Link
                                 href="/logout"
