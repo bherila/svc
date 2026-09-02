@@ -17,7 +17,7 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -29,6 +29,9 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->billingScheduleList($schedules));
         $registry->register($this->billingScheduleGet($schedules));
         $registry->register($this->capacityLedgerGet($capacityLedger));
+        $registry->register($this->unplaceableInvoicesAudit($billingAudits));
+        $registry->register($this->undatedCollectibleInvoicesAudit($billingAudits));
+        $registry->register($this->missingBilledOverageAudit($billingAudits));
 
         return $registry;
     }
@@ -346,6 +349,109 @@ final class AgentMcpCapabilityRegistryFactory
             rateLimitBucket: 'mcp-read',
             auditClassification: 'agent_api.read',
             featureFlag: 'mcp.read.capacity_ledger',
+        );
+    }
+
+    private function unplaceableInvoicesAudit(AgentMcpBillingAuditTools $tools): McpCapabilityDefinition
+    {
+        return $this->billingAudit(
+            name: 'billing.audit_unplaceable_invoices',
+            title: 'Audit unplaceable invoices',
+            description: 'Get aggregate counts of invoices whose billing period or cycle cannot be placed safely.',
+            handler: [$tools, 'unplaceableInvoices'],
+            properties: [
+                'invoices' => ['type' => 'integer', 'minimum' => 0],
+                'without_a_service_period' => ['type' => 'integer', 'minimum' => 0],
+                'charged_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'affected' => ['type' => 'integer', 'minimum' => 0],
+                'overage_hours_at_stake' => ['type' => 'number', 'minimum' => 0],
+                'without_a_cycle' => ['type' => 'integer', 'minimum' => 0],
+                'of_a_kind_read_by_cycle' => ['type' => 'integer', 'minimum' => 0],
+                'live_without_a_cycle' => ['type' => 'integer', 'minimum' => 0],
+                'cycle_affected' => ['type' => 'integer', 'minimum' => 0],
+                'cycle_overage_hours_at_stake' => ['type' => 'number', 'minimum' => 0],
+            ],
+        );
+    }
+
+    private function undatedCollectibleInvoicesAudit(AgentMcpBillingAuditTools $tools): McpCapabilityDefinition
+    {
+        return $this->billingAudit(
+            name: 'billing.audit_undated_collectible_invoices',
+            title: 'Audit undated collectible invoices',
+            description: 'Get aggregate counts and per-currency balances for collectible invoices without due dates.',
+            handler: [$tools, 'undatedCollectibleInvoices'],
+            properties: [
+                'invoices' => ['type' => 'integer', 'minimum' => 0],
+                'collectible' => ['type' => 'integer', 'minimum' => 0],
+                'undated' => ['type' => 'integer', 'minimum' => 0],
+                'with_an_issue_date' => ['type' => 'integer', 'minimum' => 0],
+                'without_an_issue_date' => ['type' => 'integer', 'minimum' => 0],
+                'would_become_overdue_if_backfilled' => ['type' => 'integer', 'minimum' => 0],
+                'undated_balances' => ['type' => 'object', 'additionalProperties' => ['type' => 'integer', 'minimum' => 0], 'maxProperties' => 100],
+                'would_become_overdue_balances' => ['type' => 'object', 'additionalProperties' => ['type' => 'integer', 'minimum' => 0], 'maxProperties' => 100],
+            ],
+        );
+    }
+
+    private function missingBilledOverageAudit(AgentMcpBillingAuditTools $tools): McpCapabilityDefinition
+    {
+        return $this->billingAudit(
+            name: 'billing.audit_missing_billed_overage',
+            title: 'Audit missing billed overage',
+            description: 'Get aggregate counts of charged invoices missing billed-overage data.',
+            handler: [$tools, 'missingBilledOverage'],
+            properties: [
+                'invoices' => ['type' => 'integer', 'minimum' => 0],
+                'without_a_billed_overage' => ['type' => 'integer', 'minimum' => 0],
+                'charged_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'agreements_affected' => ['type' => 'integer', 'minimum' => 0],
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $properties
+     * @param  array{0: object, 1: string}  $handler
+     */
+    private function billingAudit(string $name, string $title, string $description, array $handler, array $properties): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Tool,
+            name: $name,
+            title: $title,
+            description: $description,
+            handler: $handler,
+            inputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['workspace_id'],
+                'properties' => ['workspace_id' => ['type' => 'string', 'format' => 'uuid']],
+            ],
+            outputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['data'],
+                'properties' => [
+                    'data' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'required' => array_keys($properties),
+                        'properties' => $properties,
+                    ],
+                ],
+            ],
+            requiredScopes: ['billing:read'],
+            policyAbility: 'AgentAccess::isWorkspaceManager',
+            requiresWorkspace: true,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.'.$name,
         );
     }
 

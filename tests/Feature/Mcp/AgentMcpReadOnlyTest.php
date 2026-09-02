@@ -59,7 +59,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -95,6 +95,12 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertFalse($ledgerResponse['isError']);
         $this->assertSame($agreement->public_id, $ledgerResponse['structuredContent']['data']['agreement_id']);
         $this->assertLessThanOrEqual(1, count($ledgerResponse['structuredContent']['data']['months']));
+
+        $auditResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => 'billing.audit_unplaceable_invoices', 'arguments' => ['workspace_id' => $workspace->public_id]]], $session)
+            ->assertOk()->json('result');
+        $this->assertFalse($auditResponse['isError']);
+        $this->assertSame(0, $auditResponse['structuredContent']['data']['invoices']);
+        $this->assertArrayNotHasKey('invoice_number', $auditResponse['structuredContent']['data']);
     }
 
     public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void
