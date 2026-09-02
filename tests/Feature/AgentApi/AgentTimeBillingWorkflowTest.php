@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -16,7 +15,6 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\SubcontractorBillingMode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
-use Laravel\Passport\Passport;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -385,7 +383,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 
     private function initialize(): string

@@ -9,6 +9,8 @@ use App\Policies\ClientCompanyPolicy;
 use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
 use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Mcp\Context\McpPrincipalResolver;
+use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ResourceAccessTokenRepository;
 use App\Support\AgentApi\ResourceAuthCodeRepository;
@@ -41,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Passport::$deviceCodeGrantEnabled = false;
         $this->app->singleton(ReplayHistoryBasis::class);
+        $this->app->bind(McpPrincipalResolverInterface::class, McpPrincipalResolver::class);
         $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
             router: $app->make(Router::class),
             exceptions: $app->make(ExceptionHandler::class),

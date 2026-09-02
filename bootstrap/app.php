@@ -1,6 +1,8 @@
 <?php
 
+use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RejectMcpQueryCredentials;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -18,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(RejectMcpQueryCredentials::class);
         $middleware->web(append: [
             EnforceOAuthResourceIndicator::class,
             HandleInertiaRequests::class,
@@ -45,6 +48,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        $exceptions->render(function (InvalidAgentApiCursor $exception, Request $request) {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => 'The pagination cursor is not valid for this request.',
+            ], 422);
+        });
         // Billing services signal user-correctable preconditions (over-balance
         // payment, double-issue, voiding with pending payments) as DomainException;
         // render them as 422s like EngagementController::reportFailure does, not 500s.

@@ -8,10 +8,12 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Passport\Passport;
@@ -89,6 +91,45 @@ class AgentReadApiTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $invoice->public_id)
             ->assertJsonMissingPath('data.0.notes');
+    }
+
+    public function test_client_cannot_read_a_hidden_task_directly(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $client = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $client->id, 'role' => 'client']);
+        $hidden = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => 'Hidden task must stay private',
+            'is_visible_to_client' => false,
+        ]);
+        $visible = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'title' => 'Visible task',
+            'is_visible_to_client' => true,
+        ]);
+        $this->actingAsAgent($client, [AgentApiScopes::TASKS_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$hidden->public_id}")
+            ->assertNotFound();
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$visible->public_id}")
+            ->assertOk()
+            ->assertJsonPath('data.title', $visible->title);
+    }
+
+    public function test_cursor_query_mismatch_is_a_client_error(): void
+    {
+        [$workspace] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+        $cursor = AgentApiCursor::encode(1, $workspace->public_id, 'projects|status=active|search=');
+        $this->actingAsAgent($owner, [AgentApiScopes::PROJECTS_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects?cursor=".urlencode($cursor))
+            ->assertStatus(422)
+            ->assertJson(['message' => 'The pagination cursor is not valid for this request.']);
     }
 
     public function test_legacy_client_visible_time_never_falls_back_to_internal_description(): void

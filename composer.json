@@ -79,6 +79,9 @@
         "registry:manifest": [
             "@php scripts/registry-manifest.php"
         ],
+        "mcp:smoke": [
+            "node scripts/mcp-smoke.mjs"
+        ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "pnpm run lint:check",

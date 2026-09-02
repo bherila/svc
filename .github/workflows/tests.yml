@@ -141,6 +141,51 @@ jobs:
       - name: Run the test suite against MariaDB
         run: php artisan test --parallel --processes=4
 
+  mcp-smoke:
+    name: MCP SDK streamable HTTP smoke
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.5.0 --activate
+
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      - name: Install application and generate ephemeral OAuth keys
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+          test -f .env || cp .env.example .env
+          php artisan key:generate --force
+          php artisan migrate --force
+          install -d -m 700 storage/app/private/oauth
+          php artisan passport:keys --force
+
+      - name: Run pinned SDK MCP smoke
+        run: bash scripts/mcp-smoke-ci.sh
+
   mutation:
     name: Diff-scoped mutation tests
     if: ${{ github.event_name == 'pull_request' }}
@@ -202,8 +247,8 @@ jobs:
 
   deploy:
     name: Deploy empty alpha to web1
-    needs: [ci, mariadb]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' }}
+    needs: [ci, mariadb, mcp-smoke]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
     permissions:

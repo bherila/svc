@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Mcp;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -10,7 +9,15 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Mcp\AgentMcpAgreementResource;
+use App\Services\Mcp\AgentMcpAgreementTools;
+use App\Services\Mcp\AgentMcpBillingAuditTools;
+use App\Services\Mcp\AgentMcpBillingScheduleTools;
+use App\Services\Mcp\AgentMcpCapabilityRegistryFactory;
+use App\Services\Mcp\AgentMcpCapacityLedgerTools;
+use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpInputSchemaFactory;
+use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpToolCatalog;
 use App\Services\Mcp\AgentMcpWriteTools;
@@ -20,7 +27,6 @@ use App\Support\AgentApi\AgentApiVersion;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
-use Laravel\Passport\Passport;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
@@ -46,6 +52,43 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertArrayHasKey($target, $schema['$defs'] ?? [], $definition->name);
             }
         }
+    }
+
+    public function test_context_resource_uses_the_canonical_context_response_contract(): void
+    {
+        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
+            app(AgentMcpReadTools::class),
+            app(AgentMcpContextResource::class),
+            app(AgentMcpAgreementTools::class),
+            app(AgentMcpAgreementResource::class),
+            app(AgentMcpBillingScheduleTools::class),
+            app(AgentMcpCapacityLedgerTools::class),
+            app(AgentMcpBillingAuditTools::class),
+            app(AgentMcpPrompts::class),
+            app(AgentMcpWriteTools::class),
+        );
+
+        $this->assertSame(
+            AgentApiResponseSchemaCatalog::forOperation('context.get'),
+            $registry->get('current-context')->outputSchema,
+        );
+    }
+
+    public function test_agreement_status_schema_includes_paused(): void
+    {
+        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
+            app(AgentMcpReadTools::class),
+            app(AgentMcpContextResource::class),
+            app(AgentMcpAgreementTools::class),
+            app(AgentMcpAgreementResource::class),
+            app(AgentMcpBillingScheduleTools::class),
+            app(AgentMcpCapacityLedgerTools::class),
+            app(AgentMcpBillingAuditTools::class),
+            app(AgentMcpPrompts::class),
+            app(AgentMcpWriteTools::class),
+        );
+
+        $this->assertContains('paused', $registry->get('agreements.list')->inputSchema['properties']['status']['enum']);
     }
 
     public function test_openapi_inventory_and_scopes_match_every_shipped_agent_route(): void
@@ -277,7 +320,7 @@ final class AgentMcpContractTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 
     private function initialize(): string
