@@ -36,4 +36,30 @@ final class AgentApiCursorTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         AgentApiCursor::decode($legacy, 'workspace-a', 'projects');
     }
+
+    public function test_cursor_round_trips_across_a_range_of_bound_workspace_and_query_values(): void
+    {
+        foreach (range(1, 64) as $id) {
+            $workspace = "workspace-{$id}";
+            $query = 'projects|status='.($id % 2 === 0 ? 'active' : 'archived')."|search={$id}";
+
+            $this->assertSame($id, AgentApiCursor::decode(AgentApiCursor::encode($id, $workspace, $query), $workspace, $query));
+        }
+    }
+
+    public function test_malformed_cursor_inputs_are_rejected_when_legacy_compatibility_is_disabled(): void
+    {
+        config(['agent_api.accept_legacy_cursors' => false]);
+
+        foreach (range(1, 64) as $index) {
+            $malformed = hash('sha256', "malformed-cursor-{$index}");
+
+            try {
+                AgentApiCursor::decode($malformed, 'workspace-a', 'projects');
+                $this->fail('A malformed cursor must not decode.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
 }
