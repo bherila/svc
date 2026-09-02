@@ -29,9 +29,11 @@ use LogicException;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Capability\Registry\ResourceTemplateReference;
 use Mcp\Schema\JsonRpc\Request as JsonRpcRequest;
 use Mcp\Schema\Request\GetPromptRequest;
 use Mcp\Schema\Request\ReadResourceRequest;
+use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Handler\Request\CallToolHandler;
@@ -73,6 +75,7 @@ final class AgentMcpServerFactory
         $reads = new AgentMcpReadTools($this->readService, $this->accounts, $context);
         $contextResource = new AgentMcpContextResource($this->readService, $context);
         $agreements = new AgentMcpAgreementTools($this->agreementReadService, $this->accounts, $context);
+        $agreementResource = new AgentMcpAgreementResource($this->agreementReadService, $this->accounts, $context);
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
@@ -80,7 +83,7 @@ final class AgentMcpServerFactory
         $resultLimiter = new McpCapabilityResultLimiter;
         $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
         $concurrencyLimiter = new McpCapabilityConcurrencyLimiter($cacheStore instanceof LockProvider ? $cacheStore : null);
-        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
+        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $agreementResource, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
         $availableCapabilities = array_values(array_filter(
             $definitions,
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
@@ -150,13 +153,16 @@ final class AgentMcpServerFactory
                 $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
-                $this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
-                static function (JsonRpcRequest $request): string {
+                [
+                    ...$this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
+                    ...$this->capabilityMetadata($definitions, McpCapabilityKind::ResourceTemplate, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
+                ],
+                function (JsonRpcRequest $request) use ($definitions): string {
                     if (! $request instanceof ReadResourceRequest) {
                         throw new LogicException('MCP resource audit handler received an invalid request.');
                     }
 
-                    return $request->uri;
+                    return $this->resourceCapabilityKey($definitions, $request->uri);
                 },
             ))
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
@@ -195,6 +201,19 @@ final class AgentMcpServerFactory
             $builder->addResource(
                 handler: $definition->handler,
                 uri: $definition->uri,
+                name: $definition->name,
+                title: $definition->title,
+                description: $definition->description,
+                mimeType: 'application/json',
+            );
+        }
+        foreach ($availableCapabilities as $definition) {
+            if ($definition->kind !== McpCapabilityKind::ResourceTemplate || $definition->uri === null) {
+                continue;
+            }
+            $builder->addResourceTemplate(
+                handler: $definition->handler,
+                uriTemplate: $definition->uri,
                 name: $definition->name,
                 title: $definition->title,
                 description: $definition->description,
@@ -253,6 +272,27 @@ final class AgentMcpServerFactory
         }
 
         return $metadata;
+    }
+
+    /** @param list<McpCapabilityDefinition> $definitions */
+    private function resourceCapabilityKey(array $definitions, string $uri): string
+    {
+        foreach ($definitions as $definition) {
+            if ($definition->kind === McpCapabilityKind::Resource && $definition->uri === $uri) {
+                return $uri;
+            }
+        }
+        foreach ($definitions as $definition) {
+            if ($definition->kind !== McpCapabilityKind::ResourceTemplate || $definition->uri === null) {
+                continue;
+            }
+            $template = new ResourceTemplate($definition->uri, $definition->name);
+            if ((new ResourceTemplateReference($template, $definition->handler))->matches($uri)) {
+                return $definition->uri;
+            }
+        }
+
+        return $uri;
     }
 
     /** @param array<string, true> $available */

@@ -71,8 +71,9 @@ final class McpCapabilityRegistry
         if (! $this->isClosedObjectSchema($definition->outputSchema)) {
             throw new LogicException('MCP output schema must be a closed object.');
         }
-        if ($definition->kind === McpCapabilityKind::Resource && (! is_string($definition->uri) || trim($definition->uri) === '')) {
-            throw new LogicException('MCP resources must declare a URI.');
+        if (in_array($definition->kind, [McpCapabilityKind::Resource, McpCapabilityKind::ResourceTemplate], true)
+            && (! is_string($definition->uri) || trim($definition->uri) === '')) {
+            throw new LogicException('MCP resources and resource templates must declare a URI.');
         }
         $this->assertNonEmptyUniqueStrings($definition->requiredCapabilities, 'required capabilities');
     }

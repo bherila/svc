@@ -17,7 +17,7 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -26,6 +26,7 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->contextResource($contextResource));
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
+        $registry->register($this->agreementResource($agreementResource));
         $registry->register($this->billingScheduleList($schedules));
         $registry->register($this->billingScheduleGet($schedules));
         $registry->register($this->capacityLedgerGet($capacityLedger));
@@ -138,6 +139,42 @@ final class AgentMcpCapabilityRegistryFactory
             rateLimitBucket: 'mcp-read',
             auditClassification: 'agent_api.read',
             featureFlag: 'mcp.read.agreements',
+        );
+    }
+
+    private function agreementResource(AgentMcpAgreementResource $resource): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::ResourceTemplate,
+            name: 'agreement',
+            title: 'Agreement',
+            description: 'Read one canonical agreement representation visible to a workspace manager.',
+            handler: [$resource, 'read'],
+            inputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['workspace_id', 'agreement_id'],
+                'properties' => [
+                    'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+                    'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+                ],
+            ],
+            outputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['data'],
+                'properties' => ['data' => $this->agreementDto()],
+            ],
+            requiredScopes: ['billing:read'],
+            policyAbility: 'AgentAccess::isWorkspaceManager',
+            requiresWorkspace: true,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.agreements',
+            uri: 'svc://workspaces/{workspace_id}/agreements/{agreement_id}',
         );
     }
 

@@ -111,11 +111,15 @@ approval/invoice write registrations above are the explicit exception pending
 their migration; they must not be used as a pattern for new MCP work.
 
 `svc://context` is a bounded JSON resource equivalent to `context.get`; it is
-advertised and readable only with `identity:read`. There are no resource
-templates today. Prompts are conditional: `log-time-across-projects` is
-advertised only when its required context/project/time tools are discoverable;
-`prepare-invoice-safely` appears only with the full authorized invoice-draft
-workflow. Prompts provide guidance only and do not bypass tool authorization.
+advertised and readable only with `identity:read`. The `agreement` resource
+template is `svc://workspaces/{workspace_id}/agreements/{agreement_id}`. It
+uses the same workspace-scoped `AgentAgreementReadService` and allowlisted DTO
+as `agreements.get`, requires `billing:read` and a workspace-manager role, and
+does not expose list/search or arbitrary paths. Prompts are conditional:
+`log-time-across-projects` is advertised only when its required
+context/project/time tools are discoverable; `prepare-invoice-safely` appears
+only with the full authorized invoice-draft workflow. Prompts provide guidance
+only and do not bypass tool authorization.
 
 Cursor pagination is available on project, task, time-entry, and invoice
 lists, with a maximum page size of 100. The server's discovery pagination
@@ -132,6 +136,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | Capability | Operator/UI workflow and backing service | Scope and policy | Bounds and privacy contract | Flag and coverage |
 | --- | --- | --- | --- | --- |
 | `agreements.list`, `agreements.get` | Client-directory agreement view; `AgentAgreementReadService` and the shared `AgreementReadPresenter` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Status filter, 1–100 page, query-bound cursor; allowlisted stored and derived terms only; inaccessible objects are not found | `mcp.read.agreements`; MCP contract, parity, and tenant-isolation tests |
+| `agreement` resource template | Canonical agreement representation; the same `AgentAgreementReadService` and `AgreementReadPresenter` as `agreements.get` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Fixed `svc://workspaces/{workspace_id}/agreements/{agreement_id}` URI shape; UUID variables are bounded before lookup; allowlisted DTO only; inaccessible objects are not found | `mcp.read.agreements`; discovery, direct-read, hidden-template, and tenant-isolation tests |
 | `billing_schedules.list`, `billing_schedules.get` | Billing schedule view; `AgentBillingScheduleReadService` and `BillingScheduleReadPresenter` | `billing:read`; manager; workspace-scoped schedule query | Active filter, 1–100 page, query-bound cursor; only agreement ID, cadence, next-run date, and active state | `mcp.read.billing_schedules`; MCP contract, parity, and tenant-isolation tests |
 | `capacity_ledger.get` | Time-sheet capacity display and billing ledger; `AgentCapacityLedgerReadService` over `InvoiceLedgerBuilder` | `billing:read`; manager; workspace-scoped agreement query | 1–60 trailing months; signed, allowlisted computed ledger rows; inaccessible agreement is not found | `mcp.read.capacity_ledger`; ledger, schema, and cross-workspace tests |
 | `billing.audit_unplaceable_invoices` | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests |
@@ -162,7 +167,7 @@ use it. `scripts/mcp-smoke.mjs` uses the pinned official MCP JavaScript client
 against a supplied short-lived bearer token. The concurrent CI smoke job starts
 Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
 the client through handshake, discovery, and `context.get`. Tool, resource,
-and prompt execution are centrally throttled by reviewed `mcp-read`
+resource-template, and prompt execution are centrally throttled by reviewed `mcp-read`
 (120/minute) and `mcp-write` (20/minute) buckets, keyed to the authenticated
 credential and capability; the route's `throttle:60,1` remains the broad outer
 limit. A capability call
@@ -170,16 +175,18 @@ fails closed with a safe retry-later error if its limiter backend is
 unavailable. Capability execution is also limited to four concurrent requests
 per authenticated credential and capability, using 60-second cache-backed
 leases; a saturated or unavailable lock store returns a safe retry-later error.
-The baseline does not yet provide dashboards, alerts, or resource
-templates. Every tool call, resource read, and prompt retrieval also
+Every tool call, resource read (including a resource-template read), and prompt
+retrieval also
 emits the metadata-only `mcp.capability.executed` audit event and a matching
 payload-free `McpCapabilityInvoked` application event for metrics integrations
 (including hidden or unknown direct tool attempts): request ID, capability,
 bucket, audit classification, outcome, duration, subject public ID, and one-way
 credential/client fingerprints. Arguments, results, headers, and raw tokens
 are excluded by contract. Audit and metrics sink failures never alter the MCP
-response or expose their implementation details; sink-health monitoring must
-be handled by the deployment's logging/metrics platform.
+response or expose their implementation details. The source-controlled
+deployment-neutral dashboard, dimensions, and initial alert thresholds are in
+[the MCP operational runbook](mcp-operations.md#monitoring-and-alerts); alert
+delivery is configured by the deployment's logging/metrics platform.
 Incident containment, OAuth-connection revocation, recovery, and rollback are
 documented in [the MCP operational runbook](mcp-operations.md).
 

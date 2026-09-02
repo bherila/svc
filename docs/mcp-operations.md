@@ -64,17 +64,32 @@ documented, reviewed exception. Run the disclosure scan as part of the same
 candidate checks; do not paste its findings into an issue because matched
 values are intentionally redacted.
 
-## Monitoring baseline
+## Monitoring and alerts
 
-Watch request volume, 401/403/429 and safe MCP error categories, handler
-duration, active-session/cache failures, OAuth revocation failures, and the
-per-capability feature-flag state. Alerts must use capability and request IDs,
-not tool arguments or results. The current application has global route
-throttling, credential-bound per-capability `mcp-read`/`mcp-write` buckets for
-tools, resources, and prompts,
-capability kill switches, and `mcp.capability.executed` metadata-only audit
-events. The matching payload-free `McpCapabilityInvoked` application event is
-the metrics/alerting integration hook; dashboards and alert thresholds remain
-hardening work and must be validated before general availability. Audit and
-metrics sink failures are deliberately non-fatal to MCP callers and contain no
-payload fallback; monitor those sinks through the deployment platform.
+The deployment dashboard is named **SVC MCP Safety**. Its application telemetry
+is the metadata-only `mcp.capability.executed` audit event and matching
+`McpCapabilityInvoked` event. Its HTTP-status panel uses aggregate deployment
+request metrics for the MCP route, never bodies or headers. Permitted event
+dimensions are `capability`, `rate_limit_bucket`, `audit_classification`,
+`outcome`, `duration_ms`, and request ID. Do not index or display arguments,
+results, headers, account IDs, user email addresses, raw credential IDs, or
+token values. Credential and client fingerprints are for investigated,
+access-controlled correlation only; they are not dashboard dimensions.
+
+The dashboard has these panels, grouped by capability and five-minute window:
+
+| Panel | Signal | Initial alert |
+| --- | --- | --- |
+| Invocations | Count of `mcp.capability.executed` | No alert; use as the denominator for rate alerts. |
+| Authentication and authorization | Requests rejected by the MCP route, plus `outcome=error` | Page the on-call owner when the error rate exceeds 5% and at least 20 MCP requests occur in five minutes. |
+| Availability guards | `rate_limit_unavailable`, `concurrency_unavailable`, and `result_too_large` outcomes | Page immediately for any limiter/concurrency backend unavailability; create a ticket for repeated result-size rejections (five in 15 minutes). |
+| Saturation | `rate_limited` and `concurrency_limited` outcomes | Alert the service owner when either exceeds 2% of calls and there are at least 20 calls in five minutes. |
+| Latency | p50/p95 `duration_ms` | Alert the service owner when p95 exceeds 5 seconds for 10 minutes, with at least 20 calls in the window. |
+| Audit/metrics delivery | `mcp.capability.metrics_unavailable` log events | Page immediately: visibility is degraded even though capability requests remain safely available. |
+| Configuration | Global MCP and per-capability feature-flag state | Alert on every change; link the change to its deployment, request ID if applicable, and the containment runbook. |
+
+The thresholds are initial deployment defaults. Tune them only from aggregate,
+payload-free production observations and retain the previous threshold and
+rationale in the deployment change record. Audit and metrics sink failures are
+deliberately non-fatal to MCP callers and contain no payload fallback; monitor
+those sinks through the deployment platform.

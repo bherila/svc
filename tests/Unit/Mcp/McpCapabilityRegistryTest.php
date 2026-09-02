@@ -99,15 +99,26 @@ final class McpCapabilityRegistryTest extends TestCase
         ));
     }
 
-    public function test_it_rejects_a_resource_with_a_blank_uri(): void
+    public function test_it_rejects_a_resource_or_resource_template_with_a_blank_uri(): void
     {
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('MCP resources must declare a URI.');
+        $this->expectExceptionMessage('MCP resources and resource templates must declare a URI.');
 
         (new McpCapabilityRegistry)->register($this->definition(
             McpCapabilityKind::Resource,
             'svc://context',
             uri: ' ',
+        ));
+    }
+
+    public function test_it_rejects_a_resource_template_without_a_uri(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP resources and resource templates must declare a URI.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::ResourceTemplate,
+            'agreement',
         ));
     }
 

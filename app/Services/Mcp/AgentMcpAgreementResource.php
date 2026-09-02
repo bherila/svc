@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Services\Mcp;
+
+use App\Services\AgentApi\AgentAgreementReadService;
+use App\Services\Mcp\Context\McpAccountContextResolver;
+use App\Services\Mcp\Context\McpRequestContext;
+use Illuminate\Support\Str;
+use LogicException;
+use Mcp\Exception\ResourceReadException;
+
+/** Canonical agreement resource backed by the same scoped read as agreements.get. */
+final class AgentMcpAgreementResource
+{
+    public function __construct(
+        private readonly AgentAgreementReadService $agreements,
+        private readonly McpAccountContextResolver $accounts,
+        private readonly ?McpRequestContext $requestContext = null,
+    ) {}
+
+    /** @return array{data: array<string, mixed>} */
+    public function read(string $workspace_id, string $agreement_id): array
+    {
+        if (! Str::isUuid($workspace_id) || ! Str::isUuid($agreement_id)) {
+            throw new ResourceReadException('The requested resource was not found.');
+        }
+
+        $context = $this->workspace($workspace_id);
+
+        return ['data' => $this->agreements->get($context->principal->subject, $context->workspace, $agreement_id)];
+    }
+
+    private function workspace(string $workspaceId): McpRequestContext
+    {
+        $context = $this->requestContext ?? throw new LogicException('MCP agreement resource requires a request context.');
+        if (! $context->principal->hasScope('billing:read')) {
+            throw new ResourceReadException('This connection lacks the required permission.');
+        }
+
+        return $this->accounts->resolve($context, $workspaceId);
+    }
+}
