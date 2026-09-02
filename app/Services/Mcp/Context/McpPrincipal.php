@@ -20,6 +20,7 @@ final readonly class McpPrincipal
         public AgentPrincipal $subject,
         public string $credentialId,
         public string $clientId,
+        /** @var list<string> */
         public array $scopes,
     ) {}
 

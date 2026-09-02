@@ -25,7 +25,6 @@ final class McpPrincipalResolver
 
         $accessToken = $subject->token();
         if (! $accessToken instanceof AccessToken
-            || ! is_string($accessToken->oauth_access_token_id)
             || $accessToken->oauth_access_token_id === '') {
             throw new AuthenticationException('Invalid MCP credential.');
         }
@@ -39,7 +38,6 @@ final class McpPrincipalResolver
             || $token->expires_at === null
             || $token->expires_at->isPast()
             || (int) $token->user_id !== (int) $subject->id
-            || ! is_string($token->client_id)
             || $token->client_id === ''
             || ! hash_equals(OAuthResourceIndicator::resource(), (string) $token->getAttribute('resource_uri'))) {
             throw new AuthenticationException('Invalid MCP credential.');
