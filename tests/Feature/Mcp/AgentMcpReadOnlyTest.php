@@ -183,6 +183,19 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNotContains('billing_schedules.list', $names);
         $this->assertNotContains('capacity_ledger.get', $names);
         $this->assertNotContains('billing.audit_unplaceable_invoices', $names);
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'agreements.list',
+                'arguments' => ['workspace_id' => $workspace->public_id],
+            ],
+        ], $session)
+            ->assertOk()
+            ->assertJsonPath('error.code', -32601)
+            ->assertJsonMissingPath('result');
     }
 
     public function test_mcp_capability_rate_limits_return_a_safe_tool_error(): void
