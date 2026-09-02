@@ -164,6 +164,7 @@ final class AgentMcpServerFactory
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
             ))
+            ->addRequestHandler(new McpUnsupportedOptionalProtocolHandler)
             ->addRequestHandler(new McpUnsupportedResourceSubscriptionHandler)
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),

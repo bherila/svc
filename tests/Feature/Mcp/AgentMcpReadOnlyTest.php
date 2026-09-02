@@ -124,6 +124,26 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertJsonPath('error.code', -32601)
             ->assertJsonPath('error.message', 'Resource subscriptions are not supported.')
             ->assertJsonMissingPath('result');
+        foreach ([
+            ['method' => 'logging/setLevel', 'params' => ['level' => 'debug']],
+            [
+                'method' => 'completion/complete',
+                'params' => [
+                    'ref' => ['type' => 'ref/resource', 'uri' => 'svc://workspaces/{workspace_id}/agreements/{agreement_id}'],
+                    'argument' => ['name' => 'workspace_id', 'value' => ''],
+                ],
+            ],
+        ] as $index => $unsupported) {
+            $this->mcp([
+                'jsonrpc' => '2.0',
+                'id' => 25 + $index,
+                ...$unsupported,
+            ], $session)
+                ->assertOk()
+                ->assertJsonPath('error.code', -32601)
+                ->assertJsonPath('error.message', 'This optional MCP feature is not supported.')
+                ->assertJsonMissingPath('result');
+        }
 
         $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'projects.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id]]], $session)
             ->assertOk()->json('result');
