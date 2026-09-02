@@ -10,7 +10,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
+import { cn } from '@/lib/utils';
 import type { CompanyAgreement } from '@/types/clients';
 
 type ProjectTask = {
@@ -60,7 +62,9 @@ export default function ClientProjectDetail({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={project.name} />
-            <main className="mx-auto grid max-w-5xl grid-cols-1 gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={`/workspaces/${workspace.id}/clients/${company.id}`}

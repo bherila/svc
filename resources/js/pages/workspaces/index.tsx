@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 
 /**
  * Choose a workspace. That is the whole screen.
@@ -136,7 +138,12 @@ export default function WorkspaceSelector({
             <Head title="Choose a workspace" />
 
             <header className="border-b border-border">
-                <div className="flex h-12 w-full items-center gap-2 px-4">
+                <div
+                    className={cn(
+                        SHELL_CONTAINER,
+                        'flex h-12 items-center gap-2',
+                    )}
+                >
                     {/*
                      * Not a link. This *is* the workspace selector, so the
                      * wordmark has nowhere to take the reader from here.
@@ -151,7 +158,7 @@ export default function WorkspaceSelector({
                 </div>
             </header>
 
-            <main className="mx-auto max-w-2xl px-6 py-12">
+            <main className={cn(SHELL_CONTAINER, 'py-12')}>
                 <div className="flex items-baseline justify-between gap-4">
                     <h1 className="text-2xl font-semibold tracking-tight">
                         Choose a workspace

@@ -8,7 +8,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
+import { cn } from '@/lib/utils';
 
 /**
  * The work done, as the client reads it.
@@ -40,7 +42,9 @@ export default function PortalTime({
     return (
         <WorkspaceShell activeModule="time">
             <Head title={`${company.name} time`} />
-            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 px-6 py-8">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                     <h1 className="text-2xl font-semibold tracking-tight">
                         Time
@@ -63,7 +67,9 @@ export default function PortalTime({
                                 <TableRow>
                                     <TableHead>Date</TableHead>
                                     <TableHead>Project</TableHead>
-                                    <TableHead>Description</TableHead>
+                                    <TableHead className="min-w-64">
+                                        Description
+                                    </TableHead>
                                     <TableHead>Hours</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -76,7 +82,7 @@ export default function PortalTime({
                                         <TableCell>
                                             {entry.project ?? '—'}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                             {entry.description}
                                         </TableCell>
                                         <TableCell className="tabular-nums">

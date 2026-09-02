@@ -10,7 +10,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { cn } from '@/lib/utils';
 
 type PortalLine = {
     id: string;
@@ -71,7 +74,9 @@ export default function PortalInvoice({
     return (
         <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
-            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
@@ -83,7 +88,9 @@ export default function PortalInvoice({
                         <h1 className="text-2xl font-semibold">
                             {invoice.invoice_number ?? 'Invoice'}
                         </h1>
-                        <Badge variant="outline">{invoice.status}</Badge>
+                        <Badge variant="outline">
+                            {statusLabel(invoice.status)}
+                        </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
@@ -117,7 +124,9 @@ export default function PortalInvoice({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Description</TableHead>
+                                            <TableHead className="min-w-64">
+                                                Description
+                                            </TableHead>
                                             <TableHead>Date</TableHead>
                                             <TableHead>Quantity</TableHead>
                                             <TableHead>Hours</TableHead>
@@ -128,7 +137,7 @@ export default function PortalInvoice({
                                     <TableBody>
                                         {lines.map((line) => (
                                             <TableRow key={line.id}>
-                                                <TableCell className="font-medium">
+                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
                                                 <TableCell>

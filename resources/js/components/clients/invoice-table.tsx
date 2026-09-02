@@ -8,6 +8,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { statusLabel } from '@/lib/labels';
 import { formatMoney } from '@/lib/money';
 import type { CompanyInvoice } from '@/types/clients';
 
@@ -74,7 +75,7 @@ export function InvoiceTable({
                             </TableCell>
                             <TableCell>
                                 <Badge variant="outline">
-                                    {invoice.status}
+                                    {statusLabel(invoice.status)}
                                 </Badge>
                             </TableCell>
                             <TableCell>

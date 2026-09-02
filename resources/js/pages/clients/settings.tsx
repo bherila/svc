@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 
 type ManagedCompany = {
     id: string;
@@ -399,7 +401,9 @@ export default function ClientManage({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={`${company.name} settings`} />
-            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <h1 className="text-2xl font-semibold tracking-tight">
                     {company.name} settings
                 </h1>

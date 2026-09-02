@@ -2,8 +2,11 @@ import { Head, Link } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
+import { cn } from '@/lib/utils';
 
 /**
  * One client, at a glance.
@@ -141,7 +144,9 @@ export default function ClientHome({
         <WorkspaceShell activeModule="home">
             <Head title={company.name} />
 
-            <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 px-6 py-8">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <header className="flex flex-wrap items-center justify-between gap-3">
                     <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                         {company.name}
@@ -201,7 +206,7 @@ export default function ClientHome({
                                         {latestInvoice.invoice_number}
                                     </Link>
                                     <Badge variant="outline">
-                                        {latestInvoice.status}
+                                        {statusLabel(latestInvoice.status)}
                                     </Badge>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
@@ -238,21 +243,27 @@ export default function ClientHome({
                     empty="No recent time."
                     isEmpty={recentTime.length === 0}
                 >
+                    {/*
+                     * Three columns, and only the middle one is prose. The
+                     * date and the duration are fixed and never wrap; the
+                     * description wraps as far as it needs to, because a
+                     * description clipped at one line is the half of the row
+                     * worth reading thrown away.
+                     */}
                     <ul className="divide-y divide-border">
                         {recentTime.map((entry) => (
                             <li
                                 key={entry.id}
-                                className="flex items-baseline justify-between gap-4 py-2 text-sm"
+                                className="flex items-start justify-between gap-4 py-2 text-sm"
                             >
                                 <span className="w-24 shrink-0 text-muted-foreground tabular-nums">
                                     {entry.worked_on}
                                 </span>
-                                <span className="min-w-0 flex-1 truncate">
+                                <span className="min-w-0 flex-1 wrap-anywhere">
                                     {entry.description ?? '—'}
                                     {entry.project !== null && (
-                                        <span className="text-muted-foreground">
-                                            {' '}
-                                            · {entry.project}
+                                        <span className="block text-xs text-muted-foreground">
+                                            {entry.project}
                                         </span>
                                     )}
                                 </span>
@@ -275,18 +286,19 @@ export default function ClientHome({
                         {openTasks.map((task) => (
                             <li
                                 key={task.id}
-                                className="flex items-baseline justify-between gap-4 py-2 text-sm"
+                                className="flex items-start justify-between gap-4 py-2 text-sm"
                             >
-                                <span className="min-w-0 flex-1 truncate">
+                                <span className="min-w-0 flex-1 wrap-anywhere">
                                     {task.title}
                                     {task.project !== null && (
-                                        <span className="text-muted-foreground">
-                                            {' '}
-                                            · {task.project}
+                                        <span className="block text-xs text-muted-foreground">
+                                            {task.project}
                                         </span>
                                     )}
                                 </span>
-                                <Badge variant="outline">{task.status}</Badge>
+                                <Badge variant="outline" className="shrink-0">
+                                    {statusLabel(task.status)}
+                                </Badge>
                             </li>
                         ))}
                     </ul>
@@ -310,14 +322,13 @@ export default function ClientHome({
                                 {engagement.agreement_title}
                             </Link>
                             <Badge variant="outline">
-                                {engagement.agreement_status}
+                                {statusLabel(engagement.agreement_status)}
                             </Badge>
                             {engagement.agreement_cadence !== null && (
                                 <span className="text-muted-foreground">
-                                    {engagement.agreement_cadence.replace(
-                                        /_/g,
-                                        ' ',
-                                    )}
+                                    {statusLabel(
+                                        engagement.agreement_cadence,
+                                    ).toLowerCase()}
                                 </span>
                             )}
                         </p>

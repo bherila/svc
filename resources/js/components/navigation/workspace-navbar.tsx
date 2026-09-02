@@ -4,6 +4,8 @@ import { CommandPaletteTrigger } from '@/components/command-palette';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { ClientCompanySwitcher } from '@/components/navigation/client-company-switcher';
 import { ClientModuleTabs } from '@/components/navigation/client-module-tabs';
+import { SHELL_CONTAINER } from '@/lib/layout';
+import { cn } from '@/lib/utils';
 import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
 
 /**
@@ -24,9 +26,10 @@ import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
  * link - each was another route to things the tabs already reach, and having
  * two is what made getting anywhere take four clicks and a guess.
  *
- * The row never wraps. Wrapping turns one bar into two and moves the tabs to
- * where the reader has stopped looking; instead the tab strip scrolls, and the
- * two anchors - the wordmark and the switcher - are the parts that never leave.
+ * The row never wraps, and it sits in the same column as the page below it.
+ * Wrapping turns one bar into two and moves the tabs to where the reader has
+ * stopped looking; instead the tab strip scrolls, and the two anchors - the
+ * wordmark and the switcher - are the parts that never leave.
  * The switcher does narrow, though: on a phone, a client whose registered name
  * runs to sixty characters would otherwise hold the row wider than the window
  * and scroll every page sideways, so it truncates the name rather than the bar
@@ -48,7 +51,15 @@ export function WorkspaceNavbar({
 
     return (
         <header className="sticky top-0 z-40 border-b border-border bg-background">
-            <div className="flex h-12 w-full items-center gap-2 px-4">
+            {/*
+             * Border edge to edge, contents in the same column as the page.
+             * A bar whose ends sit hard against the viewport while the content
+             * below is centred somewhere narrower is what made this look like
+             * everything had been pushed to the right.
+             */}
+            <div
+                className={cn(SHELL_CONTAINER, 'flex h-12 items-center gap-2')}
+            >
                 <Link
                     href="/app"
                     aria-label="Choose workspace"

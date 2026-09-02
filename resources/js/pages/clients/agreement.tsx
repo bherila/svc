@@ -10,8 +10,11 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
+import { cn } from '@/lib/utils';
 import type { CompanyAgreement } from '@/types/clients';
 
 type AgreementTerms = CompanyAgreement & {
@@ -89,7 +92,9 @@ export default function ClientAgreementDetail({
     return (
         <WorkspaceShell activeModule="home">
             <Head title={agreement.title} />
-            <main className="mx-auto grid max-w-5xl grid-cols-1 gap-6 p-6">
+            <main
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
+            >
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
@@ -101,7 +106,9 @@ export default function ClientAgreementDetail({
                         <h1 className="text-2xl font-semibold">
                             {agreement.title}
                         </h1>
-                        <Badge variant="outline">{agreement.status}</Badge>
+                        <Badge variant="outline">
+                            {statusLabel(agreement.status)}
+                        </Badge>
                         {!agreement.is_recurring && (
                             <Badge variant="outline">One time</Badge>
                         )}
