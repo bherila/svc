@@ -53,15 +53,19 @@ final class AgentMcpServerFactory
             $this->requestId($request),
         );
         $reads = new AgentMcpReadTools($this->readService, $this->accounts, $context);
+        $contextResource = new AgentMcpContextResource($this->readService, $context);
         $agreements = new AgentMcpAgreementTools($this->agreementReadService, $this->accounts, $context);
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
-        $definitions = $this->capabilities->make($reads, $agreements, $schedules, $this->writes)->ofKind(McpCapabilityKind::Tool);
-        $exposedDefinitions = array_values(array_filter(
-            $definitions,
+        $availableCapabilities = array_values(array_filter(
+            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $this->writes)->all(),
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(
                 $context,
                 $definition->requiredScopes,
             ),
+        ));
+        $exposedDefinitions = array_values(array_filter(
+            $availableCapabilities,
+            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool,
         ));
         $exposedToolNames = array_fill_keys(array_map(
             static fn (McpCapabilityDefinition $definition): string => $definition->name,
@@ -135,6 +139,19 @@ final class AgentMcpServerFactory
                 annotations: new ToolAnnotations(readOnlyHint: $definition->readOnly, destructiveHint: $definition->destructive, idempotentHint: $definition->idempotent, openWorldHint: false),
                 inputSchema: $definition->inputSchema,
                 outputSchema: $definition->outputSchema,
+            );
+        }
+        foreach ($availableCapabilities as $definition) {
+            if ($definition->kind !== McpCapabilityKind::Resource || $definition->uri === null) {
+                continue;
+            }
+            $builder->addResource(
+                handler: $definition->handler,
+                uri: $definition->uri,
+                name: $definition->name,
+                title: $definition->title,
+                description: $definition->description,
+                mimeType: 'application/json',
             );
         }
 

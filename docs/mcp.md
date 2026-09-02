@@ -93,11 +93,12 @@ tools and the REST controller both use `AgentReadService`, the single
 tenant-scoped query/presentation boundary; MCP does not invoke controllers or
 internal HTTP routes, and it does not expose Eloquent models.
 
-There are no MCP resources or resource templates today. Prompts are
-conditional: `log-time-across-projects` is advertised only when its required
-context/project/time tools are discoverable; `prepare-invoice-safely` appears
-only with the full authorized invoice-draft workflow. Prompts provide
-guidance only and do not bypass tool authorization.
+`svc://context` is a bounded JSON resource equivalent to `context.get`; it is
+advertised and readable only with `identity:read`. There are no resource
+templates today. Prompts are conditional: `log-time-across-projects` is
+advertised only when its required context/project/time tools are discoverable;
+`prepare-invoice-safely` appears only with the full authorized invoice-draft
+workflow. Prompts provide guidance only and do not bypass tool authorization.
 
 Cursor pagination is available on project, task, time-entry, and invoice
 lists, with a maximum page size of 100. The server's discovery pagination

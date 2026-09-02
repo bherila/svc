@@ -17,12 +17,13 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
             $registry->register($this->definition($tool));
         }
+        $registry->register($this->contextResource($contextResource));
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->billingScheduleList($schedules));
@@ -275,5 +276,28 @@ final class AgentMcpCapabilityRegistryFactory
                 'is_active' => ['type' => 'boolean'],
             ],
         ];
+    }
+
+    private function contextResource(AgentMcpContextResource $resource): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Resource,
+            name: 'current-context',
+            title: 'Current SVC context',
+            description: 'The authenticated SVC identity and authorized workspaces.',
+            handler: [$resource, 'read'],
+            inputSchema: ['type' => 'object', 'additionalProperties' => false],
+            outputSchema: ['type' => 'object', 'additionalProperties' => false],
+            requiredScopes: ['identity:read'],
+            policyAbility: 'AgentAccess::canViewWorkspace',
+            requiresWorkspace: false,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.context',
+            uri: 'svc://context',
+        );
     }
 }

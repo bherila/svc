@@ -67,6 +67,14 @@ final class AgentMcpReadOnlyTest extends TestCase
             $this->assertFalse($tool['outputSchema']['additionalProperties']);
         }
 
+        $resources = $this->mcp(['jsonrpc' => '2.0', 'id' => 20, 'method' => 'resources/list', 'params' => []], $session)
+            ->assertOk()->json('result.resources');
+        $this->assertSame(['svc://context'], array_column($resources, 'uri'));
+        $contextResource = $this->mcp(['jsonrpc' => '2.0', 'id' => 21, 'method' => 'resources/read', 'params' => ['uri' => 'svc://context']], $session)
+            ->assertOk()->json('result.contents.0');
+        $this->assertSame('svc://context', $contextResource['uri']);
+        $this->assertSame('application/json', $contextResource['mimeType']);
+
         $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'projects.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id]]], $session)
             ->assertOk()->json('result');
         $this->assertFalse($response['isError']);

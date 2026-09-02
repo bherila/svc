@@ -37,5 +37,6 @@ final readonly class McpCapabilityDefinition
         public string $featureFlag,
         public ?string $deprecatedSince = null,
         public ?string $replacement = null,
+        public ?string $uri = null,
     ) {}
 }
