@@ -565,7 +565,7 @@ class ClientDirectoryTest extends TestCase
         // screen never renders company B's name in its projects, agreements or
         // invoices.
         $props = $response->viewData('page')['props'];
-        unset($props['clientContext']);
+        unset($props['workspaceNavigation']);
 
         $this->assertStringNotContainsString(
             'Sibling Client Name',
@@ -971,7 +971,8 @@ class ClientDirectoryTest extends TestCase
         $this->actingAs($member)
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('clientContext.can_manage', false));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('workspaceNavigation.permissions.manage_current_client', false));
 
         $this->actingAs($member)
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")

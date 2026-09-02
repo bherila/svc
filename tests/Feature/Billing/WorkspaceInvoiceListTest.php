@@ -49,8 +49,9 @@ class WorkspaceInvoiceListTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('invoices/index')
                 ->has('invoices', 2)
-                // No client in context, so no switcher naming one.
-                ->where('clientContext', null));
+                // Inside the workspace but not inside one client, so the
+                // switcher has options and no selection.
+                ->where('workspaceNavigation.current_client_id', null));
     }
 
     /**

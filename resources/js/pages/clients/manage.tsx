@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 
 type ManagedCompany = {
     id: string;
@@ -396,7 +396,7 @@ export default function ClientManage({
     assignable: AssignableMember[];
 }) {
     return (
-        <ClientContextLayout active="manage">
+        <WorkspaceShell activeModule="home">
             <Head title={`Manage ${company.name}`} />
             <main className="mx-auto grid max-w-4xl gap-6 p-6">
                 <Card>
@@ -438,6 +438,6 @@ export default function ClientManage({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

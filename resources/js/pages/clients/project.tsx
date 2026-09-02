@@ -9,7 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatHours } from '@/lib/time';
 import type { CompanyAgreement } from '@/types/clients';
 
@@ -58,7 +58,7 @@ export default function ClientProjectDetail({
     agreements: CompanyAgreement[];
 }) {
     return (
-        <ClientContextLayout active="overview">
+        <WorkspaceShell activeModule="home">
             <Head title={project.name} />
             <main className="mx-auto grid max-w-5xl gap-6 p-6">
                 <header className="grid gap-1">
@@ -207,6 +207,6 @@ export default function ClientProjectDetail({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

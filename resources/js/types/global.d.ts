@@ -1,4 +1,5 @@
 import type { Auth, RelyingApplication } from '@/types/auth';
+import type { WorkspaceNavigation } from '@/types/navigation';
 
 declare module 'react' {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -13,6 +14,8 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             applications: RelyingApplication[];
+            /** Present only on routes that render the workspace shell. */
+            workspaceNavigation: WorkspaceNavigation | null;
             [key: string]: unknown;
         };
     }

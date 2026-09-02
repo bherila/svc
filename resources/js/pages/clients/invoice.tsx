@@ -9,7 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatMoney } from '@/lib/money';
 import type { CompanyInvoice } from '@/types/clients';
 
@@ -64,7 +64,7 @@ export default function ClientInvoiceDetail({
     const backHref = `/workspaces/${workspace.id}/clients/${company.id}/invoices`;
 
     return (
-        <ClientContextLayout active="invoices">
+        <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <header className="grid gap-1">
@@ -250,6 +250,6 @@ export default function ClientInvoiceDetail({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

@@ -9,7 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
 import type { CompanyAgreement } from '@/types/clients';
@@ -77,7 +77,7 @@ export default function ClientAgreementDetail({
     recurring_items: RecurringItem[];
 }) {
     return (
-        <ClientContextLayout active="overview">
+        <WorkspaceShell activeModule="home">
             <Head title={agreement.title} />
             <main className="mx-auto grid max-w-5xl gap-6 p-6">
                 <header className="grid gap-1">
@@ -279,6 +279,6 @@ export default function ClientAgreementDetail({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

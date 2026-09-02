@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ClientShow from '@/pages/clients/show';
 import { sharedPageProps } from '@/test/shared-page-props';
+import { workspaceNavigation } from '@/test/workspace-navigation';
 import type {
     ClientShowProps,
     CompanyAgreement,
@@ -15,18 +16,18 @@ vi.mock('@inertiajs/react', () => ({
         <a href={href}>{children}</a>
     ),
     router: { visit: vi.fn() },
-    // The page renders inside the client chrome now, which reads the shared
-    // switcher payload. Supplied here so these stay tests of the Overview
-    // content rather than of the layout - `client-context-layout.test.tsx`
-    // owns the switcher and the tabs.
+    // The page renders inside the workspace shell, which reads the shared
+    // navbar payload. Supplied here so these stay tests of the page's own
+    // content - `workspace-shell.test.tsx` owns the switcher and the tabs.
     usePage: () => ({
         props: sharedPageProps({
-            clientContext: {
-                workspace: { id: 'workspace-1', name: 'Synthetic Workspace' },
-                companies: [{ id: 'company-1', name: 'Synthetic Client' }],
-                current_company_id: 'company-1',
-                can_manage: false,
-            },
+            workspaceNavigation: workspaceNavigation({
+                permissions: {
+                    manage_workspace: false,
+                    create_client: false,
+                    manage_current_client: false,
+                },
+            }),
         }),
     }),
 }));

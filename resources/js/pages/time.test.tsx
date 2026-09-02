@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TimeSheet from '@/pages/time';
 import { sharedPageProps } from '@/test/shared-page-props';
-import type { ClientContext } from '@/types/navigation';
+import { workspaceNavigation } from '@/test/workspace-navigation';
+import type { WorkspaceNavigation } from '@/types/navigation';
 import type {
     CompanyOption,
     TimeEntry,
@@ -19,7 +20,7 @@ const inertia = vi.hoisted(() => ({
     visit: vi.fn(),
 }));
 
-let clientContext: ClientContext | null = null;
+let navigation: WorkspaceNavigation | null = null;
 
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
@@ -27,15 +28,16 @@ vi.mock('@inertiajs/react', () => ({
         <a href={href}>{children}</a>
     ),
     router: inertia,
-    // The sheet renders inside the client chrome on the company tab and bare
-    // on the workspace-wide route. A null context is the latter, which keeps
-    // these tests about the sheet's own controls - the chrome has its own
-    // tests in `client-context-layout.test.tsx`.
-    usePage: () => ({ props: sharedPageProps({ clientContext }) }),
+    // The shell owns the navbar, and `workspace-shell.test.tsx` owns the
+    // tests for it. A null payload renders the sheet without chrome, which
+    // keeps these about the sheet's own controls.
+    usePage: () => ({
+        props: sharedPageProps({ workspaceNavigation: navigation }),
+    }),
 }));
 
 beforeEach(() => {
-    clientContext = null;
+    navigation = null;
 });
 
 function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
@@ -108,33 +110,24 @@ function props({
 }
 
 describe('time sheet controls', () => {
-    it('renders one appearance selector on the workspace-wide route', () => {
-        render(<TimeSheet {...props()} />);
-
-        expect(
-            screen.getAllByRole('combobox', { name: 'Appearance' }),
-        ).toHaveLength(1);
-    });
-
-    it('renders one appearance selector on the client-scoped route', () => {
-        clientContext = {
-            workspace: {
-                id: 'workspace-1',
-                name: 'Synthetic Workspace',
-            },
-            companies: [
-                { id: 'company-1', name: 'Synthetic Client' },
-                { id: 'company-2', name: 'Another Synthetic Client' },
-            ],
-            current_company_id: 'company-1',
-            can_manage: true,
-        };
+    /**
+     * The theme control, the palette trigger and the client switcher are the
+     * navbar's, and the page used to render a second copy of each whenever it
+     * decided it was on a chrome-less route. One owner means the count is one
+     * wherever the sheet is mounted, rather than one or two depending on which
+     * route reached it.
+     */
+    it.each([
+        ['without the shell', null],
+        ['inside the shell', workspaceNavigation()],
+    ])('renders exactly one appearance selector %s', (_name, payload) => {
+        navigation = payload;
 
         render(<TimeSheet {...props()} />);
 
         expect(
-            screen.getAllByRole('combobox', { name: 'Appearance' }),
-        ).toHaveLength(1);
+            screen.queryAllByRole('combobox', { name: 'Appearance' }),
+        ).toHaveLength(payload === null ? 0 : 1);
     });
 
     it.each([

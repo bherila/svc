@@ -4,10 +4,12 @@ use App\Http\Controllers\Engagement\AgreementController;
 use App\Http\Controllers\Engagement\ProposalController;
 use App\Http\Controllers\Engagement\TimeEntryController;
 use App\Http\Controllers\Engagement\TimeSheetController;
+use App\Http\Middleware\ResolveWorkspaceNavigation;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/time', TimeSheetController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.engagement.time-entries.index');
 
     // The same sheet as a tab of one client. Named `clients.*` so it picks up
@@ -15,6 +17,7 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     // inside the client context the company is not a filter the page chooses,
     // it is where the operator already is.
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/time', TimeSheetController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
         ->name('clients.time');
     Route::post('/workspaces/{workspace}/projects/{clientProject}/time-entries', [TimeEntryController::class, 'store'])
         ->name('svc.engagement.time-entries.store');

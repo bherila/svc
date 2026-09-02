@@ -2,7 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { InvoiceTable } from '@/components/clients/invoice-table';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
 import type { ClientShowProps, CompanyAgreement } from '@/types/clients';
@@ -136,7 +136,7 @@ export default function ClientShow({
     invoices,
 }: ClientShowProps) {
     return (
-        <ClientContextLayout active="overview">
+        <WorkspaceShell activeModule="home">
             <Head title={company.name} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <header className="grid gap-1">
@@ -236,6 +236,6 @@ export default function ClientShow({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

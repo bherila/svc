@@ -1,8 +1,6 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { AppearanceSelector } from '@/components/appearance-selector';
-import { CommandPaletteTrigger } from '@/components/command-palette';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
 import {
     AlertDialog,
@@ -32,10 +30,9 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
-import type { ClientContext } from '@/types/navigation';
 import type {
     Capacity,
     Month,
@@ -188,7 +185,6 @@ export default function TimeSheet({
     months,
     approval_limit: approvalLimit,
 }: TimeSheetProps) {
-    const clientContext = usePage().props.clientContext as ClientContext | null;
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
@@ -290,38 +286,23 @@ export default function TimeSheet({
     };
 
     return (
-        // Renders bare on the workspace-wide sheet and inside the client chrome
-        // on the company tab. The layout decides which, from the shared
-        // context, so this page does not need to know where it is mounted.
-        <ClientContextLayout active="time">
+        <WorkspaceShell activeModule="time">
             <Head title="Time" />
 
-            <div
-                className="min-h-screen bg-background text-foreground"
-                data-appearance-bridge
-            >
+            <div>
                 <div className="mx-auto max-w-6xl px-6 py-10">
                     <header className="flex flex-wrap items-end justify-between gap-4">
-                        <div>
-                            <a
-                                href="/app"
-                                className="text-sm text-muted-foreground hover:text-foreground"
-                            >
-                                ← {workspace.name}
-                            </a>
-                            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-                                Time
-                            </h1>
-                        </div>
+                        <h1 className="text-3xl font-semibold tracking-tight">
+                            Time
+                        </h1>
 
                         <div className="flex items-center gap-2">
-                            {/* Only outside the client chrome, which carries its own pair. */}
-                            {clientContext === null && (
-                                <>
-                                    <CommandPaletteTrigger />
-                                    <AppearanceSelector />
-                                </>
-                            )}
+                            {/*
+                             * Only the workspace-wide sheet still picks a
+                             * client here; inside the client tabs the company
+                             * is the route, and the navbar's switcher is the
+                             * one control that changes it.
+                             */}
                             {companies.length > 1 && (
                                 <Select
                                     value={company?.id ?? ''}
@@ -515,7 +496,7 @@ export default function TimeSheet({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }
 

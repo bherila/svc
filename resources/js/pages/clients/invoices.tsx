@@ -1,7 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { InvoiceTable } from '@/components/clients/invoice-table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import type { CompanyInvoice } from '@/types/clients';
 
 /**
@@ -25,7 +25,7 @@ export default function ClientInvoices({
     invoices: CompanyInvoice[];
 }) {
     return (
-        <ClientContextLayout active="invoices">
+        <WorkspaceShell activeModule="invoices">
             <Head title={`${company.name} invoices`} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <Card>
@@ -43,6 +43,6 @@ export default function ClientInvoices({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }

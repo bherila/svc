@@ -16,7 +16,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import ClientContextLayout from '@/layouts/client-context-layout';
+import WorkspaceShell from '@/layouts/workspace-shell';
 
 type TaskProject = { id: string; name: string };
 
@@ -54,7 +54,7 @@ export default function ClientTasks({
     const selected = filters.project_id ?? ALL_PROJECTS;
 
     return (
-        <ClientContextLayout active="tasks">
+        <WorkspaceShell activeModule="tasks">
             <Head title={`${company.name} tasks`} />
             <main className="mx-auto grid max-w-6xl gap-6 p-6">
                 <Card>
@@ -157,6 +157,6 @@ export default function ClientTasks({
                     </CardContent>
                 </Card>
             </main>
-        </ClientContextLayout>
+        </WorkspaceShell>
     );
 }
