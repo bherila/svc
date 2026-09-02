@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Token;
@@ -231,6 +232,37 @@ final class AgentMcpReadOnlyTest extends TestCase
 
         $this->assertTrue($limited['isError']);
         $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
+    }
+
+    public function test_mcp_fails_closed_when_the_capability_rate_limiter_is_unavailable(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Limiter Failure Workspace', 'slug' => 'limiter-failure-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $originalLimiter = app(RateLimiter::class);
+        $limiter = \Mockery::mock(RateLimiter::class);
+        $limiter->shouldReceive('tooManyAttempts')->once()->andReturnFalse()->ordered();
+        $limiter->shouldReceive('hit')->once()->andReturn(1)->ordered();
+        $limiter->shouldReceive('tooManyAttempts')->once()->andThrow(new \RuntimeException('cache backend details must not escape'))->ordered();
+        $limiter->shouldReceive('retriesLeft')->once()->andReturn(59);
+
+        try {
+            app()->instance(RateLimiter::class, $limiter);
+            $result = $this->mcp([
+                'jsonrpc' => '2.0',
+                'id' => 2,
+                'method' => 'tools/call',
+                'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => $workspace->public_id]],
+            ], $session)->assertOk()->json('result');
+
+            $this->assertTrue($result['isError']);
+            $this->assertSame('This operation is temporarily unavailable. Please retry later.', $result['content'][0]['text']);
+            $this->assertStringNotContainsString('cache backend details', $result['content'][0]['text']);
+        } finally {
+            app()->instance(RateLimiter::class, $originalLimiter);
+        }
     }
 
     public function test_mcp_capability_audit_event_contains_only_attribution_metadata(): void

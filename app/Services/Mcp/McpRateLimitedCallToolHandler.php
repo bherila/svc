@@ -12,6 +12,7 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
+use Throwable;
 
 /**
  * Enforces reviewed per-capability MCP buckets before tool execution.
@@ -49,17 +50,26 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         $bucket = $metadata['rate_limit_bucket'];
         $classification = $metadata['audit_classification'];
         $limit = config("agent_api.mcp_rate_limits.{$bucket}");
-        if (is_int($limit) && $limit > 0) {
-            $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
-            if ($this->limiter->tooManyAttempts($key, $limit)) {
-                $response = new Response($request->getId(), CallToolResult::error([
-                    new TextContent('This operation is temporarily rate limited. Please retry later.'),
-                ]));
-                $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limited', 0);
+        try {
+            if (is_int($limit) && $limit > 0) {
+                $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
+                if ($this->limiter->tooManyAttempts($key, $limit)) {
+                    $response = new Response($request->getId(), CallToolResult::error([
+                        new TextContent('This operation is temporarily rate limited. Please retry later.'),
+                    ]));
+                    $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limited', 0);
 
-                return $response;
+                    return $response;
+                }
+                $this->limiter->hit($key, 60);
             }
-            $this->limiter->hit($key, 60);
+        } catch (Throwable) {
+            $response = new Response($request->getId(), CallToolResult::error([
+                new TextContent('This operation is temporarily unavailable. Please retry later.'),
+            ]));
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limit_unavailable', 0);
+
+            return $response;
         }
         $started = hrtime(true);
         $response = $this->inner->handle($request, $session);
