@@ -5,11 +5,13 @@ namespace App\Services\Mcp;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
@@ -25,7 +27,9 @@ final class AgentMcpWriteTools
         private readonly LogTimeEntriesAction $logTime,
         private readonly UpdateTimeEntryAction $updateTime,
         private readonly DeleteTimeEntryAction $deleteTime,
+        private readonly AgentTaskMutationAction $tasks,
         private readonly AgentTimeEntryPresenter $timeEntries,
+        private readonly AgentTaskPresenter $taskPresenter,
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
@@ -38,7 +42,9 @@ final class AgentMcpWriteTools
             $this->logTime,
             $this->updateTime,
             $this->deleteTime,
+            $this->tasks,
             $this->timeEntries,
+            $this->taskPresenter,
             $this->accounts,
             $context,
         );
@@ -130,7 +136,12 @@ final class AgentMcpWriteTools
     /** @return array<string, mixed> */
     public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/projects/{$project_id}/tasks", array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+        $context = $this->workspaceContext($workspace_id, 'tasks:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $task = $this->tasks->create($actor, $workspace, $context->principal->clientId, $idempotency_key, $project_id, array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null));
+
+        return ['data' => $this->taskPresenter->present($workspace, $task)];
     }
 
     /** @return array<string, mixed> */
@@ -152,7 +163,12 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('PATCH', "workspaces/{$workspace_id}/tasks/{$task_id}", $body, $idempotency_key);
+        $context = $this->workspaceContext($workspace_id, 'tasks:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $task = $this->tasks->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $task_id, $body);
+
+        return ['data' => $this->taskPresenter->present($workspace, $task)];
     }
 
     /** @param list<string> $time_entry_ids
