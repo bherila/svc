@@ -169,6 +169,7 @@ jobs:
           test -f .env || cp .env.example .env
           php artisan key:generate --force
           php artisan migrate --force
+          install -d -m 700 storage/app/private/oauth
           php artisan passport:keys --force
 
       - name: Run pinned SDK MCP smoke
