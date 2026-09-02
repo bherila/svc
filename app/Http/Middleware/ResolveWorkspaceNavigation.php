@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\WorkspaceEntryController;
 use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
@@ -37,7 +38,7 @@ class ResolveWorkspaceNavigation
         if ($workspace instanceof Workspace && $user instanceof User) {
             $company = $request->route('clientCompany');
 
-            Inertia::share('workspaceNavigation', $this->factory->for(
+            $navigation = $this->factory->for(
                 $workspace,
                 $user,
                 // Bound from the route, and only when it belongs to this
@@ -48,7 +49,20 @@ class ResolveWorkspaceNavigation
                 $company instanceof ClientCompany && (int) $company->workspace_id === (int) $workspace->id
                     ? $company
                     : null,
-            )->toArray());
+            );
+
+            // Written here rather than by each controller, and only from the
+            // id the factory was willing to call current - which is to say only
+            // after authorization. That is what lets the workspace entry point
+            // route on it later without asking the browser to be trusted.
+            if ($navigation->currentClientId !== null) {
+                $request->session()->put(
+                    WorkspaceEntryController::rememberedClientKey($workspace),
+                    $navigation->currentClientId,
+                );
+            }
+
+            Inertia::share('workspaceNavigation', $navigation->toArray());
         }
 
         return $next($request);

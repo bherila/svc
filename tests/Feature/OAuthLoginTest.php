@@ -139,7 +139,7 @@ class OAuthLoginTest extends TestCase
             'oauth.login.code_verifier' => 'expected-verifier',
         ])->get('/oauth/callback?state=expected-state&code=authorization-code');
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertRedirect(route('workspaces.index'));
         $this->assertAuthenticated();
         $this->assertDatabaseHas('users', [
             'email' => 'synthetic@example.test',

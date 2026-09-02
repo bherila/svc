@@ -31,7 +31,10 @@ class ClientProjectController extends Controller
             'is_visible_to_client' => $request->boolean('is_visible_to_client', true),
         ]);
 
-        return redirect()->route('dashboard')->with('status', 'Project created.');
+        // Back to the settings screen it was created from. Projects are
+        // created inside one client, so returning to a workspace-wide page
+        // would leave the operator to find their way back in.
+        return redirect()->back()->with('status', 'Project created.');
     }
 
     /**

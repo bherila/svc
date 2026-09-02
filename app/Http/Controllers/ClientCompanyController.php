@@ -22,13 +22,18 @@ class ClientCompanyController extends Controller
         Gate::authorize('manage', $workspace);
         $billingEmail = $request->validated('billing_email');
 
-        $createClientCompany->handle(
+        $company = $createClientCompany->handle(
             $workspace,
             $request->string('name')->toString(),
             is_string($billingEmail) ? $billingEmail : null,
         );
 
-        return redirect()->route('dashboard')->with('status', 'Client created.');
+        // Straight into the client that was just made. It is created from the
+        // switcher, which exists to put the operator inside a client - so
+        // returning them to a list to pick the one they just named would be
+        // the switcher failing at its only job.
+        return redirect()->route('clients.show', [$workspace, $company])
+            ->with('status', 'Client created.');
     }
 
     /**

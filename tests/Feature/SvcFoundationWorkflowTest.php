@@ -21,7 +21,7 @@ class SvcFoundationWorkflowTest extends TestCase
 
         $this->actingAs($user)
             ->post('/workspaces', ['name' => 'Synthetic Studio'])
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('workspaces.enter', Workspace::query()->sole()));
 
         $workspace = Workspace::query()->sole();
         $this->assertSame('synthetic-studio', $workspace->slug);
@@ -54,7 +54,7 @@ class SvcFoundationWorkflowTest extends TestCase
             ->post("/workspaces/{$workspace->public_id}/clients", [
                 'name' => 'Example Client',
                 'billing_email' => 'billing@example.test',
-            ])->assertRedirect(route('dashboard'));
+            ])->assertRedirect(route('clients.show', [$workspace, ClientCompany::query()->sole()]));
 
         $company = ClientCompany::query()->sole();
         $this->actingAs($owner)
@@ -62,14 +62,14 @@ class SvcFoundationWorkflowTest extends TestCase
                 'name' => 'Website refresh',
                 'description' => 'Synthetic project description.',
                 'is_visible_to_client' => true,
-            ])->assertRedirect(route('dashboard'));
+            ])->assertRedirect('/');
 
         $project = ClientProject::query()->sole();
         $this->actingAs($owner)
             ->post("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
                 'title' => 'Prepare discovery notes',
                 'is_visible_to_client' => true,
-            ])->assertRedirect(route('dashboard'));
+            ])->assertRedirect('/');
 
         $task = ClientTask::query()->sole();
         $this->assertSame($workspace->id, $company->workspace_id);
@@ -80,7 +80,7 @@ class SvcFoundationWorkflowTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
                 'status' => 'completed',
                 'is_visible_to_client' => true,
-            ])->assertRedirect(route('dashboard'));
+            ])->assertRedirect('/');
 
         $this->assertSame('completed', $task->fresh()->status);
         $this->assertNotNull($task->fresh()->completed_at);

@@ -29,7 +29,7 @@ class ClientTaskController extends Controller
             'is_visible_to_client' => $request->boolean('is_visible_to_client', true),
         ]);
 
-        return redirect()->route('dashboard')->with('status', 'Task created.');
+        return redirect()->back()->with('status', 'Task created.');
     }
 
     public function update(
@@ -48,6 +48,6 @@ class ClientTaskController extends Controller
             'is_visible_to_client' => $request->boolean('is_visible_to_client', $clientTask->is_visible_to_client),
         ]);
 
-        return redirect()->route('dashboard')->with('status', 'Task updated.');
+        return redirect()->back()->with('status', 'Task updated.');
     }
 }

@@ -13,8 +13,10 @@ class WorkspaceController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $createWorkspace->handle($user, $request->string('name')->toString());
+        $workspace = $createWorkspace->handle($user, $request->string('name')->toString());
 
-        return redirect()->route('dashboard')->with('status', 'Workspace created.');
+        // Into the workspace that was just made, rather than back to the list
+        // it was made from: the next thing to do is inside it.
+        return redirect()->route('workspaces.enter', $workspace)->with('status', 'Workspace created.');
     }
 }

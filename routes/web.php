@@ -6,11 +6,12 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
+use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
+use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use BWH\Auth\Http\Controllers\OAuthDynamicClientRegistrationController;
@@ -34,7 +35,9 @@ Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])
 Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('oauth.callback');
 
 Route::middleware('auth')->group(function (): void {
-    Route::get('/app', DashboardController::class)->name('dashboard');
+    // Where signing in lands. One row per workspace and nothing else - the
+    // question this screen asks has exactly one answer per row.
+    Route::get('/app', WorkspaceSelectorController::class)->name('workspaces.index');
 
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
@@ -46,6 +49,13 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
 
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
+
+    // Opening a workspace, as its own step. Which client to open depends on
+    // this viewer at this moment, so the selector links here instead of
+    // guessing a destination it has no basis for.
+    Route::get('/workspaces/{workspace}', WorkspaceEntryController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.enter');
 
     // Everything below renders the workspace shell, so the switcher and the
     // module tabs are resolved once for the group rather than by a name test
