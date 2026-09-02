@@ -56,7 +56,9 @@ checks.
 Current token scopes are `identity:read`, `projects:read`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
 `billing:write`, `billing:deliver`, and `mcp:use`. Discovery filters tools by
-the scopes declared for their corresponding Agent API operation. The MCP
+their declared scopes and omits manager-only capabilities when the principal
+has no workspace where the existing `AgentAccess::isWorkspaceManager` policy
+can succeed. The MCP
 principal resolver rereads the persisted Passport token on each request and
 rejects expired, revoked, wrong-subject, wrong-client, or wrong-audience
 credentials before discovery or execution. Read execution repeats scope
@@ -71,7 +73,10 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `context.get`, `operations.summary`, `projects.list`, `projects.get`,
 `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`, and
 `invoices.get`, `agreements.list`, `agreements.get`,
-`billing_schedules.list`, `billing_schedules.get`, and `capacity_ledger.get`.
+`billing_schedules.list`, `billing_schedules.get`, `capacity_ledger.get`,
+`billing.audit_unplaceable_invoices`,
+`billing.audit_undated_collectible_invoices`, and
+`billing.audit_missing_billed_overage`.
 
 Agreement tools require `billing:read` and an SVC workspace-manager role.
 They return only the existing directory's allowlisted, derived agreement DTO;
