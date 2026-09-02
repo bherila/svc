@@ -21,7 +21,10 @@ final class LogTimeEntriesAction
         private readonly AgentEditableTimeEntryReplayGuard $replayGuard,
     ) {}
 
-    /** @param array<string, mixed> $payload */
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
     public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload): array
     {
         return $this->mutations->run(

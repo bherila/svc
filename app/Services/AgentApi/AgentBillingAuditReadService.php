@@ -37,7 +37,18 @@ final class AgentBillingAuditReadService
         return $this->unplaceable->count($workspace)->toArray();
     }
 
-    /** @return array<string, array<string, int>|int> */
+    /**
+     * @return array{
+     *     invoices: int,
+     *     collectible: int,
+     *     undated: int,
+     *     with_an_issue_date: int,
+     *     without_an_issue_date: int,
+     *     would_become_overdue_if_backfilled: int,
+     *     undated_balances: array<string, int>,
+     *     would_become_overdue_balances: array<string, int>,
+     * }
+     */
     public function undatedCollectibleInvoices(User|AgentPrincipal $user, Workspace $workspace): array
     {
         $this->requireManager($user, $workspace);

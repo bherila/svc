@@ -8,6 +8,7 @@ use App\Services\Mcp\Context\McpRequestContext;
 use LogicException;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
+use stdClass;
 
 /** Thin MCP adapters over the canonical aggregate-only billing audits. */
 final class AgentMcpBillingAuditTools
@@ -26,15 +27,27 @@ final class AgentMcpBillingAuditTools
         return ['data' => $this->audits->unplaceableInvoices($context->principal->subject, $context->workspace)];
     }
 
-    /** @return array{data: array<string, array<string, int>|int>} */
+    /**
+     * @return array{data: array{
+     *     invoices: int,
+     *     collectible: int,
+     *     undated: int,
+     *     with_an_issue_date: int,
+     *     without_an_issue_date: int,
+     *     would_become_overdue_if_backfilled: int,
+     *     undated_balances: array<string, int>|stdClass,
+     *     would_become_overdue_balances: array<string, int>|stdClass,
+     * }}
+     */
     public function undatedCollectibleInvoices(#[Schema(format: 'uuid')] string $workspace_id): array
     {
         $context = $this->workspace($workspace_id);
         $data = $this->audits->undatedCollectibleInvoices($context->principal->subject, $context->workspace);
-        foreach (['undated_balances', 'would_become_overdue_balances'] as $key) {
-            if ($data[$key] === []) {
-                $data[$key] = (object) [];
-            }
+        if ($data['undated_balances'] === []) {
+            $data['undated_balances'] = new stdClass;
+        }
+        if ($data['would_become_overdue_balances'] === []) {
+            $data['would_become_overdue_balances'] = new stdClass;
         }
 
         return ['data' => $data];
