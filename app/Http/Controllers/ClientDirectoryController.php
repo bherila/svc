@@ -20,13 +20,12 @@ use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceStatus;
-use App\Support\Engagement\AgreementTermsPayload;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -48,6 +47,11 @@ use Inertia\Response;
  */
 class ClientDirectoryController extends Controller
 {
+    /** How many invoices the detail screen shows before it stops. */
+    private const RECENT_INVOICES = 20;
+
+    public function __construct(private readonly AgreementReadPresenter $agreements) {}
+
     public function index(Request $request, Workspace $workspace, ProjectAccess $access): Response
     {
         Gate::authorize('view', $workspace);
@@ -355,7 +359,7 @@ class ClientDirectoryController extends Controller
             // concern. The same page serves the client's portal, which reads
             // the commercial terms and not these.
             'audience' => 'operator',
-            'agreement' => $this->agreementPayload($clientAgreement, $projectNames) + [
+            'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
                 // where the term is simply unstated - the difference decides
@@ -528,7 +532,7 @@ class ClientDirectoryController extends Controller
             // covers it too, but saying so here would read as this project
             // having terms of its own.
             'agreements' => $agreements->map(
-                fn (ClientAgreement $agreement): array => $this->agreementPayload($agreement, $projectNames),
+                fn (ClientAgreement $agreement): array => $this->agreements->present($agreement, $projectNames->get((int) $agreement->client_project_id)),
             )->values()->all(),
         ]);
     }
@@ -865,37 +869,6 @@ class ClientDirectoryController extends Controller
     }
 
     /**
-     * @param  Collection<int, string>  $projectNames  project id => name, for this company only
-     * @return array<string, mixed>
-     */
-    private function agreementPayload(ClientAgreement $agreement, Collection $projectNames): array
-    {
-        return AgreementTermsPayload::for(
-            $agreement,
-            // Resolved from the projects already read for this company rather
-            // than looked up from the id on the row, so an agreement pointing
-            // outside what the viewer holds renders as unscoped instead of
-            // disclosing a project name they cannot otherwise see.
-            $agreement->client_project_id === null
-                ? null
-                : $projectNames->get((int) $agreement->client_project_id),
-        );
-    }
-
-    /**
-     * Does this agreement grant retainer capacity on a repeating cycle?
-     *
-     * The same pair of conditions the time sheet's capacity strip applies: an
-     * hourly-only agreement has no capacity to report, and a one-time one has
-     * no cycle to report it for.
-     */
-    private function grantsRecurringRetainer(ClientAgreement $agreement): bool
-    {
-        return $agreement->billsOnARecurringCadence()
-            && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null);
-    }
-
-    /**
      * This period's retainer draw for every company that has one, keyed by
      * company id.
      *
@@ -1035,7 +1008,7 @@ class ClientDirectoryController extends Controller
         foreach ($agreements as $agreement) {
             $companyId = (int) $agreement->client_company_id;
 
-            if (isset($byCompany[$companyId]) || ! $this->grantsRecurringRetainer($agreement)) {
+            if (isset($byCompany[$companyId]) || ! $this->agreements->grantsRecurringRetainer($agreement)) {
                 continue;
             }
 
