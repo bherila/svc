@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
@@ -232,6 +233,55 @@ final class AgentMcpReadOnlyTest extends TestCase
 
         $this->assertTrue($limited['isError']);
         $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
+    }
+
+    public function test_mcp_time_entry_collection_is_bounded_and_cursor_continuable_at_high_volume(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'High Volume Workspace', 'slug' => 'high-volume-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'owner']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'High Volume Client', 'slug' => 'high-volume-client']);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'High Volume Project']);
+        for ($index = 0; $index < 105; $index++) {
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $user->id,
+                'worked_on' => '2026-08-20',
+                'minutes' => 60,
+                'description' => "Synthetic high-volume entry {$index}",
+                'billing_rate_amount' => 15000,
+                'currency' => 'USD',
+            ]);
+        }
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ]);
+        $session = $this->initialize();
+
+        $first = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'limit' => 100]],
+        ], $session)->assertOk()->json('result');
+        $this->assertFalse($first['isError']);
+        $this->assertCount(100, $first['structuredContent']['data']);
+        $cursor = $first['structuredContent']['meta']['next_cursor'];
+        $this->assertIsString($cursor);
+
+        $second = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'limit' => 100, 'cursor' => $cursor]],
+        ], $session)->assertOk()->json('result');
+        $this->assertFalse($second['isError']);
+        $this->assertCount(5, $second['structuredContent']['data']);
+        $this->assertNull($second['structuredContent']['meta']['next_cursor']);
+        $this->assertSame([], array_values(array_intersect(
+            array_column($first['structuredContent']['data'], 'id'),
+            array_column($second['structuredContent']['data'], 'id'),
+        )));
     }
 
     public function test_mcp_fails_closed_when_the_capability_rate_limiter_is_unavailable(): void
