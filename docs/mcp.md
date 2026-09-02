@@ -63,6 +63,16 @@ workspace. `AgentAccess`, `ProjectAccess`, `PortalAccess`,
 and object checks. OAuth scopes are a ceiling, not a replacement for those
 checks.
 
+For compatibility, a credential-bound resumable session currently permits a
+principal to select any of its authorized workspaces on each workspace-scoped
+call. The selector never establishes identity or a durable authority grant,
+and it is re-scoped and reauthorized before the backing application read. The
+target architecture prefers one selected workspace per MCP session, but
+pinning the first selector would break existing multi-workspace consumers.
+[#187](https://github.com/bherila/svc/issues/187#issuecomment-5509206668)
+tracks the required decision between an explicit future session-selection
+protocol with a deprecation window and immediate breaking enforcement.
+
 Current token scopes are `identity:read`, `projects:read`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
 `billing:write`, `billing:deliver`, and `mcp:use`. Discovery filters tools by
@@ -149,6 +159,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.audit_undated_collectible_invoices` | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts and bounded per-currency integer balances only; no record identifiers | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests |
 | `billing.audit_missing_billed_overage` | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts only; no record identifiers or raw models | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests |
 | Duplicate-time diagnostics | No checked-in workflow/service establishes the grouping key | Unresolved | Not implemented: matching semantics must be explicitly defined before time-entry data is grouped or disclosed | No flag or release cohort until a canonical application query exists |
+| Session workspace selection | Existing clients select an authorized workspace on every scoped call; no explicit session-selection workflow exists | Unresolved compatibility decision | The credential/client session is bound, but an authorized selector is revalidated per call; pinning the first selector would break current multi-workspace sessions | [#187 decision](https://github.com/bherila/svc/issues/187#issuecomment-5509206668) required before changing the public behavior |
 
 ## Compatibility and current coverage
 
@@ -211,6 +222,7 @@ workflow remains unresolved:
 | Read-only `svc:billing:audit-*` operations | Implemented as aggregate-only, manager-scoped `billing.audit_unplaceable_invoices`, `billing.audit_undated_collectible_invoices`, and `billing.audit_missing_billed_overage` over the canonical billing auditors |
 | Billing-schedule visibility | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get` |
 | Imported-duplicate maintenance preview/execute | Unresolved and consequential; no implementation without explicit approval |
+| One-workspace-per-session binding | Unresolved compatibility decision: existing clients may select authorized workspaces per call; no explicit session selection or rotation protocol exists | No implementation until the decision recorded in [#187](https://github.com/bherila/svc/issues/187#issuecomment-5509206668) approves a breaking change or a migration path |
 
 [#172](https://github.com/bherila/svc/pull/172) is the merged appearance
 selector work and has no MCP contract dependency. [#175](https://github.com/bherila/svc/pull/175) tightened null-tolerant billing-cycle attribution and
