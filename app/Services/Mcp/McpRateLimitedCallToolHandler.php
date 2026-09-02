@@ -12,6 +12,7 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Enforces reviewed per-capability MCP buckets before tool execution.
@@ -27,6 +28,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
     public function __construct(
         private RequestHandlerInterface $inner,
         private RateLimiter $limiter,
+        private LoggerInterface $audit,
         private McpRequestContext $context,
         private array $bucketsByTool,
     ) {}
@@ -51,12 +53,35 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         }
         $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
         if ($this->limiter->tooManyAttempts($key, $limit)) {
-            return new Response($request->getId(), CallToolResult::error([
+            $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily rate limited. Please retry later.'),
             ]));
+            $this->audit($request, $bucket, 'rate_limited', 0);
+
+            return $response;
         }
         $this->limiter->hit($key, 60);
+        $started = hrtime(true);
+        $response = $this->inner->handle($request, $session);
+        $outcome = $response instanceof Error
+            ? 'error'
+            : ($response->result->isError ? 'rejected' : 'success');
+        $this->audit($request, $bucket, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
 
-        return $this->inner->handle($request, $session);
+        return $response;
+    }
+
+    private function audit(CallToolRequest $request, string $bucket, string $outcome, int $durationMs): void
+    {
+        $this->audit->info('mcp.capability.executed', [
+            'request_id' => $this->context->requestId,
+            'capability' => $request->name,
+            'rate_limit_bucket' => $bucket,
+            'outcome' => $outcome,
+            'duration_ms' => $durationMs,
+            'subject_id' => $this->context->principal->subject->public_id,
+            'credential_fingerprint' => hash('sha256', $this->context->principal->credentialId),
+            'client_fingerprint' => hash('sha256', $this->context->principal->clientId),
+        ]);
     }
 }

@@ -122,6 +122,7 @@ final class AgentMcpServerFactory
                     'The SVC API returned a response that failed its output contract.',
                 ),
                 app(RateLimiter::class),
+                $driftLogger,
                 $context,
                 collect($exposedDefinitions)->mapWithKeys(
                     static fn (McpCapabilityDefinition $definition): array => [$definition->name => $definition->rateLimitBucket],
