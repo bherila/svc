@@ -8,13 +8,14 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
+use Illuminate\Contracts\Console\Kernel;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 
 require __DIR__.'/../vendor/autoload.php';
 
 $app = require __DIR__.'/../bootstrap/app.php';
-$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$app->make(Kernel::class)->bootstrap();
 
 if ($app->environment('production')) {
     fwrite(STDERR, "Refusing to issue MCP smoke credentials in production.\n");

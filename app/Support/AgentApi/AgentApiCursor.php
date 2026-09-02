@@ -2,9 +2,9 @@
 
 namespace App\Support\AgentApi;
 
-use InvalidArgumentException;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
+use InvalidArgumentException;
 
 final class AgentApiCursor
 {
