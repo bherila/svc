@@ -284,6 +284,36 @@ final class AgentMcpReadOnlyTest extends TestCase
         )));
     }
 
+    public function test_mcp_read_schema_rejects_out_of_bounds_and_unknown_arguments_before_lookup(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Schema Workspace', 'slug' => 'schema-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+
+        foreach ([
+            ['limit' => 0],
+            ['limit' => 101],
+            ['query' => str_repeat('x', 201)],
+            ['cursor' => str_repeat('x', 2049)],
+            ['unrecognized' => 'value'],
+        ] as $index => $invalid) {
+            $this->mcp([
+                'jsonrpc' => '2.0',
+                'id' => $index + 2,
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'projects.list',
+                    'arguments' => ['workspace_id' => $workspace->public_id, ...$invalid],
+                ],
+            ], $session)
+                ->assertOk()
+                ->assertJsonPath('error.code', -32602)
+                ->assertJsonMissingPath('result');
+        }
+    }
+
     public function test_mcp_fails_closed_when_the_capability_rate_limiter_is_unavailable(): void
     {
         $user = User::factory()->create();
