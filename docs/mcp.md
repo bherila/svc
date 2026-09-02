@@ -163,8 +163,8 @@ Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
 the client through handshake, discovery, and `context.get`. Tool, resource,
 and prompt execution are centrally throttled by reviewed `mcp-read`
 (120/minute) and `mcp-write` (20/minute) buckets, keyed to the authenticated
-credential and capability;
-the route's `throttle:60,1` remains the broad outer limit. A capability call
+credential and capability; the route's `throttle:60,1` remains the broad outer
+limit. A capability call
 fails closed with a safe retry-later error if its limiter backend is
 unavailable. The baseline does not yet provide dashboards, alerts, or resource
 templates. Every tool call, resource read, and prompt retrieval also
@@ -173,7 +173,9 @@ payload-free `McpCapabilityInvoked` application event for metrics integrations
 (including hidden or unknown direct tool attempts): request ID, capability,
 bucket, audit classification, outcome, duration, subject public ID, and one-way
 credential/client fingerprints. Arguments, results, headers, and raw tokens
-are excluded by contract.
+are excluded by contract. Audit and metrics sink failures never alter the MCP
+response or expose their implementation details; sink-health monitoring must
+be handled by the deployment's logging/metrics platform.
 Incident containment, OAuth-connection revocation, recovery, and rollback are
 documented in [the MCP operational runbook](mcp-operations.md).
 

@@ -75,4 +75,6 @@ tools, resources, and prompts,
 capability kill switches, and `mcp.capability.executed` metadata-only audit
 events. The matching payload-free `McpCapabilityInvoked` application event is
 the metrics/alerting integration hook; dashboards and alert thresholds remain
-hardening work and must be validated before general availability.
+hardening work and must be validated before general availability. Audit and
+metrics sink failures are deliberately non-fatal to MCP callers and contain no
+payload fallback; monitor those sinks through the deployment platform.

@@ -29,7 +29,12 @@ final readonly class McpCapabilityAuditor
             'credential_fingerprint' => hash('sha256', $context->principal->credentialId),
             'client_fingerprint' => hash('sha256', $context->principal->clientId),
         ];
-        $this->audit->info('mcp.capability.executed', $metadata);
+        try {
+            $this->audit->info('mcp.capability.executed', $metadata);
+        } catch (Throwable) {
+            // An unavailable audit sink must not expose its implementation
+            // details through the MCP protocol or interrupt a capability.
+        }
         try {
             $this->events->dispatch(new McpCapabilityInvoked(
                 $metadata['request_id'],
@@ -43,11 +48,16 @@ final readonly class McpCapabilityAuditor
                 $metadata['client_fingerprint'],
             ));
         } catch (Throwable) {
-            $this->audit->warning('mcp.capability.metrics_unavailable', [
-                'request_id' => $metadata['request_id'],
-                'capability' => $metadata['capability'],
-                'audit_classification' => $metadata['audit_classification'],
-            ]);
+            try {
+                $this->audit->warning('mcp.capability.metrics_unavailable', [
+                    'request_id' => $metadata['request_id'],
+                    'capability' => $metadata['capability'],
+                    'audit_classification' => $metadata['audit_classification'],
+                ]);
+            } catch (Throwable) {
+                // The primary audit sink is unavailable too. There is no
+                // safe fallback that can be assumed at this layer.
+            }
         }
     }
 }
