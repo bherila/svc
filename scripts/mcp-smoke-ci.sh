@@ -4,7 +4,7 @@ set -euo pipefail
 
 mcp_smoke_credentials="$(php scripts/mcp-smoke-credentials.php)"
 mcp_smoke_token="$(php -r '$credentials = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR); echo $credentials["token"];' "$mcp_smoke_credentials")"
-PHP_CLI_SERVER_WORKERS=4 php artisan serve --host=127.0.0.1 --port=8088 > storage/logs/mcp-smoke-server.log 2>&1 &
+PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload --host=127.0.0.1 --port=8088 > storage/logs/mcp-smoke-server.log 2>&1 &
 mcp_smoke_server_pid=$!
 cleanup() {
     mcp_smoke_status=$?
