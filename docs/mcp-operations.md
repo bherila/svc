@@ -55,6 +55,15 @@ MCP has no schema migration of its own. Roll back application code/configuration
 using the normal deployment mechanism; do not roll back unrelated database
 migrations or delete OAuth rows merely to recover the endpoint.
 
+## Security release checks
+
+Before publishing an MCP head, run `composer audit --no-interaction` and
+`pnpm audit --prod --audit-level=high` against the checked-in locks. Treat a
+new advisory as a release blocker until it is upgraded, removed, or has a
+documented, reviewed exception. Run the disclosure scan as part of the same
+candidate checks; do not paste its findings into an issue because matched
+values are intentionally redacted.
+
 ## Monitoring baseline
 
 Watch request volume, 401/403/429 and safe MCP error categories, handler
