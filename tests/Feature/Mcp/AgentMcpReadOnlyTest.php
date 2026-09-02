@@ -123,6 +123,23 @@ final class AgentMcpReadOnlyTest extends TestCase
             'jsonrpc' => '2.0', 'id' => 2, 'method' => 'prompts/list', 'params' => [],
         ], $limitedSession)->assertOk()->json('result.prompts');
         $this->assertSame([], $limitedPrompts);
+        $limitedResources = $this->mcp([
+            'jsonrpc' => '2.0', 'id' => 3, 'method' => 'resources/list', 'params' => [],
+        ], $limitedSession)->assertOk()->json('result.resources');
+        $this->assertSame([], $limitedResources);
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 4,
+            'method' => 'resources/read',
+            'params' => ['uri' => 'svc://context'],
+        ], $limitedSession)->assertOk()->assertJsonPath('error.code', -32002);
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 5,
+            'method' => 'prompts/get',
+            'params' => ['name' => 'log-time-across-projects', 'arguments' => []],
+        ], $limitedSession)->assertOk()->assertJsonPath('error.code', -32002);
 
         config(['agent_api.writes_enabled' => true]);
         $this->actingAsMcp($user, [
