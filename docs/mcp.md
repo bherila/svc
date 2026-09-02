@@ -153,7 +153,11 @@ the client through handshake, discovery, and `context.get`. Tool execution is
 also centrally throttled by reviewed `mcp-read` (120/minute) and `mcp-write`
 (20/minute) buckets, keyed to the authenticated credential and capability;
 the route's `throttle:60,1` remains the broad outer limit. The baseline does
-not yet provide per-capability audit/metrics or resource templates.
+not yet provide per-capability metrics or resource templates. Every tool call
+also emits the metadata-only `mcp.capability.executed` audit event: request ID,
+capability, bucket, outcome, duration, subject public ID, and one-way
+credential/client fingerprints. Arguments, results, headers, and raw tokens
+are excluded by contract.
 Incident containment, OAuth-connection revocation, recovery, and rollback are
 documented in [the MCP operational runbook](mcp-operations.md).
 
