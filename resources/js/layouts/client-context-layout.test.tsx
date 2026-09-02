@@ -1,30 +1,53 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sharedPageProps } from '@/test/shared-page-props';
+import type { RelyingApplication } from '@/types/auth';
 import type { ClientContext } from '@/types/navigation';
 import ClientContextLayout from './client-context-layout';
 
 const visit = vi.fn();
 
 let context: ClientContext | null = null;
+let applications: RelyingApplication[] = [];
+
+beforeEach(() => {
+    applications = [];
+});
 
 vi.mock('@inertiajs/react', () => ({
+    // `method` and `as` are Inertia's own props rather than DOM attributes,
+    // and `as` changes the element - a non-GET Link renders a button, not an
+    // anchor. Honoured here rather than forwarded, so the sign-out item is the
+    // element the real one would be.
     Link: ({
         href,
         children,
+        method,
+        as,
         ...rest
     }: {
         href: string;
         children: ReactNode;
-    }) => (
-        <a href={href} {...rest}>
-            {children}
-        </a>
-    ),
+        method?: string;
+        as?: string;
+    }) =>
+        as === 'button' ? (
+            <button type="button" data-method={method} {...rest}>
+                {children}
+            </button>
+        ) : (
+            <a href={href} {...rest}>
+                {children}
+            </a>
+        ),
     router: {
         visit: (...args: unknown[]) => visit(...args),
     },
-    usePage: () => ({ props: { clientContext: context } }),
+    usePage: () => ({
+        props: sharedPageProps({ clientContext: context, applications }),
+    }),
 }));
 
 function withContext(overrides: Partial<ClientContext> = {}): ClientContext {
@@ -133,13 +156,13 @@ describe('client context layout', () => {
     });
 
     /**
-     * Only that the switcher is there and reachable by name. Base UI portals
-     * the options and mounts them on open, so asserting the list here would be
-     * asserting the library. *Which* companies it may contain is the part that
-     * matters and it is proved server-side, where the payload is built:
+     * The switcher names the selected client on its face rather than behind a
+     * label, because it is the only thing on a client screen that says which
+     * client's money is on display. *Which* companies it may contain is proved
+     * server-side, where the payload is built:
      * `ClientContextTest::test_no_other_workspaces_client_reaches_the_switcher`.
      */
-    it('offers a switcher reachable by an accessible name', () => {
+    it('names the current client on the switcher itself', () => {
         context = withContext();
 
         render(
@@ -149,17 +172,75 @@ describe('client context layout', () => {
         );
 
         expect(
-            screen.getByRole('combobox', { name: 'Current client' }),
-        ).toBeInTheDocument();
-        expect(
-            screen.getByRole('link', { name: 'All clients' }),
-        ).toHaveAttribute('href', '/workspaces/workspace-1/clients');
+            screen.getByRole('button', { name: 'Current client' }),
+        ).toHaveTextContent('Aa Synthetic Client');
         expect(
             screen.getByRole('combobox', { name: 'Appearance' }),
         ).toBeInTheDocument();
         expect(
             document.querySelector('[data-appearance-bridge]'),
         ).not.toBeNull();
+    });
+
+    /**
+     * A client reached by direct link that the switcher may not list - a
+     * scoped member's case - must not make the bar claim a different client.
+     * Naming the workspace, or the first option, would be worse than saying
+     * nothing, because both read as a statement about the page's data.
+     */
+    it('claims no client when the selected one is not among the options', () => {
+        context = withContext({ current_company_id: 'company-9' });
+
+        render(
+            <ClientContextLayout active="overview">
+                <p>Overview body</p>
+            </ClientContextLayout>,
+        );
+
+        const switcher = screen.getByRole('button', { name: 'Current client' });
+
+        expect(switcher).toHaveTextContent('Select a client');
+        expect(switcher).not.toHaveTextContent('Aa Synthetic Client');
+    });
+
+    /**
+     * The one way out of the application, and the only place a client screen
+     * says whose session this is. Both were unreachable from this chrome
+     * before: `/logout` had a route and a generated action, and nothing
+     * rendered it - so an operator working inside a client could not sign out
+     * without first navigating to the dashboard.
+     */
+    it('offers identity, the workspace screens and sign out from the far end', async () => {
+        context = withContext();
+        applications = [
+            { key: 'finance', name: 'Finance', url: 'https://example.com/f' },
+        ];
+
+        render(
+            <ClientContextLayout active="overview">
+                <p>Overview body</p>
+            </ClientContextLayout>,
+        );
+
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Account and settings' }),
+        );
+
+        expect(
+            await screen.findByText('operator@example.com'),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('menuitem', { name: 'All clients' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/clients');
+        expect(
+            screen.getByRole('menuitem', { name: 'Operations' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/operations');
+        expect(
+            screen.getByRole('menuitem', { name: 'Finance' }),
+        ).toHaveAttribute('href', 'https://example.com/f');
+        expect(
+            screen.getByRole('menuitem', { name: 'Sign out' }),
+        ).toBeInTheDocument();
     });
 
     /**
@@ -179,7 +260,7 @@ describe('client context layout', () => {
         expect(screen.getByText('Overview body')).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Overview' })).toBeNull();
         expect(
-            screen.queryByRole('combobox', { name: 'Current client' }),
+            screen.queryByRole('button', { name: 'Current client' }),
         ).toBeNull();
     });
 
@@ -194,7 +275,7 @@ describe('client context layout', () => {
 
         expect(screen.getByText('Overview body')).toBeInTheDocument();
         expect(
-            screen.queryByRole('combobox', { name: 'Current client' }),
+            screen.queryByRole('button', { name: 'Current client' }),
         ).toBeNull();
     });
 });

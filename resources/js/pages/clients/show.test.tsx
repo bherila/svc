@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ClientShow from '@/pages/clients/show';
+import { sharedPageProps } from '@/test/shared-page-props';
 import type {
     ClientShowProps,
     CompanyAgreement,
@@ -19,13 +20,14 @@ vi.mock('@inertiajs/react', () => ({
     // content rather than of the layout - `client-context-layout.test.tsx`
     // owns the switcher and the tabs.
     usePage: () => ({
-        props: {
+        props: sharedPageProps({
             clientContext: {
                 workspace: { id: 'workspace-1', name: 'Synthetic Workspace' },
                 companies: [{ id: 'company-1', name: 'Synthetic Client' }],
                 current_company_id: 'company-1',
+                can_manage: false,
             },
-        },
+        }),
     }),
 }));
 
