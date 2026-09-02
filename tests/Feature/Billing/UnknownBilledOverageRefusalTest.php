@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
 use DomainException;
@@ -212,6 +213,87 @@ final class UnknownBilledOverageRefusalTest extends TestCase
             2.5,
             app(InterimOverageGenerator::class)->interimOverageHoursForCycle($this->company, $agreement, $cycle),
         );
+    }
+
+    /**
+     * An invoice the application itself created is readable the moment it exists.
+     *
+     * Found by review of this branch, and the one case that would have made the
+     * refusal worse than the defect. `InvoiceLifecycleService::createDraft()` is
+     * the native creation path - every scheduled invoice from
+     * `BillingScheduleService::generateDue()` and every ad-hoc invoice an
+     * operator raises - and it never wrote `hours_billed_at_rate`. Issue one of
+     * those against an agreement and it becomes a charged row carrying a null,
+     * so the very next cadence period refused, permanently, over a value the
+     * application had declined to state about itself.
+     *
+     * Zero rather than a widened window, because zero is the truth: nothing on
+     * that path bills overage hours. Narrowing the window by invoice kind would
+     * instead have left a null in the ledger for some later reader to coerce.
+     *
+     * The assertion is the contract, not the column: the invoice is asked for
+     * its figure, which is what every sum does and what would have thrown.
+     */
+    public function test_a_natively_created_invoice_states_a_figure_rather_than_none(): void
+    {
+        $agreement = $this->agreement();
+
+        $draft = app(InvoiceLifecycleService::class)->createDraft(
+            $this->workspace,
+            $this->company,
+            [
+                'invoice_number' => 'SCH-'.str()->random(8),
+                'issue_date' => '2024-01-01',
+                'due_date' => '2024-01-31',
+                'service_period_start' => '2024-01-01',
+                'service_period_end' => '2024-01-31',
+                'currency' => 'USD',
+                'client_agreement_id' => $agreement->id,
+            ],
+            [['description' => 'Monthly retainer', 'type' => 'retainer', 'quantity' => '1', 'unit_amount' => 150000]],
+        );
+
+        $this->assertSame(0.0, $draft->billedOverageHoursOrFail());
+    }
+
+    /**
+     * And the period after one is priced rather than refused.
+     *
+     * The end-to-end half of the case above: the sum that reads this column is
+     * `totalBilledOveragesThrough()`, and the failure it was reported for was
+     * generation stopping for the agreement rather than a value being wrong. So
+     * this issues the native invoice and then generates the following period,
+     * which is where the refusal would have fired.
+     */
+    public function test_generation_continues_after_a_natively_created_invoice_is_issued(): void
+    {
+        $agreement = $this->agreement();
+
+        $draft = app(InvoiceLifecycleService::class)->createDraft(
+            $this->workspace,
+            $this->company,
+            [
+                'invoice_number' => 'SCH-'.str()->random(8),
+                'issue_date' => '2024-01-01',
+                'due_date' => '2024-01-31',
+                'service_period_start' => '2024-01-01',
+                'service_period_end' => '2024-01-31',
+                'currency' => 'USD',
+                'client_agreement_id' => $agreement->id,
+            ],
+            [['description' => 'Monthly retainer', 'type' => 'retainer', 'quantity' => '1', 'unit_amount' => 150000]],
+        );
+        app(InvoiceLifecycleService::class)->issue($draft, $this->workspace);
+
+        $this->entry(600, '2024-02-12');
+
+        $invoice = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+        );
+
+        $this->assertInstanceOf(ClientInvoice::class, $invoice);
     }
 
     private function agreement(): ClientAgreement
