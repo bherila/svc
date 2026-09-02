@@ -63,9 +63,59 @@ final class McpCapabilityRegistryTest extends TestCase
         ));
     }
 
+    public function test_it_rejects_blank_required_scopes(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP required scopes must contain non-empty strings.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::Tool,
+            'projects.list',
+            requiredScopes: ['projects:read', ''],
+        ));
+    }
+
+    public function test_it_rejects_duplicate_required_scopes(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP required scopes must not contain duplicates.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::Tool,
+            'projects.list',
+            requiredScopes: ['projects:read', 'projects:read'],
+        ));
+    }
+
+    public function test_it_rejects_duplicate_required_capabilities(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP required capabilities must not contain duplicates.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::Tool,
+            'projects.list',
+            requiredCapabilities: ['context.get', 'context.get'],
+        ));
+    }
+
+    public function test_it_rejects_a_resource_with_a_blank_uri(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('MCP resources must declare a URI.');
+
+        (new McpCapabilityRegistry)->register($this->definition(
+            McpCapabilityKind::Resource,
+            'svc://context',
+            uri: ' ',
+        ));
+    }
+
     /**
      * @param  array<string, mixed>  $inputSchema
      * @param  array<string, mixed>  $outputSchema
+     * @param  list<string>  $requiredScopes
+     * @param  list<string>  $requiredCapabilities
      */
     private function definition(
         McpCapabilityKind $kind,
@@ -73,6 +123,9 @@ final class McpCapabilityRegistryTest extends TestCase
         array $inputSchema = ['type' => 'object', 'additionalProperties' => false],
         array $outputSchema = ['type' => 'object', 'additionalProperties' => false],
         string $featureFlag = 'mcp-projects-read',
+        array $requiredScopes = ['projects:read'],
+        array $requiredCapabilities = [],
+        ?string $uri = null,
     ): McpCapabilityDefinition {
         return new McpCapabilityDefinition(
             kind: $kind,
@@ -82,7 +135,7 @@ final class McpCapabilityRegistryTest extends TestCase
             handler: static fn (): array => [],
             inputSchema: $inputSchema,
             outputSchema: $outputSchema,
-            requiredScopes: ['projects:read'],
+            requiredScopes: $requiredScopes,
             policyAbility: 'viewAny',
             requiresWorkspace: true,
             readOnly: true,
@@ -91,7 +144,8 @@ final class McpCapabilityRegistryTest extends TestCase
             rateLimitBucket: 'mcp-read',
             auditClassification: 'read',
             featureFlag: $featureFlag,
-            uri: $kind === McpCapabilityKind::Resource ? $name : null,
+            uri: $uri ?? ($kind === McpCapabilityKind::Resource ? $name : null),
+            requiredCapabilities: $requiredCapabilities,
         );
     }
 }

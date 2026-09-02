@@ -64,18 +64,17 @@ final class McpCapabilityRegistry
         if ($definition->requiredScopes === []) {
             throw new LogicException('MCP required scopes must be declared.');
         }
+        $this->assertNonEmptyUniqueStrings($definition->requiredScopes, 'required scopes');
         if (! $this->isClosedObjectSchema($definition->inputSchema)) {
             throw new LogicException('MCP input schema must be a closed object.');
         }
         if (! $this->isClosedObjectSchema($definition->outputSchema)) {
             throw new LogicException('MCP output schema must be a closed object.');
         }
-        if ($definition->kind === McpCapabilityKind::Resource && (! is_string($definition->uri) || $definition->uri === '')) {
+        if ($definition->kind === McpCapabilityKind::Resource && (! is_string($definition->uri) || trim($definition->uri) === '')) {
             throw new LogicException('MCP resources must declare a URI.');
         }
-        if (count($definition->requiredCapabilities) !== count(array_unique($definition->requiredCapabilities))) {
-            throw new LogicException('MCP required capabilities must not contain duplicates.');
-        }
+        $this->assertNonEmptyUniqueStrings($definition->requiredCapabilities, 'required capabilities');
     }
 
     /** @param array<string, mixed> $schema */
@@ -83,5 +82,18 @@ final class McpCapabilityRegistry
     {
         return ($schema['type'] ?? null) === 'object'
             && ($schema['additionalProperties'] ?? null) === false;
+    }
+
+    /** @param list<string> $values */
+    private function assertNonEmptyUniqueStrings(array $values, string $field): void
+    {
+        foreach ($values as $value) {
+            if (trim($value) === '') {
+                throw new LogicException("MCP {$field} must contain non-empty strings.");
+            }
+        }
+        if (count($values) !== count(array_unique($values))) {
+            throw new LogicException("MCP {$field} must not contain duplicates.");
+        }
     }
 }
