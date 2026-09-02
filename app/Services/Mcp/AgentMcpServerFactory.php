@@ -3,6 +3,7 @@
 namespace App\Services\Mcp;
 
 use App\Services\AgentApi\AgentAgreementReadService;
+use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpPrincipalResolver;
@@ -34,6 +35,7 @@ final class AgentMcpServerFactory
         private readonly McpFeatureFlags $featureFlags,
         private readonly AgentReadService $readService,
         private readonly AgentAgreementReadService $agreementReadService,
+        private readonly AgentBillingScheduleReadService $billingScheduleReadService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpPrincipalResolver $principals,
         private readonly AgentMcpWriteTools $writes,
@@ -52,7 +54,8 @@ final class AgentMcpServerFactory
         );
         $reads = new AgentMcpReadTools($this->readService, $this->accounts, $context);
         $agreements = new AgentMcpAgreementTools($this->agreementReadService, $this->accounts, $context);
-        $definitions = $this->capabilities->make($reads, $agreements, $this->writes)->ofKind(McpCapabilityKind::Tool);
+        $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
+        $definitions = $this->capabilities->make($reads, $agreements, $schedules, $this->writes)->ofKind(McpCapabilityKind::Tool);
         $exposedDefinitions = array_values(array_filter(
             $definitions,
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition) && $this->allowsAll(

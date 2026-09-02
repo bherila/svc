@@ -17,7 +17,7 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpAgreementTools $agreements, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpAgreementTools $agreements, AgentMcpBillingScheduleTools $schedules, AgentMcpWriteTools $writes): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -25,6 +25,8 @@ final class AgentMcpCapabilityRegistryFactory
         }
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
+        $registry->register($this->billingScheduleList($schedules));
+        $registry->register($this->billingScheduleGet($schedules));
 
         return $registry;
     }
@@ -173,6 +175,104 @@ final class AgentMcpCapabilityRegistryFactory
                 'hourly_rate_amount' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'rollover_months' => ['type' => ['integer', 'null'], 'minimum' => 0, 'maximum' => 120],
                 'project' => ['type' => ['string', 'null'], 'maxLength' => 255],
+            ],
+        ];
+    }
+
+    private function billingScheduleList(AgentMcpBillingScheduleTools $tools): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Tool,
+            name: 'billing_schedules.list',
+            title: 'List billing schedules',
+            description: 'List bounded recurring billing schedules visible to a workspace manager.',
+            handler: [$tools, 'list'],
+            inputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['workspace_id'],
+                'properties' => [
+                    'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+                    'is_active' => ['type' => ['boolean', 'null']],
+                    'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25],
+                    'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048],
+                ],
+            ],
+            outputSchema: $this->billingScheduleListOutput(),
+            requiredScopes: ['billing:read'],
+            policyAbility: 'AgentAccess::isWorkspaceManager',
+            requiresWorkspace: true,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.billing_schedules',
+        );
+    }
+
+    private function billingScheduleGet(AgentMcpBillingScheduleTools $tools): McpCapabilityDefinition
+    {
+        return new McpCapabilityDefinition(
+            kind: McpCapabilityKind::Tool,
+            name: 'billing_schedules.get',
+            title: 'Get billing schedule',
+            description: 'Get one bounded recurring billing schedule.',
+            handler: [$tools, 'get'],
+            inputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['workspace_id', 'schedule_id'],
+                'properties' => [
+                    'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+                    'schedule_id' => ['type' => 'string', 'format' => 'uuid'],
+                ],
+            ],
+            outputSchema: [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['data'],
+                'properties' => ['data' => $this->billingScheduleDto()],
+            ],
+            requiredScopes: ['billing:read'],
+            policyAbility: 'AgentAccess::isWorkspaceManager',
+            requiresWorkspace: true,
+            readOnly: true,
+            idempotent: true,
+            destructive: false,
+            rateLimitBucket: 'mcp-read',
+            auditClassification: 'agent_api.read',
+            featureFlag: 'mcp.read.billing_schedules',
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function billingScheduleListOutput(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['data', 'meta'],
+            'properties' => [
+                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => $this->billingScheduleDto()],
+                'meta' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['next_cursor'], 'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]]],
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function billingScheduleDto(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['id', 'agreement_id', 'cadence', 'next_run_on', 'is_active'],
+            'properties' => [
+                'id' => ['type' => 'string', 'format' => 'uuid'],
+                'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+                'cadence' => ['type' => 'string', 'maxLength' => 32],
+                'next_run_on' => ['type' => 'string', 'format' => 'date'],
+                'is_active' => ['type' => 'boolean'],
             ],
         ];
     }
