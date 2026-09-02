@@ -11,12 +11,15 @@ use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class WorkspaceOperationsController extends Controller
 {
+    public function __construct(private readonly BillingScheduleReadPresenter $schedules) {}
+
     public function __invoke(Workspace $workspace): Response
     {
         Gate::authorize('view', $workspace);
@@ -194,13 +197,7 @@ class WorkspaceOperationsController extends Controller
                     ])
                     ->all(),
                 'billing_schedules' => ($schedulesByCompany->get($company->id) ?? collect())
-                    ->map(fn (ClientBillingSchedule $schedule): array => [
-                        'id' => $schedule->public_id,
-                        'agreement_id' => $schedule->agreement->public_id,
-                        'cadence' => $schedule->cadence,
-                        'next_run_on' => $schedule->next_run_on->toDateString(),
-                        'is_active' => $schedule->is_active,
-                    ])
+                    ->map(fn (ClientBillingSchedule $schedule): array => $this->schedules->present($schedule))
                     ->all(),
                 'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
