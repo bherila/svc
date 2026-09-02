@@ -467,15 +467,24 @@ final class AgentMcpReadOnlyTest extends TestCase
         $user = User::factory()->create();
         $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
 
-        config(['agent_api.mcp_feature_flags' => ['projects.list' => false]]);
         $session = $this->initialize();
+        config(['agent_api.mcp_feature_flags' => ['projects.list' => false]]);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
         $this->assertSame(['projects.get'], array_column($tools, 'name'));
 
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => (string) str()->uuid()]],
+        ], $session)
+            ->assertOk()
+            ->assertJsonPath('error.code', -32601)
+            ->assertJsonMissingPath('result');
+
         config(['agent_api.mcp_enabled' => false]);
-        $session = $this->initialize();
-        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list', 'params' => []], $session)
+        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
         $this->assertSame([], $tools);
     }
