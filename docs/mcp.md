@@ -111,6 +111,22 @@ limit is also 100. Current schemas and output field allowlists are in
 `public/openapi/svc-agent-v1.json` and are protected by
 `AgentMcpContractTest`.
 
+### #187 read capability matrix
+
+This matrix covers the additive read surface proposed by #187. Every entry
+uses a workspace-scoped application read service; the MCP handler only
+resolves authenticated context, validates its DTO, and maps the result.
+
+| Capability | Operator/UI workflow and backing service | Scope and policy | Bounds and privacy contract | Flag and coverage |
+| --- | --- | --- | --- | --- |
+| `agreements.list`, `agreements.get` | Client-directory agreement view; `AgentAgreementReadService` and the shared `AgreementReadPresenter` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Status filter, 1–100 page, query-bound cursor; allowlisted stored and derived terms only; inaccessible objects are not found | `mcp.read.agreements`; MCP contract, parity, and tenant-isolation tests |
+| `billing_schedules.list`, `billing_schedules.get` | Billing schedule view; `AgentBillingScheduleReadService` and `BillingScheduleReadPresenter` | `billing:read`; manager; workspace-scoped schedule query | Active filter, 1–100 page, query-bound cursor; only agreement ID, cadence, next-run date, and active state | `mcp.read.billing_schedules`; MCP contract, parity, and tenant-isolation tests |
+| `capacity_ledger.get` | Time-sheet capacity display and billing ledger; `AgentCapacityLedgerReadService` over `InvoiceLedgerBuilder` | `billing:read`; manager; workspace-scoped agreement query | 1–60 trailing months; signed, allowlisted computed ledger rows; inaccessible agreement is not found | `mcp.read.capacity_ledger`; ledger, schema, and cross-workspace tests |
+| `billing.audit_unplaceable_invoices` | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests |
+| `billing.audit_undated_collectible_invoices` | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts and bounded per-currency integer balances only; no record identifiers | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests |
+| `billing.audit_missing_billed_overage` | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts only; no record identifiers or raw models | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests |
+| Duplicate-time diagnostics | No checked-in workflow/service establishes the grouping key | Unresolved | Not implemented: matching semantics must be explicitly defined before time-entry data is grouped or disclosed | No flag or release cohort until a canonical application query exists |
+
 ## Compatibility and current coverage
 
 Existing clients depend on the public tool and prompt names, dotted naming,
