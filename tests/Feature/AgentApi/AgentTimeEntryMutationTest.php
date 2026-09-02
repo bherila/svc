@@ -205,6 +205,52 @@ final class AgentTimeEntryMutationTest extends TestCase
             ]]],
         )->assertUnprocessable()->assertJsonValidationErrors('entries.0.currency');
         $this->assertDatabaseCount('client_time_entries', 0);
+        $this->assertDatabaseHas('agent_mutation_audits', [
+            'operation' => 'time_entries.log',
+            'outcome' => 'failed',
+            'error_category' => 'validation',
+        ]);
+    }
+
+    public function test_invalid_time_update_is_audited_inside_the_mutation_boundary(): void
+    {
+        config([
+            'agent_api.writes_enabled' => false,
+            'agent_api.time_entry_writes_enabled' => true,
+        ]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $contributor->id,
+            'role' => 'contributor',
+        ]);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $contributor->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Existing draft',
+        ]);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'invalid-time-update')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/time-entries/{$entry->public_id}", [
+                'expected_version' => AgentApiVersion::for($entry),
+                'minutes' => 0,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('minutes');
+
+        $this->assertDatabaseHas('agent_mutation_audits', [
+            'operation' => 'time_entries.update',
+            'outcome' => 'failed',
+            'error_category' => 'validation',
+        ]);
     }
 
     public function test_project_viewer_cannot_log_time(): void

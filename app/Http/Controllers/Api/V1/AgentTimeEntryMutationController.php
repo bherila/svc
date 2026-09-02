@@ -26,13 +26,12 @@ final class AgentTimeEntryMutationController extends Controller
         AgentMutationContextFactory $contexts,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,currency'], 'entries.*.project_id' => ['required', 'uuid'], 'entries.*.task_id' => ['nullable', 'uuid'], 'entries.*.worked_on' => ['required', 'date_format:Y-m-d'], 'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'], 'entries.*.description' => ['required', 'string', 'max:10000'], 'entries.*.is_billable' => ['sometimes', 'boolean'], 'entries.*.is_deferred' => ['sometimes', 'boolean'], 'entries.*.is_visible_to_client' => ['sometimes', 'boolean'], 'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'], 'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/']]);
         $ids = $logTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
-            $data['entries'],
+            $request->all(),
         );
         $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
@@ -54,14 +53,13 @@ final class AgentTimeEntryMutationController extends Controller
         AgentMutationContextFactory $contexts,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'worked_on' => ['sometimes', 'date_format:Y-m-d'], 'minutes' => ['sometimes', 'integer', 'min:1', 'max:1440'], 'description' => ['sometimes', 'string', 'max:10000'], 'is_billable' => ['sometimes', 'boolean'], 'is_deferred' => ['sometimes', 'boolean'], 'is_visible_to_client' => ['sometimes', 'boolean'], 'client_visible_description' => ['nullable', 'string', 'max:10000']]);
         $record = $updateTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
             $entry,
-            $data,
+            $request->all(),
         );
 
         return response()->json(['data' => $presenter->present($workspace, $record)]);
@@ -75,14 +73,13 @@ final class AgentTimeEntryMutationController extends Controller
         AgentMutationContextFactory $contexts,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']]);
         $id = $deleteTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
             $entry,
-            $data['expected_version'],
+            $request->all(),
         );
 
         return response()->json(['data' => ['deleted_id' => $id]]);

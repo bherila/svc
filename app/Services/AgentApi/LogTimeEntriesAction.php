@@ -5,11 +5,13 @@ namespace App\Services\AgentApi;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * The tenant-scoped, idempotent time-log workflow shared by REST and MCP.
  *
- * Transport adapters validate their public DTO before calling this action.
+ * The action validates the payload inside the mutation executor so every
+ * transport reaches the same receipt and failure-audit boundary.
  */
 final class LogTimeEntriesAction
 {
@@ -19,11 +21,8 @@ final class LogTimeEntriesAction
         private readonly AgentEditableTimeEntryReplayGuard $replayGuard,
     ) {}
 
-    /**
-     * @param  list<array<string, mixed>>  $entries
-     * @return list<string>
-     */
-    public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $entries): array
+    /** @param array<string, mixed> $payload */
+    public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload): array
     {
         return $this->mutations->run(
             $user,
@@ -31,10 +30,24 @@ final class LogTimeEntriesAction
             $clientId,
             'time_entries.log',
             $idempotencyKey,
-            ['entries' => $entries],
-            function () use ($workspace, $user, $entries): array {
+            $payload,
+            function () use ($workspace, $user, $payload): array {
+                $data = Validator::make($payload, [
+                    'entries' => ['required', 'array', 'min:1', 'max:20'],
+                    'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,currency'],
+                    'entries.*.project_id' => ['required', 'uuid'],
+                    'entries.*.task_id' => ['nullable', 'uuid'],
+                    'entries.*.worked_on' => ['required', 'date_format:Y-m-d'],
+                    'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'],
+                    'entries.*.description' => ['required', 'string', 'max:10000'],
+                    'entries.*.is_billable' => ['sometimes', 'boolean'],
+                    'entries.*.is_deferred' => ['sometimes', 'boolean'],
+                    'entries.*.is_visible_to_client' => ['sometimes', 'boolean'],
+                    'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'],
+                    'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+                ])->validate();
                 $ids = [];
-                foreach ($entries as $entry) {
+                foreach ($data['entries'] as $entry) {
                     $project = ClientProject::query()
                         ->where('workspace_id', $workspace->id)
                         ->where('public_id', $entry['project_id'] ?? null)

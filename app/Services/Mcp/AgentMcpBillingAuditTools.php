@@ -30,8 +30,14 @@ final class AgentMcpBillingAuditTools
     public function undatedCollectibleInvoices(#[Schema(format: 'uuid')] string $workspace_id): array
     {
         $context = $this->workspace($workspace_id);
+        $data = $this->audits->undatedCollectibleInvoices($context->principal->subject, $context->workspace);
+        foreach (['undated_balances', 'would_become_overdue_balances'] as $key) {
+            if ($data[$key] === []) {
+                $data[$key] = (object) [];
+            }
+        }
 
-        return ['data' => $this->audits->undatedCollectibleInvoices($context->principal->subject, $context->workspace)];
+        return ['data' => $data];
     }
 
     /** @return array{data: array<string, int>} */

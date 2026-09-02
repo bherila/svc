@@ -258,6 +258,32 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertStringContainsString('Do not approve time', $guide);
     }
 
+    public function test_empty_billing_audit_balances_are_json_objects(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Empty Audit Workspace', 'slug' => 'empty-audit-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_READ]);
+        $session = $this->initialize();
+
+        $response = $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'billing.audit_undated_collectible_invoices',
+                'arguments' => ['workspace_id' => $workspace->public_id],
+            ],
+        ], $session)
+            ->assertOk()
+            ->assertJsonPath('result.isError', false);
+
+        $wire = json_decode((string) $response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+        $data = $wire->result->structuredContent->data;
+        $this->assertIsObject($data->undated_balances);
+        $this->assertIsObject($data->would_become_overdue_balances);
+    }
+
     public function test_manager_only_read_capabilities_are_not_discovered_by_a_non_manager(): void
     {
         $user = User::factory()->create();
@@ -334,12 +360,21 @@ final class AgentMcpReadOnlyTest extends TestCase
             'params' => ['uri' => "svc://workspaces/{$selected->public_id}/agreements/{$agreement->public_id}"],
         ], $session)
             ->assertOk()
-            ->assertJsonPath('error.code', -32603)
-            ->assertJsonPath('error.message', 'Error while reading resource')
+            ->assertJsonPath('error.code', -32002)
             ->assertJsonMissingPath('result');
 
         $this->assertStringNotContainsString($agreement->public_id, (string) $response->getContent());
         $this->assertStringNotContainsString('Other Agreement', (string) $response->getContent());
+
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'resources/read',
+            'params' => ['uri' => 'svc://workspaces/'.(string) str()->uuid()."/agreements/{$agreement->public_id}"],
+        ], $session)
+            ->assertOk()
+            ->assertJsonPath('error.code', -32002)
+            ->assertJsonMissingPath('result');
     }
 
     public function test_mcp_capability_rate_limits_return_a_safe_tool_error(): void
@@ -637,9 +672,16 @@ final class AgentMcpReadOnlyTest extends TestCase
             'method' => 'resources/read',
             'params' => ['uri' => "svc://workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}"],
         ], $session)->assertOk();
+        $unknownResourceUri = 'svc://unknown-resource?credential=must-not-be-audited';
         $this->mcp([
             'jsonrpc' => '2.0',
             'id' => 6,
+            'method' => 'resources/read',
+            'params' => ['uri' => $unknownResourceUri],
+        ], $session)->assertOk()->assertJsonPath('error.code', -32002);
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 7,
             'method' => 'tools/call',
             'params' => ['name' => 'unknown.tool', 'arguments' => ['query' => 'must-not-be-audited']],
         ], $session)->assertOk()->assertJsonPath('error.code', -32601);
@@ -648,7 +690,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             $audit->entries,
             static fn (array $entry): bool => $entry['message'] === 'mcp.capability.executed',
         ));
-        $this->assertCount(5, $events);
+        $this->assertCount(6, $events);
         $event = $events[0];
         $this->assertSame('info', $event['level']);
         $this->assertSame([
@@ -692,14 +734,21 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNotContains($workspace->public_id, $templateEvent['context']);
         $this->assertNotContains($agreement->public_id, $templateEvent['context']);
 
-        $unknownEvent = $events[4];
+        $unknownResourceEvent = $events[4];
+        $this->assertSame('mcp.unknown_resource', $unknownResourceEvent['context']['capability']);
+        $this->assertSame('mcp-unknown', $unknownResourceEvent['context']['rate_limit_bucket']);
+        $this->assertSame('mcp.unknown', $unknownResourceEvent['context']['audit_classification']);
+        $this->assertSame('error', $unknownResourceEvent['context']['outcome']);
+        $this->assertStringNotContainsString($unknownResourceUri, json_encode($unknownResourceEvent['context'], JSON_THROW_ON_ERROR));
+
+        $unknownEvent = $events[5];
         $this->assertSame('unknown.tool', $unknownEvent['context']['capability']);
         $this->assertSame('mcp-unknown', $unknownEvent['context']['rate_limit_bucket']);
         $this->assertSame('mcp.unknown', $unknownEvent['context']['audit_classification']);
         $this->assertSame('error', $unknownEvent['context']['outcome']);
         $this->assertArrayNotHasKey('arguments', $unknownEvent['context']);
 
-        Event::assertDispatchedTimes(McpCapabilityInvoked::class, 5);
+        Event::assertDispatchedTimes(McpCapabilityInvoked::class, 6);
         Event::assertDispatched(McpCapabilityInvoked::class, static fn (McpCapabilityInvoked $event): bool => $event->capability === 'projects.list'
             && $event->auditClassification === 'agent_api.read'
             && $event->subjectId === $user->public_id

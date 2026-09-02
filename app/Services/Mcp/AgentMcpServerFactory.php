@@ -312,7 +312,7 @@ final class AgentMcpServerFactory
             }
         }
 
-        return $uri;
+        return 'mcp.unknown_resource';
     }
 
     /** @param array<string, true> $available */

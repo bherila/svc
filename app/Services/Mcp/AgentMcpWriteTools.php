@@ -66,7 +66,7 @@ final class AgentMcpWriteTools
             $workspace,
             $context->principal->clientId,
             $idempotency_key,
-            $entries,
+            ['entries' => $entries],
         );
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
@@ -121,7 +121,7 @@ final class AgentMcpWriteTools
         $context = $this->workspaceContext($workspace_id, 'time:write');
         $workspace = $this->workspace($context);
         $actor = User::query()->findOrFail($context->principal->subject->id);
-        $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, $expected_version);
+        $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, ['expected_version' => $expected_version]);
 
         return ['data' => ['deleted_id' => $id]];
     }
