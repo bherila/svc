@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Mcp;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
@@ -23,6 +24,17 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP Client', 'slug' => 'mcp-client']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP Project']);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'MCP Agreement',
+            'status' => 'active',
+            'starts_on' => '2026-01-01',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'retainer_minutes' => 120,
+        ]);
         $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::IDENTITY_READ,
@@ -35,7 +47,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $session = $this->initialize();
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -47,6 +59,11 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertOk()->json('result');
         $this->assertFalse($response['isError']);
         $this->assertSame($project->public_id, $response['structuredContent']['data']['id']);
+
+        $agreementResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'agreements.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id]]], $session)
+            ->assertOk()->json('result');
+        $this->assertFalse($agreementResponse['isError']);
+        $this->assertSame('MCP Agreement', $agreementResponse['structuredContent']['data']['title']);
     }
 
     public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void
