@@ -76,18 +76,33 @@ Route::middleware('auth')->group(function (): void {
             ->name('clients.invoices');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])
             ->name('clients.tasks');
-        Route::get('/workspaces/{workspace}/clients/{clientCompany}/manage', [ClientDirectoryController::class, 'manage'])
-            ->name('clients.manage');
+        // Client settings, not a tab. Editing the client record and its
+        // projects is administration of the client rather than one of its
+        // modules, so it is reached from the switcher and from Client Home.
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/settings', [ClientDirectoryController::class, 'manage'])
+            ->name('clients.settings');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
             ->name('clients.agreement');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}', [ClientDirectoryController::class, 'proposal'])
+            ->name('clients.proposal');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientDirectoryController::class, 'project'])
             ->name('clients.project');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
             ->name('clients.invoice');
 
         Route::get('/portal/{clientCompany}', [ClientPortalController::class, 'show'])->name('portal.show');
+        Route::get('/portal/{clientCompany}/invoices', [ClientPortalController::class, 'invoices'])
+            ->name('portal.invoices');
         Route::get('/portal/{clientCompany}/invoices/{clientInvoice}', [ClientPortalController::class, 'invoice'])
             ->name('portal.invoice');
+        Route::get('/portal/{clientCompany}/time', [ClientPortalController::class, 'time'])
+            ->name('portal.time');
+        Route::get('/portal/{clientCompany}/tasks', [ClientPortalController::class, 'tasks'])
+            ->name('portal.tasks');
+        Route::get('/portal/{clientCompany}/agreements/{clientAgreement}', [ClientPortalController::class, 'agreement'])
+            ->name('portal.agreement');
+        Route::get('/portal/{clientCompany}/proposals/{clientProposal}', [ClientPortalController::class, 'proposal'])
+            ->name('portal.proposal');
     });
 
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])

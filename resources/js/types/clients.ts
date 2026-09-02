@@ -91,13 +91,3 @@ export type CompanyInvoice = {
     paid_amount: number;
     balance_amount: number;
 };
-
-export type ClientShowProps = {
-    workspace: WorkspaceRef;
-    company: CompanyHeader;
-    projects: CompanyProject[];
-    agreements: CompanyAgreement[];
-    /** How many invoices the screen will show at most. */
-    invoice_limit: number;
-    invoices: CompanyInvoice[];
-};

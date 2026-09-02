@@ -42,16 +42,23 @@ const ALL_PROJECTS = 'all';
  */
 export default function ClientTasks({
     company,
+    audience,
     filters,
     projects,
     tasks,
 }: {
     company: { id: string; name: string };
+    /**
+     * Whether "client sees" is a column. It is a statement about disclosure,
+     * which means nothing on the copy of this screen the client is reading.
+     */
+    audience: 'operator' | 'client';
     filters: { project_id: string | null };
     projects: TaskProject[];
     tasks: CompanyTask[];
 }) {
     const selected = filters.project_id ?? ALL_PROJECTS;
+    const showsVisibility = audience === 'operator';
 
     return (
         <WorkspaceShell activeModule="tasks">
@@ -123,7 +130,11 @@ export default function ClientTasks({
                                             <TableHead>Project</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Completed</TableHead>
-                                            <TableHead>Client sees</TableHead>
+                                            {showsVisibility && (
+                                                <TableHead>
+                                                    Client sees
+                                                </TableHead>
+                                            )}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -143,11 +154,13 @@ export default function ClientTasks({
                                                 <TableCell>
                                                     {task.completed_at ?? '—'}
                                                 </TableCell>
-                                                <TableCell>
-                                                    {task.is_visible_to_client
-                                                        ? 'Yes'
-                                                        : 'No'}
-                                                </TableCell>
+                                                {showsVisibility && (
+                                                    <TableCell>
+                                                        {task.is_visible_to_client
+                                                            ? 'Yes'
+                                                            : 'No'}
+                                                    </TableCell>
+                                                )}
                                             </TableRow>
                                         ))}
                                     </TableBody>

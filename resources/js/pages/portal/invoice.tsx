@@ -9,6 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatMoney } from '@/lib/money';
 
 type PortalLine = {
@@ -52,10 +53,12 @@ type PortalInvoice = {
  */
 export default function PortalInvoice({
     company,
+    home_href: homeHref,
     invoice,
     lines,
 }: {
     company: { id: string; name: string };
+    home_href: string;
     invoice: PortalInvoice;
     lines: PortalLine[];
 }) {
@@ -66,12 +69,12 @@ export default function PortalInvoice({
             : `${invoice.service_period_start ?? 'open'} → ${invoice.service_period_end ?? 'open'}`;
 
     return (
-        <>
+        <WorkspaceShell activeModule="invoices">
             <Head title={invoice.invoice_number ?? 'Invoice'} />
             <main className="mx-auto grid max-w-4xl gap-6 p-6">
                 <header className="grid gap-1">
                     <Link
-                        href={`/portal/${company.id}`}
+                        href={homeHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
                     >
                         ← {company.name}
@@ -217,6 +220,6 @@ export default function PortalInvoice({
                     </CardContent>
                 </Card>
             </main>
-        </>
+        </WorkspaceShell>
     );
 }

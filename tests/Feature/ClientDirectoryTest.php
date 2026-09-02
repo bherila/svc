@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\ClientHome\ClientHomeViewModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -277,7 +278,7 @@ class ClientDirectoryTest extends TestCase
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic One Time', 'synthetic-one-time', $manager);
         $company = $this->company($workspace, 'Synthetic Client', 'synthetic-client');
-        $this->agreement($workspace, $company, [
+        $agreement = $this->agreement($workspace, $company, [
             'title' => 'Synthetic One Time Package',
             'status' => 'active',
             'billing_cadence' => 'one_time',
@@ -291,20 +292,28 @@ class ClientDirectoryTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('companies.0.retainer', null));
 
         $this->actingAs($manager)
-            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements/{$agreement->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('agreements.0.is_recurring', false)
-                ->where('agreements.0.retainer_minutes_per_period', null));
+                ->where('agreement.is_recurring', false)
+                ->where('agreement.retainer_minutes_per_period', null));
     }
 
-    public function test_the_detail_screen_shows_the_company_its_projects_agreements_and_invoices(): void
+    /**
+     * Client Home is a glance, not a record dump.
+     *
+     * What it replaced sent every project, every agreement and twenty invoices,
+     * so it grew with the engagement. This asserts the shape that keeps it from
+     * doing so again: one latest invoice, capped previews, and a link per
+     * section to the module holding the rest.
+     */
+    public function test_client_home_shows_the_latest_invoice_and_links_to_each_module(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Detail', 'synthetic-detail', $manager);
         $company = $this->company($workspace, 'Synthetic Client', 'synthetic-client');
         $project = $this->project($workspace, $company, 'Synthetic Project');
-        $this->agreement($workspace, $company, [
+        $agreement = $this->agreement($workspace, $company, [
             'title' => 'Synthetic Quarterly Retainer',
             'status' => 'active',
             'billing_cadence' => 'quarterly',
@@ -317,44 +326,70 @@ class ClientDirectoryTest extends TestCase
         ]);
         $this->invoice($workspace, $company, 'SYN-DETAIL-1', 'issued');
 
+        $base = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
+
         $this->actingAs($manager)
-            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
+            ->get($base)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('clients/show')
+                ->component('clients/home')
                 ->where('company.id', $company->public_id)
                 ->where('company.name', 'Synthetic Client')
-                ->has('projects', 1)
-                ->where('projects.0.name', 'Synthetic Project')
-                ->has('agreements', 1)
-                ->where('agreements.0.billing_cadence', 'quarterly')
-                ->where('agreements.0.is_recurring', true)
-                ->where('agreements.0.starts_on', '2026-01-01')
-                ->where('agreements.0.ends_on', '2026-12-31')
-                // Quarterly: three months of the monthly retainer.
-                ->where('agreements.0.retainer_minutes_per_period', 1800)
-                ->where('agreements.0.retainer_amount_per_period', 1500000)
-                ->where('agreements.0.project', 'Synthetic Project')
-                ->has('invoices', 1)
-                ->where('invoices.0.invoice_number', 'SYN-DETAIL-1'));
+                ->where('latest_invoice.invoice_number', 'SYN-DETAIL-1')
+                ->where('engagement.agreement_title', 'Synthetic Quarterly Retainer')
+                ->where('engagement.agreement_href', "{$base}/agreements/{$agreement->public_id}")
+                ->where('links.invoices', "{$base}/invoices")
+                ->where('links.time', "{$base}/time")
+                ->where('links.tasks', "{$base}/tasks")
+                // The unbounded collections the old screen carried are gone
+                // rather than merely shorter. Their absence is the property:
+                // a section that can grow is a section that will.
+                ->missing('projects')
+                ->missing('agreements')
+                ->missing('invoices'));
     }
 
-    public function test_the_detail_screen_bounds_the_invoice_list(): void
+    /**
+     * Every preview is capped, and by the view model rather than by each
+     * adapter - two adapters choosing their own limits is two screens that
+     * disagree about what "recent" means.
+     */
+    public function test_client_home_caps_every_preview(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Bounded', 'synthetic-bounded', $manager);
         $company = $this->company($workspace, 'Synthetic Client', 'synthetic-client');
+        $project = $this->project($workspace, $company, 'Synthetic Project');
 
         foreach (range(1, 25) as $number) {
             $this->invoice($workspace, $company, 'SYN-BOUND-'.$number, 'issued');
+            ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project->id,
+                'user_id' => $manager->id,
+                'worked_on' => '2026-03-0'.($number % 9 + 1),
+                'minutes' => 30,
+                'description' => 'Synthetic bounded work '.$number,
+                'status' => 'draft',
+            ]);
+            ClientTask::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_project_id' => $project->id,
+                'title' => 'Synthetic bounded task '.$number,
+                'status' => 'open',
+            ]);
         }
 
         $this->actingAs($manager)
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('invoice_limit', 20)
-                ->has('invoices', 20));
+                // Exactly one, not "the most recent few": a glance at money has
+                // one answer.
+                ->has('latest_invoice')
+                ->has('recent_time', ClientHomeViewModel::RECENT_TIME)
+                ->has('open_tasks', ClientHomeViewModel::OPEN_TASKS));
     }
 
     public function test_a_workspace_outsider_cannot_list_its_clients(): void
@@ -548,11 +583,22 @@ class ClientDirectoryTest extends TestCase
         ], 'Synthetic Detail Client');
 
         $response->assertInertia(fn (Assert $page) => $page
-            ->has('projects', 1)
-            ->has('agreements', 2)
-            ->has('invoices', 1)
-            ->where('agreements.0.title', 'Synthetic Cross Scoped Agreement')
-            ->where('agreements.0.project', null));
+            ->where('latest_invoice.invoice_number', 'SYN-SCOPE-1')
+            ->where('engagement.agreement_title', 'Synthetic Detail Agreement'));
+
+        // The cross-scoped agreement names a project of another company by an
+        // independent key, and its detail screen is where a name would be
+        // resolved from that key. Asserted on that screen rather than on Home,
+        // which names no project at all - a guarantee is only tested where the
+        // thing it guards is rendered.
+        $crossScoped = ClientAgreement::query()
+            ->where('title', 'Synthetic Cross Scoped Agreement')
+            ->sole();
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements/{$crossScoped->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('agreement.project', null));
 
         // The sibling *company's* name is deliberately absent from the omit
         // list above, because the company switcher lists every company in this
@@ -886,15 +932,17 @@ class ClientDirectoryTest extends TestCase
             'Someone Elses Project',
         ], 'Reachable Client Name');
 
-        // The detail screen narrows the same way, so reaching one project of a
-        // client does not disclose the rest of that client's portfolio.
-        $detail = $this->actingAs($member)
-            ->get("/workspaces/{$workspace->public_id}/clients/{$mine->public_id}")
+        // The client's own modules narrow the same way, so reaching one
+        // project of a client does not disclose the rest of that client's
+        // portfolio. Asserted on Tasks, which is where the project list now
+        // lives - Client Home names a project only where one appears on a row.
+        $tasks = $this->actingAs($member)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$mine->public_id}/tasks")
             ->assertOk();
 
-        $detail->assertInertia(fn (Assert $page) => $page->has('projects', 1));
+        $tasks->assertInertia(fn (Assert $page) => $page->has('projects', 1));
         $this->assertInertiaPayloadOmits(
-            $detail,
+            $tasks,
             ['Unreachable Sibling Project'],
             'Reachable Scope Project',
         );
@@ -975,7 +1023,7 @@ class ClientDirectoryTest extends TestCase
                 ->where('workspaceNavigation.permissions.manage_current_client', false));
 
         $this->actingAs($member)
-            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
             ->assertForbidden();
 
         $this->actingAs($member)
@@ -1369,7 +1417,7 @@ class ClientDirectoryTest extends TestCase
 
         // And the Manage payload does not carry them either way.
         $this->actingAs($manager)
-            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/manage")
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('assignable', 0)

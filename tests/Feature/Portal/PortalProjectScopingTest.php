@@ -99,13 +99,13 @@ final class PortalProjectScopingTest extends TestCase
         $this->timeEntry($this->theirs, visible: true, description: 'Internal note', clientDescription: 'Shown to the client');
         $this->timeEntry($this->theirs, visible: false, description: 'Internal only');
 
-        $project = collect($this->portalProps($user)['company']['projects'])
-            ->firstWhere('name', 'Theirs');
+        $entries = $this->portalTimeFor($user);
 
-        $this->assertCount(1, $project['time_entries']);
-        $this->assertSame('Shown to the client', $project['time_entries'][0]['description']);
-        $this->assertArrayNotHasKey('billing_rate_amount', $project['time_entries'][0]);
-        $this->assertArrayNotHasKey('subcontractor_cost_amount', $project['time_entries'][0]);
+        $this->assertCount(1, $entries);
+        $this->assertSame('Shown to the client', $entries[0]['description']);
+        $this->assertSame('Theirs', $entries[0]['project']);
+        $this->assertArrayNotHasKey('billing_rate_amount', $entries[0]);
+        $this->assertArrayNotHasKey('subcontractor_cost_amount', $entries[0]);
     }
 
     public function test_time_without_a_client_safe_description_is_withheld(): void
@@ -115,10 +115,10 @@ final class PortalProjectScopingTest extends TestCase
         // internal note may say anything, so it must not stand in for one.
         $this->timeEntry($this->theirs, visible: true, description: 'Chasing their unpaid invoice');
 
-        $project = collect($this->portalProps($user)['company']['projects'])
-            ->firstWhere('name', 'Theirs');
-
-        $this->assertNull($project['time_entries'][0]['description']);
+        // Withheld entirely rather than shown with a blank description: a
+        // blank row still discloses that work happened on a day, and the
+        // internal note is never the fallback.
+        $this->assertSame([], $this->portalTimeFor($user));
     }
 
     public function test_a_client_cannot_write_time(): void
@@ -187,19 +187,35 @@ final class PortalProjectScopingTest extends TestCase
         $this->assertFalse($access->canViewProject($user, $this->someoneElses));
     }
 
-    /** @return list<string> */
+    /**
+     * The project names this portal user is offered, from the module that
+     * lists them.
+     *
+     * Tasks rather than the home screen: home names a project only where one
+     * appears on a row it is already showing, so it would answer "which
+     * projects" with whatever happened to have recent work. This asks the
+     * screen whose whole job is the list.
+     *
+     * @return list<string>
+     */
     private function projectNamesFor(User $user): array
     {
         return array_values(array_map(
             static fn (array $project): string => $project['name'],
-            $this->portalProps($user)['company']['projects'],
+            $this->portalProps($user, '/tasks')['projects'],
         ));
     }
 
-    /** @return array<string, mixed> */
-    private function portalProps(User $user): array
+    /** @return list<array<string, mixed>> */
+    private function portalTimeFor(User $user): array
     {
-        $response = $this->actingAs($user)->get("/portal/{$this->company->public_id}");
+        return array_values($this->portalProps($user, '/time')['entries']);
+    }
+
+    /** @return array<string, mixed> */
+    private function portalProps(User $user, string $suffix = ''): array
+    {
+        $response = $this->actingAs($user)->get("/portal/{$this->company->public_id}{$suffix}");
         $response->assertOk();
 
         /** @var array<string, mixed> $props */

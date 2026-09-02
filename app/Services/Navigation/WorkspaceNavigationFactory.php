@@ -167,7 +167,7 @@ final class WorkspaceNavigationFactory
     /**
      * The client-facing family.
      *
-     * Only the modules the portal actually serves. The rest are null rather
+     * Only the modules the portal serves. A module it does not is null rather
      * than pointed at the operator route: a portal user is not a workspace
      * member, so that link would 403 - and offering it at all tells them a
      * screen exists that is not theirs.
@@ -176,10 +176,10 @@ final class WorkspaceNavigationFactory
     {
         return new ClientModuleDestinations(
             home: route('portal.show', $company, absolute: false),
-            invoices: null,
-            time: null,
+            invoices: route('portal.invoices', $company, absolute: false),
+            time: route('portal.time', $company, absolute: false),
             expenses: null,
-            tasks: null,
+            tasks: route('portal.tasks', $company, absolute: false),
         );
     }
 }

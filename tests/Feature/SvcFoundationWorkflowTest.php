@@ -150,14 +150,14 @@ class SvcFoundationWorkflowTest extends TestCase
         ]);
 
         $this->actingAs($clientUser)
-            ->get("/portal/{$company->public_id}")
+            ->get("/portal/{$company->public_id}/tasks")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('portal')
-                ->has('company.projects', 1)
-                ->where('company.projects.0.name', 'Visible Project')
-                ->has('company.projects.0.tasks', 1)
-                ->where('company.projects.0.tasks.0.title', 'Visible Task'));
+                ->component('clients/tasks')
+                ->has('projects', 1)
+                ->where('projects.0.name', 'Visible Project')
+                ->has('tasks', 1)
+                ->where('tasks.0.title', 'Visible Task'));
 
         $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertForbidden();
     }

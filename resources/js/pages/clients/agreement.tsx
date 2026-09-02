@@ -66,26 +66,36 @@ function Term({
 }
 
 export default function ClientAgreementDetail({
-    workspace,
     company,
+    home_href: homeHref,
+    audience,
     agreement,
     recurring_items: recurringItems,
 }: {
-    workspace: { id: string };
     company: { id: string; name: string };
+    /** Where "back" goes, since the two route families differ. */
+    home_href: string;
+    audience: 'operator' | 'client';
     agreement: AgreementTerms;
     recurring_items: RecurringItem[];
 }) {
+    // The commercial terms - term, cadence, rate, retainer, rollover - are the
+    // client's own agreement, and the portal already showed them. The rest
+    // describe how the billing engine behaves when a term is unstated, which is
+    // an operator's concern and reads, to a client, as a list of ways their
+    // invoice might vary.
+    const forOperator = audience === 'operator';
+
     return (
         <WorkspaceShell activeModule="home">
             <Head title={agreement.title} />
             <main className="mx-auto grid max-w-5xl gap-6 p-6">
                 <header className="grid gap-1">
                     <Link
-                        href={`/workspaces/${workspace.id}/clients/${company.id}`}
+                        href={homeHref}
                         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
                     >
-                        ← {company.name} overview
+                        ← {company.name}
                     </Link>
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="text-2xl font-semibold">
@@ -158,43 +168,53 @@ export default function ClientAgreementDetail({
                                 }
                                 unset="Nothing carries forward"
                             />
-                            <Term
-                                label="Rollover policy"
-                                value={agreement.rollover_policy}
-                            />
-                            <Term
-                                label="Catch-up threshold"
-                                value={
-                                    agreement.catch_up_threshold_minutes ===
-                                    null
-                                        ? null
-                                        : formatHours(
-                                              agreement.catch_up_threshold_minutes,
-                                          )
-                                }
-                                unset="Defaults to one hour, capped at the retainer"
-                            />
-                            <Term
-                                label="First cycle"
-                                value={agreement.first_cycle_proration}
-                                unset="Prorates the opening month"
-                            />
-                            <Term
-                                label="Interim overage"
-                                value={
-                                    agreement.bill_overage_interim === null
-                                        ? null
-                                        : agreement.bill_overage_interim
-                                          ? 'Billed mid-cycle'
-                                          : 'Not billed mid-cycle'
-                                }
-                                unset="Unset — not billed mid-cycle"
-                            />
-                            <Term
-                                label="Activated"
-                                value={agreement.activated_at}
-                                unset="Never activated"
-                            />
+                            {forOperator && (
+                                <>
+                                    <Term
+                                        label="Rollover policy"
+                                        value={agreement.rollover_policy}
+                                    />
+                                    <Term
+                                        label="Catch-up threshold"
+                                        value={
+                                            agreement.catch_up_threshold_minutes ===
+                                            null
+                                                ? null
+                                                : formatHours(
+                                                      agreement.catch_up_threshold_minutes,
+                                                  )
+                                        }
+                                        unset="Defaults to one hour, capped at the retainer"
+                                    />
+                                    <Term
+                                        label="First cycle"
+                                        value={agreement.first_cycle_proration}
+                                        unset="Prorates the opening month"
+                                    />
+                                    <Term
+                                        label="Interim overage"
+                                        value={
+                                            agreement.bill_overage_interim ===
+                                            null
+                                                ? null
+                                                : agreement.bill_overage_interim
+                                                  ? 'Billed mid-cycle'
+                                                  : 'Not billed mid-cycle'
+                                        }
+                                        unset="Unset — not billed mid-cycle"
+                                    />
+                                    <Term
+                                        label="Activated"
+                                        value={agreement.activated_at}
+                                        unset="Never activated"
+                                    />
+                                    <Term
+                                        label="Terminated"
+                                        value={agreement.terminated_at}
+                                        unset="Not terminated"
+                                    />
+                                </>
+                            )}
                             <Term
                                 label="Signed"
                                 value={
@@ -203,11 +223,6 @@ export default function ClientAgreementDetail({
                                         : `${agreement.signed_at}${agreement.signer_name === null ? '' : ` by ${agreement.signer_name}`}`
                                 }
                                 unset="Unsigned"
-                            />
-                            <Term
-                                label="Terminated"
-                                value={agreement.terminated_at}
-                                unset="Not terminated"
                             />
                             <Term
                                 label="Project"

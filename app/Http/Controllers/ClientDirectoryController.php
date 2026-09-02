@@ -10,14 +10,18 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
+use App\Models\ClientProposal;
+use App\Models\ClientProposalItem;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Engagement\AgreementTermsPayload;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -44,9 +48,6 @@ use Inertia\Response;
  */
 class ClientDirectoryController extends Controller
 {
-    /** How many invoices the detail screen shows before it stops. */
-    private const RECENT_INVOICES = 20;
-
     public function index(Request $request, Workspace $workspace, ProjectAccess $access): Response
     {
         Gate::authorize('view', $workspace);
@@ -105,13 +106,22 @@ class ClientDirectoryController extends Controller
         ]);
     }
 
+    /**
+     * Client Home: this client, at a glance.
+     *
+     * Bounded on purpose. What this replaced sent every project, every
+     * agreement and twenty invoices, so it grew with the engagement - the
+     * longer a client had been worked for, the less the screen said. The
+     * adapter behind it caps every section and the page links each one to the
+     * module that holds the whole history.
+     */
     public function show(
         Request $request,
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
-        BillingRecordAccess $billing,
+        OperatorClientHomeQuery $home,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -122,77 +132,18 @@ class ClientDirectoryController extends Controller
         // company by pasting its id into a URL whose workspace segment they
         // legitimately pass the gate for.
         $authorization->assertOwnedBy($workspace, $clientCompany);
-        $viewable = $access->viewableProjectIds($user, $workspace);
         $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
-        // Only the projects this viewer reaches. Reaching one project of a
-        // client is not reaching the client's whole portfolio, and a project
-        // name is the smallest thing on this screen that says who else is
-        // working on what.
-        $projects = $this->viewableProjectsOf($workspace, $clientCompany, $viewable);
-
-        // Reaching the client is not reaching its money. A member granted one
-        // project sees the agreements and invoices attributed to it, not the
-        // client's whole financial record - see `BillingRecordAccess`.
-        $agreements = $billing->constrainAgreements(
-            ClientAgreement::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $clientCompany->id),
-            $user,
-            $workspace,
-        )->orderByDesc('starts_on')->orderByDesc('id')->get();
-
-        $invoices = $billing->constrainInvoices(
-            ClientInvoice::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $clientCompany->id),
-            $user,
-            $workspace,
-        )->orderByDesc('issue_date')->orderByDesc('id')->limit(self::RECENT_INVOICES)->get();
-
-        // An agreement may be scoped to a single project, and it names that
-        // project by an independent key. Resolving the name from the projects
-        // already read for this company - rather than loading it from the id -
-        // means a row pointing outside the company renders as unscoped instead
-        // of disclosing a project name from somewhere the reader cannot see.
-        $projectNames = $projects->pluck('name', 'id');
-
-        return Inertia::render('clients/show', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
-            ],
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-                'billing_email' => $clientCompany->billing_email,
-                'is_active' => $clientCompany->is_active,
-            ],
-            'projects' => $projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id,
-                'name' => $project->name,
-                'status' => $project->status,
-                'is_visible_to_client' => $project->is_visible_to_client,
-            ])->values()->all(),
-            'agreements' => $agreements->map(
-                fn (ClientAgreement $agreement): array => $this->agreementPayload($agreement, $projectNames),
-            )->values()->all(),
-            'invoice_limit' => self::RECENT_INVOICES,
-            'invoices' => $invoices->map(
-                fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
-            )->values()->all(),
-        ]);
+        return Inertia::render('clients/home', $home->for($workspace, $clientCompany, $user)->toArray());
     }
 
     /**
      * Every invoice this client has, as a tab of the client.
      *
-     * Overview shows the most recent {@see self::RECENT_INVOICES} and links
-     * here; this is the unbounded list. Both read the same two keys - the
-     * workspace and the company - because `client_company_id` alone would
-     * serialize another workspace's invoice on the strength of the company it
-     * names, and both render through the same table component so the rows
-     * cannot drift apart.
+     * Client Home carries the latest one and links here; this is the full
+     * list. Both read the same two keys - the workspace and the company -
+     * because `client_company_id` alone would serialize another workspace's
+     * invoice on the strength of the company it names.
      */
     public function invoices(
         Request $request,
@@ -222,11 +173,14 @@ class ClientDirectoryController extends Controller
         )->orderByDesc('issue_date')->orderByDesc('id')->get();
 
         return Inertia::render('clients/invoices', [
-            'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
             ],
+            // Where a row links. Sent rather than assembled in the browser
+            // because the client's own copy of this screen is a different route
+            // family entirely, and the page is the same page.
+            'invoice_base_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
             'invoices' => $invoices->map(
                 fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
             )->values()->all(),
@@ -366,11 +320,15 @@ class ClientDirectoryController extends Controller
             ->get();
 
         return Inertia::render('clients/agreement', [
-            'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
             ],
+            'home_href' => route('clients.show', [$workspace, $clientCompany], absolute: false),
+            // The engine's behaviour when a term is unstated is an operator's
+            // concern. The same page serves the client's portal, which reads
+            // the commercial terms and not these.
+            'audience' => 'operator',
             'agreement' => $this->agreementPayload($clientAgreement, $projectNames) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
@@ -419,6 +377,51 @@ class ClientDirectoryController extends Controller
      * year of entries, and this screen answers "how much" rather than "which";
      * the Time tab answers the second question and is one click away.
      */
+    /**
+     * One proposal, for the operator who sent it.
+     *
+     * Read-only here. Acceptance is the client's act and lives on their copy of
+     * this page; an operator accepting on their behalf is not a shortcut, it is
+     * a signature nobody gave.
+     */
+    public function proposal(
+        Request $request,
+        Workspace $workspace,
+        ClientCompany $clientCompany,
+        ClientProposal $clientProposal,
+        WorkspaceAuthorization $authorization,
+        ProjectAccess $access,
+    ): Response {
+        Gate::authorize('view', $workspace);
+        $authorization->assertOwnedBy($workspace, $clientCompany);
+        $authorization->assertOwnedBy($workspace, $clientProposal);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+        $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
+
+        abort_unless((int) $clientProposal->client_company_id === (int) $clientCompany->id, 404);
+
+        // A proposal scoped to a project is not readable by someone who does
+        // not hold that project, for the same reason its rates are not.
+        $viewable = $access->viewableProjectIds($user, $workspace);
+        abort_if(
+            $viewable !== null
+                && $clientProposal->client_project_id !== null
+                && ! in_array((int) $clientProposal->client_project_id, $viewable, true),
+            404,
+        );
+
+        return Inertia::render('clients/proposal', $this->proposalPayload($clientProposal) + [
+            'company' => [
+                'id' => $clientCompany->public_id,
+                'name' => $clientCompany->name,
+            ],
+            'home_href' => route('clients.show', [$workspace, $clientCompany], absolute: false),
+            'accept_href' => null,
+        ]);
+    }
+
     public function project(
         Request $request,
         Workspace $workspace,
@@ -568,7 +571,7 @@ class ClientDirectoryController extends Controller
             ->map(fn (mixed $membership): ?User => $membership->user)
             ->filter(fn (?User $member): bool => $member instanceof User);
 
-        return Inertia::render('clients/manage', [
+        return Inertia::render('clients/settings', [
             'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -676,6 +679,10 @@ class ClientDirectoryController extends Controller
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
             ],
+            // Whether the "client sees" column appears. It is a statement about
+            // disclosure, which is meaningless on the copy of this screen the
+            // client is reading.
+            'audience' => 'operator',
             'filters' => [
                 'project_id' => $selected?->public_id,
             ],
@@ -763,11 +770,56 @@ class ClientDirectoryController extends Controller
     }
 
     /**
+     * The proposal itself, without the keys the model already hides.
+     *
+     * Shared with the client's copy of this screen, so the two cannot describe
+     * the same document differently - which, on a page whose whole purpose is a
+     * signature, would be a signature given to something other than what was
+     * shown.
+     *
+     * @return array{proposal: array<string, mixed>, items: list<array<string, mixed>>}
+     */
+    private function proposalPayload(ClientProposal $proposal): array
+    {
+        $items = $proposal->items()
+            ->where('workspace_id', $proposal->workspace_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $proposal->setRelation('items', $items);
+
+        return [
+            'proposal' => [
+                'id' => $proposal->public_id,
+                'title' => $proposal->title,
+                'summary' => $proposal->summary,
+                'terms' => $proposal->terms,
+                'status' => $proposal->status,
+                'currency' => $proposal->currency,
+                'valid_until' => $proposal->valid_until?->toDateString(),
+                'sent_at' => $proposal->sent_at?->toISOString(),
+                'accepted_at' => $proposal->accepted_at?->toISOString(),
+                'total_amount' => $proposal->totalAmount(),
+            ],
+            'items' => array_values($items->map(fn (ClientProposalItem $item): array => [
+                'id' => $item->public_id,
+                'description' => $item->description,
+                // A string rather than a float: quantities are decimals in the
+                // column, and rendering 1.5 through a float is how 0.1 + 0.2
+                // reaches an invoice.
+                'quantity' => (string) $item->quantity,
+                'unit_amount' => (int) $item->unit_amount,
+                'cadence' => $item->cadence,
+            ])->all()),
+        ];
+    }
+
+    /**
      * One invoice as both screens send it.
      *
-     * Shared so Overview's recent list and the Invoices tab cannot disagree
-     * about a field, and so a column added for one appears on the other rather
-     * than only where someone remembered.
+     * Shared so Client Home's latest invoice and the Invoices tab cannot
+     * disagree about a field, and so a column added for one appears on the
+     * other rather than only where someone remembered.
      *
      * @return array<string, mixed>
      */
@@ -792,37 +844,16 @@ class ClientDirectoryController extends Controller
      */
     private function agreementPayload(ClientAgreement $agreement, Collection $projectNames): array
     {
-        $grantsRetainer = $this->grantsRecurringRetainer($agreement);
-
-        return [
-            'id' => $agreement->public_id,
-            'title' => $agreement->title,
-            'status' => $agreement->status,
-            'currency' => $agreement->currency,
-            'billing_cadence' => $agreement->billing_cadence,
-            // A one-time arrangement carrying retainer columns is not a
-            // retainer, and reporting its terms as periodic reads as capacity
-            // granted again every cycle.
-            'is_recurring' => $agreement->billsOnARecurringCadence(),
-            'starts_on' => $agreement->starts_on->toDateString(),
-            'ends_on' => $agreement->ends_on?->toDateString(),
-            'signed_at' => $agreement->signed_at?->toISOString(),
-            'retainer_minutes_per_period' => $grantsRetainer
-                ? (int) round($agreement->periodRetainerHours() * 60)
-                : null,
-            'retainer_amount_per_period' => $grantsRetainer
-                ? (int) round($agreement->periodRetainerFee() * 100)
-                : null,
-            'hourly_rate_amount' => $agreement->hourly_rate_amount === null
-                ? null
-                : (int) $agreement->hourly_rate_amount,
-            'rollover_months' => $agreement->rollover_months === null
-                ? null
-                : (int) $agreement->rollover_months,
-            'project' => $agreement->client_project_id === null
+        return AgreementTermsPayload::for(
+            $agreement,
+            // Resolved from the projects already read for this company rather
+            // than looked up from the id on the row, so an agreement pointing
+            // outside what the viewer holds renders as unscoped instead of
+            // disclosing a project name they cannot otherwise see.
+            $agreement->client_project_id === null
                 ? null
                 : $projectNames->get((int) $agreement->client_project_id),
-        ];
+        );
     }
 
     /**
