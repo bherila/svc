@@ -4,6 +4,8 @@ namespace Tests\Feature\ExternalImport;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\ExternalImport\SourceGuard;
 use App\Services\ExternalImport\SupersededImportRepairer;
@@ -153,6 +155,74 @@ class SupersededImportRepairTest extends TestCase
         $this->assertNotNull(ClientInvoice::query()->find($theirInvoice->id), 'The other tenant keeps its row');
     }
 
+    /**
+     * The number this repair exists to drive to zero, when it does not reach it.
+     *
+     * A surviving invoice whose lines do not sum to its own subtotal means the
+     * superseded set was not the whole story. Asserted in the failing direction
+     * because the passing one is indistinguishable from a counter that never
+     * increments.
+     */
+    public function test_it_reports_a_survivor_that_still_does_not_add_up(): void
+    {
+        $workspace = $this->workspace();
+        $short = $this->invoice($workspace, 'SYNTH-202606-001', 375000);
+        $this->line($workspace, $short, 100000, sourceKey: '40');
+
+        $superseded = $this->invoice($workspace, 'SYNTH-202606-002', 0, sourceKey: '41');
+        $this->sourceRows(deletedInvoiceKeys: ['41']);
+
+        $counts = $this->repairer()->repair($workspace, $this->source(), apply: true);
+
+        $this->assertSame(1, $counts->retiredInvoices, 'The repair still did its own job');
+        $this->assertSame(1, $counts->survivorsNotReconciling);
+        $this->assertFalse($counts->reconciled());
+        $this->assertFalse($counts->isClean());
+        $this->assertNotNull(ClientInvoice::query()->find($short->id), 'A short invoice is reported, never repaired by deletion');
+        $this->assertNull(ClientInvoice::query()->find($superseded->id));
+    }
+
+    /** A database with nothing superseded and every invoice adding up says so. */
+    public function test_it_is_clean_when_there_is_nothing_to_do(): void
+    {
+        $workspace = $this->workspace();
+        $invoice = $this->invoice($workspace, 'SYNTH-202607-001', 375000);
+        $this->line($workspace, $invoice, 375000, sourceKey: '50');
+        $this->sourceRows();
+
+        $counts = $this->repairer()->repair($workspace, $this->source());
+
+        $this->assertTrue($counts->isClean());
+        $this->assertSame(0, $counts->eligibleInvoices);
+        $this->assertSame(0, $counts->eligibleLines);
+        $this->assertSame(0, $counts->survivorsNotReconciling);
+    }
+
+    /**
+     * The time entries a retired line had claimed go back to uninvoiced.
+     *
+     * They are real work; only the invoice that claimed them was not real. The
+     * link row has to go first, or the delete leaves a row pointing at nothing.
+     */
+    public function test_it_releases_the_time_entries_a_retired_line_had_claimed(): void
+    {
+        $workspace = $this->workspace();
+        $invoice = $this->invoice($workspace, 'SYNTH-202608-001', 0);
+        $line = $this->line($workspace, $invoice, 0, sourceKey: '60');
+
+        DB::table('client_invoice_line_time_entries')->insert([
+            'workspace_id' => $workspace->id,
+            'client_invoice_line_id' => $line,
+            'client_time_entry_id' => $this->timeEntry($workspace),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->sourceRows(deletedLineKeys: ['60']);
+        $this->repairer()->repair($workspace, $this->source(), apply: true);
+
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')->count());
+    }
+
     /** The command will not write without an explicit acknowledgement that a backup exists. */
     public function test_the_command_refuses_to_apply_without_a_snapshot(): void
     {
@@ -239,9 +309,12 @@ class SupersededImportRepairTest extends TestCase
         return Workspace::query()->create(['name' => ucfirst($slug), 'slug' => $slug]);
     }
 
+    /** @var array<int, ClientCompany> */
+    private array $companies = [];
+
     private function company(Workspace $workspace): ClientCompany
     {
-        return ClientCompany::query()->create([
+        return $this->companies[(int) $workspace->id] ??= ClientCompany::query()->create([
             'workspace_id' => $workspace->id,
             'name' => 'Synthetic Repair Client',
             'slug' => 'synthetic-repair-client-'.$workspace->id,
@@ -284,6 +357,35 @@ class SupersededImportRepairTest extends TestCase
         $this->ledger('client_invoice_lines', $sourceKey, $publicId, (int) $workspace->id);
 
         return $id;
+    }
+
+    /**
+     * A real time entry, because #113's composite foreign keys refuse an
+     * invented id - which is the correct behaviour and worth working with
+     * rather than around.
+     */
+    private function timeEntry(Workspace $workspace): int
+    {
+        $company = $this->company($workspace);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => 'Synthetic Repair Project',
+            'status' => 'active',
+        ]);
+
+        return DB::table('client_time_entries')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-01-05',
+            'minutes' => 60,
+            'description' => 'Synthetic work',
+            'status' => 'approved',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 
     private function ledger(string $table, string $sourceKey, string $targetPublicId, int $workspaceId): void
