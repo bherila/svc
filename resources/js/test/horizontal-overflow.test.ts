@@ -11,8 +11,20 @@ import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
  * and the same tree fixed.
  */
 function tree(html: string): HTMLElement {
-    const root = document.createElement('div');
-    root.innerHTML = html;
+    // Parsed into an inert document rather than assigned through `innerHTML`.
+    // These fixtures are literals written here, but `innerHTML =` is the sink
+    // every scanner reads as an XSS hazard, and a test helper is not worth
+    // teaching anyone that it is fine - `DOMParser` reaches the same tree
+    // without ever attaching markup to a live one.
+    const parsed = new DOMParser().parseFromString(
+        `<body><div>${html}</div></body>`,
+        'text/html',
+    );
+    const root = parsed.body.firstElementChild;
+
+    if (!(root instanceof HTMLElement)) {
+        throw new Error('The fixture parsed to nothing.');
+    }
 
     return root;
 }
@@ -169,11 +181,9 @@ describe('horizontal overflow risks', () => {
      * page, and a `<option>` is laid out by the browser's own widget.
      */
     it.each([
-        ['sr-only text', '<span class="sr-only">'],
-        ['a select option', '<option>'],
-    ])('ignores %s', (_, open) => {
-        const close = open.replace('<', '</').replace(/ .*>/, '>');
-
+        ['sr-only text', '<span class="sr-only">', '</span>'],
+        ['a select option', '<option>', '</option>'],
+    ])('ignores %s', (_, open, close) => {
         expect(
             horizontalOverflowRisks(
                 tree(
