@@ -453,7 +453,6 @@ class TimeSheetController extends Controller
             // table an operator logs against. Terminated agreements stay -
             // historical months still need theirs.
             ->where('status', '!=', 'draft')
-            ->whereNotNull('starts_on')
             // Ordered as the selector expects: it returns the first later
             // candidate in collection order, so `starts_on` has to lead and
             // `id` is only the tie-break. Sorted by id first, a March renewal

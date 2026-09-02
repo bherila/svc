@@ -34,14 +34,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $hourly_rate_amount
  * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $terminated_at
- * @property CarbonImmutable|null $starts_on
+ * @property CarbonImmutable $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $signed_at
  * @property-read float $monthly_retainer_hours
  * @property-read float $monthly_retainer_fee
  * @property-read float|null $retainer_hours
  * @property-read float|null $retainer_fee
- * @property-read CarbonImmutable|null $active_date
+ * @property-read CarbonImmutable $active_date
  * @property-read CarbonImmutable|null $termination_date
  */
 #[Fillable([
@@ -138,7 +138,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             ?? FirstCycleProration::ProrateHours;
     }
 
-    public function retainerStartsOn(): ?CarbonImmutable
+    public function retainerStartsOn(): CarbonImmutable
     {
         return $this->starts_on;
     }
@@ -359,7 +359,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
     }
 
     /** The engine's name for the date the agreement takes effect. */
-    public function getActiveDateAttribute(): ?CarbonImmutable
+    public function getActiveDateAttribute(): CarbonImmutable
     {
         return $this->starts_on;
     }

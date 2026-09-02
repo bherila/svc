@@ -804,7 +804,7 @@ class ClientDirectoryController extends Controller
             // retainer, and reporting its terms as periodic reads as capacity
             // granted again every cycle.
             'is_recurring' => $agreement->billsOnARecurringCadence(),
-            'starts_on' => $agreement->starts_on?->toDateString(),
+            'starts_on' => $agreement->starts_on->toDateString(),
             'ends_on' => $agreement->ends_on?->toDateString(),
             'signed_at' => $agreement->signed_at?->toISOString(),
             'retainer_minutes_per_period' => $grantsRetainer
@@ -964,9 +964,8 @@ class ClientDirectoryController extends Controller
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companyIds)
             ->where('status', 'active')
-            ->where(fn (Builder $query): Builder => $query
-                ->whereNull('starts_on')
-                ->orWhere('starts_on', '<=', $today->toDateString()))
+            // `starts_on` is `NOT NULL` (#147); no null branch to take.
+            ->where('starts_on', '<=', $today->toDateString())
             ->where(fn (Builder $query): Builder => $query
                 ->whereNull('ends_on')
                 ->orWhere('ends_on', '>=', $today->toDateString()))
@@ -1005,7 +1004,7 @@ class ClientDirectoryController extends Controller
         $start = CarbonImmutable::instance($cadence->cycleStart($today));
         $end = CarbonImmutable::instance($cadence->cycleEnd($today));
 
-        if ($agreement->starts_on !== null && $agreement->starts_on->gt($start)) {
+        if ($agreement->starts_on->gt($start)) {
             $start = $agreement->starts_on;
         }
 

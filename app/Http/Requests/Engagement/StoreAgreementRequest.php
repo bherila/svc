@@ -17,7 +17,10 @@ class StoreAgreementRequest extends FormRequest
     {
         return [
             'title' => ['required', 'string', 'max:200'],
-            'starts_on' => ['nullable', 'date_format:Y-m-d'],
+            // Required, not nullable (#147). `client_agreements.starts_on` is
+            // `NOT NULL` because a null had seven incompatible readings; this is
+            // the edge an operator could still push one through.
+            'starts_on' => ['required', 'date_format:Y-m-d'],
             'ends_on' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:starts_on'],
             'agreement_text' => ['nullable', 'string', 'max:30000'],
             'is_visible_to_client' => ['sometimes', 'boolean'],

@@ -106,13 +106,7 @@ export default function ClientAgreementDetail({
                         <dl className="grid gap-2 text-sm sm:grid-cols-2">
                             <Term
                                 label="Term"
-                                value={
-                                    agreement.starts_on === null &&
-                                    agreement.ends_on === null
-                                        ? null
-                                        : `${agreement.starts_on ?? 'open'} → ${agreement.ends_on ?? 'open'}`
-                                }
-                                unset="No term recorded"
+                                value={`${agreement.starts_on} → ${agreement.ends_on ?? 'open'}`}
                             />
                             <Term
                                 label="Cadence"

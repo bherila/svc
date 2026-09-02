@@ -65,15 +65,6 @@ class RetainerCalculator
         $naturalCycle = $this->billingCycleResolver->cycleContaining($agreement, $cycle->start);
 
         $startsOn = $agreement->retainerStartsOn();
-        if ($startsOn === null) {
-            // An agreement with no start date has not started, so it grants no
-            // retainer entitlement. Throwing here would contradict
-            // ClientInvoicingService::agreementStart(), which deliberately
-            // surfaces an empty ledger rather than an exception for a
-            // half-configured agreement; parsing the null into "now" - the
-            // behaviour this replaced - silently invented a start date.
-            return 0.0;
-        }
         $activeDate = Carbon::instance($startsOn)->startOfDay();
         $fullPeriodFirstCycle = $agreement->effectiveFirstCycleProration() === FirstCycleProration::FullPeriod
             && $cycle->start->isSameDay($activeDate)
@@ -128,15 +119,6 @@ class RetainerCalculator
     public function monthRetainerMultiplier(RetainerAgreementTerms $agreement, Carbon $monthStart, Carbon $monthEnd): float
     {
         $startsOn = $agreement->retainerStartsOn();
-        if ($startsOn === null) {
-            // An agreement with no start date has not started, so it grants no
-            // retainer entitlement. Throwing here would contradict
-            // ClientInvoicingService::agreementStart(), which deliberately
-            // surfaces an empty ledger rather than an exception for a
-            // half-configured agreement; parsing the null into "now" - the
-            // behaviour this replaced - silently invented a start date.
-            return 0.0;
-        }
         $activeDate = Carbon::instance($startsOn)->startOfDay();
         $terminationDate = $agreement->retainerEndsOn()
             ? Carbon::instance($agreement->retainerEndsOn())->startOfDay()

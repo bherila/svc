@@ -176,6 +176,7 @@ class EngagementWorkflowTest extends TestCase
         $agreement = $workflow->create($workspace, $company, null, null, [
             'title' => 'Synthetic reactivation agreement',
             'currency' => 'USD',
+            'starts_on' => '2026-01-01',
         ]);
 
         $workflow->activate($agreement);
@@ -210,6 +211,7 @@ class EngagementWorkflowTest extends TestCase
         $agreement = $workflow->create($workspace, $company, null, null, [
             'title' => 'Synthetic activation agreement',
             'currency' => 'USD',
+            'starts_on' => '2026-01-01',
         ]);
 
         $this->assertNull($agreement->activated_at, 'A draft has not been activated');
@@ -248,6 +250,7 @@ class EngagementWorkflowTest extends TestCase
         $agreement = $workflow->activate($workflow->create($workspace, $company, null, null, [
             'title' => 'Synthetic signing agreement',
             'currency' => 'USD',
+            'starts_on' => '2026-01-01',
         ]));
 
         $this->assertNull($agreement->signed_at, 'Nobody has signed yet');

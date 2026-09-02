@@ -28,12 +28,11 @@ final class ReplayCadenceAgreementRepository
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', $companyIds)
             ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
-            ->whereNotNull('starts_on')
             ->get();
 
         $byCompany = [];
         foreach ($agreements as $agreement) {
-            if (! $agreement->billsOnARecurringCadence() || $agreement->starts_on === null) {
+            if (! $agreement->billsOnARecurringCadence()) {
                 continue;
             }
 

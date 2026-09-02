@@ -115,7 +115,7 @@ final class CompositeForeignKeyRollbackTest extends TestCase
         $this->bootProbeDatabase(self::CONNECTION);
 
         $this->migrate();
-        $this->rollback(1);
+        $this->rollback('2026_08_31_000200');
         $before = $this->fingerprint();
 
         $connection = DB::connection(self::CONNECTION);
@@ -234,8 +234,9 @@ final class CompositeForeignKeyRollbackTest extends TestCase
         Artisan::call('migrate', ['--database' => self::CONNECTION, '--force' => true]);
     }
 
-    private function rollback(int $step = 3): void
+    /** By name, not by a count of how many migrations happen to follow today. */
+    private function rollback(string $migration = '2026_08_31_000000'): void
     {
-        Artisan::call('migrate:rollback', ['--database' => self::CONNECTION, '--step' => $step, '--force' => true]);
+        $this->rollbackProbeTo(self::CONNECTION, $migration);
     }
 }

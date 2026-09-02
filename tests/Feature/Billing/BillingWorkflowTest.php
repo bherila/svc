@@ -167,7 +167,7 @@ class BillingWorkflowTest extends TestCase
         [, $workspace, $company] = $this->tenant('Schedule Workspace');
         $agreement = ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
-            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
         $schedule = ClientBillingSchedule::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
@@ -206,7 +206,7 @@ class BillingWorkflowTest extends TestCase
 
         $agreement = ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
-            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
         $schedule = ClientBillingSchedule::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,

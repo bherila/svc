@@ -310,7 +310,7 @@ class ClientPortalController extends Controller
                 'id' => $agreement->public_id,
                 'title' => $agreement->title,
                 'status' => $agreement->status,
-                'starts_on' => $agreement->starts_on?->toDateString(),
+                'starts_on' => $agreement->starts_on->toDateString(),
                 'ends_on' => $agreement->ends_on?->toDateString(),
                 'agreement_text' => $agreement->agreement_text,
                 'currency' => $agreement->currency,

@@ -68,7 +68,8 @@ export type CompanyAgreement = {
     billing_cadence: string | null;
     /** False for a one-time arrangement, whose retainer terms mean nothing. */
     is_recurring: boolean;
-    starts_on: string | null;
+    /** Never null: `client_agreements.starts_on` is NOT NULL (#147). */
+    starts_on: string;
     ends_on: string | null;
     signed_at: string | null;
     retainer_minutes_per_period: number | null;

@@ -625,9 +625,12 @@ class ExternalImportTest extends TestCase
         // The agreement these lines fall under. Its cadence is what the
         // composer takes the cadence word in a generated description from, so
         // a fixture without one cannot exercise those templates at all.
-        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, billing_cadence TEXT, termination_date TEXT, deleted_at TEXT)');
+        // `active_date` is required, not decorative: the importer refuses an
+        // agreement that states no start date rather than substituting one
+        // (#147), so a fixture without it fails the whole row.
+        $pdo->exec('CREATE TABLE client_agreements (id INTEGER PRIMARY KEY, client_company_id INTEGER, active_date TEXT, billing_cadence TEXT, termination_date TEXT, deleted_at TEXT)');
         $termination = $terminatedOn === null ? 'NULL' : "'{$terminatedOn}'";
-        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '{$cadence}', {$termination}, NULL)");
+        $pdo->exec("INSERT INTO client_agreements VALUES (41, 11, '2026-01-01', '{$cadence}', {$termination}, NULL)");
         $pdo->exec("INSERT INTO client_invoices VALUES (121, 11, NULL, 'SYN-121', 'issued', '2026-01-10', '2026-02-10', '100.00', 'USD', NULL)");
         $pdo->exec("INSERT INTO client_invoice_lines VALUES (122, 121, 41, NULL, 'Deferred work items applied to retainer (9:55)', '1', '100.00', '100.00', '{$supersededType}', 1, '2026-01-11 09:00:00')");
         $pdo->exec("INSERT INTO client_invoice_lines VALUES (123, 121, 41, NULL, 'Deferred work items applied to retainer (10:00)', '1', '100.00', '100.00', '{$replacementType}', 2, NULL)");
