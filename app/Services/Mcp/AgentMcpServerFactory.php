@@ -66,8 +66,9 @@ final class AgentMcpServerFactory
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $writes = $this->writes->forContext($context);
+        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
         $availableCapabilities = array_values(array_filter(
-            $this->capabilities->make($reads, $contextResource, $agreements, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all(),
+            $definitions,
             fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
                 && $this->authorizer->allowsDiscovery($context, $definition),
         ));
@@ -124,9 +125,13 @@ final class AgentMcpServerFactory
                 app(RateLimiter::class),
                 $driftLogger,
                 $context,
-                collect($exposedDefinitions)->mapWithKeys(
-                    static fn (McpCapabilityDefinition $definition): array => [$definition->name => $definition->rateLimitBucket],
-                )->all(),
+                collect($definitions)
+                    ->filter(static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool)
+                    ->mapWithKeys(static fn (McpCapabilityDefinition $definition): array => [$definition->name => [
+                        'rate_limit_bucket' => $definition->rateLimitBucket,
+                        'audit_classification' => $definition->auditClassification,
+                    ]])
+                    ->all(),
             ))
             ->setLazyLoading(false);
 

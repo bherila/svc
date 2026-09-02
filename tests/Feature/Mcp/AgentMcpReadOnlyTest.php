@@ -249,17 +249,25 @@ final class AgentMcpReadOnlyTest extends TestCase
             ],
         ], $session)->assertOk()->assertJsonPath('result.isError', false);
 
+        $this->mcp([
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => ['name' => 'unknown.tool', 'arguments' => ['query' => 'must-not-be-audited']],
+        ], $session)->assertOk()->assertJsonPath('error.code', -32601);
+
         $events = array_values(array_filter(
             $audit->entries,
             static fn (array $entry): bool => $entry['message'] === 'mcp.capability.executed',
         ));
-        $this->assertCount(1, $events);
+        $this->assertCount(2, $events);
         $event = $events[0];
         $this->assertSame('info', $event['level']);
         $this->assertSame([
             'request_id',
             'capability',
             'rate_limit_bucket',
+            'audit_classification',
             'outcome',
             'duration_ms',
             'subject_id',
@@ -267,6 +275,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'client_fingerprint',
         ], array_keys($event['context']));
         $this->assertSame('projects.list', $event['context']['capability']);
+        $this->assertSame('agent_api.read', $event['context']['audit_classification']);
         $this->assertSame($user->public_id, $event['context']['subject_id']);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $event['context']['credential_fingerprint']);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $event['context']['client_fingerprint']);
@@ -274,6 +283,13 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertArrayNotHasKey('arguments', $event['context']);
         $this->assertArrayNotHasKey('result', $event['context']);
         $this->assertArrayNotHasKey('headers', $event['context']);
+
+        $unknownEvent = $events[1];
+        $this->assertSame('unknown.tool', $unknownEvent['context']['capability']);
+        $this->assertSame('mcp-unknown', $unknownEvent['context']['rate_limit_bucket']);
+        $this->assertSame('mcp.unknown', $unknownEvent['context']['audit_classification']);
+        $this->assertSame('error', $unknownEvent['context']['outcome']);
+        $this->assertArrayNotHasKey('arguments', $unknownEvent['context']);
     }
 
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void

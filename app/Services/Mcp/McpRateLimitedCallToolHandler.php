@@ -23,14 +23,14 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
 {
     /**
      * @param  RequestHandlerInterface<CallToolResult>  $inner
-     * @param  array<string, string>  $bucketsByTool
+     * @param  array<string, array{rate_limit_bucket: string, audit_classification: string}>  $metadataByTool
      */
     public function __construct(
         private RequestHandlerInterface $inner,
         private RateLimiter $limiter,
         private LoggerInterface $audit,
         private McpRequestContext $context,
-        private array $bucketsByTool,
+        private array $metadataByTool,
     ) {}
 
     public function supports(Request $request): bool
@@ -43,40 +43,42 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         if (! $request instanceof CallToolRequest) {
             return $this->inner->handle($request, $session);
         }
-        $bucket = $this->bucketsByTool[$request->name] ?? null;
-        if ($bucket === null) {
-            return $this->inner->handle($request, $session);
-        }
+        $metadata = $this->metadataByTool[$request->name] ?? [
+            'rate_limit_bucket' => 'mcp-unknown',
+            'audit_classification' => 'mcp.unknown',
+        ];
+        $bucket = $metadata['rate_limit_bucket'];
+        $classification = $metadata['audit_classification'];
         $limit = config("agent_api.mcp_rate_limits.{$bucket}");
-        if (! is_int($limit) || $limit < 1) {
-            return $this->inner->handle($request, $session);
-        }
-        $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
-        if ($this->limiter->tooManyAttempts($key, $limit)) {
-            $response = new Response($request->getId(), CallToolResult::error([
-                new TextContent('This operation is temporarily rate limited. Please retry later.'),
-            ]));
-            $this->audit($request, $bucket, 'rate_limited', 0);
+        if (is_int($limit) && $limit > 0) {
+            $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
+            if ($this->limiter->tooManyAttempts($key, $limit)) {
+                $response = new Response($request->getId(), CallToolResult::error([
+                    new TextContent('This operation is temporarily rate limited. Please retry later.'),
+                ]));
+                $this->audit($request, $bucket, $classification, 'rate_limited', 0);
 
-            return $response;
+                return $response;
+            }
+            $this->limiter->hit($key, 60);
         }
-        $this->limiter->hit($key, 60);
         $started = hrtime(true);
         $response = $this->inner->handle($request, $session);
         $outcome = $response instanceof Error
             ? 'error'
             : ($response->result->isError ? 'rejected' : 'success');
-        $this->audit($request, $bucket, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
+        $this->audit($request, $bucket, $classification, $outcome, (int) ((hrtime(true) - $started) / 1_000_000));
 
         return $response;
     }
 
-    private function audit(CallToolRequest $request, string $bucket, string $outcome, int $durationMs): void
+    private function audit(CallToolRequest $request, string $bucket, string $classification, string $outcome, int $durationMs): void
     {
         $this->audit->info('mcp.capability.executed', [
             'request_id' => $this->context->requestId,
             'capability' => $request->name,
             'rate_limit_bucket' => $bucket,
+            'audit_classification' => $classification,
             'outcome' => $outcome,
             'duration_ms' => $durationMs,
             'subject_id' => $this->context->principal->subject->public_id,
