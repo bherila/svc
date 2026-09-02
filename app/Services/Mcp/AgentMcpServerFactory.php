@@ -131,13 +131,14 @@ final class AgentMcpServerFactory
                     $driftLogger,
                     'The SVC API returned a response that failed its output contract.',
                 ),
-                app(RateLimiter::class),
+                new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
             ))
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new ReadResourceHandler($registry, new ReferenceHandler(app()), $logger),
+                new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
@@ -151,6 +152,7 @@ final class AgentMcpServerFactory
             ))
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
                 new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
+                new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),

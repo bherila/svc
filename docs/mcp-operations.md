@@ -70,7 +70,8 @@ Watch request volume, 401/403/429 and safe MCP error categories, handler
 duration, active-session/cache failures, OAuth revocation failures, and the
 per-capability feature-flag state. Alerts must use capability and request IDs,
 not tool arguments or results. The current application has global route
-throttling, credential-bound per-capability `mcp-read`/`mcp-write` buckets,
+throttling, credential-bound per-capability `mcp-read`/`mcp-write` buckets for
+tools, resources, and prompts,
 capability kill switches, and `mcp.capability.executed` metadata-only audit
 events. The matching payload-free `McpCapabilityInvoked` application event is
 the metrics/alerting integration hook; dashboards and alert thresholds remain

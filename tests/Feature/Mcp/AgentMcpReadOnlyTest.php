@@ -237,6 +237,37 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
     }
 
+    public function test_mcp_capability_rate_limits_apply_to_resources_and_prompts(): void
+    {
+        config([
+            'agent_api.writes_enabled' => true,
+            'agent_api.mcp_rate_limits' => ['mcp-read' => 1, 'mcp-write' => 20],
+        ]);
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [
+            AgentApiScopes::MCP_USE,
+            AgentApiScopes::IDENTITY_READ,
+            AgentApiScopes::PROJECTS_READ,
+            AgentApiScopes::TIME_READ,
+            AgentApiScopes::TIME_WRITE,
+        ]);
+        $session = $this->initialize();
+
+        foreach ([
+            ['method' => 'resources/read', 'params' => ['uri' => 'svc://context']],
+            ['method' => 'prompts/get', 'params' => ['name' => 'log-time-across-projects', 'arguments' => []]],
+        ] as $index => $message) {
+            $this->mcp(['jsonrpc' => '2.0', 'id' => ($index * 2) + 2, ...$message], $session)
+                ->assertOk()
+                ->assertJsonMissingPath('error');
+            $this->mcp(['jsonrpc' => '2.0', 'id' => ($index * 2) + 3, ...$message], $session)
+                ->assertOk()
+                ->assertJsonPath('error.code', -32000)
+                ->assertJsonPath('error.message', 'This operation is temporarily rate limited. Please retry later.')
+                ->assertJsonMissingPath('result');
+        }
+    }
+
     public function test_mcp_time_entry_collection_is_bounded_and_cursor_continuable_at_high_volume(): void
     {
         $user = User::factory()->create();

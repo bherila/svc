@@ -3,7 +3,6 @@
 namespace App\Services\Mcp;
 
 use App\Services\Mcp\Context\McpRequestContext;
-use Illuminate\Cache\RateLimiter;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
@@ -12,7 +11,6 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
-use Throwable;
 
 /**
  * Enforces reviewed per-capability MCP buckets before tool execution.
@@ -27,7 +25,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
      */
     public function __construct(
         private RequestHandlerInterface $inner,
-        private RateLimiter $limiter,
+        private McpCapabilityRateLimiter $limiter,
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByTool,
@@ -49,21 +47,16 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         ];
         $bucket = $metadata['rate_limit_bucket'];
         $classification = $metadata['audit_classification'];
-        $limit = config("agent_api.mcp_rate_limits.{$bucket}");
-        try {
-            if (is_int($limit) && $limit > 0) {
-                $key = 'mcp:'.hash('sha256', $bucket.'|'.$request->name.'|'.$this->context->principal->credentialId);
-                if ($this->limiter->tooManyAttempts($key, $limit)) {
-                    $response = new Response($request->getId(), CallToolResult::error([
-                        new TextContent('This operation is temporarily rate limited. Please retry later.'),
-                    ]));
-                    $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limited', 0);
+        $decision = $this->limiter->consume($this->context, $request->name, $bucket);
+        if ($decision === McpCapabilityRateLimitDecision::RateLimited) {
+            $response = new Response($request->getId(), CallToolResult::error([
+                new TextContent('This operation is temporarily rate limited. Please retry later.'),
+            ]));
+            $this->auditor->record($this->context, $request->name, $bucket, $classification, 'rate_limited', 0);
 
-                    return $response;
-                }
-                $this->limiter->hit($key, 60);
-            }
-        } catch (Throwable) {
+            return $response;
+        }
+        if ($decision === McpCapabilityRateLimitDecision::Unavailable) {
             $response = new Response($request->getId(), CallToolResult::error([
                 new TextContent('This operation is temporarily unavailable. Please retry later.'),
             ]));

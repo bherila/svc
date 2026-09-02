@@ -24,6 +24,7 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
      */
     public function __construct(
         private RequestHandlerInterface $inner,
+        private McpCapabilityRateLimiter $limiter,
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByCapability,
@@ -42,6 +43,17 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
             'rate_limit_bucket' => 'mcp-unknown',
             'audit_classification' => 'mcp.unknown',
         ];
+        $decision = $this->limiter->consume($this->context, $capability, $metadata['rate_limit_bucket']);
+        if ($decision === McpCapabilityRateLimitDecision::RateLimited) {
+            $this->auditor->record($this->context, $capability, $metadata['rate_limit_bucket'], $metadata['audit_classification'], 'rate_limited', 0);
+
+            return Error::forServerError('This operation is temporarily rate limited. Please retry later.', $request->getId());
+        }
+        if ($decision === McpCapabilityRateLimitDecision::Unavailable) {
+            $this->auditor->record($this->context, $capability, $metadata['rate_limit_bucket'], $metadata['audit_classification'], 'rate_limit_unavailable', 0);
+
+            return Error::forServerError('This operation is temporarily unavailable. Please retry later.', $request->getId());
+        }
         $started = hrtime(true);
         $response = $this->inner->handle($request, $session);
         $this->auditor->record(

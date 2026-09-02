@@ -160,9 +160,10 @@ controlled by `AGENT_API_ACCEPT_LEGACY_CURSORS`; newly emitted cursors never
 use it. `scripts/mcp-smoke.mjs` uses the pinned official MCP JavaScript client
 against a supplied short-lived bearer token. The concurrent CI smoke job starts
 Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
-the client through handshake, discovery, and `context.get`. Tool execution is
-also centrally throttled by reviewed `mcp-read` (120/minute) and `mcp-write`
-(20/minute) buckets, keyed to the authenticated credential and capability;
+the client through handshake, discovery, and `context.get`. Tool, resource,
+and prompt execution are centrally throttled by reviewed `mcp-read`
+(120/minute) and `mcp-write` (20/minute) buckets, keyed to the authenticated
+credential and capability;
 the route's `throttle:60,1` remains the broad outer limit. A capability call
 fails closed with a safe retry-later error if its limiter backend is
 unavailable. The baseline does not yet provide dashboards, alerts, or resource
