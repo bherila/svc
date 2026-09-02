@@ -88,18 +88,26 @@ response as for an inaccessible agreement.
 
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
-scope. The broader write flag additionally enables `time_entries.approve`,
-`tasks.create`, `tasks.update`, `invoices.create_draft`,
+scope. They and `tasks.create` / `tasks.update` use tenant-scoped application
+actions directly. The broader write flag also retains legacy compatibility
+registrations for `time_entries.approve`, `invoices.create_draft`,
 `invoices.update_draft`, `invoices.discard_draft`, `invoices.issue`,
-`invoices.send`, and `invoices.void`.
+`invoices.send`, and `invoices.void`; those capabilities still enter the
+versioned Agent API through `InternalAgentApiTransport`. They are disabled by
+default and are not a PR 6/7 production-ready write path: approval, invoice,
+and externally consequential workflows require their own application-action
+migration plus the approved confirmation design before general availability.
 
 The tool catalog is `AgentMcpToolCatalog`; `AgentMcpInputSchemaFactory` and
 `AgentMcpOutputSchemaFactory` derive public schemas from the checked-in
 OpenAPI response catalog. Inputs are validated before dispatch, output is
 validated after dispatch, and failures are mapped to safe MCP errors. Read
 tools and the REST controller both use `AgentReadService`, the single
-tenant-scoped query/presentation boundary; MCP does not invoke controllers or
-internal HTTP routes, and it does not expose Eloquent models.
+tenant-scoped query/presentation boundary. Read tools and the direct
+task/draft-time write actions do not invoke controllers or internal HTTP
+routes, and no MCP capability exposes Eloquent models. The disabled legacy
+approval/invoice write registrations above are the explicit exception pending
+their migration; they must not be used as a pattern for new MCP work.
 
 `svc://context` is a bounded JSON resource equivalent to `context.get`; it is
 advertised and readable only with `identity:read`. There are no resource

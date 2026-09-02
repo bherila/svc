@@ -1,8 +1,11 @@
 # SVC Agent API and MCP product contract
 
 SVC exposes its agent surface through a versioned REST API and a remote Streamable
-HTTP MCP endpoint at `/api/v1/mcp`. MCP tools are adapters over the REST operations;
-they do not query Eloquent models directly.
+HTTP MCP endpoint at `/api/v1/mcp`. MCP read tools and migrated task/draft-time
+tools adapt the same application queries and actions as REST; they do not query
+Eloquent models directly. Legacy approval/invoice registrations remain disabled by
+default until their controller-transport migration and consequential-workflow
+approval are complete.
 
 ## Scope and exclusions
 
