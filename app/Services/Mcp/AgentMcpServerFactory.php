@@ -20,6 +20,7 @@ use Bherila\McpLaravelBridge\Mcp\ValidatedCallToolHandler;
 use Closure;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use LogicException;
@@ -61,7 +62,7 @@ final class AgentMcpServerFactory
     {
         $logger = new NullLogger;
         $driftLogger = app(LoggerInterface::class);
-        $capabilityAuditor = new McpCapabilityAuditor($driftLogger);
+        $capabilityAuditor = new McpCapabilityAuditor($driftLogger, app(Dispatcher::class));
         $registry = new Registry(logger: $logger);
         $context = new McpRequestContext(
             $this->principals->resolve($request),

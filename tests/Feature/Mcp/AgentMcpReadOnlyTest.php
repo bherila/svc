@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Mcp;
 
+use App\Events\McpCapabilityInvoked;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
@@ -13,6 +14,7 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Token;
 use Psr\Log\AbstractLogger;
@@ -373,6 +375,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             AgentApiScopes::TIME_WRITE,
         ]);
         $session = $this->initialize();
+        Event::fake([McpCapabilityInvoked::class]);
 
         $this->mcp([
             'jsonrpc' => '2.0',
@@ -449,6 +452,13 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame('mcp.unknown', $unknownEvent['context']['audit_classification']);
         $this->assertSame('error', $unknownEvent['context']['outcome']);
         $this->assertArrayNotHasKey('arguments', $unknownEvent['context']);
+
+        Event::assertDispatchedTimes(McpCapabilityInvoked::class, 4);
+        Event::assertDispatched(McpCapabilityInvoked::class, static fn (McpCapabilityInvoked $event): bool => $event->capability === 'projects.list'
+            && $event->auditClassification === 'agent_api.read'
+            && $event->subjectId === $user->public_id
+            && preg_match('/^[a-f0-9]{64}$/', $event->credentialFingerprint) === 1
+            && preg_match('/^[a-f0-9]{64}$/', $event->clientFingerprint) === 1);
     }
 
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void

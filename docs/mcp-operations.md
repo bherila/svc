@@ -72,5 +72,6 @@ per-capability feature-flag state. Alerts must use capability and request IDs,
 not tool arguments or results. The current application has global route
 throttling, credential-bound per-capability `mcp-read`/`mcp-write` buckets,
 capability kill switches, and `mcp.capability.executed` metadata-only audit
-events. Per-capability metrics remain hardening work and must be validated
-before general availability.
+events. The matching payload-free `McpCapabilityInvoked` application event is
+the metrics/alerting integration hook; dashboards and alert thresholds remain
+hardening work and must be validated before general availability.
