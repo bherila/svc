@@ -6,6 +6,7 @@ use App\Events\McpCapabilityInvoked;
 use App\Services\Mcp\Context\McpRequestContext;
 use Illuminate\Contracts\Events\Dispatcher;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 /** Emits the stable, metadata-only audit event for an MCP capability attempt. */
 final readonly class McpCapabilityAuditor
@@ -29,16 +30,24 @@ final readonly class McpCapabilityAuditor
             'client_fingerprint' => hash('sha256', $context->principal->clientId),
         ];
         $this->audit->info('mcp.capability.executed', $metadata);
-        $this->events->dispatch(new McpCapabilityInvoked(
-            $metadata['request_id'],
-            $metadata['capability'],
-            $metadata['rate_limit_bucket'],
-            $metadata['audit_classification'],
-            $metadata['outcome'],
-            $metadata['duration_ms'],
-            $metadata['subject_id'],
-            $metadata['credential_fingerprint'],
-            $metadata['client_fingerprint'],
-        ));
+        try {
+            $this->events->dispatch(new McpCapabilityInvoked(
+                $metadata['request_id'],
+                $metadata['capability'],
+                $metadata['rate_limit_bucket'],
+                $metadata['audit_classification'],
+                $metadata['outcome'],
+                $metadata['duration_ms'],
+                $metadata['subject_id'],
+                $metadata['credential_fingerprint'],
+                $metadata['client_fingerprint'],
+            ));
+        } catch (Throwable) {
+            $this->audit->warning('mcp.capability.metrics_unavailable', [
+                'request_id' => $metadata['request_id'],
+                'capability' => $metadata['capability'],
+                'audit_classification' => $metadata['audit_classification'],
+            ]);
+        }
     }
 }
