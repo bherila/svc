@@ -182,6 +182,23 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNotContains('billing.audit_unplaceable_invoices', $names);
     }
 
+    public function test_mcp_capability_rate_limits_return_a_safe_tool_error(): void
+    {
+        config(['agent_api.mcp_rate_limits' => ['mcp-read' => 1, 'mcp-write' => 20]]);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Rate Limited Workspace', 'slug' => 'rate-limited-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $message = ['jsonrpc' => '2.0', 'method' => 'tools/call', 'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => $workspace->public_id]]];
+
+        $this->mcp(['id' => 2, ...$message], $session)->assertOk()->assertJsonPath('result.isError', false);
+        $limited = $this->mcp(['id' => 3, ...$message], $session)->assertOk()->json('result');
+
+        $this->assertTrue($limited['isError']);
+        $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
+    }
+
     public function test_mcp_requires_connection_scope_but_allows_preflight(): void
     {
         config(['agent_api.mcp_allowed_origins' => ['http://localhost']]);
