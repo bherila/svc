@@ -1,8 +1,8 @@
 <?php
 
-namespace Tests\Unit\ExternalImport;
+namespace Tests\Unit\Support;
 
-use App\Services\ExternalImport\Fingerprint;
+use App\Support\Fingerprint;
 use PHPUnit\Framework\TestCase;
 
 class FingerprintTest extends TestCase

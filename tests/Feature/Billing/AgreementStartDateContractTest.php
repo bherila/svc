@@ -6,18 +6,15 @@ use App\Http\Requests\Engagement\StoreAgreementRequest;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
-use App\Services\ExternalImport\ExternalImportService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Concerns\UsesAProbeDatabase;
 use Tests\TestCase;
 use Throwable;
-use UnexpectedValueException;
 
 /**
  * An agreement states when it starts, and there is one way to say otherwise: none.
@@ -117,6 +114,13 @@ final class AgreementStartDateContractTest extends TestCase
      * agreement rather than an error. Bypassing the form request is exactly how
      * that happened - the agent API and any console caller reach this directly.
      */
+    /**
+     * The undated population was always an imported one - `ProposalWorkflow::
+     * accept()` sets the date on every natively created agreement, and the
+     * external importer that could produce one without a date has since been
+     * retired. What is left is the column, the request and this workflow, so
+     * these are now the only doors an undated agreement could come through.
+     */
     public function test_the_workflow_refuses_to_create_an_agreement_without_one(): void
     {
         $this->expectException(Throwable::class);
@@ -127,56 +131,6 @@ final class AgreementStartDateContractTest extends TestCase
             null,
             null,
             ['title' => 'No date', 'currency' => 'USD'],
-        );
-    }
-
-    /**
-     * The importer refuses the source row rather than dating it.
-     *
-     * The undated population was always an imported one - `ProposalWorkflow::
-     * accept()` sets the date on every natively created agreement - so this is
-     * the edge that mattered. It refuses because every candidate default writes
-     * a different billing history: today's date leaves past work unpriced, the
-     * earliest invoice's date invents a term nobody agreed, and the epoch grants
-     * capacity for years that never existed.
-     *
-     * @param  array<string, mixed>  $row
-     */
-    #[DataProvider('sourceRows')]
-    public function test_the_importer_refuses_a_source_agreement_with_no_start_date(array $row, string $because): void
-    {
-        $this->expectException(UnexpectedValueException::class);
-        // The whole message, not a fragment. An operator hitting this mid-import
-        // needs both halves: why no date could be substituted, and what to do
-        // instead. Asserting the first clause alone lets the actionable half be
-        // dropped silently.
-        $this->expectExceptionMessage(
-            'The source agreement states no start date, and there is no date this importer could supply that '
-            .'would not invent a term - which cycles exist, what capacity each period grants, and which '
-            .'agreement prices a given day are all read from it. Set the start date at the source and import '
-            .'again.',
-        );
-
-        ExternalImportService::importedAgreementStart($row);
-        $this->fail($because);
-    }
-
-    /** @return array<string, array{array<string, mixed>, string}> */
-    public static function sourceRows(): array
-    {
-        return [
-            'absent' => [[], 'A row with no active_date key at all must refuse.'],
-            'null' => [['active_date' => null], 'An explicit null must refuse.'],
-            'empty' => [['active_date' => ''], 'An empty string is not a date.'],
-        ];
-    }
-
-    /** A source row that states one is carried through unchanged. */
-    public function test_the_importer_carries_a_stated_start_date(): void
-    {
-        $this->assertSame(
-            '2024-03-01',
-            ExternalImportService::importedAgreementStart(['active_date' => '2024-03-01 09:30:00']),
         );
     }
 

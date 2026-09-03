@@ -2,7 +2,7 @@
 
 namespace Tests\Concerns;
 
-use App\Services\ExternalImport\Fingerprint;
+use App\Support\Fingerprint;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Random\Engine\Mt19937;
