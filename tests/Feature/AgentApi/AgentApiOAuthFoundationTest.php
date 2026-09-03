@@ -40,6 +40,22 @@ class AgentApiOAuthFoundationTest extends TestCase
             ->assertJsonPath('resource', url('/api/v1'));
     }
 
+    public function test_protected_resource_metadata_uses_the_exact_mcp_browser_origin_policy(): void
+    {
+        config(['agent_api.mcp_allowed_origins' => ['https://chatgpt.com']]);
+
+        $this->withHeader('Origin', 'https://chatgpt.com')
+            ->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
+            ->assertOk()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
+            ->assertHeader('Vary', 'Origin');
+
+        $this->withHeader('Origin', 'https://unapproved.example')
+            ->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
+            ->assertForbidden()
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+    }
+
     public function test_public_client_registration_accepts_only_safe_redirects(): void
     {
         $scope = implode(' ', array_keys(AgentApiScopes::descriptions()));

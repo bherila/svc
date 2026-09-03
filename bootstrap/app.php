@@ -1,10 +1,12 @@
 <?php
 
 use App\Exceptions\InvalidAgentApiCursor;
+use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RejectMcpQueryCredentials;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(RejectMcpQueryCredentials::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, EnforceAgentMcpOrigin::class);
         $middleware->web(append: [
             EnforceOAuthResourceIndicator::class,
             HandleInertiaRequests::class,

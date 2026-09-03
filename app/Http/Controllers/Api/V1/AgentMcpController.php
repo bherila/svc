@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Services\Mcp\AgentMcpServerFactory;
 use Bherila\McpLaravelBridge\Http\StreamableHttpResponder;
 use Illuminate\Http\Request;
-use Mcp\Server\Transport\Http\Middleware\DnsRebindingProtectionMiddleware;
 use Mcp\Server\Transport\Http\Middleware\ProtocolVersionMiddleware;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -25,11 +24,17 @@ final class AgentMcpController extends Controller
             );
         }
 
+        if (! in_array($this->normalizedHost($request->getHost()), $this->allowedHosts(), true)) {
+            return response('Forbidden: Invalid Host header.', Response::HTTP_FORBIDDEN, [
+                'Content-Type' => 'text/plain',
+                'Cache-Control' => 'private, no-store',
+            ]);
+        }
+
         return $responder->run(
             request: $request,
             server: $servers->make($request),
             middleware: [
-                new DnsRebindingProtectionMiddleware(allowedHosts: $this->allowedHosts()),
                 new ProtocolVersionMiddleware,
             ],
             maxBodyBytes: (int) config('agent_api.mcp_max_body_bytes'),
@@ -40,14 +45,18 @@ final class AgentMcpController extends Controller
     private function allowedHosts(): array
     {
         $hosts = [];
-        $origins = config('agent_api.mcp_allowed_origins', []);
-        foreach ([config('app.url'), ...(is_array($origins) ? $origins : [])] as $url) {
+        foreach ([config('app.url'), config('bherila-auth.oauth_server.resource')] as $url) {
             $host = is_string($url) ? parse_url($url, PHP_URL_HOST) : null;
             if (is_string($host) && $host !== '') {
-                $hosts[] = $host;
+                $hosts[] = $this->normalizedHost($host);
             }
         }
 
         return array_values(array_unique($hosts));
+    }
+
+    private function normalizedHost(string $host): string
+    {
+        return strtolower(rtrim(trim($host, '[]'), '.'));
     }
 }
