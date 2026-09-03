@@ -1,4 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
+import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
+import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -60,11 +62,20 @@ export default function PortalInvoice({
     home_href: homeHref,
     invoice,
     lines,
+    line_detail: lineDetail,
 }: {
     company: { id: string; name: string };
     home_href: string;
     invoice: PortalInvoice;
     lines: PortalLine[];
+    /**
+     * The work behind each line, keyed by line id.
+     *
+     * Narrowed on the server to entries written to be read by this client, and
+     * a line with none is simply absent - there is no row here announcing work
+     * the client is not being told about.
+     */
+    line_detail: Record<string, InvoiceLineItem[]>;
 }) {
     const period =
         invoice.service_period_start === null &&
@@ -125,6 +136,8 @@ export default function PortalInvoice({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            {/* The disclosure column. */}
+                                            <TableHead className="w-8" />
                                             <TableHead className="min-w-64">
                                                 Description
                                             </TableHead>
@@ -137,7 +150,12 @@ export default function PortalInvoice({
                                     </TableHeader>
                                     <TableBody>
                                         {lines.map((line) => (
-                                            <TableRow key={line.id}>
+                                            <InvoiceLineRows
+                                                key={line.id}
+                                                line={line}
+                                                items={lineDetail[line.id]}
+                                                columns={6}
+                                            >
                                                 <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
@@ -162,7 +180,7 @@ export default function PortalInvoice({
                                                         invoice.currency,
                                                     )}
                                                 </TableCell>
-                                            </TableRow>
+                                            </InvoiceLineRows>
                                         ))}
                                     </TableBody>
                                 </Table>

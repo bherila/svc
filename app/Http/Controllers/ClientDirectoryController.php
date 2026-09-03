@@ -23,6 +23,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
@@ -286,6 +287,12 @@ class ClientDirectoryController extends Controller
             ] : null,
             'deliveries' => $manages ? $this->deliveriesOf($workspace, $clientInvoice) : [],
             'invoice' => $this->invoicePayload($clientInvoice),
+            // What each line is made of, keyed by line. The pivot has carried
+            // this since the billing workflow was written - a line billed from
+            // time attaches the entries it drew on - and nothing ever showed
+            // it, so a client reading "Deferred work items applied to retainer
+            // (12.50 hrs)" had no way to ask which work.
+            'line_detail' => InvoiceLineDetail::forInvoice($clientInvoice, InvoiceLineDetail::OPERATOR),
             'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
                 'id' => $line->public_id,
                 'type' => $line->type,

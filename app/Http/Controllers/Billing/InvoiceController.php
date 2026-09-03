@@ -20,6 +20,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\InvoiceLineDetail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -243,8 +244,13 @@ class InvoiceController extends Controller
 
     public function pdf(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceDocumentService $documents): Response
     {
-        $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
-        $pdf = $documents->pdf($clientInvoice);
+        // The same route serves both populations, and the appendix behind this
+        // document is not the same document for both: an operator's lists every
+        // entry with its internal description, a client's lists only what was
+        // written for them to read. So the check that admits the reader also
+        // says which appendix they get.
+        $audience = $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
+        $pdf = $documents->pdf($clientInvoice, $audience);
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
@@ -301,7 +307,12 @@ class InvoiceController extends Controller
         );
     }
 
-    private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): void
+    /**
+     * Who may read this invoice, and as which audience.
+     *
+     * @return InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT
+     */
+    private function authorizeInvoiceView(Request $request, Workspace $workspace, ClientInvoice $invoice): string
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $invoice);
 
@@ -320,7 +331,7 @@ class InvoiceController extends Controller
                 abort_unless($this->billingAccess->canViewInvoice($user, $workspace, $invoice), 404);
             }
 
-            return;
+            return InvoiceLineDetail::OPERATOR;
         }
         abort_unless(
             $invoice->is_visible_to_client
@@ -328,6 +339,8 @@ class InvoiceController extends Controller
                 && $invoice->clientCompany->portalUsers()->whereKey($request->user()->id)->exists(),
             403,
         );
+
+        return InvoiceLineDetail::CLIENT;
     }
 
     private function mutationResponse(Request $request, ClientInvoice $invoice, string $message): JsonResponse|RedirectResponse

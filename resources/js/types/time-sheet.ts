@@ -47,6 +47,25 @@ export type Capacity = {
     /** Identifies the cycle: a mid-month cadence puts two in one month. */
     cycle_start: string;
     available_hours: number;
+    /**
+     * Where the availability came from: this cycle's own grant, what carried
+     * in from earlier months, and what aged out on the way.
+     *
+     * One `available_hours` figure is unarguable and unexplainable — a month
+     * living on carried hours looks identical to one with a large retainer, and
+     * the hours that expired are invisible. The ledger has computed all three
+     * since the port; only the screen was missing them.
+     */
+    retainer_hours: number;
+    rollover_in_hours: number;
+    expired_hours: number;
+    /**
+     * How many months unused hours survive, by the agreement's own rule.
+     *
+     * Null is not zero. An unset rollover means nothing carries forward, which
+     * is the same outcome and a different statement about what was agreed.
+     */
+    rollover_months: number | null;
     worked_hours: number;
     unused_hours: number;
     over_hours: number;

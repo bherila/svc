@@ -397,7 +397,7 @@ class TimeSheetController extends Controller
      * drop the rollover that month inherited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>
+     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>
      */
     private function capacityByMonth(
         InvoiceLedgerBuilder $ledgers,
@@ -568,6 +568,23 @@ class TimeSheetController extends Controller
                     // tell them apart is worse than either number alone.
                     'cycle_start' => (string) $month->cycleStart,
                     'available_hours' => round($month->opening->totalAvailable, 2),
+                    // Where that availability came from. One number saying
+                    // "18.50 h available" is unarguable and unexplainable: an
+                    // operator cannot tell a month with a large retainer from
+                    // one living on hours carried in, and cannot see the hours
+                    // that aged out on the way. The ledger has computed all
+                    // three since the port and the screen showed none of them.
+                    'retainer_hours' => round($month->opening->retainerHours, 2),
+                    'rollover_in_hours' => round($month->opening->rolloverHours, 2),
+                    'expired_hours' => round($month->opening->expiredHours, 2),
+                    // The rule the carry-forward follows, so the numbers above
+                    // can be read rather than only observed. Null is not zero:
+                    // an unset rollover means nothing carries forward, which is
+                    // the same outcome and a different statement about the
+                    // agreement.
+                    'rollover_months' => $agreement->rollover_months === null
+                        ? null
+                        : (int) $agreement->rollover_months,
                     'worked_hours' => round($month->hoursWorked, 2),
                     'unused_hours' => round($month->closing->unusedHours, 2),
                     'over_hours' => round($over, 2),
@@ -586,7 +603,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */

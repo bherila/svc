@@ -1,5 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
+import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import {
     AlertDialog,
@@ -108,6 +110,7 @@ export default function ClientInvoiceDetail({
     deliveries,
     invoice,
     lines,
+    line_detail: lineDetail,
     payments,
 }: {
     company: { id: string; name: string };
@@ -119,6 +122,8 @@ export default function ClientInvoiceDetail({
     deliveries: InvoiceDelivery[];
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
+    /** The work behind each line, keyed by line id. Absent for a line with none. */
+    line_detail: Record<string, InvoiceLineItem[]>;
     payments: InvoicePayment[];
 }) {
     const [paying, setPaying] = useState(false);
@@ -421,6 +426,12 @@ export default function ClientInvoiceDetail({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            {/*
+                                             * The disclosure column, headed by
+                                             * nothing: a column of triangles is
+                                             * not something to name.
+                                             */}
+                                            <TableHead className="w-8" />
                                             <TableHead className="min-w-64">
                                                 Description
                                             </TableHead>
@@ -434,7 +445,12 @@ export default function ClientInvoiceDetail({
                                     </TableHeader>
                                     <TableBody>
                                         {lines.map((line) => (
-                                            <TableRow key={line.id}>
+                                            <InvoiceLineRows
+                                                key={line.id}
+                                                line={line}
+                                                items={lineDetail[line.id]}
+                                                columns={7}
+                                            >
                                                 <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
@@ -462,7 +478,7 @@ export default function ClientInvoiceDetail({
                                                         invoice.currency,
                                                     )}
                                                 </TableCell>
-                                            </TableRow>
+                                            </InvoiceLineRows>
                                         ))}
                                     </TableBody>
                                 </Table>

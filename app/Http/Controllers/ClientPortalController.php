@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Engagement\AgreementTermsPayload;
 use App\Support\Files\AttachmentListing;
 use Illuminate\Database\Eloquent\Builder;
@@ -113,6 +114,12 @@ class ClientPortalController extends Controller
                 'balance_amount' => (int) $invoice->balance_amount,
                 'pdf_url' => "/workspaces/{$clientCompany->workspace->public_id}/invoices/{$invoice->public_id}/pdf",
             ],
+            // The same itemisation the operator sees, narrowed to what the
+            // client may read: only entries carrying a client-safe description,
+            // and that text rather than the internal note. Withheld rather than
+            // blanked, so there is no row announcing work the client is not
+            // being told about.
+            'line_detail' => InvoiceLineDetail::forInvoice($invoice, InvoiceLineDetail::CLIENT),
             'lines' => $lines->map(fn (ClientInvoiceLine $line): array => [
                 'id' => $line->public_id,
                 'description' => $line->description,
