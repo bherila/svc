@@ -34,6 +34,11 @@ final class AgreementTermsPayload
             'status' => $agreement->status,
             'currency' => $agreement->currency,
             'billing_cadence' => $agreement->billing_cadence,
+            // The operator payload names the billing engine's effective terms.
+            // Keep one stable page contract without disclosing those derived
+            // values through the client portal.
+            'effective_billing_cadence' => null,
+            'effective_first_cycle_proration' => null,
             'is_recurring' => $agreement->billsOnARecurringCadence(),
             'starts_on' => $agreement->starts_on->toDateString(),
             'ends_on' => $agreement->ends_on?->toDateString(),
@@ -41,6 +46,7 @@ final class AgreementTermsPayload
             'retainer_minutes_per_period' => $grantsRetainer
                 ? (int) round($agreement->periodRetainerHours() * 60)
                 : null,
+            'retainer_minutes_per_month' => null,
             'retainer_amount_per_period' => $grantsRetainer
                 ? (int) round($agreement->periodRetainerFee() * 100)
                 : null,

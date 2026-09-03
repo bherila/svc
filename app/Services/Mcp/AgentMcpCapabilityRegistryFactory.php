@@ -6,6 +6,8 @@ use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use App\Services\Mcp\Registry\McpCapabilityKind;
 use App\Services\Mcp\Registry\McpCapabilityRegistry;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\Billing\BillingCadence;
+use App\Support\Billing\FirstCycleProration;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 
 /** Builds the reviewed MCP registry from the compatibility catalog. */
@@ -33,6 +35,7 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->unplaceableInvoicesAudit($billingAudits));
         $registry->register($this->undatedCollectibleInvoicesAudit($billingAudits));
         $registry->register($this->missingBilledOverageAudit($billingAudits));
+        $registry->register($this->openingRolloverAudit($billingAudits));
         $registry->register($this->logTimePrompt($prompts));
         $registry->register($this->prepareInvoicePrompt($prompts));
 
@@ -203,18 +206,21 @@ final class AgentMcpCapabilityRegistryFactory
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['id', 'title', 'status', 'currency', 'billing_cadence', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project'],
+            'required' => ['id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project'],
             'properties' => [
                 'id' => ['type' => 'string', 'format' => 'uuid'],
                 'title' => ['type' => 'string', 'maxLength' => 255],
                 'status' => ['type' => 'string', 'maxLength' => 64],
                 'currency' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 3],
                 'billing_cadence' => ['type' => ['string', 'null'], 'maxLength' => 32],
+                'effective_billing_cadence' => ['type' => ['string', 'null'], 'enum' => [...array_column(BillingCadence::cases(), 'value'), null]],
+                'effective_first_cycle_proration' => ['type' => ['string', 'null'], 'enum' => [...array_column(FirstCycleProration::cases(), 'value'), null]],
                 'is_recurring' => ['type' => 'boolean'],
                 'starts_on' => ['type' => 'string', 'format' => 'date'],
                 'ends_on' => ['type' => ['string', 'null'], 'format' => 'date'],
                 'signed_at' => ['type' => ['string', 'null'], 'format' => 'date-time'],
                 'retainer_minutes_per_period' => ['type' => ['integer', 'null'], 'minimum' => 0],
+                'retainer_minutes_per_month' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'retainer_amount_per_period' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'hourly_rate_amount' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'rollover_months' => ['type' => ['integer', 'null'], 'minimum' => 0, 'maximum' => 120],
@@ -497,6 +503,24 @@ final class AgentMcpCapabilityRegistryFactory
         );
     }
 
+    private function openingRolloverAudit(AgentMcpBillingAuditTools $tools): McpCapabilityDefinition
+    {
+        return $this->billingAudit(
+            name: 'billing.audit_opening_rollover',
+            title: 'Audit opening rollover',
+            description: 'Get aggregate counts of agreements whose opening rollover changes their capacity ledger.',
+            handler: [$tools, 'openingRollover'],
+            properties: [
+                'agreements' => ['type' => 'integer', 'minimum' => 0],
+                'with_initial_rollover' => ['type' => 'integer', 'minimum' => 0],
+                'legacy_monthly_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'affected' => ['type' => 'integer', 'minimum' => 0],
+                'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
+                'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
+            ],
+        );
+    }
+
     /**
      * @param  array<string, array<string, mixed>>  $properties
      * @param  array{0: object, 1: string}  $handler
@@ -547,7 +571,7 @@ final class AgentMcpCapabilityRegistryFactory
             'retainer_hours', 'hours_worked', 'opening_retainer_hours', 'opening_rollover_hours',
             'opening_expired_hours', 'opening_available_hours', 'hours_used_from_retainer',
             'hours_used_from_rollover', 'unused_hours', 'excess_hours', 'negative_hours',
-            'remaining_rollover_hours',
+            'signed_available_hours', 'remaining_rollover_hours',
         ];
         $properties = [
             'period' => ['type' => 'string', 'pattern' => '^\\d{4}-\\d{2}$'],

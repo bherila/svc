@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\Billing\OpeningRolloverAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
@@ -31,6 +32,17 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(1, $summary['affected']);
         $this->assertSame(600, $summary['capacity_at_stake_minutes']);
         $this->assertSame(1, $summary['longest_rollover_months']);
+    }
+
+    public function test_one_minute_of_initial_rollover_is_positive_capacity(): void
+    {
+        $this->agreement(['initial_rollover_minutes' => 1, 'rollover_months' => 1]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['with_initial_rollover']);
+        $this->assertSame(1, $summary['affected']);
+        $this->assertSame(1, $summary['capacity_at_stake_minutes']);
     }
 
     public function test_a_cadence_agreement_is_not_counted_however_large_its_initial_rollover(): void
@@ -67,6 +79,17 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(0, $summary['affected'], 'But nothing carries it forward');
     }
 
+    public function test_the_longest_rollover_policy_is_taken_from_the_affected_population(): void
+    {
+        $this->agreement(['initial_rollover_minutes' => 600, 'rollover_months' => 1]);
+        $this->agreement(['initial_rollover_minutes' => 120, 'rollover_months' => 3]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(2, $summary['affected']);
+        $this->assertSame(3, $summary['longest_rollover_months']);
+    }
+
     public function test_an_agreement_with_no_initial_rollover_is_not_counted(): void
     {
         $this->agreement(['initial_rollover_minutes' => 0, 'rollover_months' => 6]);
@@ -76,6 +99,7 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(1, $summary['agreements']);
         $this->assertSame(0, $summary['with_initial_rollover']);
         $this->assertSame(0, $summary['affected']);
+        $this->assertSame(0, $summary['longest_rollover_months']);
     }
 
     public function test_the_report_names_no_workspace_company_or_agreement(): void
@@ -92,6 +116,23 @@ class AuditOpeningRolloverCommandTest extends TestCase
         foreach (['Rollover Workspace', 'Rollover Client', 'Carried retainer', 'rollover-workspace', 'rollover-client'] as $secret) {
             $this->assertStringNotContainsString($secret, $report);
         }
+    }
+
+    public function test_the_shared_auditor_scopes_every_count_to_one_workspace(): void
+    {
+        $selected = $this->agreement(['initial_rollover_minutes' => 600, 'rollover_months' => 1]);
+        $this->agreement(['initial_rollover_minutes' => 1200, 'rollover_months' => 2]);
+
+        $counts = app(OpeningRolloverAuditor::class)->count(
+            Workspace::query()->findOrFail($selected->workspace_id),
+        );
+
+        $this->assertSame(1, $counts->agreements);
+        $this->assertSame(1, $counts->withInitialRollover);
+        $this->assertSame(1, $counts->legacyMonthlyOfThose);
+        $this->assertSame(1, $counts->affected);
+        $this->assertSame(600, $counts->capacityAtStakeMinutes);
+        $this->assertSame(1, $counts->longestRolloverMonths);
     }
 
     public function test_an_unknown_format_is_refused(): void
