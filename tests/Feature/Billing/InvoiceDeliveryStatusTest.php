@@ -59,6 +59,23 @@ class InvoiceDeliveryStatusTest extends TestCase
         $this->assertSame(1788000000, $delivery->provider_status_at?->getTimestamp());
     }
 
+    public function test_a_padded_message_id_still_finds_its_delivery(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-padded');
+
+        // The id is read back out of somebody else's JSON. Untrimmed it matches
+        // nothing, and the delivery sits reading "not reported yet" forever
+        // while the provider has already said what became of it.
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => "  synthetic-message-id-padded\n",
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertJsonPath('recorded', 1);
+
+        $this->assertSame('delivered', $delivery->fresh()->provider_status);
+    }
+
     public function test_a_batch_of_events_is_accepted_as_well_as_a_single_one(): void
     {
         $first = $this->delivery('synthetic-message-id-a');

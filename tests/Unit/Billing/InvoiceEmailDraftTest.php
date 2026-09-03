@@ -103,6 +103,17 @@ class InvoiceEmailDraftTest extends TestCase
         InvoiceEmailDraft::of(['ap@synthetic.test'], [], "  \t ", null);
     }
 
+    public function test_the_constructor_refuses_a_whitespace_subject_of_its_own_accord(): void
+    {
+        // `of()` trims before it constructs, so going through it can never
+        // reach this guard - and a guard only one caller can trip is a guard
+        // that stops holding the moment a second caller appears.
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('An invoice email needs a subject.');
+
+        new InvoiceEmailDraft(['ap@synthetic.test'], [], "  \t ", null);
+    }
+
     public function test_a_body_of_only_whitespace_becomes_no_body(): void
     {
         $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', "  \n ");

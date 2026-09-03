@@ -23,8 +23,6 @@ final class InvoiceDocumentService
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
     public function html(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT): View
     {
-        $invoice->load('clientCompany');
-
         return view('invoices.show', [
             'invoice' => $invoice,
             // Read here and handed to the template, workspace-scoped, rather
