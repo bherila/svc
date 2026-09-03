@@ -901,7 +901,32 @@ final class AgentMcpReadOnlyTest extends TestCase
         ])->postJson('/api/v1/mcp', $this->initializeMessage())
             ->assertOk()
             ->assertHeader('Access-Control-Allow-Origin', 'https://approved.example')
-            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version');
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate');
+    }
+
+    public function test_browser_origin_allowlist_does_not_expand_the_service_host_allowlist(): void
+    {
+        config([
+            'app.url' => 'https://svc.example.test',
+            'bherila-auth.oauth_server.resource' => 'https://svc.example.test/api/v1',
+            'agent_api.mcp_allowed_origins' => ['https://chatgpt.com'],
+        ]);
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
+
+        $this->withHeaders([
+            'Mcp-Protocol-Version' => '2025-06-18',
+        ])->postJson('https://chatgpt.com/api/v1/mcp', $this->initializeMessage())
+            ->assertForbidden()
+            ->assertSeeText('Forbidden: Invalid Host header.')
+            ->assertHeader('Cache-Control', 'no-store, private');
+
+        $this->withHeaders([
+            'Origin' => 'https://chatgpt.com',
+            'Mcp-Protocol-Version' => '2025-06-18',
+        ])->postJson('https://svc.example.test/api/v1/mcp', $this->initializeMessage())
+            ->assertOk()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com');
     }
 
     public function test_originless_native_cli_request_remains_supported(): void
@@ -915,8 +940,12 @@ final class AgentMcpReadOnlyTest extends TestCase
 
     public function test_unauthenticated_mcp_request_returns_an_oauth_resource_challenge(): void
     {
-        $this->mcp($this->initializeMessage())
+        config(['agent_api.mcp_allowed_origins' => ['https://chatgpt.com']]);
+
+        $this->withHeader('Origin', 'https://chatgpt.com')->mcp($this->initializeMessage())
             ->assertUnauthorized()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate')
             ->assertHeader('WWW-Authenticate', sprintf(
                 'Bearer resource_metadata="%s"',
                 url('/.well-known/oauth-protected-resource/api/v1/mcp'),

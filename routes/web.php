@@ -12,6 +12,7 @@ use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
+use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use BWH\Auth\Http\Controllers\OAuthDynamicClientRegistrationController;
@@ -22,9 +23,12 @@ Route::inertia('/', 'welcome')->name('home');
 
 Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/.well-known/oauth-authorization-server', [OAuthMetadataController::class, 'authorizationServer']);
-    Route::get('/.well-known/oauth-protected-resource', [OAuthMetadataController::class, 'protectedResource']);
-    Route::get('/.well-known/oauth-protected-resource/api/v1', [OAuthMetadataController::class, 'protectedResource']);
-    Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource']);
+    Route::get('/.well-known/oauth-protected-resource', [OAuthMetadataController::class, 'protectedResource'])
+        ->middleware(EnforceAgentMcpOrigin::class);
+    Route::get('/.well-known/oauth-protected-resource/api/v1', [OAuthMetadataController::class, 'protectedResource'])
+        ->middleware(EnforceAgentMcpOrigin::class);
+    Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource'])
+        ->middleware(EnforceAgentMcpOrigin::class);
     Route::post('/oauth/register', OAuthDynamicClientRegistrationController::class)->middleware('throttle:10,60');
 });
 

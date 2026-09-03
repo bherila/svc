@@ -58,8 +58,9 @@ credential system.
 
 The current route also has Laravel's `throttle:60,1` limiter. Browser requests
 with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native
-clients without an Origin are permitted. CORS exposes only MCP session and
-protocol headers.
+clients without an Origin are permitted. Browser origins never expand the service
+Host allowlist, which is derived from `APP_URL` and the configured OAuth resource.
+CORS exposes the MCP session, protocol, and OAuth challenge headers.
 
 Tools presently take `workspace_id` arguments. It is only a selector: an
 immutable `McpRequestContext` resolves it through the authenticated

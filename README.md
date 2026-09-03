@@ -166,7 +166,9 @@ entries that have not been approved or invoiced. Set
 
 Browser-based MCP clients must use an exact origin listed in
 `AGENT_API_MCP_ALLOWED_ORIGINS`; unlisted origins receive no CORS authorization and
-their MCP requests are rejected. Native clients that omit `Origin` continue to work.
+their MCP requests are rejected. This browser-origin list does not change which HTTP
+`Host` values the MCP endpoint accepts; service hosts come only from `APP_URL` and the
+configured OAuth resource. Native clients that omit `Origin` continue to work.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
 `svc:oauth:prune-dynamic-clients` command (the retention is configurable).

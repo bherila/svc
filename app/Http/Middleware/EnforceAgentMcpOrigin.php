@@ -49,7 +49,7 @@ final class EnforceAgentMcpOrigin
         $response = $next($request);
         $response->headers->set('Access-Control-Allow-Origin', $origin);
         $response->setVary('Origin', false);
-        $response->headers->set('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version');
+        $response->headers->set('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate');
 
         return $response;
     }
