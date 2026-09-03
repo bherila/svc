@@ -57,6 +57,18 @@ Two things that cost real time here:
 - **Measure, do not squint.** Read the bounding boxes of the bar's children in
   a browser. A screenshot at 390px will not tell you that two boxes overlap.
 
+## A select renders its value, not its label
+
+Base UI's `Select.Value` prints the raw value in the trigger unless the root is
+given `items`. So a field the operator had just set to "Bank transfer" read
+`bank_transfer` back at them, an agreement's first-cycle rule read `unset`, and
+choosing a project on a time entry left a bare UUID in the field. Pass the same
+`{ value, label }` list to `items` that you render as `SelectItem`s.
+
+Worth stating because nothing catches it: the markup is correct, the value is
+correct, the form submits correctly, and only a person looking at the screen
+can see that the control is showing a database value to a reader.
+
 ## Tables do not wrap unless you say so
 
 The shared `TableCell` sets `whitespace-nowrap`. That is right for a date, an
