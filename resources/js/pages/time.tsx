@@ -24,8 +24,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatShortDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
-import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
+import { formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
     Capacity,
@@ -97,7 +98,7 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                 {shareTheName && row.cycle_start !== '' && (
                                     <span className="ml-1 font-normal">
                                         · cycle from{' '}
-                                        {formatDate(row.cycle_start)}
+                                        {formatShortDay(row.cycle_start)}
                                     </span>
                                 )}
                             </p>
@@ -424,7 +425,7 @@ export default function TimeSheet({
                         <AlertDialogDescription>
                             {pendingDelete === null
                                 ? ''
-                                : `${formatHours(pendingDelete.minutes)} on ${formatDate(
+                                : `${formatHours(pendingDelete.minutes)} on ${formatShortDay(
                                       pendingDelete.worked_on,
                                   )} — ${pendingDelete.description}`}
                         </AlertDialogDescription>
@@ -612,7 +613,7 @@ function MonthCard({
                                             )}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
-                                            {formatDate(entry.worked_on)}
+                                            {formatShortDay(entry.worked_on)}
                                         </TableCell>
                                         {/*
                                          * The one prose column. Table cells

@@ -31,6 +31,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -174,9 +175,9 @@ export default function ClientInvoiceDetail({
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
                             ? 'Not issued'
-                            : `Issued ${invoice.issue_date}`}
+                            : `Issued ${formatDay(invoice.issue_date)}`}
                         {invoice.due_date !== null &&
-                            ` · due ${invoice.due_date}`}
+                            ` · due ${formatDay(invoice.due_date)}`}
                     </p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -431,7 +432,7 @@ export default function ClientInvoiceDetail({
                                                     {statusLabel(line.type)}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {line.line_date ?? '—'}
+                                                    {formatDay(line.line_date)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {line.quantity}
@@ -486,7 +487,9 @@ export default function ClientInvoiceDetail({
                                         {payments.map((payment) => (
                                             <TableRow key={payment.id}>
                                                 <TableCell>
-                                                    {payment.received_on ?? '—'}
+                                                    {formatDay(
+                                                        payment.received_on,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">

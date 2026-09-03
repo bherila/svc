@@ -10,6 +10,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -123,11 +124,15 @@ export default function ClientAgreementDetail({
                         <dl className="grid gap-2 text-sm sm:grid-cols-2">
                             <Term
                                 label="Term"
-                                value={`${agreement.starts_on} → ${agreement.ends_on ?? 'open'}`}
+                                value={`${formatDay(agreement.starts_on)} → ${agreement.ends_on === null ? 'open' : formatDay(agreement.ends_on)}`}
                             />
                             <Term
                                 label="Cadence"
-                                value={agreement.billing_cadence}
+                                value={
+                                    agreement.billing_cadence === null
+                                        ? null
+                                        : statusLabel(agreement.billing_cadence)
+                                }
                             />
                             <Term
                                 label="Hourly rate"
@@ -179,7 +184,13 @@ export default function ClientAgreementDetail({
                                 <>
                                     <Term
                                         label="Rollover policy"
-                                        value={agreement.rollover_policy}
+                                        value={
+                                            agreement.rollover_policy === null
+                                                ? null
+                                                : statusLabel(
+                                                      agreement.rollover_policy,
+                                                  )
+                                        }
                                     />
                                     <Term
                                         label="Catch-up threshold"
@@ -195,7 +206,14 @@ export default function ClientAgreementDetail({
                                     />
                                     <Term
                                         label="First cycle"
-                                        value={agreement.first_cycle_proration}
+                                        value={
+                                            agreement.first_cycle_proration ===
+                                            null
+                                                ? null
+                                                : statusLabel(
+                                                      agreement.first_cycle_proration,
+                                                  )
+                                        }
                                         unset="Prorates the opening month"
                                     />
                                     <Term
@@ -212,12 +230,24 @@ export default function ClientAgreementDetail({
                                     />
                                     <Term
                                         label="Activated"
-                                        value={agreement.activated_at}
+                                        value={
+                                            agreement.activated_at === null
+                                                ? null
+                                                : formatTimestamp(
+                                                      agreement.activated_at,
+                                                  )
+                                        }
                                         unset="Never activated"
                                     />
                                     <Term
                                         label="Terminated"
-                                        value={agreement.terminated_at}
+                                        value={
+                                            agreement.terminated_at === null
+                                                ? null
+                                                : formatTimestamp(
+                                                      agreement.terminated_at,
+                                                  )
+                                        }
                                         unset="Not terminated"
                                     />
                                 </>
@@ -227,7 +257,7 @@ export default function ClientAgreementDetail({
                                 value={
                                     agreement.signed_at === null
                                         ? null
-                                        : `${agreement.signed_at}${agreement.signer_name === null ? '' : ` by ${agreement.signer_name}`}`
+                                        : `${formatTimestamp(agreement.signed_at)}${agreement.signer_name === null ? '' : ` by ${agreement.signer_name}`}`
                                 }
                                 unset="Unsigned"
                             />
@@ -269,7 +299,7 @@ export default function ClientAgreementDetail({
                                                     {item.description}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {item.cadence ?? '—'}
+                                                    {statusLabel(item.cadence)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {item.quantity ?? '—'}
@@ -283,9 +313,11 @@ export default function ClientAgreementDetail({
                                                           )}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {item.effective_on ?? '—'}
+                                                    {formatDay(
+                                                        item.effective_on,
+                                                    )}
                                                     {item.expires_on !== null &&
-                                                        ` → ${item.expires_on}`}
+                                                        ` → ${formatDay(item.expires_on)}`}
                                                 </TableCell>
                                                 <TableCell>
                                                     {item.is_active

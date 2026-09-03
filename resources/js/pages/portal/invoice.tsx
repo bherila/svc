@@ -10,6 +10,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -69,7 +70,7 @@ export default function PortalInvoice({
         invoice.service_period_start === null &&
         invoice.service_period_end === null
             ? null
-            : `${invoice.service_period_start ?? 'open'} → ${invoice.service_period_end ?? 'open'}`;
+            : `${invoice.service_period_start === null ? 'open' : formatDay(invoice.service_period_start)} → ${invoice.service_period_end === null ? 'open' : formatDay(invoice.service_period_end)}`;
 
     return (
         <WorkspaceShell activeModule="invoices">
@@ -95,9 +96,9 @@ export default function PortalInvoice({
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
                             ? 'Not dated'
-                            : `Issued ${invoice.issue_date}`}
+                            : `Issued ${formatDay(invoice.issue_date)}`}
                         {invoice.due_date !== null &&
-                            ` · due ${invoice.due_date}`}
+                            ` · due ${formatDay(invoice.due_date)}`}
                         {period !== null && ` · covering ${period}`}
                     </p>
                     <p className="text-sm">
@@ -141,7 +142,7 @@ export default function PortalInvoice({
                                                     {line.description}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {line.line_date ?? '—'}
+                                                    {formatDay(line.line_date)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {line.quantity}

@@ -10,6 +10,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -166,7 +167,9 @@ export default function ClientProjectDetail({
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {task.completed_at ?? '—'}
+                                                    {formatDay(
+                                                        task.completed_at,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {task.is_visible_to_client
