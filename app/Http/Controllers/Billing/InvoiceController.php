@@ -19,6 +19,7 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -197,16 +198,47 @@ class InvoiceController extends Controller
         ], 201);
     }
 
+    /**
+     * Send the invoice, and say what happened.
+     *
+     * The send is synchronous and the message reports the outcome, because the
+     * previous version could only ever promise to try: it dispatched a queued
+     * job onto the database driver, nothing runs a worker, and the screen said
+     * "Invoice delivery queued." while the row sat unread. An operator has no
+     * way to tell a hopeful message from a delivered one.
+     *
+     * A refusal from the mailer is a `DomainException`, which the application
+     * renders as a 422 carrying its own message - so the compose dialog shows
+     * the reason where it was asked for rather than a generic error page.
+     */
     public function send(SendInvoiceRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceEmailService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
-        $recipients = $request->validated('recipients') ?? array_filter([$clientInvoice->clientCompany->billing_email]);
-        $delivery = $service->queue($clientInvoice, $recipients, $workspace);
+
+        $user = $request->user();
+        $recipients = $request->validated('recipients')
+            ?? array_filter([$clientInvoice->clientCompany?->billing_email]);
+
+        // The sender's own address, and only theirs. See `SendInvoiceRequest`
+        // for why this is a flag rather than a field.
+        $bcc = $request->boolean('bcc_self') && $user instanceof User ? [$user->email] : [];
+
+        $delivery = $service->send($clientInvoice, InvoiceEmailDraft::of(
+            $recipients,
+            $bcc,
+            $request->validated('subject') ?? $service->defaultSubject($clientInvoice),
+            $request->validated('message'),
+        ), $workspace);
+
+        $sent = $delivery->status === 'sent';
+        $message = $sent
+            ? 'Invoice sent to '.implode(', ', $delivery->recipients).'.'
+            : 'Invoice delivery registered and will send shortly.';
 
         return $request->expectsJson()
-            ? response()->json(['data' => $delivery], 202)
-            : redirect()->back()->with('status', 'Invoice delivery queued.');
+            ? response()->json(['data' => $delivery], $sent ? 200 : 202)
+            : redirect()->back()->with('status', $message);
     }
 
     public function pdf(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceDocumentService $documents): Response

@@ -109,6 +109,12 @@ final class ImportedColumnCoverageTest extends TestCase
         'client_stripe_events' => [
             'error_summary' => 'Written when this application fails to process an event. An imported event was processed by the predecessor.',
         ],
+        'client_invoice_email_deliveries' => [
+            'bcc' => 'SVC-only. The source recorded who an invoice was sent to and never who was blind-copied, and inventing a copy that may not have been sent would be a claim about who has seen a bill.',
+            'body' => 'SVC-only. The covering note became editable here; the source sent one fixed template, and reconstructing its wording after the fact would put words in a historical email.',
+            'provider_status' => 'What Brevo reported about a message. It arrives over a webhook against a provider message id, and a historical delivery has no id we could match an event to.',
+            'provider_status_at' => 'The timestamp of that report, and absent for the same reason.',
+        ],
     ];
 
     /**

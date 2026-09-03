@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
@@ -19,6 +20,7 @@ use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceStatus;
@@ -210,6 +212,7 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         BillingRecordAccess $billing,
+        InvoiceEmailService $emails,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -270,6 +273,18 @@ class ClientDirectoryController extends Controller
                     ...InvoiceStatus::collectible(),
                 ], true) ? $base.'/void' : null,
             ],
+            // What the compose dialog needs to show before anything is sent:
+            // who it would go to, what address it comes from, and what has
+            // already been sent. All of it is an operator's to see - the
+            // addresses are their own client's - and none of it is rendered for
+            // anyone who cannot send.
+            'email' => $manages ? [
+                'from' => $emails->fromAddress(),
+                'suggested_recipients' => $emails->suggestedRecipients($clientInvoice),
+                'default_subject' => $emails->defaultSubject($clientInvoice),
+                'self' => (string) $user->email,
+            ] : null,
+            'deliveries' => $manages ? $this->deliveriesOf($workspace, $clientInvoice) : [],
             'invoice' => $this->invoicePayload($clientInvoice),
             'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
                 'id' => $line->public_id,
@@ -831,6 +846,50 @@ class ClientDirectoryController extends Controller
                 && ! in_array((int) $company->id, $reachableCompanyIds, true),
             404,
         );
+    }
+
+    /**
+     * What has been sent with this invoice, most recent first.
+     *
+     * Two statuses, kept apart on purpose. `status` is ours and says only that
+     * the message left here; `provider_status` is Brevo's and says what became
+     * of it. Collapsing them into one word would let "sent" read as "received",
+     * and an operator who believes that will chase a client who never got the
+     * invoice.
+     *
+     * `error_summary` is our own sentence naming an exception class, not the
+     * mailer's text - a transport failure quotes addresses and sometimes
+     * credentials, and this is rendered on a screen.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function deliveriesOf(Workspace $workspace, ClientInvoice $invoice): array
+    {
+        $deliveries = ClientInvoiceEmailDelivery::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        $listed = [];
+
+        foreach ($deliveries as $delivery) {
+            $listed[] = [
+                'id' => (string) $delivery->public_id,
+                'status' => (string) $delivery->status,
+                'recipients' => $delivery->recipients,
+                'bcc' => $delivery->bcc ?? [],
+                'subject' => (string) $delivery->subject,
+                'sent_at' => $delivery->sent_at?->toISOString(),
+                'failed_at' => $delivery->failed_at?->toISOString(),
+                'error_summary' => $delivery->error_summary,
+                'provider_status' => $delivery->provider_status,
+                'provider_status_at' => $delivery->provider_status_at?->toISOString(),
+            ];
+        }
+
+        return $listed;
     }
 
     /**

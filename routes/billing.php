@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Billing\BillingScheduleController;
+use App\Http\Controllers\Billing\BrevoWebhookController;
 use App\Http\Controllers\Billing\InvoiceController;
 use App\Http\Controllers\Billing\StripeWebhookController;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
@@ -12,6 +13,14 @@ Route::middleware('web')
     ->post('/api/webhooks/stripe', StripeWebhookController::class)
     ->withoutMiddleware([ValidateCsrfToken::class, PreventRequestForgery::class])
     ->name('svc.billing.stripe.webhook');
+
+// What became of an invoice email. Brevo does not sign its webhooks, so the
+// controller requires a configured shared token and refuses everything when
+// none is set - see it for why that failure direction is the safe one.
+Route::middleware('web')
+    ->post('/api/webhooks/brevo', BrevoWebhookController::class)
+    ->withoutMiddleware([ValidateCsrfToken::class, PreventRequestForgery::class])
+    ->name('svc.billing.brevo.webhook');
 
 Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/invoices', [InvoiceController::class, 'index'])

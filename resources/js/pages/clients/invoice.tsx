@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -31,13 +32,17 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { formatDay } from '@/lib/datetime';
+import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { PAYMENT_METHOD_OTHER, PAYMENT_METHODS } from '@/lib/payments';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
+import type {
+    InvoiceDelivery,
+    InvoiceEmailContext,
+} from '@/types/invoice-email';
 
 type InvoiceLine = {
     id: string;
@@ -99,6 +104,8 @@ export default function ClientInvoiceDetail({
     invoices_href: invoicesHref,
     pdf_href: pdfHref,
     actions,
+    email,
+    deliveries,
     invoice,
     lines,
     payments,
@@ -107,11 +114,15 @@ export default function ClientInvoiceDetail({
     invoices_href: string;
     pdf_href: string;
     actions: InvoiceActions;
+    /** Null for a viewer who cannot send, alongside a `send` action of null. */
+    email: InvoiceEmailContext | null;
+    deliveries: InvoiceDelivery[];
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
     payments: InvoicePayment[];
 }) {
     const [paying, setPaying] = useState(false);
+    const [sending, setSending] = useState(false);
     const [voiding, setVoiding] = useState(false);
     const [amount, setAmount] = useState('');
     const [method, setMethod] = useState<string>('bank_transfer');
@@ -195,12 +206,11 @@ export default function ClientInvoiceDetail({
                                 Issue
                             </Button>
                         )}
-                        {actions.send !== null && (
+                        {actions.send !== null && email !== null && (
                             <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={busy}
-                                onClick={() => post(actions.send ?? '')}
+                                onClick={() => setSending(true)}
                             >
                                 Send to client
                             </Button>
@@ -526,7 +536,108 @@ export default function ClientInvoiceDetail({
                         )}
                     </CardContent>
                 </Card>
+                {email !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Sent to the client</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {deliveries.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">
+                                    This invoice has not been emailed.
+                                </p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>When</TableHead>
+                                                <TableHead className="min-w-48">
+                                                    To
+                                                </TableHead>
+                                                <TableHead>Us</TableHead>
+                                                <TableHead>Provider</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {deliveries.map((delivery) => (
+                                                <TableRow key={delivery.id}>
+                                                    <TableCell>
+                                                        {formatTimestamp(
+                                                            delivery.sent_at ??
+                                                                delivery.failed_at,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                                        {delivery.recipients.join(
+                                                            ', ',
+                                                        )}
+                                                        {delivery.bcc.length >
+                                                            0 &&
+                                                            ` · bcc ${delivery.bcc.join(', ')}`}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge
+                                                            variant={
+                                                                delivery.status ===
+                                                                'failed'
+                                                                    ? 'destructive'
+                                                                    : 'outline'
+                                                            }
+                                                        >
+                                                            {statusLabel(
+                                                                delivery.status,
+                                                            )}
+                                                        </Badge>
+                                                        {delivery.error_summary !==
+                                                            null && (
+                                                            <p className="mt-1 text-xs wrap-anywhere text-muted-foreground">
+                                                                {
+                                                                    delivery.error_summary
+                                                                }
+                                                            </p>
+                                                        )}
+                                                    </TableCell>
+                                                    {/*
+                                                     * The provider's word, kept
+                                                     * apart from ours. "Sent"
+                                                     * means it left here;
+                                                     * whether it arrived is
+                                                     * this column, and it stays
+                                                     * blank until the provider
+                                                     * says.
+                                                     */}
+                                                    <TableCell>
+                                                        {delivery.provider_status ===
+                                                        null ? (
+                                                            <span className="text-muted-foreground">
+                                                                Not reported yet
+                                                            </span>
+                                                        ) : (
+                                                            statusLabel(
+                                                                delivery.provider_status,
+                                                            )
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </main>
+
+            {actions.send !== null && email !== null && (
+                <SendInvoiceDialog
+                    open={sending}
+                    onOpenChange={setSending}
+                    sendHref={actions.send}
+                    email={email}
+                />
+            )}
 
             <AlertDialog
                 open={voiding}

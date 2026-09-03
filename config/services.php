@@ -43,6 +43,11 @@ return [
 
     'brevo' => [
         'dsn' => env('MAILER_DSN'),
+        // Brevo signs nothing, so the delivery-status webhook is guarded by a
+        // shared secret the caller has to present. Unset means the endpoint
+        // refuses every request; see BrevoWebhookController for why that is the
+        // right direction to fail in.
+        'webhook_token' => env('BREVO_WEBHOOK_TOKEN'),
     ],
 
 ];

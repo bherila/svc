@@ -277,8 +277,10 @@ class BillingWorkflowTest extends TestCase
                 'Content-Disposition',
                 'inline; filename=invoice-'.Str::slug($invoice->invoice_number).'.pdf',
             );
+        // 200 rather than 202: the send happens in the request now, so the
+        // answer is what happened rather than what was promised.
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
-            ->assertAccepted();
+            ->assertOk();
         $this->assertDatabaseHas('client_invoice_email_deliveries', ['status' => 'sent']);
     }
 
