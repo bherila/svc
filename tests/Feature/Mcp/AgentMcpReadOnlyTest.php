@@ -1053,7 +1053,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame(['projects.list', 'projects.get'], array_column($tools, 'name'));
     }
 
-    public function test_global_and_per_capability_kill_switches_remove_tools_from_discovery(): void
+    public function test_per_capability_kill_switches_remove_tools_and_the_global_switch_refuses_service(): void
     {
         $user = User::factory()->create();
         $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
@@ -1075,9 +1075,12 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertJsonMissingPath('result');
 
         config(['agent_api.mcp_enabled' => false]);
-        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/list', 'params' => []], $session)
-            ->assertOk()->json('result.tools');
-        $this->assertSame([], $tools);
+        $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/list', 'params' => []], $session)
+            ->assertServiceUnavailable()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('Retry-After', '60')
+            ->assertExactJson(['message' => 'The SVC MCP service is temporarily unavailable.'])
+            ->assertJsonMissingPath('result');
     }
 
     public function test_write_catalog_is_conditionally_registered_after_cutover(): void
