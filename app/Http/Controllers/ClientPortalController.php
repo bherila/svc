@@ -16,6 +16,7 @@ use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Support\Engagement\AgreementTermsPayload;
+use App\Support\Files\AttachmentListing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -163,6 +164,24 @@ class ClientPortalController extends Controller
             ],
             'home_href' => route('portal.show', $clientCompany, absolute: false),
             'audience' => 'client',
+            // Nothing to act on: correcting the terms and managing the files is
+            // the operator's, and holding the client's own login is not
+            // authority over the agreement. Sent as nulls rather than omitted
+            // so both audiences share one payload shape.
+            'actions' => [
+                'update' => null,
+                'upload_file' => null,
+            ],
+            // The files themselves are the client's to read - a countersigned
+            // copy of their own agreement is the obvious one. `false` withholds
+            // the removal URL; `AttachmentController` re-checks this agreement's
+            // visibility, status and project scope on the way to each download.
+            'files' => AttachmentListing::for(
+                $clientCompany->workspace,
+                'agreement',
+                (string) $clientAgreement->public_id,
+                false,
+            ),
             'agreement' => AgreementTermsPayload::for(
                 $clientAgreement,
                 // The project an agreement is scoped to is named only to a
@@ -182,6 +201,16 @@ class ClientPortalController extends Controller
                 'terminated_at' => null,
                 'signer_name' => $clientAgreement->signer_name,
                 'signer_title' => $clientAgreement->signer_title,
+                // The stored terms the operator's edit form writes back. A
+                // client neither edits nor reads them: the derived per-period
+                // figures above are what their agreement says, and these are
+                // the two columns it is computed from.
+                'retainer_minutes' => null,
+                'retainer_amount' => null,
+                'period_retainer_minutes' => null,
+                'period_retainer_amount' => null,
+                'agreement_text' => null,
+                'is_visible_to_client' => null,
             ],
             'recurring_items' => $items->map(fn ($item): array => [
                 'id' => $item->public_id,

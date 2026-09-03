@@ -22,6 +22,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -346,6 +347,14 @@ class ClientDirectoryController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Correcting the record is an operator act, and a narrower one than
+        // reading it: a member scoped to one project may open this agreement
+        // and still have no authority over the client's terms. Nulls rather
+        // than booleans, so the browser is handed finished URLs it never has to
+        // assemble - and every endpoint behind one authorizes again.
+        $manages = Gate::forUser($user)->allows('manage', $workspace);
+        $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
+
         return Inertia::render('clients/agreement', [
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -356,6 +365,15 @@ class ClientDirectoryController extends Controller
             // concern. The same page serves the client's portal, which reads
             // the commercial terms and not these.
             'audience' => 'operator',
+            'actions' => [
+                'update' => $manages
+                    ? route('svc.engagement.agreements.update', [$workspace, $clientAgreement], absolute: false)
+                    : null,
+                'upload_file' => $manages
+                    ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
+                    : null,
+            ],
+            'files' => AttachmentListing::for($workspace, 'agreement', (string) $clientAgreement->public_id, $manages),
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
@@ -374,6 +392,25 @@ class ClientDirectoryController extends Controller
                 'terminated_at' => $clientAgreement->terminated_at?->toISOString(),
                 'signer_name' => $clientAgreement->signer_name,
                 'signer_title' => $clientAgreement->signer_title,
+                // The stored terms, as opposed to the derived ones the
+                // presenter reports. The form edits these: `retainer_minutes`
+                // is what one month grants and `period_retainer_minutes` is the
+                // whole-cycle override, and the summary above collapses them
+                // into a single per-period figure that cannot be written back.
+                'retainer_minutes' => $clientAgreement->retainer_minutes === null
+                    ? null
+                    : (int) $clientAgreement->retainer_minutes,
+                'retainer_amount' => $clientAgreement->retainer_amount === null
+                    ? null
+                    : (int) $clientAgreement->retainer_amount,
+                'period_retainer_minutes' => $clientAgreement->period_retainer_minutes === null
+                    ? null
+                    : (int) $clientAgreement->period_retainer_minutes,
+                'period_retainer_amount' => $clientAgreement->period_retainer_amount === null
+                    ? null
+                    : (int) $clientAgreement->period_retainer_amount,
+                'agreement_text' => $clientAgreement->agreement_text,
+                'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
             ],
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
                 'id' => $item->public_id,
