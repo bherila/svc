@@ -16,6 +16,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
     Table,
     TableBody,
     TableCell,
@@ -27,6 +34,7 @@ import WorkspaceShell from '@/layouts/workspace-shell';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { PAYMENT_METHOD_OTHER, PAYMENT_METHODS } from '@/lib/payments';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
 
@@ -105,7 +113,12 @@ export default function ClientInvoiceDetail({
     const [paying, setPaying] = useState(false);
     const [voiding, setVoiding] = useState(false);
     const [amount, setAmount] = useState('');
-    const [method, setMethod] = useState('bank_transfer');
+    const [method, setMethod] = useState<string>('bank_transfer');
+    // Only meaningful while `method` is "other": the name of the arrangement
+    // that is not on the list. Stored as the method itself, so the row reads
+    // like every other one rather than saying "other" and leaving the actual
+    // answer nowhere.
+    const [otherMethod, setOtherMethod] = useState('');
     const [reference, setReference] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
@@ -237,6 +250,24 @@ export default function ClientInvoiceDetail({
                             className="mt-3 grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
+
+                                const chosenMethod =
+                                    method === PAYMENT_METHOD_OTHER
+                                        ? otherMethod.trim()
+                                        : method;
+
+                                // Refused here rather than sent as an empty
+                                // string for the server to reject: "other"
+                                // with no name is a payment whose method
+                                // nobody would be able to read back.
+                                if (chosenMethod === '') {
+                                    setNotice(
+                                        'Name the payment method, or choose one from the list.',
+                                    );
+
+                                    return;
+                                }
+
                                 post(actions.payment ?? '', {
                                     // Minor units, the way every amount in this
                                     // system travels. Rounded rather than
@@ -247,7 +278,7 @@ export default function ClientInvoiceDetail({
                                         Number.parseFloat(amount || '0') * 100,
                                     ),
                                     currency: invoice.currency,
-                                    method,
+                                    method: chosenMethod,
                                     reference:
                                         reference === '' ? null : reference,
                                 });
@@ -266,13 +297,46 @@ export default function ClientInvoiceDetail({
                             </div>
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
-                                <Input
-                                    id="payment-method"
+                                <Select
                                     value={method}
-                                    onChange={(event) =>
-                                        setMethod(event.target.value)
-                                    }
-                                />
+                                    onValueChange={(next) => {
+                                        // Base UI can emit null on clear; there
+                                        // is nothing to clear to here, so an
+                                        // empty change leaves the choice alone
+                                        // rather than blanking a required
+                                        // field.
+                                        if (typeof next === 'string') {
+                                            setMethod(next);
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger
+                                        id="payment-method"
+                                        className="w-full"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PAYMENT_METHODS.map((option) => (
+                                            <SelectItem
+                                                key={option.value}
+                                                value={option.value}
+                                            >
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {method === PAYMENT_METHOD_OTHER && (
+                                    <Input
+                                        aria-label="Name of the payment method"
+                                        placeholder="Name the method"
+                                        value={otherMethod}
+                                        onChange={(event) =>
+                                            setOtherMethod(event.target.value)
+                                        }
+                                    />
+                                )}
                             </div>
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-reference">
@@ -426,11 +490,15 @@ export default function ClientInvoiceDetail({
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">
-                                                        {payment.status}
+                                                        {statusLabel(
+                                                            payment.status,
+                                                        )}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {payment.method ?? '—'}
+                                                    {statusLabel(
+                                                        payment.method,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {payment.reference ?? '—'}

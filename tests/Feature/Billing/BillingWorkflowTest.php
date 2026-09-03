@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class BillingWorkflowTest extends TestCase
@@ -268,7 +269,14 @@ class BillingWorkflowTest extends TestCase
         $service->issue($invoice, $workspace);
 
         $this->actingAs($owner)->get("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf")
-            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertSee('%PDF', false);
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertSee('%PDF', false)
+            // Inline: the control that leads here says "View PDF", and as an
+            // attachment every reader who wanted to look at an invoice got a
+            // file in Downloads instead.
+            ->assertHeader(
+                'Content-Disposition',
+                'inline; filename=invoice-'.Str::slug($invoice->invoice_number).'.pdf',
+            );
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
             ->assertAccepted();
         $this->assertDatabaseHas('client_invoice_email_deliveries', ['status' => 'sent']);
