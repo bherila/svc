@@ -571,7 +571,7 @@ final class AgentMcpCapabilityRegistryFactory
             'retainer_hours', 'hours_worked', 'opening_retainer_hours', 'opening_rollover_hours',
             'opening_expired_hours', 'opening_available_hours', 'hours_used_from_retainer',
             'hours_used_from_rollover', 'unused_hours', 'excess_hours', 'negative_hours',
-            'remaining_rollover_hours',
+            'signed_available_hours', 'remaining_rollover_hours',
         ];
         $properties = [
             'period' => ['type' => 'string', 'pattern' => '^\\d{4}-\\d{2}$'],

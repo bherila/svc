@@ -36,8 +36,25 @@ final class CapacityLedgerPresenterTest extends TestCase
             'unused_hours' => 3.0,
             'excess_hours' => 0.0,
             'negative_hours' => 0.0,
+            'signed_available_hours' => 3.0,
             'remaining_rollover_hours' => 1.0,
             'bill_excess_immediately' => false,
         ], (new CapacityLedgerPresenter)->present($summary));
+    }
+
+    public function test_the_signed_position_is_negative_when_the_month_closes_in_deficit(): void
+    {
+        $summary = new MonthSummary(
+            new OpeningBalance(0, 0, 0, 0, 0, 2, 0, 2),
+            new ClosingBalance(0, 0, 0, 2, 2, 0),
+            hoursWorked: 2,
+            yearMonth: '2026-09',
+            retainerHours: 0,
+        );
+
+        $this->assertSame(
+            -2.0,
+            (new CapacityLedgerPresenter)->present($summary)['signed_available_hours'],
+        );
     }
 }

@@ -179,6 +179,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertFalse($ledgerResponse['isError']);
         $this->assertSame($agreement->public_id, $ledgerResponse['structuredContent']['data']['agreement_id']);
         $this->assertLessThanOrEqual(1, count($ledgerResponse['structuredContent']['data']['months']));
+        $this->assertArrayHasKey('signed_available_hours', $ledgerResponse['structuredContent']['data']['months'][0]);
 
         $auditResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => 'billing.audit_unplaceable_invoices', 'arguments' => ['workspace_id' => $workspace->public_id]]], $session)
             ->assertOk()->json('result');
