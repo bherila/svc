@@ -13,6 +13,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceLineDetail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
+use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
 
 /**
@@ -28,7 +29,7 @@ use Tests\TestCase;
  */
 class InvoiceLineDetailTest extends TestCase
 {
-    use RefreshDatabase;
+    use AssertsSurfaceIsolation, RefreshDatabase;
 
     private const INTERNAL = 'Chased their finance team again about the missing PO';
 
@@ -160,6 +161,96 @@ class InvoiceLineDetailTest extends TestCase
         $detail = InvoiceLineDetail::forInvoice($invoice->fresh(), InvoiceLineDetail::OPERATOR);
 
         $this->assertCount(1, $detail);
+    }
+
+    /**
+     * Visibility is the operator's decision, and it is not the description.
+     *
+     * An entry can carry a client-safe description and still be withheld - the
+     * text was written, the decision to show it was not taken, or was taken
+     * back. The query asks for both, and this is the case that tells the two
+     * conditions apart: with only the description checked, an entry the
+     * operator has hidden appears on the client's copy of their own invoice.
+     */
+    public function test_an_entry_hidden_from_the_client_is_withheld_even_with_a_safe_description(): void
+    {
+        [$workspace, $invoice] = $this->invoiceWithWork();
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->sole();
+
+        $hidden = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-12',
+            'minutes' => 45,
+            'description' => 'Internal note on the hidden entry',
+            'client_visible_description' => 'Written but not shown',
+            'is_visible_to_client' => false,
+            'status' => 'approved',
+        ]);
+        $invoice->lines()->sole()->timeEntries()
+            ->attach($hidden->id, ['workspace_id' => $workspace->id]);
+
+        $items = InvoiceLineDetail::forInvoice($invoice->fresh(), InvoiceLineDetail::CLIENT)[
+            $invoice->lines()->sole()->public_id
+        ];
+
+        $this->assertStringNotContainsString('Written but not shown', (string) json_encode($items));
+        $this->assertSame([self::CLIENT_SAFE], array_column($items, 'description'));
+    }
+
+    /**
+     * The work is read in a fixed number of queries, whatever the invoice holds.
+     *
+     * Every line and every entry behind it is loaded up front, which is the
+     * whole reason this is built once for the invoice rather than read per
+     * line: an invoice with forty lines is ordinary, and a relation touched
+     * lazily inside the loop is the N+1 that makes a PDF time out. Asserted as
+     * a shape rather than a number, so a legitimately added query does not
+     * break it and a query that starts repeating per row does.
+     */
+    public function test_reading_the_work_costs_the_same_however_many_lines_there_are(): void
+    {
+        [$workspace, $invoice] = $this->invoiceWithWork();
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->sole();
+
+        $read = fn () => InvoiceLineDetail::forInvoice(
+            ClientInvoice::query()->findOrFail($invoice->id),
+            InvoiceLineDetail::OPERATOR,
+        );
+
+        $few = $this->queriesDuring($read);
+
+        foreach (range(1, 4) as $index) {
+            $line = $invoice->lines()->create([
+                'workspace_id' => $invoice->workspace_id,
+                'type' => 'additional_hours',
+                'description' => "Extra billed line {$index}",
+                'quantity' => '1',
+                'unit_amount' => 22500,
+                'total_amount' => 22500,
+                'sort_order' => 10 + $index,
+            ]);
+            $entry = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $project->client_company_id,
+                'client_project_id' => $project->id,
+                'user_id' => User::factory()->create()->id,
+                'worked_on' => '2026-08-1'.$index,
+                'minutes' => 60,
+                'description' => "Work behind extra line {$index}",
+                'status' => 'approved',
+            ]);
+            $line->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+        }
+
+        $this->assertGreaterThan(0, $few);
+        $this->assertSame(
+            $few,
+            $this->queriesDuring($read),
+            'Reading the work behind an invoice grew with its lines, which is an N+1.',
+        );
     }
 
     /** @return array{0: Workspace, 1: ClientInvoice, 2: User} */
