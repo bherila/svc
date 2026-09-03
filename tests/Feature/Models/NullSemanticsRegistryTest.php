@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Models;
 
-use App\Console\Commands\Billing\BackfillBillingLedgerCommand;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Services\Billing\AllocationService;
@@ -159,7 +158,6 @@ final class NullSemanticsRegistryTest extends TestCase
      */
     private const REGISTERED_BRANCHES = [
         'client_agreements.activated_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unstamped_agreement_takes_an_activation_date',
-        'client_agreements.agreement_link => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
@@ -194,14 +192,9 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
-        'client_invoices.hours_worked => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
-        'client_invoices.negative_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.paid_on => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.retainer_hours_included => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.rollover_hours_used => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
         'client_invoices.service_period_end => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
@@ -209,15 +202,12 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
         'client_invoices.service_period_start => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
         'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
-        'client_invoices.starting_negative_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.starting_unused_hours => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
-        'client_invoices.unused_hours_balance => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
         'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
-        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
+        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_a_task_do_not_recombine',
         'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
@@ -226,11 +216,10 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
         'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_an_absent_value_is_not_the_word_null',
-        'client_time_entries.job_type => reader_in:App\Console\Commands\Billing\BackfillBillingLedgerCommand::applyRow',
         'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
-        'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_null_billing_mode_is_read_as_ordinary_consultant_time',
+        'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_cost_with_no_mode_is_excluded_from_the_retainer',
         'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
@@ -254,9 +243,20 @@ final class NullSemanticsRegistryTest extends TestCase
      * list, which is one more edit and the entire point - both directions are
      * now deliberate.
      *
+     * The nine columns admitted here on 2026-09-02 are the one case where this
+     * list grew for an honest reason: the retirement of the external importer
+     * took `svc:billing:backfill-ledger` with it, and that command was the only
+     * code branching on their nulls. Nothing replaced it - each column was
+     * checked individually, and `ClientInvoicingService` writes them as a
+     * per-invoice ledger snapshot that nothing reads back. Naming a substitute
+     * reader would have been the false-citation failure this registry was built
+     * after, so the weaker claim is the true one. They are marked here rather
+     * than dropped so the exposure stays visible.
+     *
      * @var list<string>
      */
     private const PENDING_COLUMNS = [
+        'client_agreements.agreement_link',
         'client_agreements.agreement_text',
         'client_agreements.created_at',
         'client_agreements.rollover_policy',
@@ -268,8 +268,16 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.created_at',
         'client_invoice_lines.updated_at',
         'client_invoices.created_at',
+        'client_invoices.hours_worked',
         'client_invoices.issued_at',
+        'client_invoices.negative_hours_balance',
         'client_invoices.notes',
+        'client_invoices.paid_on',
+        'client_invoices.retainer_hours_included',
+        'client_invoices.rollover_hours_used',
+        'client_invoices.starting_negative_hours',
+        'client_invoices.starting_unused_hours',
+        'client_invoices.unused_hours_balance',
         'client_invoices.updated_at',
         'client_invoices.void_reason',
         'client_invoices.voided_at',
@@ -419,17 +427,30 @@ final class NullSemanticsRegistryTest extends TestCase
                 'reader_in' => InterimOverageGenerator::class,
                 'reads' => 'interimOverageHoursForCycle',
             ],
-            // The invoice hour-balance columns are restore-repair fields, not
-            // write-only ones. The backfill fills each only where the
-            // destination value is null, and repeats that as a `WHERE ... IS
-            // NULL` predicate at write time, so the null selects "the source may
-            // fill this hole" against "preserve the operator's correction".
-            'paid_on' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'retainer_hours_included' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'hours_worked' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'rollover_hours_used' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'unused_hours_balance' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'negative_hours_balance' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            // The invoice hour-balance columns were restore-repair fields: the
+            // ledger backfill filled each only where the destination value was
+            // null, and repeated that as a `WHERE ... IS NULL` predicate at
+            // write time, so the null selected "the source may fill this hole"
+            // against "preserve the operator's correction". That reader was
+            // retired with the importer it depended on, and these columns lost
+            // the only code that branched on their null with it.
+            //
+            // Downgraded rather than repointed. `ClientInvoicingService` writes
+            // all of them as a per-invoice ledger snapshot and nothing reads
+            // them back - checked column by column, not assumed - so there is no
+            // honest reader to name and no branch a test could isolate. That is
+            // what PENDING-AUDIT is for, and writing a citation here instead
+            // would be the prose exemption list this registry replaced.
+            //
+            // Note which direction this moved: a real reader disappeared, so the
+            // claim got weaker. Retiring these columns outright is #73's
+            // `NOT NULL` question rather than this file's.
+            'paid_on' => 'PENDING-AUDIT',
+            'retainer_hours_included' => 'PENDING-AUDIT',
+            'hours_worked' => 'PENDING-AUDIT',
+            'rollover_hours_used' => 'PENDING-AUDIT',
+            'unused_hours_balance' => 'PENDING-AUDIT',
+            'negative_hours_balance' => 'PENDING-AUDIT',
             // The one that proves why PENDING-AUDIT had to stop meaning "inert".
             // This column was filed as something nothing branches on while being
             // the column whose null-drop from a `SUM` is #135: three separate
@@ -459,8 +480,9 @@ final class NullSemanticsRegistryTest extends TestCase
                     'method' => 'test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
                 ],
             ],
-            'starting_unused_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
-            'starting_negative_hours' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            // Same story as the hour-balance columns above.
+            'starting_unused_hours' => 'PENDING-AUDIT',
+            'starting_negative_hours' => 'PENDING-AUDIT',
         ],
         'client_invoice_lines' => [
             'created_at' => 'PENDING-AUDIT',
@@ -678,7 +700,10 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => CapacityAndScopeGuardsTest::class,
                 'method' => 'test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
             ],
-            'agreement_link' => ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
+            // Also pinned to the retired ledger backfill, and nothing else
+            // reads it: the column survives in the schema and the model's
+            // fillable list and is branched on nowhere.
+            'agreement_link' => 'PENDING-AUDIT',
         ],
         'client_time_entries' => [
             // Part of the fragment-recombination signature, where null is
@@ -824,7 +849,6 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_an_absent_value_is_not_the_word_null',
                 ],
-                ['reader_in' => BackfillBillingLedgerCommand::class, 'reads' => 'applyRow'],
                 ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
             ],
             // Not a fragment of anything. Lineage is the only thing that makes

@@ -40,11 +40,13 @@ use Tests\TestCase;
  *
  * ## Sequencing
  *
- * This refusal must not reach production before
- * `svc:billing:backfill-ledger` has restored the column, because every imported
- * invoice currently carries a null and generation would stop for every company.
- * The audit command sizes that population;
- * `svc:billing:audit-missing-billed-overage` is the one to run first.
+ * This refusal could not reach production until the column had been restored on
+ * every imported invoice, because until then every one of them carried a null
+ * and generation would have stopped for every company. That repair ran, the
+ * import tooling that performed it has since been retired, and
+ * `svc:billing:audit-missing-billed-overage` reports zero. The refusal remains
+ * because the column is still nullable and a hand-edited row can still reach
+ * it.
  *
  * ## Isolation
  *
@@ -88,14 +90,17 @@ final class UnknownBilledOverageRefusalTest extends TestCase
 
         // The whole message, not a fragment. It has to name the invoice - an
         // operator hitting this mid-run has no other way to find the row - and
-        // it has to name the command that repairs it, so asserting only the
-        // first clause lets the actionable half be dropped silently.
+        // it has to say what to do about it, so asserting only the first clause
+        // lets the actionable half be dropped silently. It no longer names a
+        // command: the one it used to name was retired with the importer, and a
+        // message telling an operator to run something that does not exist is
+        // worse than one that tells them nothing.
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage(
             "Invoice {$unknown->invoice_number} is charged but records no billed-overage hours, so what it has "
             .'already billed cannot be known and the next period cannot be priced without risking a second '
-            .'charge for the same hours. Restore the figure - `svc:billing:backfill-ledger` reads it from the '
-            .'import source - before billing this agreement again.',
+            .'charge for the same hours. Set the figure on this invoice from what it actually billed before '
+            .'billing this agreement again.',
         );
         $unknown->billedOverageHoursOrFail();
     }

@@ -514,8 +514,8 @@ final class InterimOverageGenerator
      * `cycle_start` and `cycle_end` are nullable. A comparison with SQL `NULL`
      * produces UNKNOWN, which a `WHERE` clause excludes, so an invoice missing
      * either was invisible to every caller here (#141). Generated rows always
-     * carry both - the generator writes them - so the exposure is imported and
-     * hand-edited data, which `ExternalImportService` passes through unchanged.
+     * carry both - the generator writes them - so the exposure is hand-edited
+     * data, and rows the retired external importer passed through unchanged.
      *
      * Whether that invisibility is safe depends entirely on what the caller is
      * asking, which is why this takes the answer rather than picking one. A

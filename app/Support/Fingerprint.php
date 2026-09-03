@@ -1,7 +1,19 @@
 <?php
 
-namespace App\Services\ExternalImport;
+namespace App\Support;
 
+/**
+ * A deterministic hash of a database row, stable across key order and driver
+ * date formatting.
+ *
+ * It was written for the external importer, to prove a source row had not moved
+ * between reading it and writing it. The importer is gone; this is not, because
+ * two suites use it for a different question - whether a permutation of the same
+ * events leaves the same rows behind. That needs one canonical spelling of "the
+ * same row", and the normalisation below is it: nested keys sorted, lists left
+ * in order because their order is data, and dates rendered one way whatever the
+ * driver handed back.
+ */
 final class Fingerprint
 {
     /** @param array<string, mixed> $row */

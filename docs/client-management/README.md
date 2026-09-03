@@ -197,11 +197,12 @@ anything it could not map, so a restore missing rows produced no drift and read
 as verified; and the rehearsal called an empty workspace safe.
 
 The rule these share: a check must distinguish *passed* from *did not run*. Where
-it cannot, it must fail. `svc:billing:backfill-ledger` is held to the same
-standard from the other direction — it writes, so reporting is the default and
-`--apply` is the flag, and the whole repair is one transaction, because the
-checks that decide whether to trust the source can only be answered after the
-entire source has been walked.
+it cannot, it must fail. The ledger backfill was held to the same standard from
+the other direction — it wrote, so reporting was the default and `--apply` was
+the flag, and the whole repair was one transaction, because the checks that
+decide whether to trust the source can only be answered after the entire source
+has been walked. It has since been retired with the importer it read through;
+the standard it was held to is the part worth keeping.
 
 ### The engine gap underneath all of it
 
@@ -245,15 +246,15 @@ the third writes only when told to, and only if every check passes.
   for? It fingerprints every column and every line of every settled invoice
   before and after. On production data it watched 25 and found none altered.
   Always-rollback, and tested to be.
-- `svc:billing:backfill-ledger` **writes** — that is its purpose. It repairs
-  columns an earlier import dropped, and refuses unless the source still agrees
-  with what was imported, column by column, with every difference accepted by
-  name. Reporting is the default and `--apply` is the flag, so a run meant as a
-  look cannot become a write. The whole repair is one transaction: the checks
-  that decide whether to trust the source can only be answered after the entire
-  source has been walked, and it used to commit the tables it had finished
-  before returning failure — leaving a ledger half repaired from a source it had
-  just decided not to trust.
+- `svc:billing:backfill-ledger` **wrote** — that was its purpose, and it has been
+  retired. It repaired columns an earlier import dropped, and refused unless the
+  source still agreed with what was imported, column by column, with every
+  difference accepted by name. Reporting was the default and `--apply` was the
+  flag, so a run meant as a look could not become a write. The whole repair was
+  one transaction: the checks that decide whether to trust the source can only be
+  answered after the entire source has been walked, and an earlier version
+  committed the tables it had finished before returning failure — leaving a
+  ledger half repaired from a source it had just decided not to trust.
 
 An earlier version of this section said all three were always-rollback. That was
 wrong about the third, and it is the kind of wrong that matters: the sentence was

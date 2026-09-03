@@ -7,7 +7,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
-use App\Services\ExternalImport\Fingerprint;
+use App\Support\Fingerprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;

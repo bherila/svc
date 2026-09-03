@@ -12,6 +12,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_table', 'source_key_hash', 'reason_code', 'redacted_context',
     'failure_fingerprint',
 ])]
+/**
+ * A source row the retired importer declined to write, with its reason.
+ *
+ * Retained history - see {@see ExternalImportItem}. This is the negative half of
+ * the ledger, and it answers a question the positive half cannot: whether a
+ * source row is missing from the destination because it was never read, or
+ * because it was read and refused.
+ */
 class ExternalImportFailure extends Model implements WorkspaceOwned
 {
     public function workspaceId(): ?int

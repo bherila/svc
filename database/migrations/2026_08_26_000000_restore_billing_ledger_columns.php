@@ -8,8 +8,11 @@ use Illuminate\Support\Facades\Schema;
  * Restores the columns the external import had nowhere to put.
  *
  * Every column here exists because the source carried a value for it that was
- * discarded at import. Nothing speculative is added: a column earns its place
- * only if `svc:billing:backfill-ledger` can fill it from the source.
+ * discarded at import. Nothing speculative was added: a column earned its place
+ * only if the ledger backfill could fill it from the source. That backfill ran,
+ * and was retired along with the importer it read through - see
+ * `docs/external-data-import.md`. The columns stay; they hold the restored
+ * values.
  *
  * Hours are kept as decimals rather than converted to SVC's usual integer
  * minutes. 197 of the 771 source lines carry an hours value that is not a whole

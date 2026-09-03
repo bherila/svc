@@ -15,15 +15,14 @@ The current alpha establishes:
   time entries, invoices, payments, PDFs, and authenticated client views;
 - private tenant-scoped attachments with staged promotion, digest verification,
   repair tooling, and guarded web1-to-x-data mirroring;
-- dry-run-first onboarding data import and verification commands with explicit
-  public-UUID identity bindings, redacted inventories, idempotent provenance
-  ledgers, and source-change detection;
+- a retained provenance ledger from the one-time onboarding import, kept as
+  read-only history after the import tooling was retired;
 - an explicit product and integration boundary.
 
 See [the architecture](docs/architecture.md), [the interface guide](docs/ui.md),
 [the product roadmap](docs/onboarding-import-plan.md),
 [the private file storage plan](docs/file-storage-plan.md), and
-[the external data import contract](docs/external-data-import.md).
+[the retired external data import](docs/external-data-import.md).
 
 For the billing rules themselves — retainer draw-down, rollover, cadence
 cycles, deferred allocation, milestones, and overpayment credits — see
@@ -45,32 +44,13 @@ composer dev
 The generated SQLite database and `.env` are local-only. Do not import production data into this checkout.
 
 The integrated workspace screen is available at
-`/workspaces/{workspace-public-id}/operations`. Onboarding data import is inert
-until an allowlisted read-only source is configured:
+`/workspaces/{workspace-public-id}/operations`.
 
-```bash
-php artisan svc:import:external --source=external --workspace=<workspace-public-id> --format=json
-php artisan svc:import:external --source=external --workspace=<workspace-public-id> --apply --format=json
-php artisan svc:import:external:attachments --source=external --workspace=<workspace-public-id> --uploader=<user-public-id> --format=json
-php artisan svc:import:external:attachments --source=external --workspace=<workspace-public-id> --uploader=<user-public-id> --apply --format=json
-php artisan svc:import:external:verify --run=<run-public-id> --format=json
-php artisan svc:import:external:rehearse --format=json
-php artisan svc:import:external:inventory --source=external --format=json
-```
-
-The first command is a no-write inventory. Apply runs that report skips or
-failures exit nonzero, and verification never prints source row values. The
-rehearsal command runs only in local or test environments, uses generated
-synthetic SQLite databases instead of the configured application database,
-applies twice, verifies idempotency, and removes its artifacts.
-
-The source-only inventory command is the production-readiness path: it never
-resolves a destination workspace or connection, and reports only aggregate
-counts, ranges, orphan/duplicate totals, high-water marks, and fingerprints.
-Attachment import is a separate copy-only path. It resolves only planned
-ledger rows beneath the exact server-held `EXTERNAL_IMPORT_ATTACHMENT_ROOT`,
-verifies source and destination SHA-256 digests, records provenance without raw
-paths, and never deletes source objects.
+Onboarding data import is not a feature of this application. A one-time import
+brought one workspace's history in from a predecessor system; that tooling has
+been retired and its commands no longer exist. The ledger tables it wrote are
+still here and still readable, because they are the only record of which row
+came from where. See [the retired external data import](docs/external-data-import.md).
 
 ## Deployment
 

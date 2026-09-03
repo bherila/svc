@@ -1,194 +1,75 @@
-# External data import
+# External data import (retired)
 
-SVC lets a workspace bring in its existing client, project, agreement, time,
-invoice, payment, and attachment records from an external source when it signs
-up. This document is the safety contract for that onboarding-import feature.
+SVC once carried a dry-run-first importer for bringing a workspace's existing
+client, project and billing history in from a predecessor system. It ran once,
+for one workspace, and it has been removed. This page records what it did, what
+survived it, and what a future reader should not have to re-derive.
 
-## Safety contract
+The contract it was built against is in this file's history — `git log --follow
+docs/external-data-import.md` — along with the tooling itself. Nothing here is a
+plan; it is all past tense on purpose.
 
-Import tooling is dry-run by default. It reads from a dedicated read-only
-source connection and writes only with an explicit `--apply` flag. Production
-exports, database dumps, manifests containing personal data, and copied files
-must remain outside this public repository.
+## Why it was retired rather than kept
 
-Every imported row carries a source connection, source table, and source key in
-a unique import ledger. Stable mappings use SVC public UUIDs, not assumptions
-that source-side integer IDs can be reused.
+Import tooling is only safe while someone is watching it. It held a live
+connection to a foreign database, a set of credentials, a write path into
+tenant-owned billing rows, and roughly five thousand lines that no test in
+ordinary use exercised. Keeping that indefinitely to serve an operation that
+happens once per workspace — and had already happened — is a standing cost with
+no matching benefit.
 
-## Dependency order
+The judgement is specific to this application's situation, not general advice. A
+product that onboards a new customer from a predecessor every month should keep
+its importer and treat it as a feature.
 
-1. Create or select one SVC workspace for the onboarding business.
-2. Bind users by trusted OAuth provider and subject. Email alone never links an
-   external identity to an existing local user.
-3. Import client companies and memberships.
-4. Import projects, tasks, time entries, proposals, agreements, and recurring
-   billing definitions in parent-before-child order.
-5. Import invoices, line items, manual payments, and reconciliation references.
-6. Import Stripe customer, payment-method display metadata, payment-intent, and
-   event references. Stripe remains authoritative for provider objects; no card
-   or bank credentials are copied.
-7. Copy attachments through the attachment import ledger and verify every
-   digest.
-8. Reconcile the links that point backwards. A time entry's invoice line and a
-   milestone task's invoice line both live on the child row in the source but
-   name a row imported later, so they are resolved after every importer has run
-   rather than inline. Both fill a hole only: a link this system already holds
-   is left alone, because repointing a billed row is not a decision an import
-   pass gets to make.
+## What was removed
 
-   A claim can name a line the source has since superseded. The source
-   regenerates an invoice by soft-deleting its lines and inserting fresh ones
-   without repointing the rows that named the old ones, so the work was billed
-   while the line that billed it is gone. Such a claim is followed to the
-   invoice the superseded line belonged to and resolved to the live line that
-   replaced it, but only when the replacement is unambiguous in both directions:
-   exactly one live line on that invoice shares the superseded line's type, and
-   exactly one superseded line of that type is still claimed. The second half
-   matters because not every type is one line per invoice - a milestone is one
-   line per task and a subcontractor charge one per rate - so collapsing two
-   claims onto the one line that survived would mark work billed that the
-   regenerated invoice dropped. Counting claims rather than copies is also what
-   keeps the ordinary case working: an invoice regenerated twenty-one times
-   carries twenty-one superseded copies of one aggregate line, and only the last
-   is named by anything. Where the claim is exclusive there is a third
-   direction, and it is why only aggregate claims are recovered at all. A
-   milestone's claim was recovered here too until it became clear that nothing
-   available says which task an unheld line belongs to: an invoice line carries
-   no task reference, and its description is the task's title, which nothing
-   makes unique. A milestone whose line was superseded is reported unlinked
-   instead. What identifies an aggregate line is the description:
-   the type alone never identifies a line, because a generator writes a retainer
-   draw per pool and can add a deferred one beside it. The words say which, so
-   they have to agree, and only the figure the composer writes at the front of
-   its parenthetical is set aside - "(9.9168)" against "(10.0000)" is the same
-   line regenerated, while "(10.0000 applied to August 2026 pool)" is a
-   different one. Nothing else is normalised, and that is deliberate: four
-   earlier rules tried to decide which numbers were mutable and each lost to
-   some format the source writes - a year, a 2026-01 label, a day inside a
-   prose date, the leading digits of a rate. A figure written anywhere but
-   there is treated as naming the charge, so a line that moves one is refused
-   rather than recovered. Types whose description cannot settle it even so are
-   refused too: a subcontractor charge is one line per rate group and the rate
-   is a figure, and a milestone, a recurring item and an adjustment are each one
-   item among several.
+- The import, attachment-copy, verification, rehearsal and inventory commands
+  (`svc:import:*`), and the services behind them.
+- The superseded-import repair, which existed to undo one specific defect in the
+  import that had already been applied and verified.
+- `svc:billing:backfill-ledger`, which restored columns an early version of the
+  import had dropped. It read the same guarded source and could not outlive it.
+- The `external` source allowlist in `config/external-import.php`, and its
+  `EXTERNAL_IMPORT_*` environment variables. **Nothing in this application now
+  opens a connection to any database but its own.**
 
-   One limit is known and not closed. The superseded line is deleted at the
-   source, so it was never ledgered and no fingerprint can tell whether it
-   changed between the read that observed the claim and the read that follows
-   it. What bounds the exposure is everything around it: the claimant and the
-   replacement are both fingerprint-checked, and the replacement must be in this
-   workspace, of the same type, and say the same thing. Closing it needs a
-   consistent snapshot across both reads, which a source connection does not
-   offer.
-   Anything less than certain is refused and reported:
-   attaching work to a line that did not bill it suppresses a charge that is
-   owed, which is the same size of mistake as billing it twice. The superseded line is read unfiltered -
-   the only such read - because the one thing asked of it is which invoice it
-   was on, and the replacement is held to the same fingerprint check as the row
-   carrying the claim.
+## What was deliberately kept
 
-   Two further limits are deliberate rather than open, and both are in the
-   templates that decide whether a description is a generated one. The first is
-   that a template binds a line to the cadence of the agreement it falls under
-   and to the span its own text quotes, but not to a cycle that agreement's
-   start date could actually anchor. `BillingCycleResolver` runs cycles from the
-   active date, so an agreement starting on the fifteenth of a month cannot
-   produce a calendar-quarter label, and a check derived from the anchor would
-   say so. It is not applied, because the descriptions being matched were
-   written by the predecessor and the migrated source does not follow that
-   anchoring: 21 of the 76 invoices that name an agreement quote a period
-   beginning before that agreement's own recorded active date, the same
-   divergence #73 tracked. Such a check would refuse those descriptions as
-   unreachable while they carry real claims, and the shape it would guard
-   against does not occur in the migrated data - the one agreement anchored off
-   the first of a month carries no fee-span line. It becomes worth applying only
-   if the ledger is re-seeded from cycles this resolver generates, at which
-   point the anchor is evidence rather than an assumption about somebody else's
-   system.
+Four tables, and the models that read them:
 
-   The second is that the termination template asks that the source agreement
-   recorded a termination date, not that the invoice carrying the line is the
-   post-termination billing period. The narrower check would encode this
-   system's cycle semantics onto the predecessor's data, and there is nothing to
-   validate it against: the migrated source contains no line of this shape at
-   all.
+| Table | What it records |
+|---|---|
+| `external_import_runs` | One execution: when, against which source identity, and what it counted. |
+| `external_import_items` | Which destination row came from which source row. |
+| `external_import_failures` | A source row that was read and refused, with its reason. |
+| `external_import_attachment_copies` | Which stored blob came from which source file, with digests. |
 
-   Both fail in the direction that makes them tolerable. A description no
-   template shapes is compared exactly, so a line either of these would have
-   caught is refused rather than recovered, and the work it covers stays visible
-   as unbilled and is reported.
+Nothing writes them any more. They are history, and the reason they are history
+worth keeping is concrete rather than sentimental.
 
-A reconciliation pass reads the source a second time, later than the read the
-importer observed, so it re-checks each row against the fingerprint the ledger
-recorded. That covers both a row this run refused as `source_changed` and one
-edited in the gap between the two reads: either way the ledger item describes a
-snapshot this run never observed, and a billing link must not be written from
-it.
+A destination row carries no memory of where it came from. It cannot say whether
+the source row behind it was a current record or a superseded revision — which is
+exactly the information a defective import discards, and exactly the question
+that has already had to be answered once here. An early version of the importer
+read the predecessor's soft-deleted rows as live, so a workspace ended up holding
+its predecessor's entire history of replaced invoice drafts as current records.
+The repair was possible only because `external_import_items` could still name
+which rows those were. Without the ledger the only remedy would have been a full
+re-import, which rewrites rows that are correct and forces every one of them to
+be re-established.
 
-The ledger is keyed on the source identity rather than on a workspace, so a
-public id can resolve to a row owned by a tenant this run is not importing into.
-Both sides of a link are checked, not just the row being written - a foreign key
-here is not workspace-composite, so nothing below the application stops one
-tenant's task pointing at another's invoice line. A blocked write is reported
-rather than counted as a link.
+So: **no migration should drop these tables**, and no cleanup should treat them
+as orphaned by the absence of the code that wrote them.
 
-Filling a hole is decided in the write rather than in a read before it, so an
-operator issuing an invoice between the two does not have their decision
-replaced by an import pass.
+## The lesson worth carrying forward
 
-Every destination column an importer owns is either mapped, reconciled in step
-8, or listed as exempt with a reason in `ImportedColumnCoverageTest`. A column
-that is merely fillable is not covered - the model accepts it and nothing ever
-passes a value, which is how milestone links and invoice opening balances both
-arrived null on every imported row.
+The corruption above survived a comparison that checked every imported amount
+against the source to the minor unit, and passed. The invoice headers had been
+imported from the source's own totals and were right; only the lines beneath them
+were multiplied.
 
-## Rehearsal and verification
-
-- Build a schema-only source adapter and synthetic fixture set first.
-- Run a read-only source inventory that reports counts, date ranges, orphaned
-  foreign keys, duplicate source keys, and file totals without printing
-  personal values.
-- Rehearse into a disposable database, compare per-table counts and
-  deterministic fingerprints, then discard it.
-- Verify representative imported records through the UI and API before relying
-  on them.
-- Independently verify counts, money totals, payment status, and file hashes
-  after every `--apply` run, including delta passes for a source that keeps
-  changing.
-- Import tooling never deletes or modifies the external source; a source that
-  the business wants to retire is their own decision, made outside SVC.
-
-## Required import tooling
-
-The implemented foundation includes:
-
-- `svc:import:external --source=... --workspace=... [--apply]`;
-- `svc:import:external:rehearse [--format=json]`, which creates isolated
-  synthetic source and destination SQLite databases, applies the importer
-  twice, verifies stable counts and fingerprints, and removes both databases;
-- `svc:import:external:inventory --source=... [--format=json]`, which reads an
-  explicitly allowlisted source without resolving any destination connection or
-  workspace and emits only redacted aggregate evidence;
-- `svc:import:external:attachments --source=... --workspace=... --uploader=...
-  [--apply]`, which copies only planned attachment rows from an exact private
-  local root, verifies both digests, and records path hashes instead of paths;
-- `svc:import:external:verify --run=... [--workspace=...]`, which checks a
-  completed run's ledger against the destination without printing source
-  values;
-- parent-ordered entity importers with idempotency and provenance tests;
-- a redacted inventory report and machine-readable verification summary;
-- high-water-mark and failed-row ledgers;
-- planned attachment-copy ledger entries that never delete source files.
-
-Attachments and provider-owned Stripe references are deliberately ledgered as
-planned work rather than copied by the row importer. The attachment command is
-dry-run by default and copy-only; the private mirror and repair commands remain
-separate so a data import cannot delete or overwrite source objects.
-
-Identity mapping must be supplied as JSON maps from source-side identifiers (or
-trusted provider-and-subject pairs) to existing SVC public UUIDs. Email
-addresses are never accepted as identity proof.
-
-The rehearsal command refuses every environment except `local` and `testing`.
-It accepts no database path or source override and never uses the configured
-default database.
+A money comparison asks whether the amounts match. It does not ask whether the
+rows should exist. Those are separate questions and an import needs both — the
+second is answered by reconciling each parent's children against its own stored
+total, which costs one query and would have caught this immediately.

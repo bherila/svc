@@ -94,7 +94,7 @@
         ],
         "types:check": [
             "phpstan analyse --memory-limit=1G",
-            "phpstan analyse --configuration=phpstan-strict.neon --memory-limit=1G app/Services/Billing app/Services/ExternalImport app/Support/Billing"
+            "phpstan analyse --configuration=phpstan-strict.neon --memory-limit=1G app/Services/Billing app/Support/Billing"
         ],
         "test:mutation-diff": [
             "Composer\\Config::disableProcessTimeout",

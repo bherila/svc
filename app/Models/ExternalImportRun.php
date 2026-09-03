@@ -17,6 +17,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_high_water_marks', 'counts', 'fingerprints', 'started_at', 'completed_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'source_connection', 'source_identity_hash'])]
+/**
+ * One execution of the retired external importer: when it ran, against which
+ * source identity, and what it counted.
+ *
+ * Retained history rather than live machinery - see {@see ExternalImportItem}
+ * for why the ledger outlived the importer. The `source_identity_hash` is the
+ * part worth keeping deliberately: it records *which* database a run read, so a
+ * later reader can tell whether two runs saw the same source.
+ */
 class ExternalImportRun extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;

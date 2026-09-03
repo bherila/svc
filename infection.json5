@@ -3,7 +3,6 @@
     source: {
         directories: [
             "app/Services/Billing",
-            "app/Services/ExternalImport",
             "app/Support/Billing",
         ],
     },
