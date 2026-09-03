@@ -53,7 +53,52 @@ class InvoiceLineDetailTest extends TestCase
         $this->assertCount(2, $items);
         $this->assertSame(self::INTERNAL, $items[0]['description']);
         $this->assertSame(90, $items[0]['minutes']);
+        $this->assertSame('Synthetic Detail Project', $items[0]['project']);
+        $this->assertSame('2026-08-10', $items[0]['worked_on']);
         unset($workspace);
+    }
+
+    /**
+     * Every line with work behind it, not just the first.
+     *
+     * An invoice usually carries several - a retainer draw and the hours over
+     * it, or one line per project - and a builder that returned only the first
+     * would look entirely correct on any invoice that has one.
+     */
+    public function test_each_line_carries_its_own_work(): void
+    {
+        [$workspace, $invoice] = $this->invoiceWithWork();
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->sole();
+
+        $second = $invoice->lines()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'type' => 'additional_hours',
+            'description' => 'A second billed line',
+            'quantity' => '0.5',
+            'unit_amount' => 22500,
+            'total_amount' => 11250,
+            'sort_order' => 5,
+        ]);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2026-08-20',
+            'minutes' => 30,
+            'description' => 'Work behind the second line',
+            'status' => 'approved',
+        ]);
+        $second->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+
+        $detail = InvoiceLineDetail::forInvoice($invoice->fresh(), InvoiceLineDetail::OPERATOR);
+
+        $this->assertCount(2, $detail);
+        $this->assertSame(
+            'Work behind the second line',
+            $detail[$second->public_id][0]['description'],
+        );
+        $this->assertSame(30, $detail[$second->public_id][0]['minutes']);
     }
 
     public function test_a_client_sees_only_what_was_written_for_them_to_read(): void

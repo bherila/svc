@@ -77,7 +77,7 @@ final class InvoiceLineDetail
             $items = self::itemsOf($line, $forClient);
 
             if ($items !== []) {
-                $detail[(string) $line->public_id] = $items;
+                $detail[$line->public_id] = $items;
             }
         }
 
@@ -93,14 +93,37 @@ final class InvoiceLineDetail
 
         foreach ($line->timeEntries as $entry) {
             $description = $forClient
-                ? (string) $entry->client_visible_description
-                : (string) $entry->description;
+                ? $entry->client_visible_description
+                : $entry->description;
+
+            // The client's query already filters these out, and this says so a
+            // second time where the value is actually read. A cast to string
+            // was the alternative and the wrong one: it would turn "we have
+            // nothing to tell this client about this work" into a row with an
+            // empty description, which is the one outcome this class exists to
+            // avoid.
+            if ($description === null) {
+                continue;
+            }
 
             $items[] = [
                 'worked_on' => $entry->worked_on->toDateString(),
+                // Nullable despite the column being NOT NULL, and no test can
+                // reach it: `client_time_entries` carries composite tenant keys
+                // on both its company and its project, so the schema refuses to
+                // write an entry naming another workspace's project, and the
+                // constrained eager load below always finds one. Rows migrated
+                // in from before those keys can still hold the mismatch, and
+                // for one of those the difference is a project name from
+                // another tenant printed on this invoice's appendix, or a fatal
+                // on `->name` while rendering a client's PDF. Degrading to
+                // "not named" is the right end of that, and it cannot be
+                // asserted from a test that has to create the row first.
+                //
+                // @infection-ignore-all
                 'project' => $entry->project?->name,
                 'description' => $description,
-                'minutes' => (int) $entry->minutes,
+                'minutes' => $entry->minutes,
             ];
         }
 
