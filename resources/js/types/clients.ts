@@ -66,6 +66,10 @@ export type CompanyAgreement = {
     status: string;
     currency: string | null;
     billing_cadence: string | null;
+    /** Cadence the billing engine uses after applying legacy defaults. */
+    effective_billing_cadence: string | null;
+    /** Opening-cycle policy the billing engine uses after applying defaults. */
+    effective_first_cycle_proration: string | null;
     /** False for a one-time arrangement, whose retainer terms mean nothing. */
     is_recurring: boolean;
     /** Never null: `client_agreements.starts_on` is NOT NULL (#147). */
@@ -73,6 +77,7 @@ export type CompanyAgreement = {
     ends_on: string | null;
     signed_at: string | null;
     retainer_minutes_per_period: number | null;
+    retainer_minutes_per_month: number | null;
     retainer_amount_per_period: number | null;
     hourly_rate_amount: number | null;
     rollover_months: number | null;

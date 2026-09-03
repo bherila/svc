@@ -28,6 +28,7 @@ use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Mcp\Capability\Discovery\SchemaValidator;
+use stdClass;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -294,6 +295,63 @@ final class AgentMcpContractTest extends TestCase
         $writable = $this->mcp($this->initializeMessage())->assertOk()->json('result.instructions');
         $this->assertStringContainsString('write tools are enabled', $writable);
         $this->assertStringNotContainsString('connection is read-only', $writable);
+    }
+
+    public function test_a_connection_authorized_for_no_operation_can_still_complete_the_handshake(): void
+    {
+        $user = User::factory()->create();
+        // `mcp:use` and no operation scope: this connection may open and may
+        // invoke nothing. It is the shape a user gets when they grant only the
+        // scope that unlocks MCP itself.
+        $this->actingAsAgent($user, [AgentApiScopes::MCP_USE]);
+
+        $response = $this->mcp($this->initializeMessage())->assertOk();
+
+        // Decoded as objects rather than arrays, because that distinction is the
+        // whole assertion. PHP renders an empty associative array as `[]`, and
+        // `json_decode` collapses both `{}` and `[]` back to the same empty PHP
+        // array - so `->json()` cannot tell a spec-legal handshake from one a
+        // conformant client rejects with `expected object, received array`.
+        $decoded = json_decode((string) $response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities);
+        $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities->tools);
+        $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities->resources);
+
+        // And what the handshake buys is an empty list rather than an error: the
+        // server implements tools, this caller may call none of them.
+        $session = $response->headers->get('Mcp-Session-Id');
+        $this->assertIsString($session);
+        $tools = $this->mcp(
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []],
+            $session,
+        )->assertOk()->json('result.tools');
+        $this->assertSame([], $tools);
+    }
+
+    public function test_a_feature_flagged_off_group_is_not_advertised(): void
+    {
+        // The other half of the split. Authorization must not narrow what the
+        // server advertises; a server-side kill switch must. Without this,
+        // "advertise every group unconditionally" would satisfy the test above
+        // just as well, and the flags would stop meaning anything.
+        config(['agent_api.mcp_feature_flags' => [
+            'mcp.prompt.log_time_across_projects' => false,
+            'mcp.prompt.prepare_invoice_safely' => false,
+        ]]);
+
+        $user = User::factory()->create();
+        $this->actingAsAgent($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ]);
+
+        $decoded = json_decode(
+            (string) $this->mcp($this->initializeMessage())->assertOk()->getContent(),
+            false,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertObjectNotHasProperty('prompts', $decoded->result->capabilities);
+        $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities->tools);
     }
 
     /** @return list<ToolDefinition> */

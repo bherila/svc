@@ -296,7 +296,10 @@ class ClientDirectoryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('agreement.is_recurring', false)
-                ->where('agreement.retainer_minutes_per_period', null));
+                ->where('agreement.effective_billing_cadence', null)
+                ->where('agreement.effective_first_cycle_proration', null)
+                ->where('agreement.retainer_minutes_per_period', null)
+                ->where('agreement.retainer_minutes_per_month', null));
     }
 
     /**

@@ -1,9 +1,9 @@
-# SVC MCP current-state contract
+# SVC MCP public contract
 
-This document freezes the MCP surface shipped by SVC before the expansion
-proposed in [#187](https://github.com/bherila/svc/issues/187). It is an
-inventory, not a product commitment. The feature tests in `tests/Feature/Mcp`
-are the executable compatibility contract.
+This document records the MCP surface shipped by SVC and the privacy-safe read
+general-availability work tracked by
+[#202](https://github.com/bherila/svc/issues/202). The feature tests in
+`tests/Feature/Mcp` are the executable compatibility contract.
 
 ## Pinned implementation and transport
 
@@ -22,14 +22,18 @@ are the executable compatibility contract.
   rebinding and protocol-version middleware. Maximum request size is
   `AGENT_API_MCP_MAX_BODY_BYTES` (262144 by default); capability results are
   bounded after serialization by `AGENT_API_MCP_MAX_RESULT_BYTES` (also 262144
-  by default). Responses are `private, no-store`.
+  by default). Responses are `private, no-store`. When the global
+  `AGENT_API_MCP_ENABLED` kill switch is false, authenticated POST and DELETE
+  requests receive a stable no-store `503` with `Retry-After`; the application
+  does not construct a server or emit a misleading empty capability document.
 - Sessions use the Laravel cache via `Psr16SessionStore`, expire after
   `AGENT_API_MCP_SESSION_TTL_SECONDS` (1800 seconds by default), and are
   namespaced by a SHA-256 digest of the bearer credential. A session cannot be
   found from a request using a different bearer credential.
 
-The initialize response advertises only tools, resources, resource templates,
-and prompts that are registered for the authenticated request. It does not
+The initialize response advertises the protocol groups implemented and enabled
+by the server. Discovery within those groups is filtered for the authenticated
+principal, and every invocation is authorized again. SVC does not
 advertise list-change notifications, resource subscriptions, server logging,
 completions, sampling, roots, or elicitation; direct resource subscription
 and other unsupported optional-feature requests are rejected as unsupported.
@@ -66,15 +70,15 @@ workspace. `AgentAccess`, `ProjectAccess`, `PortalAccess`,
 and object checks. OAuth scopes are a ceiling, not a replacement for those
 checks.
 
-For compatibility, a credential-bound resumable session currently permits a
-principal to select any of its authorized workspaces on each workspace-scoped
-call. The selector never establishes identity or a durable authority grant,
-and it is re-scoped and reauthorized before the backing application read. The
-target architecture prefers one selected workspace per MCP session, but
-pinning the first selector would break existing multi-workspace consumers.
-[#187](https://github.com/bherila/svc/issues/187#issuecomment-5509206668)
-tracks the required decision between an explicit future session-selection
-protocol with a deprecation window and immediate breaking enforcement.
+The v1 compatibility contract deliberately permits a credential-bound
+resumable session to select any of its authorized workspaces on each
+workspace-scoped call. The selector never establishes identity or a durable
+authority grant, and active membership, scope, policy, and ownership are
+re-scoped and reauthorized before lookup and execution. Pinning the first
+selector would break existing multi-workspace consumers. Any future
+session-selected workspace contract must use an explicit versioned
+selection/rotation protocol and migration window rather than silently
+changing v1.
 
 Current token scopes are `identity:read`, `projects:read`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
@@ -99,10 +103,14 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing_schedules.list`, `billing_schedules.get`, `capacity_ledger.get`,
 `billing.audit_unplaceable_invoices`,
 `billing.audit_undated_collectible_invoices`, and
-`billing.audit_missing_billed_overage`.
+`billing.audit_missing_billed_overage`, and
+`billing.audit_opening_rollover`.
 
 Agreement tools require `billing:read` and an SVC workspace-manager role.
-They return only the existing directory's allowlisted, derived agreement DTO;
+They return only the existing directory's allowlisted, derived agreement DTO.
+The DTO preserves the stored cadence for compatibility and separately reports
+the effective cadence, effective first-cycle proration, and monthly and
+per-period retainer terms read by the billing engine;
 project-scoped users and client portal users receive the same non-existence
 response as for an inaccessible agreement.
 
@@ -152,17 +160,18 @@ This matrix covers the additive read surface proposed by #187. Every entry
 uses a workspace-scoped application read service; the MCP handler only
 resolves authenticated context, validates its DTO, and maps the result.
 
-| Capability | Operator/UI workflow and backing service | Scope and policy | Bounds and privacy contract | Flag and coverage |
-| --- | --- | --- | --- | --- |
-| `agreements.list`, `agreements.get` | Client-directory agreement view; `AgentAgreementReadService` and the shared `AgreementReadPresenter` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Status filter, 1–100 page, query-bound cursor; allowlisted stored and derived terms only; inaccessible objects are not found | `mcp.read.agreements`; MCP contract, parity, and tenant-isolation tests |
-| `agreement` resource template | Canonical agreement representation; the same `AgentAgreementReadService` and `AgreementReadPresenter` as `agreements.get` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Fixed `svc://workspaces/{workspace_id}/agreements/{agreement_id}` URI shape; UUID variables are bounded before lookup; allowlisted DTO only; inaccessible objects are not found | `mcp.read.agreements`; discovery, direct-read, hidden-template, and tenant-isolation tests |
-| `billing_schedules.list`, `billing_schedules.get` | Billing schedule view; `AgentBillingScheduleReadService` and `BillingScheduleReadPresenter` | `billing:read`; manager; workspace-scoped schedule query | Active filter, 1–100 page, query-bound cursor; only agreement ID, cadence, next-run date, and active state | `mcp.read.billing_schedules`; MCP contract, parity, and tenant-isolation tests |
-| `capacity_ledger.get` | Time-sheet capacity display and billing ledger; `AgentCapacityLedgerReadService` over `InvoiceLedgerBuilder` | `billing:read`; manager; workspace-scoped agreement query | 1–60 trailing months; signed, allowlisted computed ledger rows; inaccessible agreement is not found | `mcp.read.capacity_ledger`; ledger, schema, and cross-workspace tests |
-| `billing.audit_unplaceable_invoices` | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests |
-| `billing.audit_undated_collectible_invoices` | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts and bounded per-currency integer balances only; no record identifiers | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests |
-| `billing.audit_missing_billed_overage` | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor` | `billing:read`; manager; workspace-scoped audit | Aggregate counts only; no record identifiers or raw models | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests |
-| Duplicate-time diagnostics | No checked-in workflow/service establishes the grouping key | Unresolved | Not implemented: matching semantics must be explicitly defined before time-entry data is grouped or disclosed | No flag or release cohort until a canonical application query exists |
-| Session workspace selection | Existing clients select an authorized workspace on every scoped call; no explicit session-selection workflow exists | Unresolved compatibility decision | The credential/client session is bound, but an authorized selector is revalidated per call; pinning the first selector would break current multi-workspace sessions | [#187 decision](https://github.com/bherila/svc/issues/187#issuecomment-5509206668) required before changing the public behavior |
+| Capability                                        | Operator/UI workflow and backing service                                                                                  | Scope and policy                                                                    | Bounds and privacy contract                                                                                                                                                     | Flag and coverage                                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `agreements.list`, `agreements.get`               | Client-directory agreement view; `AgentAgreementReadService` and the shared `AgreementReadPresenter`                      | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Status filter, 1–100 page, query-bound cursor; stored cadence plus effective cadence/proration and monthly/per-period retainer terms; inaccessible objects are not found        | `mcp.read.agreements`; MCP contract, parity, and tenant-isolation tests                                               |
+| `agreement` resource template                     | Canonical agreement representation; the same `AgentAgreementReadService` and `AgreementReadPresenter` as `agreements.get` | `billing:read`; `AgentAccess::isWorkspaceManager`; workspace-scoped agreement query | Fixed `svc://workspaces/{workspace_id}/agreements/{agreement_id}` URI shape; UUID variables are bounded before lookup; allowlisted DTO only; inaccessible objects are not found | `mcp.read.agreements`; discovery, direct-read, hidden-template, and tenant-isolation tests                            |
+| `billing_schedules.list`, `billing_schedules.get` | Billing schedule view; `AgentBillingScheduleReadService` and `BillingScheduleReadPresenter`                               | `billing:read`; manager; workspace-scoped schedule query                            | Active filter, 1–100 page, query-bound cursor; only agreement ID, cadence, next-run date, and active state                                                                      | `mcp.read.billing_schedules`; MCP contract, parity, and tenant-isolation tests                                        |
+| `capacity_ledger.get`                             | Time-sheet capacity display and billing ledger; `AgentCapacityLedgerReadService` over `InvoiceLedgerBuilder`              | `billing:read`; manager; workspace-scoped agreement query                           | 1–60 trailing months; allowlisted rows include `signed_available_hours` (current and carried unused capacity positive, deficit negative); inaccessible agreement is not found   | `mcp.read.capacity_ledger`; ledger, schema, and cross-workspace tests                                                 |
+| `billing.audit_unplaceable_invoices`              | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor`                 | `billing:read`; manager; workspace-scoped audit                                     | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination                                                                                      | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests                            |
+| `billing.audit_undated_collectible_invoices`      | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor`  | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and bounded per-currency integer balances only; no record identifiers                                                                                          | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests                    |
+| `billing.audit_missing_billed_overage`            | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts only; no record identifiers or raw models                                                                                                                      | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests                          |
+| `billing.audit_opening_rollover`                  | `svc:billing:audit-opening-rollover`; `AgentBillingAuditReadService` over the shared `OpeningRolloverAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and capacity minutes only; immutable DTO cannot carry record identifiers                                                                                       | `mcp.read.billing.audit_opening_rollover`; CLI parity, aggregate/redaction, authorization, and tenant-isolation tests |
+| Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
+| Session workspace selection                       | Existing clients select an authorized workspace on every scoped call                                                      | Accepted v1 compatibility contract                                                  | Credential/client sessions are bound; every selector is active-membership scoped and reauthorized per call. Session pinning requires a future versioned migration.              | Context, membership-removal, credential-binding, and multi-workspace compatibility tests                              |
 
 ## Compatibility and current coverage
 
@@ -215,17 +224,21 @@ documented in [the MCP operational runbook](mcp-operations.md).
 Issue #187 had no comments or explicit acceptance decision when this baseline
 was written. The product owner subsequently approved every read-only proposal
 subject to the existing privacy boundary; the consequential maintenance
-workflow remains unresolved:
+workflow is outside the read-GA authorization:
 
-| Proposal | Current disposition |
-| --- | --- |
-| Agreement list/get with derived terms | Implemented; manager-only `agreements.list` / `agreements.get` |
-| Signed monthly capacity ledger | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder` |
-| Duplicate-time diagnostics | Unresolved: no checked-in duplicate-time diagnostic query or approved matching semantics exists to reuse. It will not be inferred from raw time rows. |
-| Read-only `svc:billing:audit-*` operations | Implemented as aggregate-only, manager-scoped `billing.audit_unplaceable_invoices`, `billing.audit_undated_collectible_invoices`, and `billing.audit_missing_billed_overage` over the canonical billing auditors |
-| Billing-schedule visibility | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get` |
-| Imported-duplicate maintenance preview/execute | Unresolved and consequential; no implementation without explicit approval |
-| One-workspace-per-session binding | Unresolved compatibility decision: existing clients may select authorized workspaces per call; no explicit session selection or rotation protocol exists | No implementation until the decision recorded in [#187](https://github.com/bherila/svc/issues/187#issuecomment-5509206668) approves a breaking change or a migration path |
+| Proposal                                       | Current disposition                                                                                                                                      |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agreement list/get with derived terms          | Implemented; manager-only `agreements.list` / `agreements.get`                                                                                           |
+| Signed monthly capacity ledger                 | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder`                                                                      |
+| Duplicate-time diagnostics                     | Deferred: no checked-in canonical query or privacy-reviewed grouping contract exists. It will not be inferred from raw time rows.                        |
+| Read-only `svc:billing:audit-*` operations     | Implemented as four aggregate-only, manager-scoped tools, including `billing.audit_opening_rollover`, over the same auditors used by their CLI workflows |
+| Billing-schedule visibility                    | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get`                                                                             |
+| Imported-duplicate maintenance preview/execute | Obsolete for #187 after #196 retired the importer; no maintenance write is authorized                                                                    |
+| One-workspace-per-session binding              | Per-call authorized selection is the accepted v1 contract; any pinned-session replacement requires a future versioned migration                          |
+
+The former PR 1–8 plan is superseded by the read-GA tracker in #202. New or
+widened writes and consequential workflows remain separate product work and
+require explicit authorization.
 
 [#172](https://github.com/bherila/svc/pull/172) is the merged appearance
 selector work and has no MCP contract dependency. [#175](https://github.com/bherila/svc/pull/175) tightened null-tolerant billing-cycle attribution and

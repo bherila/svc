@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\MissingBilledOverageAuditor;
+use App\Services\Billing\OpeningRolloverAuditor;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -27,6 +28,7 @@ final class AgentBillingAuditReadService
         private readonly UnplaceableInvoiceAuditor $unplaceable,
         private readonly UndatedCollectibleInvoiceAuditor $undatedCollectible,
         private readonly MissingBilledOverageAuditor $missingBilledOverage,
+        private readonly OpeningRolloverAuditor $openingRollover,
     ) {}
 
     /** @return array<string, float|int> */
@@ -62,6 +64,14 @@ final class AgentBillingAuditReadService
         $this->requireManager($user, $workspace);
 
         return $this->missingBilledOverage->count($workspace)->toArray();
+    }
+
+    /** @return array<string, int> */
+    public function openingRollover(User|AgentPrincipal $user, Workspace $workspace): array
+    {
+        $this->requireManager($user, $workspace);
+
+        return $this->openingRollover->count($workspace)->toArray();
     }
 
     private function requireManager(User|AgentPrincipal $user, Workspace $workspace): void
