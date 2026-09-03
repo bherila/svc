@@ -241,9 +241,9 @@ try {
 
     // 3. A connection holding a different operation scope must still be refused
     //    this operation. The second credential deliberately carries
-    //    `projects:read` rather than nothing, so the refusal proves the scope is
-    //    checked per operation - and so that it can complete a handshake at all,
-    //    which a connection authorized for nothing currently cannot.
+    //    `projects:read` rather than nothing, so the refusal proves operation
+    //    scopes are independent instead of relying only on the empty discovery
+    //    surface of a connection carrying `mcp:use` alone.
     if (wrongScopeToken) {
         const other = await connect(wrongScopeToken);
 
