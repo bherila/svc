@@ -57,9 +57,19 @@ final class InvoiceDeliveryStatusService
     public function record(array $event): bool
     {
         $reference = $this->stringFrom($event, ['message-id', 'message_id', 'messageId']);
-        $type = strtolower(trim((string) ($event['event'] ?? '')));
+        // Through the same reader as the message id rather than cast: this body
+        // is whatever the provider posted, so `$event['event']` can be an array
+        // or a number as easily as a string, and casting one would be a warning
+        // in production and a wrong answer here.
+        $type = $this->stringFrom($event, ['event']);
 
-        if ($reference === null || ! array_key_exists($type, self::SEVERITY)) {
+        if ($reference === null || $type === null) {
+            return false;
+        }
+
+        $type = strtolower($type);
+
+        if (! array_key_exists($type, self::SEVERITY)) {
             return false;
         }
 

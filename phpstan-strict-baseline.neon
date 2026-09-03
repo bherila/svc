@@ -140,12 +140,6 @@ parameters:
 			path: app/Services/Billing/InterimOverageGenerator.php
 
 		-
-			message: '#^Method App\\Services\\Billing\\InvoiceEmailService\:\:queue\(\) should return App\\Models\\ClientInvoiceEmailDelivery but returns App\\Models\\ClientInvoiceEmailDelivery\|null\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Services/Billing/InvoiceEmailService.php
-
-		-
 			message: '#^Anonymous function should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
 			identifier: return.type
 			count: 3

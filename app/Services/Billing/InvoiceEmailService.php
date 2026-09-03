@@ -243,7 +243,11 @@ final class InvoiceEmailService
             ])->save();
             $invoice->advanceAgentRevision();
 
-            return $delivery->fresh();
+            // The instance in hand rather than a re-read. `fresh()` is nullable
+            // - it returns null for a row deleted underneath you - and there is
+            // nothing to re-read: the save above wrote these attributes onto
+            // this object.
+            return $delivery;
         } catch (Throwable $exception) {
             // The class name, not the message. A transport failure can quote
             // the address it was refused for and the credentials it used, and
