@@ -22,7 +22,7 @@ import {
  * Operations screen and no client settings. Each of those was a second way to
  * navigate the same things, which is what made the old bar convoluted.
  *
- * Changing workspace is not here either. That is the SVC wordmark, at the other
+ * Changing workspace is not here either. That is the exit control, at the other
  * end of the row, because it is the only intentional way out of where you are.
  */
 export function AccountMenu({

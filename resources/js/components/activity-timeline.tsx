@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatTimestamp } from '@/lib/datetime';
 
 export type CompanyActivity = {
     id: string;
@@ -172,9 +173,9 @@ function ActivityRow({ activity }: { activity: FormattedActivity }) {
                     className="text-xs text-slate-500"
                     dateTime={activity.created_at ?? undefined}
                 >
-                    {activity.created_at
-                        ? new Date(activity.created_at).toLocaleString()
-                        : ''}
+                    {activity.created_at === null
+                        ? ''
+                        : formatTimestamp(activity.created_at)}
                 </time>
             </div>
             {activity.subtitle && (

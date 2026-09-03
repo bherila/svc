@@ -17,6 +17,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -75,6 +76,20 @@ export default function ClientTasks({
                             <CardTitle>Tasks</CardTitle>
                             {projects.length > 1 && (
                                 <Select
+                                    // The trigger renders the raw value unless
+                                    // the root is told the labels, so this
+                                    // filter used to show a project's UUID
+                                    // rather than its name.
+                                    items={[
+                                        {
+                                            value: ALL_PROJECTS,
+                                            label: 'All projects',
+                                        },
+                                        ...projects.map((project) => ({
+                                            value: project.id,
+                                            label: project.name,
+                                        })),
+                                    ]}
                                     value={selected}
                                     onValueChange={(next) => {
                                         // Base UI can emit null on clear, and
@@ -168,7 +183,9 @@ export default function ClientTasks({
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {task.completed_at ?? '—'}
+                                                    {formatDay(
+                                                        task.completed_at,
+                                                    )}
                                                 </TableCell>
                                                 {showsVisibility && (
                                                     <TableCell>

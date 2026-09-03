@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay, formatShortDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -210,9 +211,11 @@ export default function ClientHome({
                                     </Badge>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
-                                    {latestInvoice.issue_date ?? 'Undated'}
+                                    {latestInvoice.issue_date === null
+                                        ? 'Undated'
+                                        : formatDay(latestInvoice.issue_date)}
                                     {latestInvoice.due_date !== null &&
-                                        ` · due ${latestInvoice.due_date}`}
+                                        ` · due ${formatDay(latestInvoice.due_date)}`}
                                 </p>
                             </div>
                             <div className="text-end">
@@ -257,7 +260,7 @@ export default function ClientHome({
                                 className="flex items-start justify-between gap-4 py-2 text-sm"
                             >
                                 <span className="w-24 shrink-0 text-muted-foreground tabular-nums">
-                                    {entry.worked_on}
+                                    {formatShortDay(entry.worked_on)}
                                 </span>
                                 <span className="min-w-0 flex-1 wrap-anywhere">
                                     {entry.description ?? '—'}

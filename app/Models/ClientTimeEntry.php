@@ -26,6 +26,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $user_id
  * @property CarbonImmutable $worked_on
  * @property int $minutes
+ * @property string $description
+ * @property string|null $client_visible_description
+ * @property bool $is_visible_to_client
  * @property bool $is_billable
  * @property bool $is_deferred
  * @property int|null $billing_rate_amount

@@ -12,6 +12,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -218,7 +219,7 @@ export default function ClientProposalDetail({
 
                 {proposal.accepted_at !== null && (
                     <p className="text-sm text-muted-foreground">
-                        Accepted {proposal.accepted_at}.
+                        Accepted {formatTimestamp(proposal.accepted_at)}.
                     </p>
                 )}
             </main>

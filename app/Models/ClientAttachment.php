@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -25,6 +26,8 @@ use LogicException;
  * @property string $sha256
  * @property int|null $uploader_id
  * @property string $lifecycle_state
+ * @property CarbonImmutable|null $available_at
+ * @property CarbonImmutable|null $deleted_at
  */
 #[Fillable([
     'public_id',

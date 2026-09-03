@@ -87,6 +87,7 @@ final class WorkspaceNavigationFactory
 
         return new WorkspaceNavigation(
             workspaceId: (string) $workspace->public_id,
+            workspaceName: (string) $workspace->name,
             currentClientId: $currentIsAnOption ? $currentId : null,
             clients: $options,
             permissions: new WorkspaceNavigationPermissions(

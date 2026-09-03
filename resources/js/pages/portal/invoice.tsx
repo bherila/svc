@@ -1,4 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
+import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
+import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -10,6 +12,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -59,17 +62,26 @@ export default function PortalInvoice({
     home_href: homeHref,
     invoice,
     lines,
+    line_detail: lineDetail,
 }: {
     company: { id: string; name: string };
     home_href: string;
     invoice: PortalInvoice;
     lines: PortalLine[];
+    /**
+     * The work behind each line, keyed by line id.
+     *
+     * Narrowed on the server to entries written to be read by this client, and
+     * a line with none is simply absent - there is no row here announcing work
+     * the client is not being told about.
+     */
+    line_detail: Record<string, InvoiceLineItem[]>;
 }) {
     const period =
         invoice.service_period_start === null &&
         invoice.service_period_end === null
             ? null
-            : `${invoice.service_period_start ?? 'open'} → ${invoice.service_period_end ?? 'open'}`;
+            : `${invoice.service_period_start === null ? 'open' : formatDay(invoice.service_period_start)} → ${invoice.service_period_end === null ? 'open' : formatDay(invoice.service_period_end)}`;
 
     return (
         <WorkspaceShell activeModule="invoices">
@@ -95,9 +107,9 @@ export default function PortalInvoice({
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
                             ? 'Not dated'
-                            : `Issued ${invoice.issue_date}`}
+                            : `Issued ${formatDay(invoice.issue_date)}`}
                         {invoice.due_date !== null &&
-                            ` · due ${invoice.due_date}`}
+                            ` · due ${formatDay(invoice.due_date)}`}
                         {period !== null && ` · covering ${period}`}
                     </p>
                     <p className="text-sm">
@@ -124,6 +136,8 @@ export default function PortalInvoice({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            {/* The disclosure column. */}
+                                            <TableHead className="w-8" />
                                             <TableHead className="min-w-64">
                                                 Description
                                             </TableHead>
@@ -136,12 +150,17 @@ export default function PortalInvoice({
                                     </TableHeader>
                                     <TableBody>
                                         {lines.map((line) => (
-                                            <TableRow key={line.id}>
+                                            <InvoiceLineRows
+                                                key={line.id}
+                                                line={line}
+                                                items={lineDetail[line.id]}
+                                                columns={6}
+                                            >
                                                 <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {line.line_date ?? '—'}
+                                                    {formatDay(line.line_date)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {line.quantity}
@@ -161,7 +180,7 @@ export default function PortalInvoice({
                                                         invoice.currency,
                                                     )}
                                                 </TableCell>
-                                            </TableRow>
+                                            </InvoiceLineRows>
                                         ))}
                                     </TableBody>
                                 </Table>

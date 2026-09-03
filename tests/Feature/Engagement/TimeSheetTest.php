@@ -482,6 +482,47 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * The availability is broken down, and the carry-forward rule stated.
+     *
+     * `available_hours` alone is unarguable and unexplainable: a month living
+     * on hours carried in reads exactly like one with a large retainer, and the
+     * hours that aged out on the way are invisible. The ledger has computed all
+     * three since the port; the screen was the part that was missing.
+     */
+    public function test_the_capacity_strip_says_where_the_hours_came_from(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Rolling Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'rollover_months' => 2,
+            'starts_on' => '2026-06-01',
+        ]);
+        // June is left unworked, so July opens on hours carried in as well as
+        // its own grant - which is the case the breakdown exists to show.
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 120, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.capacity.0.retainer_hours', 10)
+                ->where('months.0.capacity.0.rollover_in_hours', 10)
+                ->where('months.0.capacity.0.available_hours', 20)
+                ->where('months.0.capacity.0.expired_hours', 0)
+                // The agreement's own rule, so the arithmetic above can be read
+                // rather than only observed. Null would be a different claim -
+                // that the agreement states no rollover at all.
+                ->where('months.0.capacity.0.rollover_months', 2));
+    }
+
+    /**
      * Membership of a workspace is not access to every project in it.
      *
      * The `view` gate on the workspace passes for an ordinary member, so

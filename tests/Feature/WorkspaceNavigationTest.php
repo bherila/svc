@@ -49,13 +49,20 @@ class WorkspaceNavigationTest extends TestCase
     }
 
     /**
-     * The bar names the client, never the tenant.
+     * The bar names the tenant, and the name is all it gets.
      *
-     * Asserted on the payload rather than on markup because that is where it is
-     * enforceable: the serializer has no workspace name to give, so a future
-     * edit that puts one in the bar has to change this contract first.
+     * This used to assert the opposite - that no workspace name was sent at all
+     * - on the argument that a tenant label competes with the client switcher.
+     * What that missed is that an operator with two workspaces had nothing on
+     * the screen saying which one they were in. The name is now the label
+     * beside the exit control.
+     *
+     * What is still asserted is the shape: a name, not a workspace object. The
+     * bar needs one string, and sending the record would put its slug, its
+     * timezone and whatever is added to it next into the payload of every
+     * authenticated page.
      */
-    public function test_the_navigation_payload_carries_no_workspace_name(): void
+    public function test_the_navigation_payload_names_the_workspace_and_sends_nothing_else_of_it(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Distinctive Synthetic Tenant Name', 'distinctive-tenant', $manager);
@@ -65,8 +72,8 @@ class WorkspaceNavigationTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->missing('workspaceNavigation.workspace')
-                ->missing('workspaceNavigation.workspace_name'));
+                ->where('workspaceNavigation.workspace_name', 'Distinctive Synthetic Tenant Name')
+                ->missing('workspaceNavigation.workspace'));
     }
 
     /**
