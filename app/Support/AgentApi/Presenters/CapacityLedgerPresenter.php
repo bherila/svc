@@ -25,7 +25,9 @@ final class CapacityLedgerPresenter
             'excess_hours' => $summary->closing->excessHours,
             'negative_hours' => $summary->closing->negativeBalance,
             'signed_available_hours' => round(
-                $summary->closing->unusedHours - $summary->closing->negativeBalance,
+                $summary->closing->unusedHours
+                    + $summary->closing->remainingRollover
+                    - $summary->closing->negativeBalance,
                 4,
             ),
             'remaining_rollover_hours' => $summary->closing->remainingRollover,

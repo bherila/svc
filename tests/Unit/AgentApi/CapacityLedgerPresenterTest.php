@@ -36,7 +36,7 @@ final class CapacityLedgerPresenterTest extends TestCase
             'unused_hours' => 3.0,
             'excess_hours' => 0.0,
             'negative_hours' => 0.0,
-            'signed_available_hours' => 3.0,
+            'signed_available_hours' => 4.0,
             'remaining_rollover_hours' => 1.0,
             'bill_excess_immediately' => false,
         ], (new CapacityLedgerPresenter)->present($summary));
