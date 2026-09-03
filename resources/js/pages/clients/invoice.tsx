@@ -314,6 +314,11 @@ export default function ClientInvoiceDetail({
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
                                 <Select
+                                    // Without `items` the trigger renders the
+                                    // stored value, so this field read
+                                    // "bank_transfer" back at the operator who
+                                    // had just picked "Bank transfer".
+                                    items={PAYMENT_METHODS}
                                     value={method}
                                     onValueChange={(next) => {
                                         // Base UI can emit null on clear; there
@@ -571,8 +576,12 @@ export default function ClientInvoiceDetail({
                                                 <TableHead className="min-w-48">
                                                     To
                                                 </TableHead>
-                                                <TableHead>Us</TableHead>
-                                                <TableHead>Provider</TableHead>
+                                                <TableHead>
+                                                    Our record
+                                                </TableHead>
+                                                <TableHead>
+                                                    Provider says
+                                                </TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>

@@ -196,6 +196,13 @@ export function TimeEntryDialog({
                         <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="project">Project</Label>
                             <Select
+                                // The trigger renders the raw value unless the
+                                // root is told the labels, so choosing a
+                                // project used to leave a UUID in the field.
+                                items={loggable.map((candidate) => ({
+                                    value: candidate.id,
+                                    label: candidate.name,
+                                }))}
                                 value={draft.project_id}
                                 onValueChange={(value: string | null) => {
                                     set('project_id', value ?? '');
@@ -227,6 +234,13 @@ export function TimeEntryDialog({
                         <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="task">Task</Label>
                             <Select
+                                items={[
+                                    { value: NO_TASK, label: 'No task' },
+                                    ...project.tasks.map((task) => ({
+                                        value: task.id,
+                                        label: task.title,
+                                    })),
+                                ]}
                                 value={
                                     draft.task_id === ''
                                         ? NO_TASK

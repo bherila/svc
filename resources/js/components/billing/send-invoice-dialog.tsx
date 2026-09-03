@@ -166,7 +166,7 @@ export function SendInvoiceDialog({
                             <Input
                                 id="invoice-recipient"
                                 type="email"
-                                className="max-w-xs"
+                                className="min-w-40 flex-1"
                                 placeholder="Add another address"
                                 value={adding}
                                 onChange={(event) =>

@@ -38,6 +38,11 @@ import type { AgreementTerms } from '@/types/agreement';
  * at nothing and says so on the client's invoice.
  */
 
+/*
+ * Every list here is passed to the select as `items` as well as rendered as
+ * options. Without it the trigger shows the stored value, so a field the
+ * operator had just set to "Semi-annual" read "semi_annual" back at them.
+ */
 const CADENCES = [
     { value: 'one_time', label: 'One time' },
     { value: 'monthly', label: 'Monthly' },
@@ -368,6 +373,7 @@ export function AgreementTermsForm({
                 </Field>
                 <Field id="cadence" label="Billing cadence">
                     <Select
+                        items={CADENCES}
                         value={form.billing_cadence}
                         onValueChange={(next) => {
                             if (typeof next === 'string') {
@@ -534,6 +540,7 @@ export function AgreementTermsForm({
 
                 <Field id="first-cycle" label="First cycle">
                     <Select
+                        items={PRORATIONS}
                         value={form.first_cycle_proration}
                         onValueChange={(next) => {
                             if (typeof next === 'string') {
@@ -558,6 +565,7 @@ export function AgreementTermsForm({
                 </Field>
                 <Field id="interim-overage" label="Interim overage">
                     <Select
+                        items={INTERIM}
                         value={form.bill_overage_interim}
                         onValueChange={(next) => {
                             if (typeof next === 'string') {
