@@ -175,10 +175,13 @@ class ClientInvoice extends Model implements WorkspaceOwned
      * quantity, coercing it to zero is exactly the current behaviour and
      * exactly the defect, and `COALESCE` to anything else invents a number.
      *
-     * The column is nullable and the importer passes the source value through,
-     * so a restored charged invoice can carry a null.
-     * `svc:billing:audit-missing-billed-overage` sizes that population and
-     * `svc:billing:backfill-ledger` repairs it from the source.
+     * The column is nullable because the retired external importer passed the
+     * source value through, so an imported charged invoice can carry a null.
+     * `svc:billing:audit-missing-billed-overage` sizes that population; in
+     * production it is now zero, the repair having run before the import
+     * tooling was removed. The refusal stays because the column is still
+     * nullable and a hand-edited row can still reach it - and because it is the
+     * refusal, not the repair, that stops the double charge.
      *
      * @throws DomainException when a charged invoice records no billed-overage figure
      */
@@ -188,8 +191,8 @@ class ClientInvoice extends Model implements WorkspaceOwned
             throw new DomainException(
                 "Invoice {$this->invoice_number} is charged but records no billed-overage hours, so what it has "
                 .'already billed cannot be known and the next period cannot be priced without risking a second '
-                .'charge for the same hours. Restore the figure - `svc:billing:backfill-ledger` reads it from the '
-                .'import source - before billing this agreement again.',
+                .'charge for the same hours. Set the figure on this invoice from what it actually billed before '
+                .'billing this agreement again.',
             );
         }
 

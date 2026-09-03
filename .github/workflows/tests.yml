@@ -213,7 +213,6 @@ jobs:
           diff_status=0
           git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
             app/Services/Billing/ \
-            app/Services/ExternalImport/ \
             app/Support/Billing/ || diff_status=$?
           if [ "$diff_status" -eq 0 ]; then
             echo "required=false" >> "$GITHUB_OUTPUT"

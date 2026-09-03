@@ -1,10 +1,14 @@
 # Mutation testing the money paths
 
-Infection mutates PHP in `app/Services/Billing/`,
-`app/Services/ExternalImport/`, and `app/Support/Billing/`. The configured
-minimum MSI is intentionally conservative: it is the rounded-down result of
-the first full run over those paths, not an aspirational guess. Raise it when
-new assertions kill escaped mutants; do not lower it to make a branch green.
+Infection mutates PHP in `app/Services/Billing/` and `app/Support/Billing/`.
+`app/Services/ExternalImport/` was a third scope until the external importer was
+retired; the baseline figures below were measured while it was still in scope and
+are left as measured rather than re-stated.
+
+The configured minimum MSI is intentionally conservative: it is the rounded-down
+result of the first full run over those paths, not an aspirational guess. Raise
+it when new assertions kill escaped mutants; do not lower it to make a branch
+green.
 Because both commands use `--with-uncovered`, uncovered mutants lower MSI
 instead of disappearing from the result.
 

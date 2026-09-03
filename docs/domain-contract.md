@@ -137,13 +137,15 @@ tuple `(source_connection, source_table, source_key)`. Successful items map that
 tuple to an SVC record type and public UUID. A run records source high-water
 marks, redacted counts, deterministic fingerprints, mode, and completion state.
 
-`svc:import:external` is dry-run by default. `--apply` is required for writes,
-the configured source connection must be explicitly marked read-only, and the
-command must refuse the destination connection as its source. Output contains
-counts, keys only when safe, and hashes; it never prints names, email addresses,
-descriptions, notes, invoice contents, or file paths.
+These tables are **read-only history**. The importer that wrote them has been
+retired, no code writes them, and no migration may drop them — they are the only
+record of which destination row came from which source row, and that mapping has
+already been needed once to repair a defective import. See
+[the retired external data import](external-data-import.md).
 
-`svc:import:external:attachments` consumes only planned attachment ledger rows.
-It requires an explicit workspace member as the import uploader, stores no
-raw source path in the provenance ledger, and verifies source and destination
-SHA-256 digests before an attachment becomes an imported item.
+`external_import_attachment_copies` is the same contract for files: it pairs a
+stored blob with the source file it was copied from, by digest and byte count,
+storing no raw source path.
+
+Should a second onboarding import ever be built, the contract it must meet is in
+this file's history alongside the tooling that met it.

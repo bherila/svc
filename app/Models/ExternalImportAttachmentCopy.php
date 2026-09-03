@@ -28,6 +28,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_sha256',
     'destination_object_key_hash',
 ])]
+/**
+ * Which stored blob was copied from which source attachment, by the retired
+ * importer.
+ *
+ * Retained history - see {@see ExternalImportItem}. This one guards real files
+ * rather than rows: `source_sha256` and `source_bytes` are the only evidence
+ * that a blob in private storage is a faithful copy of the source file it claims
+ * to be, and nothing else in the schema records the pairing.
+ */
 class ExternalImportAttachmentCopy extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;
