@@ -47,13 +47,14 @@ final class InvoiceLineDetail
      */
     public static function forInvoice(ClientInvoice $invoice, string $audience): array
     {
-        $lines = $invoice->relationLoaded('lines')
-            ? $invoice->lines
-            : $invoice->lines()->where('workspace_id', $invoice->workspace_id)->get();
-
-        if ($lines->isEmpty()) {
-            return [];
-        }
+        // Always read here, workspace-scoped, rather than reusing a relation a
+        // caller may already have loaded. That branch existed to save a query
+        // and quietly made the appendix's scoping depend on which caller got
+        // here first: `ClientDirectoryController` loads lines constrained to
+        // the workspace and `InvoiceDocumentService` does not, so the PDF was
+        // itemised from a set nothing had bounded. One query is a cheap price
+        // for the read being scoped the same way every time.
+        $lines = $invoice->lines()->where('workspace_id', $invoice->workspace_id)->get();
 
         $forClient = $audience === self::CLIENT;
 

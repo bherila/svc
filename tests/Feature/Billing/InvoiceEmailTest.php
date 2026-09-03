@@ -8,7 +8,9 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
@@ -127,9 +129,17 @@ class InvoiceEmailTest extends TestCase
             ->postJson($this->sendUrl($workspace, $invoice))
             ->assertStatus(422);
 
-        // The class of failure, never the transport's own words: those quote
-        // addresses and sometimes credentials, and this reaches a screen.
-        $this->assertStringContainsString('TransportException', $response->json('message'));
+        // The exact sentence, not a substring of it. Asserting only that the
+        // class name appears somewhere passes just as happily when the pieces
+        // are in the wrong order or a fragment has fallen off - and this text
+        // is the entire explanation an operator gets for a message that did
+        // not go.
+        $this->assertSame(
+            'The mail server refused this message (TransportException). Nothing was sent.',
+            $response->json('message'),
+        );
+        // Never the transport's own words: those quote the address it was
+        // refused for and sometimes the credentials it used.
         $this->assertStringNotContainsString('535', $response->json('message'));
 
         $delivery = ClientInvoiceEmailDelivery::query()->sole();
@@ -138,7 +148,62 @@ class InvoiceEmailTest extends TestCase
         // with the send would leave no evidence that anything was tried.
         $this->assertSame('failed', $delivery->status);
         $this->assertNotNull($delivery->failed_at);
-        $this->assertStringNotContainsString('535', (string) $delivery->error_summary);
+        $this->assertSame(
+            'Email delivery failed (TransportException).',
+            $delivery->error_summary,
+        );
+    }
+
+    /**
+     * A failed send still moves the invoice on.
+     *
+     * An agent reading the invoice before the attempt holds a version that no
+     * longer describes it: there is a delivery row against it now, and it says
+     * the message did not go. Leaving the revision alone would let that agent
+     * act on a state it has not seen.
+     */
+    public function test_a_failed_send_advances_the_invoices_revision(): void
+    {
+        [$owner, $workspace, $invoice] = $this->issuedInvoice();
+        $before = AgentApiVersion::for($invoice->fresh());
+
+        Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+
+        $this->actingAs($owner)
+            ->postJson($this->sendUrl($workspace, $invoice))
+            ->assertStatus(422);
+
+        $this->assertNotSame($before, AgentApiVersion::for($invoice->fresh()));
+    }
+
+    /**
+     * The address the client will see it arrive from.
+     *
+     * Read-only on the compose screen and the one part of the message its
+     * sender cannot change, so an operator who cannot see it here cannot tell a
+     * client where to reply.
+     */
+    public function test_the_from_address_is_reported_with_its_name(): void
+    {
+        config(['mail.from.address' => 'billing@synthetic.test', 'mail.from.name' => 'Synthetic Books']);
+
+        $this->assertSame(
+            'Synthetic Books <billing@synthetic.test>',
+            app(InvoiceEmailService::class)->fromAddress(),
+        );
+
+        // With no name configured the bare address is the whole answer, rather
+        // than an empty pair of angle brackets around it.
+        config(['mail.from.name' => '']);
+        $this->assertSame(
+            'billing@synthetic.test',
+            app(InvoiceEmailService::class)->fromAddress(),
+        );
+
+        // And a deployment that never configured one says so, rather than
+        // showing an operator a blank where the sender should be.
+        config(['mail.from.address' => '']);
+        $this->assertSame('Not configured', app(InvoiceEmailService::class)->fromAddress());
     }
 
     public function test_a_draft_invoice_cannot_be_emailed(): void
