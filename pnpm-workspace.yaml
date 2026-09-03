@@ -6,3 +6,10 @@ allowBuilds:
 
 publicHoistPattern:
   - '@inertiajs/core'
+
+overrides:
+  # CVE in qs <6.16.0, reached only transitively: express 5.2.1 -> body-parser
+  # 2.3.0, pulled by the shadcn CLI and the MCP SDK. Neither is on a request
+  # path in this application - both are build-time tooling - but the lockfile is
+  # what Dependabot reads, and there is no direct dependency to bump.
+  qs: ^6.16.0
