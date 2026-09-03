@@ -8,8 +8,10 @@ customer data. Preserve those constraints in incident tickets and logs.
 
 1. Set `AGENT_API_MCP_ENABLED=false` in the protected deployment environment.
    Deploy the configuration change and clear Laravel's configuration cache using
-   the normal deployment workflow. The next request omits every MCP capability;
-   existing HTTP sessions cannot recover a capability on a subsequent request.
+   the normal deployment workflow. Authenticated POST and DELETE requests then
+   receive a no-store `503` with `Retry-After: 60`; no server or session is
+   constructed. `OPTIONS` remains available for browser preflight. Existing
+   sessions cannot recover a capability on a subsequent request.
 2. For a single capability, set its named entry in
    `agent_api.mcp_feature_flags` to `false` (the stable feature-flag name in
    `docs/mcp.md` is preferred; the public capability name is a compatibility
@@ -78,15 +80,15 @@ access-controlled correlation only; they are not dashboard dimensions.
 
 The dashboard has these panels, grouped by capability and five-minute window:
 
-| Panel | Signal | Initial alert |
-| --- | --- | --- |
-| Invocations | Count of `mcp.capability.executed` | No alert; use as the denominator for rate alerts. |
-| Authentication and authorization | Requests rejected by the MCP route, plus `outcome=error` | Page the on-call owner when the error rate exceeds 5% and at least 20 MCP requests occur in five minutes. |
-| Availability guards | `rate_limit_unavailable`, `concurrency_unavailable`, and `result_too_large` outcomes | Page immediately for any limiter/concurrency backend unavailability; create a ticket for repeated result-size rejections (five in 15 minutes). |
-| Saturation | `rate_limited` and `concurrency_limited` outcomes | Alert the service owner when either exceeds 2% of calls and there are at least 20 calls in five minutes. |
-| Latency | p50/p95 `duration_ms` | Alert the service owner when p95 exceeds 5 seconds for 10 minutes, with at least 20 calls in the window. |
-| Audit/metrics delivery | `mcp.capability.metrics_unavailable` log events | Page immediately: visibility is degraded even though capability requests remain safely available. |
-| Configuration | Global MCP and per-capability feature-flag state | Alert on every change; link the change to its deployment, request ID if applicable, and the containment runbook. |
+| Panel                            | Signal                                                                               | Initial alert                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invocations                      | Count of `mcp.capability.executed`                                                   | No alert; use as the denominator for rate alerts.                                                                                              |
+| Authentication and authorization | Requests rejected by the MCP route, plus `outcome=error`                             | Page the on-call owner when the error rate exceeds 5% and at least 20 MCP requests occur in five minutes.                                      |
+| Availability guards              | `rate_limit_unavailable`, `concurrency_unavailable`, and `result_too_large` outcomes | Page immediately for any limiter/concurrency backend unavailability; create a ticket for repeated result-size rejections (five in 15 minutes). |
+| Saturation                       | `rate_limited` and `concurrency_limited` outcomes                                    | Alert the service owner when either exceeds 2% of calls and there are at least 20 calls in five minutes.                                       |
+| Latency                          | p50/p95 `duration_ms`                                                                | Alert the service owner when p95 exceeds 5 seconds for 10 minutes, with at least 20 calls in the window.                                       |
+| Audit/metrics delivery           | `mcp.capability.metrics_unavailable` log events                                      | Page immediately: visibility is degraded even though capability requests remain safely available.                                              |
+| Configuration                    | Global MCP and per-capability feature-flag state                                     | Alert on every change; link the change to its deployment, request ID if applicable, and the containment runbook.                               |
 
 The thresholds are initial deployment defaults. Tune them only from aggregate,
 payload-free production observations and retain the previous threshold and

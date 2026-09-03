@@ -17,6 +17,14 @@ final class AgentMcpController extends Controller
         AgentMcpServerFactory $servers,
         StreamableHttpResponder $responder,
     ): Response {
+        if (! (bool) config('agent_api.mcp_enabled', true)) {
+            return response()->json(
+                ['message' => 'The SVC MCP service is temporarily unavailable.'],
+                Response::HTTP_SERVICE_UNAVAILABLE,
+                ['Retry-After' => '60'],
+            );
+        }
+
         return $responder->run(
             request: $request,
             server: $servers->make($request),

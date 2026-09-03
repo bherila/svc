@@ -47,5 +47,6 @@ final class AgentCapacityLedgerReadServiceTest extends TestCase
         $this->assertCount(2, $result['months']);
         $this->assertSame('2026-08', $result['months'][0]['period']);
         $this->assertSame(10.0, $result['months'][0]['retainer_hours']);
+        $this->assertSame(10.0, $result['months'][0]['signed_available_hours']);
     }
 }

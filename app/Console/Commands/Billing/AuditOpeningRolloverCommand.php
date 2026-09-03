@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands\Billing;
 
-use App\Models\ClientAgreement;
+use App\Services\Billing\OpeningRolloverAuditor;
 use Illuminate\Console\Command;
 
 /**
@@ -42,7 +42,7 @@ final class AuditOpeningRolloverCommand extends Command
 
     protected $description = 'Count agreements whose ledger would change if the opening rollover seed were repaired';
 
-    public function handle(): int
+    public function handle(OpeningRolloverAuditor $auditor): int
     {
         $format = (string) $this->option('format');
 
@@ -52,22 +52,11 @@ final class AuditOpeningRolloverCommand extends Command
             return self::INVALID;
         }
 
-        $withRollover = ClientAgreement::query()->where('initial_rollover_minutes', '>', 0);
+        $counts = $auditor->count();
 
-        // Read through the same column the accessors read, not through the
-        // accessor: this has to be one query against the whole table rather
-        // than a load of every agreement, and `retainer_hours` is derived.
-        $legacyMonthly = (clone $withRollover)->whereNull('period_retainer_minutes');
-        $affected = (clone $legacyMonthly)->where('rollover_months', '>', 0);
-
-        $summary = [
-            'agreements' => ClientAgreement::query()->count(),
-            'with_initial_rollover' => (clone $withRollover)->count(),
-            'legacy_monthly_of_those' => (clone $legacyMonthly)->count(),
-            'affected' => (clone $affected)->count(),
-            'capacity_at_stake_minutes' => (int) (clone $affected)->sum('initial_rollover_minutes'),
-            'longest_rollover_months' => (int) ((clone $affected)->max('rollover_months') ?? 0),
-        ];
+        // The auditor owns the query and the privacy-safe DTO. This command
+        // deliberately owns only the operator presentation.
+        $summary = $counts->toArray();
 
         if ($format === 'json') {
             $this->line((string) json_encode(['summary' => $summary], JSON_THROW_ON_ERROR));
@@ -75,23 +64,23 @@ final class AuditOpeningRolloverCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->components->twoColumnDetail('Agreements', (string) $summary['agreements']);
-        $this->components->twoColumnDetail('With an initial rollover', (string) $summary['with_initial_rollover']);
-        $this->components->twoColumnDetail('... of those, legacy monthly', (string) $summary['legacy_monthly_of_those']);
-        $this->components->twoColumnDetail('... of those, with a rollover policy', (string) $summary['affected']);
+        $this->components->twoColumnDetail('Agreements', (string) $counts->agreements);
+        $this->components->twoColumnDetail('With an initial rollover', (string) $counts->withInitialRollover);
+        $this->components->twoColumnDetail('... of those, legacy monthly', (string) $counts->legacyMonthlyOfThose);
+        $this->components->twoColumnDetail('... of those, with a rollover policy', (string) $counts->affected);
         $this->newLine();
-        $this->components->twoColumnDetail('Capacity at stake (minutes)', (string) $summary['capacity_at_stake_minutes']);
-        $this->components->twoColumnDetail('Longest rollover policy (months)', (string) $summary['longest_rollover_months']);
+        $this->components->twoColumnDetail('Capacity at stake (minutes)', (string) $counts->capacityAtStakeMinutes);
+        $this->components->twoColumnDetail('Longest rollover policy (months)', (string) $counts->longestRolloverMonths);
 
         $this->newLine();
 
-        if ($summary['affected'] === 0) {
+        if ($counts->affected === 0) {
             $this->components->info(
                 'No agreement would change. The repair is a latent-defect fix with no effect on what any client is charged.'
             );
         } else {
             $this->components->warn(
-                $summary['affected'].' agreement(s) would receive opening capacity they do not currently get, lowering overage on the next invoice each generates.'
+                $counts->affected.' agreement(s) would receive opening capacity they do not currently get, lowering overage on the next invoice each generates.'
             );
         }
 

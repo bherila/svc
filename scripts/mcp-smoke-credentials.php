@@ -82,9 +82,9 @@ echo json_encode([
     // A connection carrying a different operation scope, so this lane exercises
     // the scope and session-isolation assertions too - a check that only ever
     // runs post-deploy is a check whose failures are expensive. It holds
-    // `projects:read` rather than nothing because a connection authorized for
-    // nothing cannot complete the handshake at all; see
-    // DeploySmokeCredentialsCommand.
+    // `projects:read` rather than nothing so the refusal proves operation
+    // scopes are independent instead of relying only on an empty discovery
+    // surface.
     'wrong_scope_token' => $issue('SVC MCP smoke wrong scope', [
         AgentApiScopes::MCP_USE,
         AgentApiScopes::PROJECTS_READ,
