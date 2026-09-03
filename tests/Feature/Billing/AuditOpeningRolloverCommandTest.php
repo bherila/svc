@@ -34,6 +34,17 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(1, $summary['longest_rollover_months']);
     }
 
+    public function test_one_minute_of_initial_rollover_is_positive_capacity(): void
+    {
+        $this->agreement(['initial_rollover_minutes' => 1, 'rollover_months' => 1]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(1, $summary['with_initial_rollover']);
+        $this->assertSame(1, $summary['affected']);
+        $this->assertSame(1, $summary['capacity_at_stake_minutes']);
+    }
+
     public function test_a_cadence_agreement_is_not_counted_however_large_its_initial_rollover(): void
     {
         // The seed sits after the cadence branch has already returned, so an
@@ -88,6 +99,7 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(1, $summary['agreements']);
         $this->assertSame(0, $summary['with_initial_rollover']);
         $this->assertSame(0, $summary['affected']);
+        $this->assertSame(0, $summary['longest_rollover_months']);
     }
 
     public function test_the_report_names_no_workspace_company_or_agreement(): void

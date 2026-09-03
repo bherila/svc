@@ -26,16 +26,22 @@ final class OpeningRolloverAuditor
         // accessors. This is the same branch InvoiceLedgerBuilder evaluates.
         $legacyMonthly = (clone $withRollover)->whereNull('period_retainer_minutes');
         $affected = (clone $legacyMonthly)->where('rollover_months', '>', 0);
-        $longest = (clone $affected)
+        $agreementCount = $agreements->count();
+        $withRolloverCount = $withRollover->count();
+        $legacyMonthlyCount = $legacyMonthly->count();
+        $affectedCount = $affected->count();
+        // @infection-ignore-all PDO may return an integer-column SUM as a numeric string; the DTO requires one stable integer type.
+        $capacityAtStakeMinutes = (int) $affected->sum('initial_rollover_minutes');
+        $longest = $affected
             ->orderByDesc('rollover_months')
             ->first(['rollover_months']);
 
         return new OpeningRolloverCounts(
-            agreements: $agreements->count(),
-            withInitialRollover: (clone $withRollover)->count(),
-            legacyMonthlyOfThose: (clone $legacyMonthly)->count(),
-            affected: (clone $affected)->count(),
-            capacityAtStakeMinutes: (int) (clone $affected)->sum('initial_rollover_minutes'),
+            agreements: $agreementCount,
+            withInitialRollover: $withRolloverCount,
+            legacyMonthlyOfThose: $legacyMonthlyCount,
+            affected: $affectedCount,
+            capacityAtStakeMinutes: $capacityAtStakeMinutes,
             longestRolloverMonths: $longest->rollover_months ?? 0,
         );
     }
