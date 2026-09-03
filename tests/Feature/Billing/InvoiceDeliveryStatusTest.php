@@ -278,6 +278,20 @@ class InvoiceDeliveryStatusTest extends TestCase
         $this->assertNull($delivery->fresh()->provider_status);
     }
 
+    public function test_an_unsupported_event_name_is_ignored(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-unsupported-event');
+
+        $this->postJson(self::URL, [
+            'event' => 'synthetic_provider_event',
+            'message-id' => 'synthetic-message-id-unsupported-event',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertExactJson(['received' => 1, 'recorded' => 0]);
+
+        $this->assertNull($delivery->fresh()->provider_status);
+    }
+
     public function test_an_oversized_body_is_refused_before_it_is_decoded(): void
     {
         config(['services.brevo.webhook_max_payload_bytes' => 100]);
