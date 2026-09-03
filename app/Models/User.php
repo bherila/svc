@@ -24,9 +24,19 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property int|null $last_workspace_id
+ * @property int|null $last_client_company_id
+ *
+ * Where this person was last working. Hidden and deliberately not fillable:
+ * they are internal ids, they are written only by `WorkspaceReturnPoint` and
+ * only after authorization, and serializing them would put one tenant's
+ * numeric ids into another surface's JSON.
  */
 #[Fillable(['public_id', 'name', 'email', 'password', 'oauth_provider', 'oauth_subject'])]
-#[Hidden(['id', 'password', 'remember_token', 'oauth_provider', 'oauth_subject'])]
+#[Hidden([
+    'id', 'password', 'remember_token', 'oauth_provider', 'oauth_subject',
+    'last_workspace_id', 'last_client_company_id',
+])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */

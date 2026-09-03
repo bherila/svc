@@ -25,22 +25,28 @@ it, so the outer gutter never moves.
 
 ## The navbar is one row, and never wraps
 
-    SVC  [Client ▾]  Client Home  Invoices  Time  Expenses  Tasks     ⌘K  ☾  ⚙
+    ⏻ Workspace  [Client ▾]  Client Home  Invoices  Time  Tasks     ⌘K  ☾  ⚙
 
-Read left to right it is a sentence about where the reader is: which client,
-then which part of that client, then — pushed to the far end — the things that
-mean the same thing whatever the client is. An item whose meaning changes when
-the switcher does belongs on the left; everything else belongs on the right.
-The workspace's name is in neither, and the shared payload does not carry it,
-so its absence is a property of the contract rather than a rule the markup has
-to keep remembering.
+Read left to right it is a sentence about where the reader is: which tenant,
+which client, then which part of that client — then, pushed to the far end, the
+things that mean the same thing whatever the client is. An item whose meaning
+changes when the switcher does belongs on the left; everything else belongs on
+the right.
+
+The workspace is named, and the exit control sits to its left. This was an
+"SVC" wordmark that quietly returned to the selector, and it failed twice over:
+nothing on the screen said which tenant you were in, and the one way out was a
+piece of branding that gave no sign of leading anywhere. An operator with two
+workspaces had to open a client to find out where they were.
 
 Wrapping turns one bar into two and moves the tabs to where the reader has
 stopped looking, so the row must always fit. What gives ground, in order: the
-tab strip scrolls, then collapses into a menu naming the section you are in;
-the theme control sheds its icon and caps its width; the client switcher
-truncates its name but never disappears, because it is the context everything
-else is scoped by.
+workspace name, which disappears entirely below `sm` — the exit button stays,
+because losing the way out is worse than losing the label, and the selector it
+leads to names the tenant anyway; then the tab strip, which scrolls and then
+collapses into a menu naming the section you are in; then the theme control,
+which sheds its icon and caps its width. The client switcher truncates its name
+but never disappears, because it is the context everything else is scoped by.
 
 Two things that cost real time here:
 

@@ -6,11 +6,11 @@
  * free to supply a different one, which is how two views of the same navigation
  * drift apart.
  *
- * Note what is *not* here: the workspace's name. The bar names the client, and
- * the only way to change workspace is the SVC wordmark, so a workspace label
- * beside the switcher would read as a second, competing context. Leaving it out
- * of the payload makes that a property of the contract rather than a rule the
- * markup has to keep remembering.
+ * The workspace's name is here and used not to be. The old argument was that a
+ * tenant label beside the switcher competes with it for the reader's attention;
+ * what it missed is that an operator working across two workspaces had nothing
+ * on the screen telling them which one they were in, and the way back out was a
+ * wordmark that gave no sign of leading anywhere.
  */
 
 /** The five modules of a client, in the order the tab strip reads them. */
@@ -40,6 +40,8 @@ export type ClientNavigationOption = {
 
 export type WorkspaceNavigation = {
     workspace_id: string;
+    /** Named in the bar, with the exit control beside it. */
+    workspace_name: string;
     current_client_id: string | null;
     /** Every client this viewer may enter, alphabetically. */
     clients: ClientNavigationOption[];

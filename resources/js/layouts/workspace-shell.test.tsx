@@ -68,7 +68,7 @@ function navbarText(): string[] {
 }
 
 describe('workspace shell', () => {
-    it('reads left to right: SVC, the client, then that client’s modules', () => {
+    it('reads left to right: leave, the workspace, the client, then its modules', () => {
         navigation = workspaceNavigation();
 
         render(
@@ -79,7 +79,8 @@ describe('workspace shell', () => {
 
         const order = navbarText();
 
-        expect(order[0]).toBe('SVC');
+        // The exit button carries an icon and no text, so its entry is empty.
+        expect(order[0]).toBe('');
         expect(order[1]).toBe('Aa Synthetic Client');
         expect(order.slice(2, 6)).toEqual([
             'Client Home',
@@ -89,7 +90,7 @@ describe('workspace shell', () => {
         ]);
     });
 
-    it('sends the wordmark to the workspace selector rather than the public home', () => {
+    it('sends the exit control to the workspace selector rather than the public home', () => {
         navigation = workspaceNavigation();
 
         render(
@@ -99,7 +100,7 @@ describe('workspace shell', () => {
         );
 
         expect(
-            screen.getByRole('link', { name: 'Choose workspace' }),
+            screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toHaveAttribute('href', '/app');
     });
 
@@ -126,17 +127,22 @@ describe('workspace shell', () => {
     });
 
     /**
-     * The bar names the client, not the tenant. The payload carries no
-     * workspace name at all, so this is really a guard on the shape: a future
-     * edit that reintroduces one has to add it to the contract first.
+     * The bar names the workspace and the client, and nothing else navigational.
+     * The directory and the operations screen were each a second route to what
+     * the tabs already reach, and having two of everything is what made getting
+     * anywhere take four clicks and a guess.
      */
-    it('names no workspace and offers no directory or operations screen', () => {
+    it('names the workspace and offers no directory or operations screen', () => {
         navigation = workspaceNavigation();
 
         render(
             <WorkspaceShell activeModule="home">
                 <p>Body</p>
             </WorkspaceShell>,
+        );
+
+        expect(screen.getByTitle('Synthetic Workspace')).toHaveTextContent(
+            'Synthetic Workspace',
         );
 
         for (const label of [
@@ -297,7 +303,7 @@ describe('workspace shell', () => {
         );
 
         expect(
-            screen.getByRole('link', { name: 'Choose workspace' }),
+            screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toBeInTheDocument();
         expect(
             screen.getByRole('button', { name: 'Current client' }),

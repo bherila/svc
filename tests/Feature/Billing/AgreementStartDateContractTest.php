@@ -205,11 +205,13 @@ final class AgreementStartDateContractTest extends TestCase
             '--force' => true,
             '--step' => true,
         ]);
-        Artisan::call('migrate:rollback', [
-            '--database' => self::CONNECTION,
-            '--step' => 1,
-            '--force' => true,
-        ]);
+        // Rolled back until this migration is undone, rather than by a fixed
+        // one step. `--step` on the way up gives every migration its own batch,
+        // so "one step" meant "the newest migration in the repository" - which
+        // was this one only until the next migration was written, and then this
+        // test silently began asserting against a schema that still had the
+        // constraint in it.
+        $this->rollBackPast('2026_09_01_000000_require_an_agreement_start_date');
 
         $this->assertTrue(
             $this->startDateIsNullableOnTheProbe(),
@@ -254,6 +256,35 @@ final class AgreementStartDateContractTest extends TestCase
             DB::connection(self::CONNECTION)->table('client_agreements')->value('starts_on'),
             'The migration wrote a start date it had refused to choose.',
         );
+    }
+
+    /**
+     * Undo the named migration on the probe, and everything applied after it.
+     *
+     * One batch at a time, because the batches above it are exactly what has to
+     * come off first. Bounded so a migration whose `down()` does not remove its
+     * own row cannot spin here forever.
+     */
+    private function rollBackPast(string $migration): void
+    {
+        for ($attempt = 0; $attempt < 200; $attempt++) {
+            $applied = DB::connection(self::CONNECTION)
+                ->table('migrations')
+                ->where('migration', $migration)
+                ->exists();
+
+            if (! $applied) {
+                return;
+            }
+
+            Artisan::call('migrate:rollback', [
+                '--database' => self::CONNECTION,
+                '--step' => 1,
+                '--force' => true,
+            ]);
+        }
+
+        $this->fail("The probe never rolled back past [{$migration}].");
     }
 
     private function startDateIsNullableOnTheProbe(): bool

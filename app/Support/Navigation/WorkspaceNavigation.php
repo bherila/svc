@@ -10,12 +10,14 @@ namespace App\Support\Navigation;
  * is a page free to supply a different set - which is how two views of the same
  * navigation drift apart.
  *
- * The workspace's *name* is deliberately absent. The navbar names the client,
- * not the tenant: a workspace label beside the company switcher reads as a
- * second, competing context, and the only action that changes workspace is the
- * SVC wordmark. Leaving the name out of the payload is what makes "the
- * workspace name never appears in the navbar" a property the serializer
- * enforces rather than a rule the markup has to keep remembering.
+ * The workspace's name is here, and used to be deliberately absent. The
+ * argument for leaving it out was that a tenant label beside the company
+ * switcher offers a second, competing context to read the tabs against. What
+ * that missed is that the tenant is a context whether or not it is named: an
+ * operator working across two workspaces had nothing on the screen saying which
+ * one they were in, and the only way out was a wordmark that gave no hint it
+ * led anywhere. So the name is the label and an exit control sits beside it -
+ * the boundary is drawn once, visibly, instead of being inferred.
  */
 final class WorkspaceNavigation
 {
@@ -24,6 +26,7 @@ final class WorkspaceNavigation
      */
     public function __construct(
         public readonly string $workspaceId,
+        public readonly string $workspaceName,
         public readonly ?string $currentClientId,
         public readonly array $clients,
         public readonly WorkspaceNavigationPermissions $permissions,
@@ -45,6 +48,7 @@ final class WorkspaceNavigation
     /**
      * @return array{
      *     workspace_id: string,
+     *     workspace_name: string,
      *     current_client_id: string|null,
      *     clients: list<array{id: string, name: string, destinations: array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}}>,
      *     permissions: array{manage_workspace: bool, create_client: bool, manage_current_client: bool, search: bool},
@@ -55,6 +59,7 @@ final class WorkspaceNavigation
     {
         return [
             'workspace_id' => $this->workspaceId,
+            'workspace_name' => $this->workspaceName,
             'current_client_id' => $this->currentClientId,
             'clients' => array_map(
                 static fn (ClientNavigationOption $client): array => $client->toArray(),

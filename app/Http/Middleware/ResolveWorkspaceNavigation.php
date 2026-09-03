@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Navigation\WorkspaceNavigationFactory;
+use App\Services\Navigation\WorkspaceReturnPoint;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -28,7 +29,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class ResolveWorkspaceNavigation
 {
-    public function __construct(private readonly WorkspaceNavigationFactory $factory) {}
+    public function __construct(
+        private readonly WorkspaceNavigationFactory $factory,
+        private readonly WorkspaceReturnPoint $returnPoint,
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -38,18 +42,16 @@ class ResolveWorkspaceNavigation
         if ($workspace instanceof Workspace && $user instanceof User) {
             $company = $request->route('clientCompany');
 
-            $navigation = $this->factory->for(
-                $workspace,
-                $user,
-                // Bound from the route, and only when it belongs to this
-                // workspace. A company id is unique across every tenant, so a
-                // pasted one arrives bound and plausible; the factory refuses
-                // to mark it current, but only if it is never handed one from
-                // somewhere else.
-                $company instanceof ClientCompany && (int) $company->workspace_id === (int) $workspace->id
+            // Bound from the route, and only when it belongs to this workspace.
+            // A company id is unique across every tenant, so a pasted one
+            // arrives bound and plausible; the factory refuses to mark it
+            // current, but only if it is never handed one from somewhere else.
+            $current = $company instanceof ClientCompany
+                && (int) $company->workspace_id === (int) $workspace->id
                     ? $company
-                    : null,
-            );
+                    : null;
+
+            $navigation = $this->factory->for($workspace, $user, $current);
 
             // Written here rather than by each controller, and only from the
             // id the factory was willing to call current - which is to say only
@@ -61,6 +63,19 @@ class ResolveWorkspaceNavigation
                     $navigation->currentClientId,
                 );
             }
+
+            // And durably, on the user. The session keeps the per-workspace
+            // memory for as long as it lives; this is what survives it, so
+            // signing in tomorrow lands where today ended rather than on the
+            // selector. Passed the same authorized company - null when the
+            // reader is inside the workspace but not inside any one client -
+            // and it writes only when the pair actually moved, because this
+            // runs on every navigated page.
+            $this->returnPoint->remember(
+                $user,
+                $workspace,
+                $navigation->currentClientId === null ? null : $current,
+            );
 
             Inertia::share('workspaceNavigation', $navigation->toArray());
         }
