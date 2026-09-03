@@ -33,8 +33,10 @@ final class AgentAgreementReadServiceTest extends TestCase
             'status' => 'active',
             'starts_on' => '2026-01-01',
             'currency' => 'USD',
-            'billing_cadence' => 'monthly',
+            'billing_cadence' => 'quarterly',
+            'first_cycle_proration' => null,
             'retainer_minutes' => 120,
+            'period_retainer_minutes' => 360,
             'retainer_amount' => 20000,
         ]);
         $other = Workspace::query()->create(['name' => 'Other workspace', 'slug' => 'other-agreement-workspace']);
@@ -53,7 +55,11 @@ final class AgentAgreementReadServiceTest extends TestCase
 
         $result = $service->get($principal, $workspace, $agreement->public_id);
         $this->assertSame('Monthly support', $result['title']);
-        $this->assertSame(120, $result['retainer_minutes_per_period']);
+        $this->assertSame('quarterly', $result['billing_cadence']);
+        $this->assertSame('quarterly', $result['effective_billing_cadence']);
+        $this->assertSame('prorate_hours', $result['effective_first_cycle_proration']);
+        $this->assertSame(360, $result['retainer_minutes_per_period']);
+        $this->assertSame(120, $result['retainer_minutes_per_month']);
         $this->assertSame('Agreement project', $result['project']);
 
         $this->expectException(ModelNotFoundException::class);

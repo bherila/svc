@@ -165,6 +165,9 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertOk()->json('result');
         $this->assertFalse($agreementResponse['isError']);
         $this->assertSame('MCP Agreement', $agreementResponse['structuredContent']['data']['title']);
+        $this->assertSame('monthly', $agreementResponse['structuredContent']['data']['effective_billing_cadence']);
+        $this->assertSame('prorate_hours', $agreementResponse['structuredContent']['data']['effective_first_cycle_proration']);
+        $this->assertSame(120, $agreementResponse['structuredContent']['data']['retainer_minutes_per_month']);
 
         $scheduleResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/call', 'params' => ['name' => 'billing_schedules.get', 'arguments' => ['workspace_id' => $workspace->public_id, 'schedule_id' => $schedule->public_id]]], $session)
             ->assertOk()->json('result');

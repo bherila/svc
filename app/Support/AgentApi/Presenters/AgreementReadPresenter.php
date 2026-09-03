@@ -10,7 +10,9 @@ final class AgreementReadPresenter
     /** @return array<string, mixed> */
     public function present(ClientAgreement $agreement, ?string $projectName): array
     {
-        $grantsRetainer = $this->grantsRecurringRetainer($agreement);
+        $isRecurring = $agreement->billsOnARecurringCadence();
+        $grantsRetainer = $isRecurring
+            && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null);
 
         return [
             'id' => $agreement->public_id,
@@ -18,12 +20,21 @@ final class AgreementReadPresenter
             'status' => $agreement->status,
             'currency' => $agreement->currency,
             'billing_cadence' => $agreement->billing_cadence,
-            'is_recurring' => $agreement->billsOnARecurringCadence(),
+            'effective_billing_cadence' => $isRecurring
+                ? $agreement->effectiveBillingCadence()->value
+                : null,
+            'effective_first_cycle_proration' => $isRecurring
+                ? $agreement->effectiveFirstCycleProration()->value
+                : null,
+            'is_recurring' => $isRecurring,
             'starts_on' => $agreement->starts_on->toDateString(),
             'ends_on' => $agreement->ends_on?->toDateString(),
             'signed_at' => $agreement->signed_at?->toISOString(),
             'retainer_minutes_per_period' => $grantsRetainer
                 ? (int) round($agreement->periodRetainerHours() * 60)
+                : null,
+            'retainer_minutes_per_month' => $grantsRetainer
+                ? (int) round($agreement->retainerHoursPerMonth() * 60)
                 : null,
             'retainer_amount_per_period' => $grantsRetainer
                 ? (int) round($agreement->periodRetainerFee() * 100)
