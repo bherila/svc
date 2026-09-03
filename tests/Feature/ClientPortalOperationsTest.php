@@ -167,6 +167,33 @@ class ClientPortalOperationsTest extends TestCase
         $this->assertSame(1, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->count());
     }
 
+    public function test_the_client_agreement_payload_masks_internal_effective_terms_with_a_stable_shape(): void
+    {
+        [, $clientUser, , $workspace, $company] = $this->tenant();
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Visible synthetic agreement',
+            'starts_on' => '2026-01-01',
+            'status' => 'active',
+            'is_visible_to_client' => true,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'retainer_minutes' => 600,
+        ]);
+
+        $this->actingAs($clientUser)
+            ->get("/portal/{$company->public_id}/agreements/{$agreement->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('agreement.effective_billing_cadence')
+                ->has('agreement.effective_first_cycle_proration')
+                ->has('agreement.retainer_minutes_per_month')
+                ->where('agreement.effective_billing_cadence', null)
+                ->where('agreement.effective_first_cycle_proration', null)
+                ->where('agreement.retainer_minutes_per_month', null));
+    }
+
     public function test_nothing_invisible_reaches_the_portal_payload(): void
     {
         [, $clientUser, , $workspace, $company, $otherCompany] = $this->tenant();
