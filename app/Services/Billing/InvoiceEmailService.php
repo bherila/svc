@@ -89,26 +89,54 @@ final class InvoiceEmailService
         $this->assertSendable($invoice, $workspace);
 
         $delivery = $this->record($invoice, $draft);
-        $id = (int) $delivery->id;
+        $id = $delivery->id;
 
-        DB::afterCommit(function () use ($invoice, $draft, $id): void {
-            $registered = ClientInvoiceEmailDelivery::query()->find($id);
-
-            if (! $registered instanceof ClientInvoiceEmailDelivery) {
-                return;
-            }
-
-            try {
-                $this->deliver($invoice, $registered, $draft);
-            } catch (DomainException $failure) {
-                Log::warning('An invoice email failed after commit.', [
-                    'delivery' => $registered->public_id,
-                    'reason' => $failure->getMessage(),
-                ]);
-            }
-        });
+        DB::afterCommit(fn () => $this->deliverRegistered($invoice, $id, $draft));
 
         return $delivery;
+    }
+
+    /**
+     * Send a delivery that was registered earlier, by its id.
+     *
+     * Extracted from the `afterCommit` closure so it can be tested at all: a
+     * callback registered inside a transaction never runs under
+     * `RefreshDatabase`, which wraps every test in one, so everything it
+     * decided was unreachable from the suite.
+     *
+     * A delivery that has gone, or that is no longer pending, is not an error.
+     * The transaction it was written in may have rolled back after this was
+     * registered - which is exactly the case deferring exists to handle - and a
+     * delivery already resolved has nothing left to do.
+     *
+     * Nor is a refusal, here. The request that asked for this has already been
+     * answered, so the outcome goes on the delivery row and the reason into the
+     * log rather than into an exception nobody is waiting for.
+     */
+    public function deliverRegistered(ClientInvoice $invoice, int $deliveryId, InvoiceEmailDraft $draft): void
+    {
+        $registered = ClientInvoiceEmailDelivery::query()->find($deliveryId);
+
+        if (! $registered instanceof ClientInvoiceEmailDelivery) {
+            return;
+        }
+
+        // Only a delivery still waiting is sent. The job this replaced carried
+        // the same guard for queue retries; the deferral is registered once, so
+        // reaching here twice takes a second caller - and the cost of getting
+        // that wrong is a client billed once and emailed about it twice.
+        if ($registered->status !== 'pending') {
+            return;
+        }
+
+        try {
+            $this->deliver($invoice, $registered, $draft);
+        } catch (DomainException $failure) {
+            Log::warning('An invoice email failed after commit.', [
+                'delivery' => $registered->public_id,
+                'reason' => $failure->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -130,25 +158,31 @@ final class InvoiceEmailService
         }
 
         $suggestions = [];
+        // A list of the addresses already offered rather than a map to `true`.
+        // `isset()` never looks at the value, so the flag could be anything and
+        // nothing would change - which is not a thing to leave in code that
+        // decides whether a client is emailed twice.
         $seen = [];
 
         $billing = trim((string) $company->billing_email);
 
         if ($billing !== '' && filter_var($billing, FILTER_VALIDATE_EMAIL) !== false) {
             $suggestions[] = ['email' => $billing, 'label' => 'Billing address'];
-            $seen[strtolower($billing)] = true;
+            $seen[] = strtolower($billing);
         }
 
         foreach ($company->portalUsers()->get() as $user) {
-            $address = trim((string) $user->email);
+            $address = trim($user->email);
             $key = strtolower($address);
 
-            if ($address === '' || isset($seen[$key])) {
+            // `continue`, not `break`: one duplicate in the middle of the list
+            // must not stop the people after it being offered.
+            if ($address === '' || in_array($key, $seen, true)) {
                 continue;
             }
 
-            $suggestions[] = ['email' => $address, 'label' => (string) $user->name];
-            $seen[$key] = true;
+            $suggestions[] = ['email' => $address, 'label' => $user->name];
+            $seen[] = $key;
         }
 
         return $suggestions;

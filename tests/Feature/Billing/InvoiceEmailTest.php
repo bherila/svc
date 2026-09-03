@@ -13,6 +13,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceEmailDraft;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -254,6 +255,153 @@ class InvoiceEmailTest extends TestCase
                 "A billing_email of [{$stored}] was suggested.",
             );
         }
+    }
+
+    public function test_a_billing_address_with_stray_whitespace_is_still_suggested(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $invoice->clientCompany->forceFill(['billing_email' => '  ap@synthetic.test '])->save();
+
+        // An address pasted out of a spreadsheet arrives padded. Untrimmed it
+        // fails validation here and is silently dropped, so the operator sees
+        // no suggestion at all for a client that plainly has one.
+        $this->assertSame(
+            [['email' => 'ap@synthetic.test', 'label' => 'Billing address']],
+            app(InvoiceEmailService::class)->suggestedRecipients($invoice->fresh()),
+        );
+    }
+
+    public function test_the_billing_address_is_matched_case_insensitively(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $invoice->clientCompany->forceFill(['billing_email' => 'Billing@Synthetic.test'])->save();
+        $invoice->clientCompany->portalUsers()->attach(
+            User::factory()->create(['name' => 'Ada Synthetic', 'email' => 'billing@synthetic.test']),
+            ['role' => 'client'],
+        );
+
+        // Stored one way on the company and another on the person, and the
+        // routing part of an address is not case-sensitive - so this is one
+        // recipient, not two.
+        $this->assertSame(
+            [['email' => 'Billing@Synthetic.test', 'label' => 'Billing address']],
+            app(InvoiceEmailService::class)->suggestedRecipients($invoice->fresh()),
+        );
+    }
+
+    public function test_a_duplicate_portal_user_does_not_hide_the_ones_after_it(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $company = $invoice->clientCompany;
+
+        // The duplicate comes first on purpose: skipping it must not stop the
+        // list, which is the difference between `continue` and `break` and the
+        // difference between emailing a client's second contact and not.
+        foreach ([
+            ['Ada Synthetic', 'billing@synthetic.test'],
+            ['Bo Synthetic', 'bo@synthetic.test'],
+        ] as [$name, $email]) {
+            $company->portalUsers()->attach(
+                User::factory()->create(['name' => $name, 'email' => $email]),
+                ['role' => 'client'],
+            );
+        }
+
+        $this->assertSame([
+            ['email' => 'billing@synthetic.test', 'label' => 'Billing address'],
+            ['email' => 'bo@synthetic.test', 'label' => 'Bo Synthetic'],
+        ], app(InvoiceEmailService::class)->suggestedRecipients($invoice->fresh()));
+    }
+
+    /**
+     * The deferred send, reached directly.
+     *
+     * Extracted from the `afterCommit` closure so the suite can reach what it
+     * decides at all, rather than only through a callback whose firing depends
+     * on transaction bookkeeping.
+     */
+    public function test_a_registered_delivery_is_sent_when_it_is_reached(): void
+    {
+        Mail::fake();
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null);
+
+        $delivery = app(InvoiceEmailService::class)->sendAfterCommit($invoice, $draft, $workspace);
+
+        Mail::assertSent(InvoiceMail::class, 1);
+        $this->assertSame('sent', $delivery->fresh()->status);
+    }
+
+    public function test_a_delivery_that_already_went_is_not_sent_again(): void
+    {
+        Mail::fake();
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null);
+        $delivery = app(InvoiceEmailService::class)->sendAfterCommit($invoice, $draft, $workspace);
+
+        // Reaching the deferred send twice takes a second caller, and the cost
+        // of getting it wrong is a client billed once and emailed about it
+        // twice.
+        app(InvoiceEmailService::class)->deliverRegistered($invoice, $delivery->id, $draft);
+
+        Mail::assertSent(InvoiceMail::class, 1);
+    }
+
+    public function test_a_delivery_that_no_longer_exists_is_not_an_error(): void
+    {
+        Mail::fake();
+        [, , $invoice] = $this->issuedInvoice();
+
+        // The transaction that wrote it rolled back after the send was
+        // registered, which is the case deferring exists to handle: there is
+        // nothing to send and nothing to complain about.
+        app(InvoiceEmailService::class)->deliverRegistered(
+            $invoice,
+            987654321,
+            InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null),
+        );
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_a_refusal_after_commit_is_recorded_rather_than_thrown(): void
+    {
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        Log::spy();
+        Mail::shouldReceive('to')->andThrow(new TransportException('refused'));
+
+        // Nobody is waiting on this: the request that asked for it has been
+        // answered. Throwing would reach nothing, so the outcome goes on the
+        // row and the reason into the log.
+        $delivery = app(InvoiceEmailService::class)->sendAfterCommit(
+            $invoice,
+            InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null),
+            $workspace,
+        );
+
+        $this->assertSame('failed', $delivery->fresh()->status);
+        Log::shouldHaveReceived('warning');
+    }
+
+    public function test_a_failed_send_is_logged_with_the_delivery_it_names(): void
+    {
+        [$owner, $workspace, $invoice] = $this->issuedInvoice();
+        Log::spy();
+        Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+
+        $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertStatus(422);
+
+        $delivery = ClientInvoiceEmailDelivery::query()->sole();
+
+        // The log line is the only place the reason survives - the screen gets
+        // the class of failure and nothing more - so it has to name which
+        // delivery it is about.
+        Log::shouldHaveReceived('error')
+            ->withArgs(function (string $message, array $context) use ($delivery): bool {
+                return $message === 'An invoice email could not be sent.'
+                    && ($context['delivery'] ?? null) === $delivery->public_id
+                    && ($context['exception'] ?? null) instanceof TransportException;
+            });
     }
 
     public function test_the_default_subject_names_the_invoice(): void

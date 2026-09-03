@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property int $id
  * @property string $public_id
  * @property string $status
  * @property list<string> $recipients
