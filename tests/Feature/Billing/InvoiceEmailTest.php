@@ -271,6 +271,23 @@ class InvoiceEmailTest extends TestCase
         );
     }
 
+    public function test_a_portal_users_address_is_trimmed_before_it_is_offered(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $invoice->clientCompany->portalUsers()->attach(
+            User::factory()->create(['name' => 'Ada Synthetic', 'email' => " ada@synthetic.test\n"]),
+            ['role' => 'client'],
+        );
+
+        // Same reason as the billing address: an address is padded by whoever
+        // typed it, and an untrimmed one is offered to the operator, chosen,
+        // and then refused by the mail server as invalid.
+        $this->assertSame([
+            ['email' => 'billing@synthetic.test', 'label' => 'Billing address'],
+            ['email' => 'ada@synthetic.test', 'label' => 'Ada Synthetic'],
+        ], app(InvoiceEmailService::class)->suggestedRecipients($invoice->fresh()));
+    }
+
     public function test_the_billing_address_is_matched_case_insensitively(): void
     {
         [, , $invoice] = $this->issuedInvoice();

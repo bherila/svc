@@ -96,11 +96,15 @@ class InvoiceDeliveryStatusTest extends TestCase
     {
         $delivery = $this->delivery('synthetic-message-id-2');
 
-        foreach (['hard_bounce', 'opened'] as $event) {
+        // The refused one is counted as not recorded, which is the only way a
+        // reader of this response can tell the two outcomes apart.
+        foreach (['hard_bounce' => 1, 'opened' => 0] as $event => $recorded) {
             $this->postJson(self::URL, [
                 'event' => $event,
                 'message-id' => 'synthetic-message-id-2',
-            ], ['X-Webhook-Token' => 'synthetic-webhook-token'])->assertOk();
+            ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+                ->assertOk()
+                ->assertJsonPath('recorded', $recorded);
         }
 
         // These arrive out of order - the provider retries - and a message that
@@ -167,7 +171,149 @@ class InvoiceDeliveryStatusTest extends TestCase
         $this->assertNull($delivery->fresh()->provider_status);
     }
 
-    private function delivery(string $reference): ClientInvoiceEmailDelivery
+    public function test_an_event_of_equal_weight_replaces_the_one_before_it(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-equal');
+
+        foreach (['delivered', 'opened'] as $event) {
+            $this->postJson(self::URL, [
+                'event' => $event,
+                'message-id' => 'synthetic-message-id-equal',
+            ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+                ->assertOk()
+                ->assertJsonPath('recorded', 1);
+        }
+
+        // Only a *worse* earlier event holds its ground. These two weigh the
+        // same, and the later one says more: the invoice was opened. Refusing
+        // it would freeze the row on the first thing ever heard about it.
+        $this->assertSame('opened', $delivery->fresh()->provider_status);
+    }
+
+    public function test_an_event_name_in_the_providers_own_casing_is_still_understood(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-cased');
+
+        // Which events arrive is chosen from a list of labels in someone else's
+        // console, and the casing that comes back is not ours to fix. An event
+        // name we fail to recognise is dropped without a word.
+        $this->postJson(self::URL, [
+            'event' => 'Hard_Bounce',
+            'message-id' => 'synthetic-message-id-cased',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertJsonPath('recorded', 1);
+
+        $this->assertSame('hard_bounce', $delivery->fresh()->provider_status);
+    }
+
+    public function test_an_event_naming_no_message_is_not_pinned_on_a_delivery_that_has_none(): void
+    {
+        // A delivery that has not reached the provider yet carries no
+        // reference, and there is always at least one of those. Eloquent turns
+        // `where($column, null)` into `where $column is null`, so those rows
+        // are precisely what an event with no message id would match.
+        $delivery = $this->delivery(null);
+
+        $this->postJson(self::URL, [
+            'event' => 'hard_bounce',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertJsonPath('recorded', 0);
+
+        $this->assertNull($delivery->fresh()->provider_status);
+    }
+
+    public function test_an_event_name_that_is_not_a_string_is_ignored_rather_than_fatal(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-shape');
+
+        // The body is whatever was posted. Brevo sends `event` as a string, but
+        // nothing about the shape is guaranteed and `trim()` on an array is a
+        // TypeError - which is a 500, and a provider that retries it.
+        $this->postJson(self::URL, [
+            'event' => ['delivered'],
+            'message-id' => 'synthetic-message-id-shape',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertJsonPath('recorded', 0);
+
+        $this->assertNull($delivery->fresh()->provider_status);
+    }
+
+    public function test_a_blank_message_id_falls_through_to_the_other_spelling(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-alt');
+
+        // Brevo has posted this key both ways. A blank `message-id` beside a
+        // populated `message_id` is what decides whether the fall-through is
+        // real: taken untrimmed, the blank one reads as an answer and the
+        // lookup goes out with an empty reference.
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => '   ',
+            'message_id' => 'synthetic-message-id-alt',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertJsonPath('recorded', 1);
+
+        $this->assertSame('delivered', $delivery->fresh()->provider_status);
+    }
+
+    public function test_a_timestamp_sent_as_a_string_of_digits_is_read_as_one(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-ts-string');
+
+        // JSON has one number type and providers are inconsistent about which
+        // side of the quotes they put a unix timestamp on. Refusing the quoted
+        // form silently substitutes our clock for theirs.
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => 'synthetic-message-id-ts-string',
+            'ts_event' => '1788000000',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])->assertOk();
+
+        $this->assertSame(1788000000, $delivery->fresh()->provider_status_at?->getTimestamp());
+    }
+
+    public function test_a_timestamp_we_cannot_read_falls_back_to_our_own_clock(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-ts-unreadable');
+
+        // `(int) '2026-05-01T10:00:00Z'` is 2026, which is a January morning in
+        // 1970. Reading a date we do not understand as a number is worse than
+        // not reading it: our own clock is at least approximately right, and a
+        // bounce dated 1970 sorts to the bottom of every screen that shows it.
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => 'synthetic-message-id-ts-unreadable',
+            'ts_event' => '2026-05-01T10:00:00Z',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])->assertOk();
+
+        $recorded = $delivery->fresh()->provider_status_at;
+
+        $this->assertNotNull($recorded);
+        $this->assertGreaterThan(1700000000, $recorded->getTimestamp());
+    }
+
+    public function test_the_event_time_is_preferred_over_the_time_the_notice_was_assembled(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-ts-both');
+
+        // Brevo sends both: `ts_event` is when the thing happened and `ts` is
+        // when this notification was put together, and after a retry the two
+        // are hours apart. "Bounced at" is about the bounce.
+        $this->postJson(self::URL, [
+            'event' => 'hard_bounce',
+            'message-id' => 'synthetic-message-id-ts-both',
+            'ts_event' => 1788000000,
+            'ts' => 1788009999,
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])->assertOk();
+
+        $this->assertSame(1788000000, $delivery->fresh()->provider_status_at?->getTimestamp());
+    }
+
+    private function delivery(?string $reference): ClientInvoiceEmailDelivery
     {
         $owner = User::factory()->create();
         $workspace = Workspace::query()->create([
