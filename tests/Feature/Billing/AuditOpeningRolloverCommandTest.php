@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\Billing\OpeningRolloverAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
@@ -92,6 +93,23 @@ class AuditOpeningRolloverCommandTest extends TestCase
         foreach (['Rollover Workspace', 'Rollover Client', 'Carried retainer', 'rollover-workspace', 'rollover-client'] as $secret) {
             $this->assertStringNotContainsString($secret, $report);
         }
+    }
+
+    public function test_the_shared_auditor_scopes_every_count_to_one_workspace(): void
+    {
+        $selected = $this->agreement(['initial_rollover_minutes' => 600, 'rollover_months' => 1]);
+        $this->agreement(['initial_rollover_minutes' => 1200, 'rollover_months' => 2]);
+
+        $counts = app(OpeningRolloverAuditor::class)->count(
+            Workspace::query()->findOrFail($selected->workspace_id),
+        );
+
+        $this->assertSame(1, $counts->agreements);
+        $this->assertSame(1, $counts->withInitialRollover);
+        $this->assertSame(1, $counts->legacyMonthlyOfThose);
+        $this->assertSame(1, $counts->affected);
+        $this->assertSame(600, $counts->capacityAtStakeMinutes);
+        $this->assertSame(1, $counts->longestRolloverMonths);
     }
 
     public function test_an_unknown_format_is_refused(): void

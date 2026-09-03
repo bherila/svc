@@ -83,7 +83,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertIsString($session);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -185,6 +185,12 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertFalse($auditResponse['isError']);
         $this->assertSame(0, $auditResponse['structuredContent']['data']['invoices']);
         $this->assertArrayNotHasKey('invoice_number', $auditResponse['structuredContent']['data']);
+
+        $openingRolloverResponse = $this->mcp(['jsonrpc' => '2.0', 'id' => 8, 'method' => 'tools/call', 'params' => ['name' => 'billing.audit_opening_rollover', 'arguments' => ['workspace_id' => $workspace->public_id]]], $session)
+            ->assertOk()->json('result');
+        $this->assertFalse($openingRolloverResponse['isError']);
+        $this->assertSame(1, $openingRolloverResponse['structuredContent']['data']['agreements']);
+        $this->assertArrayNotHasKey('agreement_id', $openingRolloverResponse['structuredContent']['data']);
     }
 
     public function test_mcp_initialization_and_prompts_self_document_safe_workflows(): void
@@ -307,6 +313,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNotContains('billing_schedules.list', $names);
         $this->assertNotContains('capacity_ledger.get', $names);
         $this->assertNotContains('billing.audit_unplaceable_invoices', $names);
+        $this->assertNotContains('billing.audit_opening_rollover', $names);
 
         $templates = $this->mcp([
             'jsonrpc' => '2.0', 'id' => 4, 'method' => 'resources/templates/list', 'params' => [],

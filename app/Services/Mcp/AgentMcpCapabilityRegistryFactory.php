@@ -35,6 +35,7 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->unplaceableInvoicesAudit($billingAudits));
         $registry->register($this->undatedCollectibleInvoicesAudit($billingAudits));
         $registry->register($this->missingBilledOverageAudit($billingAudits));
+        $registry->register($this->openingRolloverAudit($billingAudits));
         $registry->register($this->logTimePrompt($prompts));
         $registry->register($this->prepareInvoicePrompt($prompts));
 
@@ -498,6 +499,24 @@ final class AgentMcpCapabilityRegistryFactory
                 'charged_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'agreements_affected' => ['type' => 'integer', 'minimum' => 0],
+            ],
+        );
+    }
+
+    private function openingRolloverAudit(AgentMcpBillingAuditTools $tools): McpCapabilityDefinition
+    {
+        return $this->billingAudit(
+            name: 'billing.audit_opening_rollover',
+            title: 'Audit opening rollover',
+            description: 'Get aggregate counts of agreements whose opening rollover changes their capacity ledger.',
+            handler: [$tools, 'openingRollover'],
+            properties: [
+                'agreements' => ['type' => 'integer', 'minimum' => 0],
+                'with_initial_rollover' => ['type' => 'integer', 'minimum' => 0],
+                'legacy_monthly_of_those' => ['type' => 'integer', 'minimum' => 0],
+                'affected' => ['type' => 'integer', 'minimum' => 0],
+                'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
+                'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
             ],
         );
     }

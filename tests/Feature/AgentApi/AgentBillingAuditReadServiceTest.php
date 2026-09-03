@@ -3,6 +3,7 @@
 namespace Tests\Feature\AgentApi;
 
 use App\Models\AgentPrincipal;
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\User;
@@ -23,6 +24,18 @@ final class AgentBillingAuditReadServiceTest extends TestCase
         $workspace = Workspace::query()->create(['name' => 'Audit workspace', 'slug' => 'audit-workspace']);
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Audit client', 'slug' => 'audit-client']);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'title' => 'Audit agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly',
+            'retainer_minutes' => 600,
+            'initial_rollover_minutes' => 600,
+            'rollover_months' => 1,
+        ]);
         ClientInvoice::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
@@ -33,6 +46,18 @@ final class AgentBillingAuditReadServiceTest extends TestCase
         ]);
         $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign audit workspace', 'slug' => 'foreign-audit-workspace']);
         $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreignWorkspace->id, 'name' => 'Foreign audit client', 'slug' => 'foreign-audit-client']);
+        ClientAgreement::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            'client_company_id' => $foreignCompany->id,
+            'title' => 'Foreign audit agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly',
+            'retainer_minutes' => 1200,
+            'initial_rollover_minutes' => 1200,
+            'rollover_months' => 2,
+        ]);
         ClientInvoice::query()->create([
             'workspace_id' => $foreignWorkspace->id,
             'client_company_id' => $foreignCompany->id,
@@ -48,11 +73,16 @@ final class AgentBillingAuditReadServiceTest extends TestCase
         $unplaceable = $service->unplaceableInvoices($principal, $workspace);
         $undated = $service->undatedCollectibleInvoices($principal, $workspace);
         $overage = $service->missingBilledOverage($principal, $workspace);
+        $openingRollover = $service->openingRollover($principal, $workspace);
 
         $this->assertSame(1, $unplaceable['invoices']);
         $this->assertSame(1, $undated['invoices']);
         $this->assertSame(['USD' => 10000], $undated['undated_balances']);
         $this->assertSame(1, $overage['invoices']);
+        $this->assertSame(1, $openingRollover['agreements']);
+        $this->assertSame(1, $openingRollover['affected']);
+        $this->assertSame(600, $openingRollover['capacity_at_stake_minutes']);
+        $this->assertArrayNotHasKey('agreement_id', $openingRollover);
         $this->assertArrayNotHasKey('invoice_number', $undated);
     }
 
