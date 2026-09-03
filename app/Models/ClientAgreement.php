@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $billing_cadence
  * @property string $public_id
  * @property int|null $hourly_rate_amount
+ * @property int|null $rollover_months
  * @property CarbonImmutable|null $activated_at
  * @property CarbonImmutable|null $terminated_at
  * @property CarbonImmutable $starts_on

@@ -26,6 +26,9 @@ final class OpeningRolloverAuditor
         // accessors. This is the same branch InvoiceLedgerBuilder evaluates.
         $legacyMonthly = (clone $withRollover)->whereNull('period_retainer_minutes');
         $affected = (clone $legacyMonthly)->where('rollover_months', '>', 0);
+        $longest = (clone $affected)
+            ->orderByDesc('rollover_months')
+            ->first(['rollover_months']);
 
         return new OpeningRolloverCounts(
             agreements: $agreements->count(),
@@ -33,7 +36,7 @@ final class OpeningRolloverAuditor
             legacyMonthlyOfThose: (clone $legacyMonthly)->count(),
             affected: (clone $affected)->count(),
             capacityAtStakeMinutes: (int) (clone $affected)->sum('initial_rollover_minutes'),
-            longestRolloverMonths: (int) ((clone $affected)->max('rollover_months') ?? 0),
+            longestRolloverMonths: $longest->rollover_months ?? 0,
         );
     }
 

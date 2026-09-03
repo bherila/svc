@@ -68,6 +68,17 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(0, $summary['affected'], 'But nothing carries it forward');
     }
 
+    public function test_the_longest_rollover_policy_is_taken_from_the_affected_population(): void
+    {
+        $this->agreement(['initial_rollover_minutes' => 600, 'rollover_months' => 1]);
+        $this->agreement(['initial_rollover_minutes' => 120, 'rollover_months' => 3]);
+
+        $summary = $this->summary();
+
+        $this->assertSame(2, $summary['affected']);
+        $this->assertSame(3, $summary['longest_rollover_months']);
+    }
+
     public function test_an_agreement_with_no_initial_rollover_is_not_counted(): void
     {
         $this->agreement(['initial_rollover_minutes' => 0, 'rollover_months' => 6]);
