@@ -32,7 +32,7 @@
 <table>
     <thead><tr><th>Description</th><th>Type</th><th class="right">Quantity</th><th class="right">Unit</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>
     <tbody>
-    @foreach ($invoice->lines as $line)
+    @foreach ($lines as $line)
         <tr><td>{{ $line->description }}</td><td>{{ $line->type }}</td><td class="right">{{ $line->quantity }}</td><td class="right">{{ number_format($line->unit_amount / 100, 2) }}</td><td class="right">{{ number_format($line->tax_amount / 100, 2) }}</td><td class="right">{{ number_format($line->total_amount / 100, 2) }}</td></tr>
     @endforeach
     </tbody>
@@ -58,7 +58,7 @@
 @if (! empty($detail))
     <div class="appendix">
         <h2>Appendix: what this covers</h2>
-        @foreach ($invoice->lines as $line)
+        @foreach ($lines as $line)
             @php($items = $detail[$line->public_id] ?? [])
             @if (! empty($items))
                 <h3>{{ $line->description }}</h3>

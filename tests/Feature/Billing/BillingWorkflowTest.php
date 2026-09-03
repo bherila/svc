@@ -10,6 +10,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use Carbon\CarbonImmutable;
@@ -366,7 +367,12 @@ class BillingWorkflowTest extends TestCase
         ], [$this->line()]);
         $service->issue($invoice, $workspace);
 
-        $html = view('invoices.show', ['invoice' => $invoice->fresh(['lines', 'clientCompany'])])->render();
+        // Through the service that owns this document rather than by handing
+        // the view a set of variables assembled here: what the template is
+        // given - which lines, and whose appendix - is exactly the decision
+        // being asserted, and a test that supplies its own inputs is asserting
+        // its own assembly instead of the one clients receive.
+        $html = app(InvoiceDocumentService::class)->html($invoice->fresh())->render();
         $this->assertStringNotContainsString('Internal synthetic note', $html);
     }
 

@@ -10,10 +10,12 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
-use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceEmailDraft;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
@@ -155,25 +157,136 @@ class InvoiceEmailTest extends TestCase
     }
 
     /**
-     * A failed send still moves the invoice on.
+     * Sending moves the invoice on twice, and the count is the assertion.
      *
-     * An agent reading the invoice before the attempt holds a version that no
-     * longer describes it: there is a delivery row against it now, and it says
-     * the message did not go. Leaving the revision alone would let that agent
-     * act on a state it has not seen.
+     * Once when the attempt is registered and once when its outcome is known,
+     * because an agent holding the version from before either is holding a
+     * state that no longer describes the invoice. Asserting only that the
+     * version changed proves nothing about the second: the first advance
+     * already changed it, so the outcome could stop being recorded and the
+     * test would still pass.
+     *
+     * @param  bool  $refused  whether the mailer rejects the message
      */
-    public function test_a_failed_send_advances_the_invoices_revision(): void
+    #[DataProvider('sendOutcomes')]
+    public function test_sending_advances_the_invoices_revision_twice(bool $refused): void
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
-        $before = AgentApiVersion::for($invoice->fresh());
+        $before = (int) $invoice->fresh()->lock_version;
 
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+        if ($refused) {
+            Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+        } else {
+            Mail::fake();
+        }
 
         $this->actingAs($owner)
             ->postJson($this->sendUrl($workspace, $invoice))
-            ->assertStatus(422);
+            ->assertStatus($refused ? 422 : 200);
 
-        $this->assertNotSame($before, AgentApiVersion::for($invoice->fresh()));
+        $this->assertSame($before + 2, (int) $invoice->fresh()->lock_version);
+        $this->assertNotSame($before, (int) $invoice->fresh()->lock_version);
+    }
+
+    /** @return array<string, array{0: bool}> */
+    public static function sendOutcomes(): array
+    {
+        return ['delivered' => [false], 'refused' => [true]];
+    }
+
+    /**
+     * What an invoice would be sent to if nobody chose.
+     *
+     * The client's billing address first, then the people who hold a login to
+     * their portal. Suggested rather than imposed - the compose screen shows
+     * them and the operator decides - but a wrong or missing suggestion is what
+     * an operator will send on without reading.
+     */
+    public function test_the_suggested_recipients_are_the_billing_address_then_the_portal_users(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $company = $invoice->clientCompany;
+
+        foreach ([['Ada Synthetic', 'ada@synthetic.test'], ['Bo Synthetic', 'bo@synthetic.test']] as [$name, $email]) {
+            $company->portalUsers()->attach(
+                User::factory()->create(['name' => $name, 'email' => $email]),
+                ['role' => 'client'],
+            );
+        }
+
+        $this->assertSame([
+            ['email' => 'billing@synthetic.test', 'label' => 'Billing address'],
+            ['email' => 'ada@synthetic.test', 'label' => 'Ada Synthetic'],
+            ['email' => 'bo@synthetic.test', 'label' => 'Bo Synthetic'],
+        ], app(InvoiceEmailService::class)->suggestedRecipients($invoice));
+    }
+
+    public function test_a_portal_user_at_the_billing_address_is_suggested_once(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+        $invoice->clientCompany->portalUsers()->attach(
+            User::factory()->create(['name' => 'Ada Synthetic', 'email' => 'BILLING@synthetic.test']),
+            ['role' => 'client'],
+        );
+
+        // The same address twice on one list is an operator's cue to remove one
+        // and a chance to remove the wrong one. Matched case-insensitively,
+        // because an address is not case-sensitive in the part that routes it.
+        $this->assertSame(
+            [['email' => 'billing@synthetic.test', 'label' => 'Billing address']],
+            app(InvoiceEmailService::class)->suggestedRecipients($invoice),
+        );
+    }
+
+    public function test_an_unusable_billing_address_is_not_suggested(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+
+        foreach (['', '   ', 'not-an-address'] as $stored) {
+            $invoice->clientCompany->forceFill(['billing_email' => $stored])->save();
+
+            // Offering one would put an address in the To line that the draft
+            // then refuses, so the send fails on something the operator never
+            // typed.
+            $this->assertSame(
+                [],
+                app(InvoiceEmailService::class)->suggestedRecipients($invoice->fresh()),
+                "A billing_email of [{$stored}] was suggested.",
+            );
+        }
+    }
+
+    public function test_the_default_subject_names_the_invoice(): void
+    {
+        [, , $invoice] = $this->issuedInvoice();
+
+        $this->assertSame(
+            'Invoice '.$invoice->invoice_number,
+            app(InvoiceEmailService::class)->defaultSubject($invoice),
+        );
+    }
+
+    /**
+     * The deferred path refuses what the immediate one refuses.
+     *
+     * It registers a delivery and sends after the caller's transaction commits,
+     * and by then there is nobody to report a refusal to - so the invoice has
+     * to be checked before anything is written, not after.
+     */
+    public function test_registering_a_send_refuses_an_invoice_that_cannot_be_emailed(): void
+    {
+        [, $workspace, $company] = $this->tenant();
+        $draft = app(InvoiceLifecycleService::class)
+            ->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Only collectible issued invoices can be emailed.');
+
+        app(InvoiceEmailService::class)->sendAfterCommit(
+            $draft,
+            InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null),
+            $workspace,
+        );
     }
 
     /**

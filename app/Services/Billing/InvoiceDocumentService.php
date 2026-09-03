@@ -23,10 +23,20 @@ final class InvoiceDocumentService
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
     public function html(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT): View
     {
-        $invoice->load(['lines', 'clientCompany']);
+        $invoice->load('clientCompany');
 
         return view('invoices.show', [
             'invoice' => $invoice,
+            // Read here and handed to the template, workspace-scoped, rather
+            // than left for the view to reach through `$invoice->lines`. That
+            // relation is unbounded, so the document listed one set of lines
+            // while the appendix below itemised another - and on a row migrated
+            // in from before the composite tenant keys those two sets are not
+            // the same.
+            'lines' => $invoice->lines()->where('workspace_id', $invoice->workspace_id)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get(),
             // Keyed by line public id, and empty for a line with no work behind
             // it - the retainer being sold for the coming cycle is a charge, not
             // a record of hours, and has nothing to itemise.
