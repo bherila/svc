@@ -363,3 +363,88 @@ jobs:
             https://id.bherila.net/oauth/authorize?*) ;;
             *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
           esac
+
+  # The pre-merge smoke proves the code works; it runs against `artisan serve` on
+  # a runner, with the runner's configuration, so it cannot see a production-only
+  # difference. This one asks the deployed host the same questions (#50).
+  #
+  # It never reads a business record. The credentials belong to a principal that
+  # is a member of no workspace, company or project - see
+  # DeploySmokeCredentialsCommand for why that is a stronger guarantee than any
+  # masking rule.
+  deployed-mcp-smoke:
+    name: Authenticated MCP smoke against the deployment
+    needs: [deploy]
+    if: ${{ needs.deploy.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
+    environment: web1
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.5.0 --activate
+
+      - name: Install the pinned MCP client SDK
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Set up pinned SSH credentials
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ecdsa
+          chmod 600 ~/.ssh/id_ecdsa
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # Minted on the host and masked before anything else can echo them. They
+      # are short-lived as a backstop, but revocation below is what actually
+      # ends them.
+      - name: Issue short-lived smoke credentials
+        id: credentials
+        run: |
+          credentials="$(ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes -o BatchMode=yes \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "cd ~/svc-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:mcp:deploy-smoke-credentials --ttl=15")"
+          authorized="$(printf '%s' "$credentials" | jq -r '.authorized_token')"
+          wrong_scope="$(printf '%s' "$credentials" | jq -r '.wrong_scope_token')"
+          test -n "$authorized" -a "$authorized" != null
+          test -n "$wrong_scope" -a "$wrong_scope" != null
+          echo "::add-mask::$authorized"
+          echo "::add-mask::$wrong_scope"
+          {
+            echo "authorized<<SVCTOKEN"
+            echo "$authorized"
+            echo "SVCTOKEN"
+            echo "wrong_scope<<SVCTOKEN"
+            echo "$wrong_scope"
+            echo "SVCTOKEN"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run the authenticated MCP smoke
+        env:
+          MCP_SMOKE_URL: https://svc.bherila.net/api/v1/mcp
+          MCP_SMOKE_EXPECTED_RESOURCE: https://svc.bherila.net/api/v1
+          MCP_SMOKE_BEARER_TOKEN: ${{ steps.credentials.outputs.authorized }}
+          MCP_SMOKE_WRONG_SCOPE_BEARER_TOKEN: ${{ steps.credentials.outputs.wrong_scope }}
+        run: node scripts/mcp-smoke.mjs
+
+      # Always, including after a failed assertion: a credential that outlives
+      # the run it was minted for is the thing this job must not leave behind.
+      - name: Revoke the smoke credentials
+        if: ${{ always() && steps.credentials.outcome != 'skipped' }}
+        run: |
+          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes -o BatchMode=yes \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "cd ~/svc-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:mcp:deploy-smoke-credentials --revoke"

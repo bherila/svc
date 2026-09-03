@@ -60,18 +60,35 @@ $agreement = ClientAgreement::query()->create([
 ]);
 
 $client = app(ClientRepository::class)->createPersonalAccessGrantClient('SVC MCP smoke', 'agent-principals');
-$issued = AgentPrincipal::query()->findOrFail($user->id)->createToken('SVC MCP smoke', [
-    AgentApiScopes::MCP_USE,
-    AgentApiScopes::IDENTITY_READ,
-    AgentApiScopes::BILLING_READ,
-]);
-Passport::token()->newQuery()
-    ->whereKey($issued->accessTokenId)
-    ->where('client_id', $client->id)
-    ->update(['resource_uri' => OAuthResourceIndicator::resource()]);
+$principal = AgentPrincipal::query()->findOrFail($user->id);
+
+/** Without the resource indicator the token is not addressed to this API. */
+$issue = static function (string $name, array $scopes) use ($principal, $client): string {
+    $issued = $principal->createToken($name, $scopes);
+    Passport::token()->newQuery()
+        ->whereKey($issued->accessTokenId)
+        ->where('client_id', $client->id)
+        ->update(['resource_uri' => OAuthResourceIndicator::resource()]);
+
+    return $issued->accessToken;
+};
 
 echo json_encode([
-    'token' => $issued->accessToken,
+    'token' => $issue('SVC MCP smoke', [
+        AgentApiScopes::MCP_USE,
+        AgentApiScopes::IDENTITY_READ,
+        AgentApiScopes::BILLING_READ,
+    ]),
+    // A connection carrying a different operation scope, so this lane exercises
+    // the scope and session-isolation assertions too - a check that only ever
+    // runs post-deploy is a check whose failures are expensive. It holds
+    // `projects:read` rather than nothing because a connection authorized for
+    // nothing cannot complete the handshake at all; see
+    // DeploySmokeCredentialsCommand.
+    'wrong_scope_token' => $issue('SVC MCP smoke wrong scope', [
+        AgentApiScopes::MCP_USE,
+        AgentApiScopes::PROJECTS_READ,
+    ]),
     'workspace_id' => $workspace->public_id,
     'agreement_id' => $agreement->public_id,
 ], JSON_THROW_ON_ERROR);
