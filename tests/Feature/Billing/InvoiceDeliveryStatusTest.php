@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -153,6 +154,42 @@ class InvoiceDeliveryStatusTest extends TestCase
         $this->assertNull($delivery->fresh()->provider_status);
     }
 
+    public function test_a_bearer_token_is_accepted(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-bearer');
+
+        $this->withToken('synthetic-webhook-token')->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => 'synthetic-message-id-bearer',
+        ])->assertOk()->assertJsonPath('recorded', 1);
+
+        $this->assertSame('delivered', $delivery->fresh()->provider_status);
+    }
+
+    public function test_a_query_string_token_is_rejected(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-query-token');
+
+        $this->postJson(self::URL.'?token=synthetic-webhook-token', [
+            'event' => 'delivered',
+            'message-id' => 'synthetic-message-id-query-token',
+        ])->assertUnauthorized();
+
+        $this->assertNull($delivery->fresh()->provider_status);
+    }
+
+    public function test_conflicting_header_credentials_are_rejected(): void
+    {
+        $delivery = $this->delivery('synthetic-message-id-conflicting-token');
+
+        $this->withToken('another-token')->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => 'synthetic-message-id-conflicting-token',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])->assertUnauthorized();
+
+        $this->assertNull($delivery->fresh()->provider_status);
+    }
+
     public function test_an_unconfigured_deployment_refuses_every_caller(): void
     {
         config(['services.brevo.webhook_token' => null]);
@@ -239,6 +276,105 @@ class InvoiceDeliveryStatusTest extends TestCase
             ->assertJsonPath('recorded', 0);
 
         $this->assertNull($delivery->fresh()->provider_status);
+    }
+
+    public function test_an_oversized_body_is_refused_before_it_is_decoded(): void
+    {
+        config(['services.brevo.webhook_max_payload_bytes' => 100]);
+
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => str_repeat('x', 101),
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertStatus(413)
+            ->assertExactJson(['message' => 'Webhook body is too large.']);
+    }
+
+    public function test_malformed_json_is_refused_without_processing_an_event(): void
+    {
+        $this->call(
+            'POST',
+            self::URL,
+            server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_WEBHOOK_TOKEN' => 'synthetic-webhook-token',
+            ],
+            content: '{"event":',
+        )->assertBadRequest()->assertExactJson(['message' => 'Unreadable webhook body.']);
+    }
+
+    public function test_a_batch_above_the_configured_event_limit_is_refused(): void
+    {
+        config(['services.brevo.webhook_max_events' => 1]);
+
+        $this->postJson(self::URL, [
+            ['event' => 'delivered', 'message-id' => 'synthetic-message-id-a'],
+            ['event' => 'delivered', 'message-id' => 'synthetic-message-id-b'],
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertStatus(413)
+            ->assertExactJson(['message' => 'Webhook batch contains too many events.']);
+    }
+
+    public function test_a_reference_shared_across_workspaces_is_ambiguous_and_updates_neither(): void
+    {
+        $first = $this->delivery('synthetic-shared-message-id');
+        $second = $this->delivery('synthetic-shared-message-id');
+        Log::spy();
+
+        $this->postJson(self::URL, [
+            'event' => 'hard_bounce',
+            'message-id' => 'synthetic-shared-message-id',
+        ], ['X-Webhook-Token' => 'synthetic-webhook-token'])
+            ->assertOk()
+            ->assertExactJson(['received' => 1, 'recorded' => 0]);
+
+        $this->assertNull($first->fresh()->provider_status);
+        $this->assertNull($second->fresh()->provider_status);
+        Log::shouldHaveReceived('notice')->once()->withArgs(
+            fn (string $message, array $context): bool => $message === 'Brevo webhook events were not recorded.'
+                && $context === [
+                    'received' => 1,
+                    'recorded' => 0,
+                    'outcomes' => ['ambiguous' => 1],
+                ],
+        );
+    }
+
+    public function test_nonrecorded_telemetry_contains_counts_but_no_payload_or_credentials(): void
+    {
+        $messageId = implode('-', ['synthetic', 'private', 'message']);
+        $credential = 'synthetic-webhook-token';
+        Log::spy();
+
+        $this->postJson(self::URL, [
+            'event' => 'delivered',
+            'message-id' => $messageId,
+            'email' => 'private-recipient@synthetic.test',
+        ], ['X-Webhook-Token' => $credential])->assertOk();
+
+        Log::shouldHaveReceived('notice')->once()->withArgs(
+            function (string $message, array $context) use ($messageId, $credential): bool {
+                $encoded = json_encode($context, JSON_THROW_ON_ERROR);
+
+                return $message === 'Brevo webhook events were not recorded.'
+                    && $context === [
+                        'received' => 1,
+                        'recorded' => 0,
+                        'outcomes' => ['unmatched' => 1],
+                    ]
+                    && ! str_contains($encoded, $messageId)
+                    && ! str_contains($encoded, $credential)
+                    && ! str_contains($encoded, 'private-recipient');
+            },
+        );
+    }
+
+    public function test_the_webhook_route_uses_its_dedicated_throttle_bucket(): void
+    {
+        $route = Route::getRoutes()->getByName('svc.billing.brevo.webhook');
+
+        $this->assertNotNull($route);
+        $this->assertContains('throttle:brevo-webhooks', $route->gatherMiddleware());
     }
 
     public function test_a_blank_message_id_falls_through_to_the_other_spelling(): void
