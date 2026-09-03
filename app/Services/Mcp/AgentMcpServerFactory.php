@@ -93,10 +93,16 @@ final class AgentMcpServerFactory
             }
         }
         $hasManagedWorkspace = $hasManagerCapabilities ? $this->authorizer->hasManagedWorkspace($context) : null;
-        $availableCapabilities = array_values(array_filter(
+        // Split deliberately. A feature flag is a server-side kill switch, so a
+        // flagged-off group genuinely is not served here; authorization is about
+        // this one caller and must not change what the server says it implements.
+        $implementedCapabilities = array_values(array_filter(
             $definitions,
-            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition)
-                && $this->authorizer->allowsDiscovery($context, $definition, $hasManagedWorkspace),
+            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition),
+        ));
+        $availableCapabilities = array_values(array_filter(
+            $implementedCapabilities,
+            fn (McpCapabilityDefinition $definition): bool => $this->authorizer->allowsDiscovery($context, $definition, $hasManagedWorkspace),
         ));
         $availableNames = array_fill_keys(array_map(
             static fn (McpCapabilityDefinition $definition): string => $definition->name,
@@ -117,10 +123,26 @@ final class AgentMcpServerFactory
         $hasWriteTools = collect($exposedDefinitions)->contains(
             static fn (McpCapabilityDefinition $definition): bool => ! $definition->readOnly,
         );
-        $hasResources = collect($availableCapabilities)->contains(
+        // Capability negotiation is a protocol-feature exchange - which request
+        // groups this server serves - and not an authorization decision, which is
+        // enforced per call and already is. So these describe what the server
+        // implements, not what this principal may invoke.
+        //
+        // Deriving them from the authorized set made a connection holding no
+        // operation scope advertise no group at all, and `ServerCapabilities`
+        // builds its result by adding a key per enabled group: with none enabled
+        // that is an empty PHP array, which `json_encode` renders as `[]` where
+        // the protocol requires an object. A conformant client then rejects
+        // `initialize` outright, so a user granted `mcp:use` alone could not
+        // connect (#197). Advertising a group the caller may invoke nothing in
+        // costs an empty `tools/list` - a spec-legal answer it can read.
+        $implementsTools = collect($implementedCapabilities)->contains(
+            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool,
+        );
+        $implementsResources = collect($implementedCapabilities)->contains(
             static fn (McpCapabilityDefinition $definition): bool => in_array($definition->kind, [McpCapabilityKind::Resource, McpCapabilityKind::ResourceTemplate], true),
         );
-        $hasPrompts = collect($availableCapabilities)->contains(
+        $implementsPrompts = collect($implementedCapabilities)->contains(
             static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Prompt,
         );
         $schemaIds = [];
@@ -140,12 +162,12 @@ final class AgentMcpServerFactory
 
         $builder->setPaginationLimit(100)
             ->setCapabilities(new ServerCapabilities(
-                tools: $exposedDefinitions !== [],
+                tools: $implementsTools,
                 toolsListChanged: false,
-                resources: $hasResources,
+                resources: $implementsResources,
                 resourcesSubscribe: false,
                 resourcesListChanged: false,
-                prompts: $hasPrompts,
+                prompts: $implementsPrompts,
                 promptsListChanged: false,
                 logging: false,
                 completions: false,
