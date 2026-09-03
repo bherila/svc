@@ -10,6 +10,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use Carbon\CarbonImmutable;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class BillingWorkflowTest extends TestCase
@@ -268,9 +270,18 @@ class BillingWorkflowTest extends TestCase
         $service->issue($invoice, $workspace);
 
         $this->actingAs($owner)->get("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf")
-            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertSee('%PDF', false);
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertSee('%PDF', false)
+            // Inline: the control that leads here says "View PDF", and as an
+            // attachment every reader who wanted to look at an invoice got a
+            // file in Downloads instead.
+            ->assertHeader(
+                'Content-Disposition',
+                'inline; filename=invoice-'.Str::slug($invoice->invoice_number).'.pdf',
+            );
+        // 200 rather than 202: the send happens in the request now, so the
+        // answer is what happened rather than what was promised.
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
-            ->assertAccepted();
+            ->assertOk();
         $this->assertDatabaseHas('client_invoice_email_deliveries', ['status' => 'sent']);
     }
 
@@ -356,7 +367,12 @@ class BillingWorkflowTest extends TestCase
         ], [$this->line()]);
         $service->issue($invoice, $workspace);
 
-        $html = view('invoices.show', ['invoice' => $invoice->fresh(['lines', 'clientCompany'])])->render();
+        // Through the service that owns this document rather than by handing
+        // the view a set of variables assembled here: what the template is
+        // given - which lines, and whose appendix - is exactly the decision
+        // being asserted, and a test that supplies its own inputs is asserting
+        // its own assembly instead of the one clients receive.
+        $html = app(InvoiceDocumentService::class)->html($invoice->fresh())->render();
         $this->assertStringNotContainsString('Internal synthetic note', $html);
     }
 

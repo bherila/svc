@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\AccessibleWorkspacesQuery;
 use App\Services\Navigation\WorkspaceNavigationFactory;
+use App\Services\Navigation\WorkspaceReturnPoint;
 use App\Support\Navigation\ClientNavigationOption;
 use App\Support\Navigation\WorkspaceNavigation;
 use Illuminate\Http\RedirectResponse;
@@ -48,6 +49,7 @@ class WorkspaceEntryController extends Controller
         Workspace $workspace,
         AccessibleWorkspacesQuery $accessible,
         WorkspaceNavigationFactory $navigation,
+        WorkspaceReturnPoint $returnPoint,
     ): Response|RedirectResponse {
         $user = $request->user();
         abort_if(! $user instanceof User, 401);
@@ -63,6 +65,7 @@ class WorkspaceEntryController extends Controller
         $context = $navigation->for($workspace, $user, null);
 
         $destination = $this->rememberedClient($request, $workspace, $context)
+            ?? $this->clientOnRecord($returnPoint, $user, $workspace, $context)
             ?? $this->onlyClient($context);
 
         if ($destination !== null) {
@@ -106,6 +109,37 @@ class WorkspaceEntryController extends Controller
         // A remembered id survives the grant that produced it: a project scope
         // narrowed, a portal membership removed, or a session carried over from
         // another tenant entirely.
+        foreach ($context->clients as $client) {
+            if ($client->id === $remembered) {
+                return $client;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The client this person was last inside, from before this session.
+     *
+     * The session is asked first, because it is the more specific answer: it
+     * remembers a client per workspace for as long as the session lives. This
+     * is the fallback underneath it - a new device, or a cookie that expired
+     * over a weekend - and it is revalidated exactly as hard, against the
+     * options this viewer has right now rather than the ones they had when it
+     * was written.
+     */
+    private function clientOnRecord(
+        WorkspaceReturnPoint $returnPoint,
+        User $user,
+        Workspace $workspace,
+        WorkspaceNavigation $context,
+    ): ?ClientNavigationOption {
+        $remembered = $returnPoint->rememberedClientId($user, $workspace);
+
+        if ($remembered === null) {
+            return null;
+        }
+
         foreach ($context->clients as $client) {
             if ($client->id === $remembered) {
                 return $client;

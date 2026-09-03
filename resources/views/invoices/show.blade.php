@@ -11,6 +11,14 @@
         .right { text-align: right; } .summary { margin-left: auto; width: 280px; margin-top: 18px; }
         .summary td { border: 0; } .total { font-weight: bold; border-top: 2px solid #111827; }
         .muted { color: #6b7280; }
+        /* The appendix starts a page of its own: the invoice is the document
+           being paid, and the evidence behind it should not push the total
+           onto a second page. */
+        .appendix { page-break-before: always; }
+        .appendix h2 { margin: 0 0 6px; font-size: 16px; }
+        .appendix h3 { margin: 18px 0 0; font-size: 13px; font-weight: bold; }
+        .appendix table { margin-top: 6px; font-size: 11px; }
+        .appendix td, .appendix th { padding: 5px 9px; }
     </style>
 </head>
 <body>
@@ -24,7 +32,7 @@
 <table>
     <thead><tr><th>Description</th><th>Type</th><th class="right">Quantity</th><th class="right">Unit</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>
     <tbody>
-    @foreach ($invoice->lines as $line)
+    @foreach ($lines as $line)
         <tr><td>{{ $line->description }}</td><td>{{ $line->type }}</td><td class="right">{{ $line->quantity }}</td><td class="right">{{ number_format($line->unit_amount / 100, 2) }}</td><td class="right">{{ number_format($line->tax_amount / 100, 2) }}</td><td class="right">{{ number_format($line->total_amount / 100, 2) }}</td></tr>
     @endforeach
     </tbody>
@@ -38,5 +46,38 @@
 </table>
 {{-- Never render $invoice->notes here: it is internal-only (#[Hidden] on the model,
      suppressed on every JSON path) and this template is served to portal clients. --}}
+
+{{-- The appendix: what each line was billed from.
+     On its own page, after the invoice, because the invoice is the document
+     being paid and this is the evidence behind it - a reader who wants the
+     total should not have to page past three hundred time entries to find it.
+     `$detail` is keyed by line public id and holds only lines with work behind
+     them; a retainer sold for the coming cycle is a charge, not a record of
+     hours, and has nothing to itemise. What each audience may read is decided
+     in InvoiceLineDetail, not here. --}}
+@if (! empty($detail))
+    <div class="appendix">
+        <h2>Appendix: what this covers</h2>
+        @foreach ($lines as $line)
+            @php($items = $detail[$line->public_id] ?? [])
+            @if (! empty($items))
+                <h3>{{ $line->description }}</h3>
+                <table>
+                    <thead><tr><th>Date</th><th>Project</th><th>Work</th><th class="right">Hours</th></tr></thead>
+                    <tbody>
+                    @foreach ($items as $item)
+                        <tr>
+                            <td>{{ $item['worked_on'] }}</td>
+                            <td>{{ $item['project'] ?? '—' }}</td>
+                            <td>{{ $item['description'] }}</td>
+                            <td class="right">{{ number_format($item['minutes'] / 60, 2) }}</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            @endif
+        @endforeach
+    </div>
+@endif
 </body>
 </html>

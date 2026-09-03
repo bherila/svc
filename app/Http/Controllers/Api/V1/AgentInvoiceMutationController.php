@@ -15,6 +15,7 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -136,7 +137,15 @@ final class AgentInvoiceMutationController extends Controller
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
             $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'recipients' => ['required', 'array', 'min:1', 'max:10'], 'recipients.*' => ['email'], 'confirm' => ['accepted']]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
-            $email->queue($record, $data['recipients'], $workspace);
+            // Registered here and sent when this mutation's transaction
+            // commits: the receipt and the effect have to land together, and an
+            // email already gone is not something a rollback can take back.
+            $email->sendAfterCommit($record, InvoiceEmailDraft::of(
+                $data['recipients'],
+                [],
+                $email->defaultSubject($record),
+                null,
+            ), $workspace);
 
             return [$record->public_id];
         }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));

@@ -1,5 +1,8 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
+import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,6 +19,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
     Table,
     TableBody,
     TableCell,
@@ -24,11 +34,17 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { PAYMENT_METHOD_OTHER, PAYMENT_METHODS } from '@/lib/payments';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
+import type {
+    InvoiceDelivery,
+    InvoiceEmailContext,
+} from '@/types/invoice-email';
 
 type InvoiceLine = {
     id: string;
@@ -90,22 +106,36 @@ export default function ClientInvoiceDetail({
     invoices_href: invoicesHref,
     pdf_href: pdfHref,
     actions,
+    email,
+    deliveries,
     invoice,
     lines,
+    line_detail: lineDetail,
     payments,
 }: {
     company: { id: string; name: string };
     invoices_href: string;
     pdf_href: string;
     actions: InvoiceActions;
+    /** Null for a viewer who cannot send, alongside a `send` action of null. */
+    email: InvoiceEmailContext | null;
+    deliveries: InvoiceDelivery[];
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
+    /** The work behind each line, keyed by line id. Absent for a line with none. */
+    line_detail: Record<string, InvoiceLineItem[]>;
     payments: InvoicePayment[];
 }) {
     const [paying, setPaying] = useState(false);
+    const [sending, setSending] = useState(false);
     const [voiding, setVoiding] = useState(false);
     const [amount, setAmount] = useState('');
-    const [method, setMethod] = useState('bank_transfer');
+    const [method, setMethod] = useState<string>('bank_transfer');
+    // Only meaningful while `method` is "other": the name of the arrangement
+    // that is not on the list. Stored as the method itself, so the row reads
+    // like every other one rather than saying "other" and leaving the actual
+    // answer nowhere.
+    const [otherMethod, setOtherMethod] = useState('');
     const [reference, setReference] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
@@ -161,9 +191,9 @@ export default function ClientInvoiceDetail({
                     <p className="text-sm text-muted-foreground">
                         {invoice.issue_date === null
                             ? 'Not issued'
-                            : `Issued ${invoice.issue_date}`}
+                            : `Issued ${formatDay(invoice.issue_date)}`}
                         {invoice.due_date !== null &&
-                            ` · due ${invoice.due_date}`}
+                            ` · due ${formatDay(invoice.due_date)}`}
                     </p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -181,12 +211,11 @@ export default function ClientInvoiceDetail({
                                 Issue
                             </Button>
                         )}
-                        {actions.send !== null && (
+                        {actions.send !== null && email !== null && (
                             <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={busy}
-                                onClick={() => post(actions.send ?? '')}
+                                onClick={() => setSending(true)}
                             >
                                 Send to client
                             </Button>
@@ -237,6 +266,24 @@ export default function ClientInvoiceDetail({
                             className="mt-3 grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
+
+                                const chosenMethod =
+                                    method === PAYMENT_METHOD_OTHER
+                                        ? otherMethod.trim()
+                                        : method;
+
+                                // Refused here rather than sent as an empty
+                                // string for the server to reject: "other"
+                                // with no name is a payment whose method
+                                // nobody would be able to read back.
+                                if (chosenMethod === '') {
+                                    setNotice(
+                                        'Name the payment method, or choose one from the list.',
+                                    );
+
+                                    return;
+                                }
+
                                 post(actions.payment ?? '', {
                                     // Minor units, the way every amount in this
                                     // system travels. Rounded rather than
@@ -247,7 +294,7 @@ export default function ClientInvoiceDetail({
                                         Number.parseFloat(amount || '0') * 100,
                                     ),
                                     currency: invoice.currency,
-                                    method,
+                                    method: chosenMethod,
                                     reference:
                                         reference === '' ? null : reference,
                                 });
@@ -266,13 +313,51 @@ export default function ClientInvoiceDetail({
                             </div>
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
-                                <Input
-                                    id="payment-method"
+                                <Select
+                                    // Without `items` the trigger renders the
+                                    // stored value, so this field read
+                                    // "bank_transfer" back at the operator who
+                                    // had just picked "Bank transfer".
+                                    items={PAYMENT_METHODS}
                                     value={method}
-                                    onChange={(event) =>
-                                        setMethod(event.target.value)
-                                    }
-                                />
+                                    onValueChange={(next) => {
+                                        // Base UI can emit null on clear; there
+                                        // is nothing to clear to here, so an
+                                        // empty change leaves the choice alone
+                                        // rather than blanking a required
+                                        // field.
+                                        if (typeof next === 'string') {
+                                            setMethod(next);
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger
+                                        id="payment-method"
+                                        className="w-full"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PAYMENT_METHODS.map((option) => (
+                                            <SelectItem
+                                                key={option.value}
+                                                value={option.value}
+                                            >
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {method === PAYMENT_METHOD_OTHER && (
+                                    <Input
+                                        aria-label="Name of the payment method"
+                                        placeholder="Name the method"
+                                        value={otherMethod}
+                                        onChange={(event) =>
+                                            setOtherMethod(event.target.value)
+                                        }
+                                    />
+                                )}
                             </div>
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-reference">
@@ -346,6 +431,12 @@ export default function ClientInvoiceDetail({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            {/*
+                                             * The disclosure column, headed by
+                                             * nothing: a column of triangles is
+                                             * not something to name.
+                                             */}
+                                            <TableHead className="w-8" />
                                             <TableHead className="min-w-64">
                                                 Description
                                             </TableHead>
@@ -359,7 +450,12 @@ export default function ClientInvoiceDetail({
                                     </TableHeader>
                                     <TableBody>
                                         {lines.map((line) => (
-                                            <TableRow key={line.id}>
+                                            <InvoiceLineRows
+                                                key={line.id}
+                                                line={line}
+                                                items={lineDetail[line.id]}
+                                                columns={7}
+                                            >
                                                 <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
                                                     {line.description}
                                                 </TableCell>
@@ -367,7 +463,7 @@ export default function ClientInvoiceDetail({
                                                     {statusLabel(line.type)}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {line.line_date ?? '—'}
+                                                    {formatDay(line.line_date)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {line.quantity}
@@ -387,7 +483,7 @@ export default function ClientInvoiceDetail({
                                                         invoice.currency,
                                                     )}
                                                 </TableCell>
-                                            </TableRow>
+                                            </InvoiceLineRows>
                                         ))}
                                     </TableBody>
                                 </Table>
@@ -422,15 +518,21 @@ export default function ClientInvoiceDetail({
                                         {payments.map((payment) => (
                                             <TableRow key={payment.id}>
                                                 <TableCell>
-                                                    {payment.received_on ?? '—'}
+                                                    {formatDay(
+                                                        payment.received_on,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">
-                                                        {payment.status}
+                                                        {statusLabel(
+                                                            payment.status,
+                                                        )}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {payment.method ?? '—'}
+                                                    {statusLabel(
+                                                        payment.method,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {payment.reference ?? '—'}
@@ -455,7 +557,112 @@ export default function ClientInvoiceDetail({
                         )}
                     </CardContent>
                 </Card>
+                {email !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Sent to the client</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {deliveries.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">
+                                    This invoice has not been emailed.
+                                </p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>When</TableHead>
+                                                <TableHead className="min-w-48">
+                                                    To
+                                                </TableHead>
+                                                <TableHead>
+                                                    Our record
+                                                </TableHead>
+                                                <TableHead>
+                                                    Provider says
+                                                </TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {deliveries.map((delivery) => (
+                                                <TableRow key={delivery.id}>
+                                                    <TableCell>
+                                                        {formatTimestamp(
+                                                            delivery.sent_at ??
+                                                                delivery.failed_at,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                                        {delivery.recipients.join(
+                                                            ', ',
+                                                        )}
+                                                        {delivery.bcc.length >
+                                                            0 &&
+                                                            ` · bcc ${delivery.bcc.join(', ')}`}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge
+                                                            variant={
+                                                                delivery.status ===
+                                                                'failed'
+                                                                    ? 'destructive'
+                                                                    : 'outline'
+                                                            }
+                                                        >
+                                                            {statusLabel(
+                                                                delivery.status,
+                                                            )}
+                                                        </Badge>
+                                                        {delivery.error_summary !==
+                                                            null && (
+                                                            <p className="mt-1 text-xs wrap-anywhere text-muted-foreground">
+                                                                {
+                                                                    delivery.error_summary
+                                                                }
+                                                            </p>
+                                                        )}
+                                                    </TableCell>
+                                                    {/*
+                                                     * The provider's word, kept
+                                                     * apart from ours. "Sent"
+                                                     * means it left here;
+                                                     * whether it arrived is
+                                                     * this column, and it stays
+                                                     * blank until the provider
+                                                     * says.
+                                                     */}
+                                                    <TableCell>
+                                                        {delivery.provider_status ===
+                                                        null ? (
+                                                            <span className="text-muted-foreground">
+                                                                Not reported yet
+                                                            </span>
+                                                        ) : (
+                                                            statusLabel(
+                                                                delivery.provider_status,
+                                                            )
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </main>
+
+            {actions.send !== null && email !== null && (
+                <SendInvoiceDialog
+                    open={sending}
+                    onOpenChange={setSending}
+                    sendHref={actions.send}
+                    email={email}
+                />
+            )}
 
             <AlertDialog
                 open={voiding}

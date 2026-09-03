@@ -13,9 +13,9 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
-use App\Services\Billing\SendInvoiceEmailJob;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -226,8 +226,11 @@ final class AgentMutationIntegrityTest extends TestCase
         $send = ['expected_version' => $issued['version'], 'recipients' => ['client@example.test'], 'confirm' => true];
         $sent = $this->withHeader('Idempotency-Key', 'invoice-send')->postJson("{$invoicePath}/send", $send)->assertOk()->json('data');
         $this->withHeader('Idempotency-Key', 'invoice-send')->postJson("{$invoicePath}/send", $send)->assertOk()->assertJsonPath('data.version', $sent['version']);
+        // One delivery, registered rather than dispatched. The agent path
+        // sends after its mutation transaction commits - so the receipt and the
+        // email land together, and a rollback does not leave an email that has
+        // already gone.
         $this->assertDatabaseCount('client_invoice_email_deliveries', 1);
-        Queue::assertPushed(SendInvoiceEmailJob::class, 1);
 
         $void = ['expected_version' => $sent['version'], 'reason' => 'Customer requested cancellation', 'confirm' => true];
         $voided = $this->withHeader('Idempotency-Key', 'invoice-void')->postJson("{$invoicePath}/void", $void)->assertOk()->json('data');
@@ -289,13 +292,18 @@ final class AgentMutationIntegrityTest extends TestCase
         $issuedVersion = AgentApiVersion::for($invoice);
         $this->assertNotSame($draftVersion, $issuedVersion);
 
-        $delivery = app(InvoiceEmailService::class)->queue($invoice, ['client@example.test'], $workspace);
-        $queuedVersion = AgentApiVersion::for($invoice->fresh());
-        $this->assertNotSame($issuedVersion, $queuedVersion);
+        // Registering the delivery advances the revision, and so does the send
+        // itself: an agent that read the invoice before either would be acting
+        // on a version that no longer describes it.
+        Mail::fake();
+        $draft = InvoiceEmailDraft::of(['client@example.test'], [], 'Invoice', null);
+        app(InvoiceEmailService::class)->sendAfterCommit($invoice, $draft, $workspace);
+        $registeredVersion = AgentApiVersion::for($invoice->fresh());
+        $this->assertNotSame($issuedVersion, $registeredVersion);
 
-        (new SendInvoiceEmailJob($invoice->id, $delivery->id))->handle();
+        app(InvoiceEmailService::class)->send($invoice, $draft, $workspace);
         $deliveredVersion = AgentApiVersion::for($invoice->fresh());
-        $this->assertNotSame($queuedVersion, $deliveredVersion);
+        $this->assertNotSame($registeredVersion, $deliveredVersion);
 
         $lifecycle->applyPayment($invoice, [
             'amount' => 1000,

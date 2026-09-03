@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\Navigation\WorkspaceReturnPoint;
 use BWH\Auth\Concerns\SignsOutThroughProvider;
 use BWH\Auth\OAuth\OAuthClient;
 use BWH\Auth\OAuth\ProviderApplications;
@@ -31,7 +32,7 @@ class OAuthLoginController extends Controller
         return $redirect;
     }
 
-    public function callback(Request $request, OAuthClient $oauth): RedirectResponse
+    public function callback(Request $request, OAuthClient $oauth, WorkspaceReturnPoint $returnPoint): RedirectResponse
     {
         $identity = $oauth->identityFromCallback($request);
 
@@ -51,7 +52,15 @@ class OAuthLoginController extends Controller
         // JS bundle, so what exists is not readable by anyone who downloads it.
         ProviderApplications::remember($request, $identity->apps);
 
-        return redirect()->intended(route('workspaces.index'));
+        // Back where they left off, when they may still go there. The
+        // selector stays the default and stays reachable - the navbar's exit
+        // button is the way to it - but landing on it every single time made
+        // signing in a screen with one row on it and one thing to click.
+        //
+        // `WorkspaceReturnPoint` revalidates against this person's current
+        // access before offering a workspace, so losing a membership means the
+        // selector rather than a 404 they were sent to.
+        return redirect()->intended($returnPoint->landingUrl($user));
     }
 
     public function logout(Request $request, OAuthClient $oauth): RedirectResponse

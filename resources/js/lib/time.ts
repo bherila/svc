@@ -64,16 +64,6 @@ export function parseDuration(input: string): number | null {
     return null;
 }
 
-export function formatDate(iso: string): string {
-    const date = new Date(`${iso}T00:00:00`);
-
-    return date.toLocaleDateString(undefined, {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-    });
-}
-
 /**
  * Today on a given calendar, computed now.
  *

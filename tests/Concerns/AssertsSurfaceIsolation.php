@@ -88,6 +88,15 @@ trait AssertsSurfaceIsolation
      */
     protected function assertQueryCountIndependentOfRows(callable $render, callable $addRows): void
     {
+        // Primed first, then measured twice. A first request can legitimately
+        // pay a one-time write that no later one does - recording which
+        // workspace and client this person was last inside is the current
+        // example, and it settles after one render. Measuring that first render
+        // against a later one reports a difference of one as an N+1, which is
+        // both wrong and exactly the kind of failure that gets a real assertion
+        // weakened to make it stop.
+        $render();
+
         $few = $this->queriesDuring($render);
 
         $this->assertGreaterThan(0, $few, 'The first render issued no queries, so this asserted nothing.');

@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
@@ -19,9 +20,12 @@ use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -209,6 +213,7 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         BillingRecordAccess $billing,
+        InvoiceEmailService $emails,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -269,7 +274,25 @@ class ClientDirectoryController extends Controller
                     ...InvoiceStatus::collectible(),
                 ], true) ? $base.'/void' : null,
             ],
+            // What the compose dialog needs to show before anything is sent:
+            // who it would go to, what address it comes from, and what has
+            // already been sent. All of it is an operator's to see - the
+            // addresses are their own client's - and none of it is rendered for
+            // anyone who cannot send.
+            'email' => $manages ? [
+                'from' => $emails->fromAddress(),
+                'suggested_recipients' => $emails->suggestedRecipients($clientInvoice),
+                'default_subject' => $emails->defaultSubject($clientInvoice),
+                'self' => (string) $user->email,
+            ] : null,
+            'deliveries' => $manages ? $this->deliveriesOf($workspace, $clientInvoice) : [],
             'invoice' => $this->invoicePayload($clientInvoice),
+            // What each line is made of, keyed by line. The pivot has carried
+            // this since the billing workflow was written - a line billed from
+            // time attaches the entries it drew on - and nothing ever showed
+            // it, so a client reading "Deferred work items applied to retainer
+            // (12.50 hrs)" had no way to ask which work.
+            'line_detail' => InvoiceLineDetail::forInvoice($clientInvoice, InvoiceLineDetail::OPERATOR),
             'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
                 'id' => $line->public_id,
                 'type' => $line->type,
@@ -346,6 +369,14 @@ class ClientDirectoryController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Correcting the record is an operator act, and a narrower one than
+        // reading it: a member scoped to one project may open this agreement
+        // and still have no authority over the client's terms. Nulls rather
+        // than booleans, so the browser is handed finished URLs it never has to
+        // assemble - and every endpoint behind one authorizes again.
+        $manages = Gate::forUser($user)->allows('manage', $workspace);
+        $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
+
         return Inertia::render('clients/agreement', [
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -356,6 +387,15 @@ class ClientDirectoryController extends Controller
             // concern. The same page serves the client's portal, which reads
             // the commercial terms and not these.
             'audience' => 'operator',
+            'actions' => [
+                'update' => $manages
+                    ? route('svc.engagement.agreements.update', [$workspace, $clientAgreement], absolute: false)
+                    : null,
+                'upload_file' => $manages
+                    ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
+                    : null,
+            ],
+            'files' => AttachmentListing::for($workspace, 'agreement', (string) $clientAgreement->public_id, $manages),
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
@@ -374,6 +414,25 @@ class ClientDirectoryController extends Controller
                 'terminated_at' => $clientAgreement->terminated_at?->toISOString(),
                 'signer_name' => $clientAgreement->signer_name,
                 'signer_title' => $clientAgreement->signer_title,
+                // The stored terms, as opposed to the derived ones the
+                // presenter reports. The form edits these: `retainer_minutes`
+                // is what one month grants and `period_retainer_minutes` is the
+                // whole-cycle override, and the summary above collapses them
+                // into a single per-period figure that cannot be written back.
+                'retainer_minutes' => $clientAgreement->retainer_minutes === null
+                    ? null
+                    : (int) $clientAgreement->retainer_minutes,
+                'retainer_amount' => $clientAgreement->retainer_amount === null
+                    ? null
+                    : (int) $clientAgreement->retainer_amount,
+                'period_retainer_minutes' => $clientAgreement->period_retainer_minutes === null
+                    ? null
+                    : (int) $clientAgreement->period_retainer_minutes,
+                'period_retainer_amount' => $clientAgreement->period_retainer_amount === null
+                    ? null
+                    : (int) $clientAgreement->period_retainer_amount,
+                'agreement_text' => $clientAgreement->agreement_text,
+                'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
             ],
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
                 'id' => $item->public_id,
@@ -794,6 +853,50 @@ class ClientDirectoryController extends Controller
                 && ! in_array((int) $company->id, $reachableCompanyIds, true),
             404,
         );
+    }
+
+    /**
+     * What has been sent with this invoice, most recent first.
+     *
+     * Two statuses, kept apart on purpose. `status` is ours and says only that
+     * the message left here; `provider_status` is Brevo's and says what became
+     * of it. Collapsing them into one word would let "sent" read as "received",
+     * and an operator who believes that will chase a client who never got the
+     * invoice.
+     *
+     * `error_summary` is our own sentence naming an exception class, not the
+     * mailer's text - a transport failure quotes addresses and sometimes
+     * credentials, and this is rendered on a screen.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function deliveriesOf(Workspace $workspace, ClientInvoice $invoice): array
+    {
+        $deliveries = ClientInvoiceEmailDelivery::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        $listed = [];
+
+        foreach ($deliveries as $delivery) {
+            $listed[] = [
+                'id' => (string) $delivery->public_id,
+                'status' => (string) $delivery->status,
+                'recipients' => $delivery->recipients,
+                'bcc' => $delivery->bcc ?? [],
+                'subject' => (string) $delivery->subject,
+                'sent_at' => $delivery->sent_at?->toISOString(),
+                'failed_at' => $delivery->failed_at?->toISOString(),
+                'error_summary' => $delivery->error_summary,
+                'provider_status' => $delivery->provider_status,
+                'provider_status_at' => $delivery->provider_status_at?->toISOString(),
+            ];
+        }
+
+        return $listed;
     }
 
     /**

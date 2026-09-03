@@ -8,6 +8,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatShortDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -77,7 +78,7 @@ export default function PortalTime({
                                 {entries.map((entry) => (
                                     <TableRow key={entry.id}>
                                         <TableCell className="tabular-nums">
-                                            {entry.worked_on}
+                                            {formatShortDay(entry.worked_on)}
                                         </TableCell>
                                         <TableCell>
                                             {entry.project ?? '—'}

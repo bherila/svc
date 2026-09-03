@@ -38,6 +38,11 @@ Route::middleware(['web', 'auth'])->group(function (): void {
 
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/agreements', [AgreementController::class, 'store'])
         ->name('svc.engagement.agreements.store');
+    // Correcting the record, as opposed to moving it through its lifecycle.
+    // The imported agreements that arrived titled "Legacy Agreement" are what
+    // this is for, and the same endpoint takes the whole terms form.
+    Route::patch('/workspaces/{workspace}/agreements/{clientAgreement}', [AgreementController::class, 'update'])
+        ->name('svc.engagement.agreements.update');
     Route::post('/workspaces/{workspace}/agreements/{clientAgreement}/activate', [AgreementController::class, 'activate'])
         ->name('svc.engagement.agreements.activate');
     Route::post('/workspaces/{workspace}/agreements/{clientAgreement}/sign', [AgreementController::class, 'sign'])

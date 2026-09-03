@@ -36,6 +36,7 @@ export function workspaceNavigation(
 ): WorkspaceNavigation {
     return {
         workspace_id: 'workspace-1',
+        workspace_name: 'Synthetic Workspace',
         current_client_id: 'company-1',
         clients: [
             clientOption('company-1', 'Aa Synthetic Client'),

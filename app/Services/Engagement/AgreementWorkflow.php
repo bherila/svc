@@ -11,11 +11,29 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class AgreementWorkflow
 {
+    /**
+     * The terms an operator may correct.
+     *
+     * Lifecycle is not here. `status`, `activated_at`, `signed_at` and the
+     * signature fields have endpoints of their own that enforce the order of
+     * events and record who did it; an agreement that can be marked signed by
+     * editing a form is an agreement nobody signed.
+     *
+     * @var list<string>
+     */
+    private const EDITABLE = [
+        'title', 'starts_on', 'ends_on', 'billing_cadence', 'currency', 'agreement_text',
+        'is_visible_to_client', 'hourly_rate_amount', 'retainer_amount', 'retainer_minutes',
+        'period_retainer_amount', 'period_retainer_minutes', 'catch_up_threshold_minutes',
+        'rollover_months', 'rollover_policy', 'first_cycle_proration', 'bill_overage_interim',
+    ];
+
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
@@ -66,6 +84,91 @@ class AgreementWorkflow
             ]);
 
             return $agreement;
+        });
+    }
+
+    /**
+     * Correct the terms of an agreement that was recorded wrong.
+     *
+     * Keyed presence, not values: only the attributes the caller actually sent
+     * are written, so the rename control - which sends a title and nothing
+     * else - cannot blank the nine terms it never showed. A key that is present
+     * and null is an erasure and is written as one; the difference between
+     * "unstated" and "zero" is load-bearing all through the billing engine, and
+     * a form that could only ever write zeros would quietly price unpriced work
+     * at nothing.
+     *
+     * Re-read under a row lock inside the writing transaction and re-checked
+     * against the workspace this request was authorized for. The controller
+     * checks the instance the router bound and the router binds by key alone,
+     * so without this the check and the write are two statements about a row
+     * nothing held still in between.
+     *
+     * `update()` rather than `forceFill()`: the model's saving hook refuses a
+     * catch-up threshold larger than the retainer it is meant to leave spare,
+     * and that refusal is the point of editing these four terms together. It
+     * throws `DomainException`, which the application renders as a 422.
+     *
+     * @param  array<string, mixed>  $attributes  only the keys the caller sent
+     *
+     * @throws EngagementException when the agreement is not this workspace's
+     */
+    public function update(Workspace $workspace, ClientAgreement $agreement, array $attributes): ClientAgreement
+    {
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $agreement)) {
+            throw new EngagementException('The agreement does not belong to this workspace.');
+        }
+
+        $editable = array_intersect_key($attributes, array_flip(self::EDITABLE));
+
+        return DB::transaction(function () use ($workspace, $agreement, $editable): ClientAgreement {
+            $locked = ClientAgreement::query()
+                ->whereKey($agreement->getKey())
+                ->where('workspace_id', $workspace->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $locked instanceof ClientAgreement) {
+                throw new EngagementException('The agreement does not belong to this workspace.');
+            }
+
+            if ($editable === []) {
+                return $locked;
+            }
+
+            if (array_key_exists('currency', $editable) && is_string($editable['currency'])) {
+                $editable['currency'] = strtoupper($editable['currency']);
+            }
+
+            // What actually moved, recorded before the write. An audit line
+            // saying "updated" answers nothing a month later; this says which
+            // term changed and what it was.
+            $changes = [];
+
+            foreach ($editable as $attribute => $value) {
+                $before = $locked->getAttribute($attribute);
+                $normalised = $before instanceof CarbonImmutable ? $before->toDateString() : $before;
+
+                if ($normalised != $value) {
+                    $changes[$attribute] = ['old' => $normalised, 'new' => $value];
+                }
+            }
+
+            if ($changes === []) {
+                return $locked;
+            }
+
+            $locked->update($editable);
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'agreement.updated',
+                $locked,
+                ['changes' => $changes],
+                occurrence: (string) Str::uuid(),
+            );
+
+            return $locked->fresh();
         });
     }
 

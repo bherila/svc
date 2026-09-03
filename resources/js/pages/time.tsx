@@ -24,8 +24,9 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatShortDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
-import { formatDate, formatDecimalHours, formatHours } from '@/lib/time';
+import { formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
     Capacity,
@@ -97,7 +98,7 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                 {shareTheName && row.cycle_start !== '' && (
                                     <span className="ml-1 font-normal">
                                         · cycle from{' '}
-                                        {formatDate(row.cycle_start)}
+                                        {formatShortDay(row.cycle_start)}
                                     </span>
                                 )}
                             </p>
@@ -125,6 +126,25 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                     style={{ width: `${fraction * 100}%` }}
                                 />
                             </div>
+                            {/*
+                             * Where the availability came from. The ledger has
+                             * computed these three since the port and the
+                             * screen showed none of them, so a month living on
+                             * hours carried in read exactly like one with a
+                             * large retainer - and the hours that aged out on
+                             * the way were invisible.
+                             */}
+                            <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
+                                {formatDecimalHours(row.retainer_hours)} h this
+                                cycle
+                                {row.rollover_in_hours > 0 &&
+                                    ` + ${formatDecimalHours(row.rollover_in_hours)} h carried in`}
+                                {row.expired_hours > 0 && (
+                                    <span className="text-destructive">
+                                        {` − ${formatDecimalHours(row.expired_hours)} h expired`}
+                                    </span>
+                                )}
+                            </p>
                             <p className="mt-1.5 text-xs tabular-nums">
                                 {over ? (
                                     <span className="text-destructive">
@@ -164,6 +184,20 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                     awaiting approval
                                 </p>
                             )}
+                            {/*
+                             * The rule behind the arithmetic above, so the
+                             * numbers can be read rather than only observed.
+                             * Null months is not zero months: it says the
+                             * agreement states no rollover, which reaches the
+                             * same outcome by a different route.
+                             */}
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                {row.rollover_months === null
+                                    ? 'Unused hours do not carry forward.'
+                                    : row.rollover_months === 0
+                                      ? 'Unused hours expire at the end of the cycle.'
+                                      : `Unused hours carry forward ${row.rollover_months} month${row.rollover_months === 1 ? '' : 's'}.`}
+                            </p>
                         </div>
                     );
                 })}
@@ -424,7 +458,7 @@ export default function TimeSheet({
                         <AlertDialogDescription>
                             {pendingDelete === null
                                 ? ''
-                                : `${formatHours(pendingDelete.minutes)} on ${formatDate(
+                                : `${formatHours(pendingDelete.minutes)} on ${formatShortDay(
                                       pendingDelete.worked_on,
                                   )} — ${pendingDelete.description}`}
                         </AlertDialogDescription>
@@ -612,7 +646,7 @@ function MonthCard({
                                             )}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
-                                            {formatDate(entry.worked_on)}
+                                            {formatShortDay(entry.worked_on)}
                                         </TableCell>
                                         {/*
                                          * The one prose column. Table cells

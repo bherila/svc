@@ -53,6 +53,8 @@ final class FillableCoverageTest extends TestCase
             'email_verified_at' => 'Set by the verification flow, never by user input.',
             'remember_token' => 'Managed by the auth guard.',
             'password' => 'Hashed and set explicitly so a plaintext value can never be assigned by accident.',
+            'last_workspace_id' => 'Where this person was last working. An internal id written only by WorkspaceReturnPoint, after the navigation factory has authorized the workspace; a caller who could assign it could point someone at a tenant they were never admitted to.',
+            'last_client_company_id' => 'The same, for the client. Both are revalidated against current access on the way out, but a value that can only be written after authorization is one fewer thing that has to be.',
         ],
         ClientInvoiceEmailDelivery::class => [
             'external_metadata' => 'Written only by the external importer, which inserts through the query builder rather than Eloquent.',
