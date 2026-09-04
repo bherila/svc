@@ -101,16 +101,19 @@ final class ConcurrencyLockRegistryTest extends TestCase
     }
 
     /**
-     * A model query is placed by its model's table, not by its query's `from`.
+     * A model query is placed by the table it will actually lock.
      *
-     * The second half is the load-bearing one and the reason this does not just
-     * read `$query->from` for everything: an Eloquent builder can be pointed at
-     * another table, and the rows a model lock takes are still its model's. A
-     * resolver that fell through to the query would place this lock under a
-     * table the registry has never ranked - and would say so by refusing,
-     * which is a confusing way to be told the resolver is wrong.
+     * For every query in this application that is the model's own table, and an
+     * earlier revision resolved it that way. The two are not the same fact:
+     * `for update` locks the rows the statement selects, so a builder repointed
+     * at another table locks *that* table, and resolving through
+     * `getModel()->getTable()` would record a lock on rows nobody held. The
+     * repointed half is what tells the two resolvers apart - it is written to a
+     * registered table on purpose, so a resolver that read the model would
+     * return a confident wrong answer here rather than an exception, which is
+     * the failure this test exists to catch.
      */
-    public function test_an_eloquent_query_resolves_through_its_models_table(): void
+    public function test_an_eloquent_query_is_placed_by_the_table_it_will_lock(): void
     {
         $this->assertSame(
             LockResource::ClientInvoice,
@@ -118,9 +121,50 @@ final class ConcurrencyLockRegistryTest extends TestCase
         );
 
         $repointed = ClientInvoice::query()->whereKey(1);
+        $repointed->getQuery()->from = 'client_time_entries';
+
+        $this->assertSame(LockResource::ClientTimeEntry, LockResource::forQuery($repointed));
+    }
+
+    /**
+     * A repointed model query whose real table is unranked is refused by name.
+     *
+     * The other half of the same correction, and the one that shows the
+     * refusal follows the SQL rather than the model: `client_invoice_lines` is
+     * a real table nothing locks and the registry has never ranked, so a lock
+     * taken there is exactly the unranked lock the registry means to refuse -
+     * however respectable the model in the chain looks.
+     */
+    public function test_a_repointed_model_query_is_refused_when_its_real_table_is_unranked(): void
+    {
+        $repointed = ClientInvoice::query()->whereKey(1);
         $repointed->getQuery()->from = 'client_invoice_lines';
 
-        $this->assertSame(LockResource::ClientInvoice, LockResource::forQuery($repointed));
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('No lock-order registry entry for table "client_invoice_lines"');
+
+        LockResource::forQuery($repointed);
+    }
+
+    /**
+     * A model query whose table is an expression is refused too.
+     *
+     * The expression guard used to sit behind the plain-query branch, so a
+     * model builder never reached it. Now that both kinds resolve through the
+     * same `from`, this is the case that says so.
+     */
+    public function test_a_model_query_whose_table_is_an_expression_is_refused(): void
+    {
+        $repointed = ClientInvoice::query()->whereKey(1);
+        $repointed->getQuery()->from = DB::raw('client_invoices');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(
+            'A pessimistic lock was taken on a query whose table is an expression, so it cannot be placed in the '
+            .'lock-order registry. Lock a plain table, or a model.',
+        );
+
+        LockResource::forQuery($repointed);
     }
 
     /** A plain table query resolves by the name it names. */
