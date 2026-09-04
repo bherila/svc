@@ -123,7 +123,6 @@ final class LockOrderConformanceTest extends TestCase
     protected function tearDown(): void
     {
         LockOrderRecorder::stop();
-        LockOrderRecorder::forgetListeners();
 
         parent::tearDown();
     }

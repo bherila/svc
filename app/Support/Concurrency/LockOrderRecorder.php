@@ -40,8 +40,6 @@ final class LockOrderRecorder
 {
     private static bool $recording = false;
 
-    private static bool $listening = false;
-
     private static int $baseline = 0;
 
     /**
@@ -117,28 +115,39 @@ final class LockOrderRecorder
     }
 
     /**
-     * Register the transaction listeners once per application instance.
+     * Register the transaction listeners for this recording run.
      *
      * Registered here rather than in a service provider so that an application
      * that never records never gains a listener. They are cheap, but a listener
      * that exists only to check a flag is exactly the kind of thing that gets
      * read later as "the recorder runs in production".
+     *
+     * Not guarded against registering twice, deliberately. A second `start()`
+     * adds a second pair, and both pairs then do the same work in order: the
+     * opening pair sets an empty frame twice, and the closing pair archives
+     * once, because the first of them leaves the frame null and the second
+     * finds nothing to archive. Laravel builds a fresh dispatcher for every
+     * test, so they cannot accumulate beyond one. An earlier revision carried a
+     * `$listening` flag and a `forgetListeners()` to reset it; both were
+     * unobservable by construction - no test could distinguish the guarded from
+     * the unguarded behaviour - and unobservable state is the kind that goes on
+     * being maintained long after it stops being true.
      */
     private static function listen(): void
     {
-        if (self::$listening) {
-            return;
-        }
-
-        self::$listening = true;
-
         Event::listen(function (TransactionBeginning $event): void {
+            // A nested transaction is a savepoint, and a savepoint releases no
+            // locks, so its locks belong to the outermost frame. Only a
+            // transaction opened at the recording floor starts a sequence.
             if (self::$recording && $event->connection->transactionLevel() === self::$baseline + 1) {
                 self::$frame = [];
             }
         });
 
-        $close = function (TransactionCommitted|TransactionRolledBack $event): void {
+        Event::listen(function (TransactionCommitted|TransactionRolledBack $event): void {
+            // And symmetrically: a sequence is archived only when the
+            // transaction that opened it ends, not when a savepoint inside it
+            // is released.
             if (! self::$recording || $event->connection->transactionLevel() !== self::$baseline) {
                 return;
             }
@@ -148,21 +157,6 @@ final class LockOrderRecorder
             }
 
             self::$frame = null;
-        };
-
-        Event::listen($close);
-    }
-
-    /**
-     * Forget the registered listeners.
-     *
-     * Laravel builds a fresh application - and so a fresh event dispatcher -
-     * for every test, so the listeners registered above do not survive into the
-     * next one while this flag would. Called from the recording test's teardown.
-     */
-    public static function forgetListeners(): void
-    {
-        self::$listening = false;
-        self::$baseline = 0;
+        });
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Unit\Support;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
+use App\Models\ClientTimeEntry;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
@@ -33,7 +34,6 @@ final class ConcurrencyLockRegistryTest extends TestCase
     protected function tearDown(): void
     {
         LockOrderRecorder::stop();
-        LockOrderRecorder::forgetListeners();
 
         parent::tearDown();
     }
@@ -256,6 +256,83 @@ final class ConcurrencyLockRegistryTest extends TestCase
 
         $this->assertSame(
             [[LockResource::ClientAgreement, LockResource::ClientInvoice]],
+            LockOrderRecorder::sequences(),
+        );
+    }
+
+    /**
+     * A sequence is archived when its transaction ends, not left open.
+     *
+     * The distinction is invisible to a single transaction, because
+     * `sequences()` reports a still-open frame as well as the archived ones -
+     * so a recorder that never closed anything would return exactly the same
+     * list. It shows on what comes next: once the transaction has ended, the
+     * following lock is a new sequence rather than the tail of the old one.
+     */
+    public function test_a_sequence_is_archived_when_its_transaction_ends(): void
+    {
+        LockOrderRecorder::start();
+
+        DB::transaction(function (): void {
+            ClientAgreement::query()->whereKey(1)->tap(Locks::forUpdate());
+            ClientInvoice::query()->whereKey(1)->tap(Locks::forUpdate());
+        });
+
+        ClientInvoice::query()->whereKey(2)->tap(Locks::forUpdate());
+
+        $this->assertSame(
+            [
+                [LockResource::ClientAgreement, LockResource::ClientInvoice],
+                [LockResource::ClientInvoice],
+            ],
+            LockOrderRecorder::sequences(),
+        );
+    }
+
+    /** A transaction that takes no locks records no sequence, not an empty one. */
+    public function test_a_transaction_that_takes_no_locks_records_nothing(): void
+    {
+        LockOrderRecorder::start();
+
+        DB::transaction(static fn (): null => null);
+
+        $this->assertSame([], LockOrderRecorder::sequences());
+    }
+
+    /**
+     * A nested transaction continues its parent's sequence.
+     *
+     * A nested `DB::transaction()` is a savepoint, and releasing a savepoint
+     * releases no locks - so its locks are still held by the outermost
+     * transaction when the next one is asked for, and they belong to the same
+     * sequence. A recorder that started a frame per savepoint would lose
+     * everything the parent took before it; one that archived on each savepoint
+     * release would split a single held set into several, and the ordering
+     * claim would be made about neither.
+     *
+     * The third lock, taken after the savepoint is released and before the
+     * parent commits, is what makes both of those visible.
+     */
+    public function test_a_nested_transaction_continues_its_parents_sequence(): void
+    {
+        LockOrderRecorder::start();
+
+        DB::transaction(function (): void {
+            ClientAgreement::query()->whereKey(1)->tap(Locks::forUpdate());
+
+            DB::transaction(function (): void {
+                ClientInvoice::query()->whereKey(1)->tap(Locks::forUpdate());
+            });
+
+            ClientTimeEntry::query()->whereKey(1)->tap(Locks::forUpdate());
+        });
+
+        $this->assertSame(
+            [[
+                LockResource::ClientAgreement,
+                LockResource::ClientInvoice,
+                LockResource::ClientTimeEntry,
+            ]],
             LockOrderRecorder::sequences(),
         );
     }
