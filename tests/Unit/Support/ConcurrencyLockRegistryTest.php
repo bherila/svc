@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Support;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
@@ -79,52 +80,89 @@ final class ConcurrencyLockRegistryTest extends TestCase
      *
      * Failing closed is the point: an unranked lock would be recorded nowhere,
      * ordered against nothing, and pass every conformance check while being
-     * exactly the lock nobody has thought about. The message has to carry the
-     * table, because the caller is a builder chain several frames down.
+     * exactly the lock nobody has thought about.
+     *
+     * The whole message, not a fragment. The caller is a builder chain several
+     * frames down, so the refusal has to carry the table it could not place
+     * *and* say what to do about it - and asserting only the first clause lets
+     * the actionable half be dropped silently.
      */
     public function test_an_unregistered_table_is_refused_by_name(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No lock-order registry entry for table "client_invoice_lines"');
+        $this->expectExceptionMessage(
+            'No lock-order registry entry for table "client_invoice_lines". Add a case to '
+            .LockResource::class
+            .' in the position the acquisition order puts it, and record why in '
+            .'docs/client-management/concurrency.md.',
+        );
 
         LockResource::forTable('client_invoice_lines');
     }
 
-    /** A model query is placed by its model's table, not by its class name. */
+    /**
+     * A model query is placed by its model's table, not by its query's `from`.
+     *
+     * The second half is the load-bearing one and the reason this does not just
+     * read `$query->from` for everything: an Eloquent builder can be pointed at
+     * another table, and the rows a model lock takes are still its model's. A
+     * resolver that fell through to the query would place this lock under a
+     * table the registry has never ranked - and would say so by refusing,
+     * which is a confusing way to be told the resolver is wrong.
+     */
     public function test_an_eloquent_query_resolves_through_its_models_table(): void
     {
         $this->assertSame(
             LockResource::ClientInvoice,
             LockResource::forQuery(ClientInvoice::query()->whereKey(1)),
         );
+
+        $repointed = ClientInvoice::query()->whereKey(1);
+        $repointed->getQuery()->from = 'client_invoice_lines';
+
+        $this->assertSame(LockResource::ClientInvoice, LockResource::forQuery($repointed));
     }
 
-    /**
-     * A plain table query resolves too, aliased or not.
-     *
-     * Aliasing changes what the rows are called and not which rows are locked,
-     * so the base name is the answer. Left unhandled, `from ... as x` would
-     * miss every case and be refused as unregistered - which reads like a
-     * missing registry entry and is not one.
-     */
-    public function test_a_plain_table_query_resolves_with_or_without_an_alias(): void
+    /** A plain table query resolves by the name it names. */
+    public function test_a_plain_table_query_resolves_through_its_table_name(): void
     {
         $this->assertSame(
             LockResource::StripePaymentMethodState,
             LockResource::forQuery(DB::table('stripe_payment_method_states')),
         );
-
-        $this->assertSame(
-            LockResource::StripePaymentMethodState,
-            LockResource::forQuery(DB::table('stripe_payment_method_states as states')),
-        );
     }
 
-    /** A table this cannot read is refused rather than guessed at. */
+    /**
+     * An aliased table is refused, and refused *as itself*.
+     *
+     * Deliberate. Nothing here locks an aliased table - a lock is taken on rows
+     * by key - so accepting the form would be defence against a shape that does
+     * not occur, and it cost a fallback branch and a cast that no test could
+     * reach. Refusing names the table in full, which is the direction a
+     * registry whose point is "an unranked lock is refused" should be wrong in,
+     * and it says exactly what to add if a call site ever needs it.
+     */
+    public function test_an_aliased_table_is_refused_rather_than_silently_resolved(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('No lock-order registry entry for table "stripe_payment_method_states as states"');
+
+        LockResource::forQuery(DB::table('stripe_payment_method_states as states'));
+    }
+
+    /**
+     * A table this cannot read is refused rather than guessed at.
+     *
+     * The whole message again, for the same reason: it has to say what to do,
+     * not only that something went wrong.
+     */
     public function test_a_query_whose_table_is_an_expression_is_refused(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('whose table is an expression');
+        $this->expectExceptionMessage(
+            'A pessimistic lock was taken on a query whose table is an expression, so it cannot be placed in the '
+            .'lock-order registry. Lock a plain table, or a model.',
+        );
 
         LockResource::forQuery(DB::table(DB::raw('client_invoices')));
     }
@@ -168,6 +206,58 @@ final class ConcurrencyLockRegistryTest extends TestCase
         LockOrderRecorder::stop();
         ClientInvoice::query()->whereKey(1)->tap(Locks::forUpdate());
         $this->assertSame([], LockOrderRecorder::sequences());
+    }
+
+    /**
+     * Two locks outside any transaction are two sequences, not one.
+     *
+     * A lock taken outside a transaction is released at the end of the
+     * statement, so it is its own one-element sequence and never part of the
+     * next one. Asserted with *two* locks on purpose: with one, a recorder that
+     * appended to the open frame instead of closing a sequence produces exactly
+     * the same output, and the distinction only shows on the second.
+     */
+    public function test_locks_outside_a_transaction_are_each_their_own_sequence(): void
+    {
+        LockOrderRecorder::start();
+
+        ClientInvoice::query()->whereKey(1)->tap(Locks::forUpdate());
+        ClientInvoice::query()->whereKey(2)->tap(Locks::forUpdate());
+
+        $this->assertSame(
+            [[LockResource::ClientInvoice], [LockResource::ClientInvoice]],
+            LockOrderRecorder::sequences(),
+        );
+    }
+
+    /**
+     * Locks inside one transaction are one sequence, in order.
+     *
+     * The grouping the conformance test's whole claim rests on, at unit scale:
+     * the queries are built and never run, so this needs a transaction and not
+     * a schema. Read once while the transaction is still open - a sequence that
+     * only appeared on commit would be invisible to any assertion made inside
+     * the workflow it is about - and once after, to show it is archived rather
+     * than merely still open.
+     */
+    public function test_locks_inside_one_transaction_are_one_ordered_sequence(): void
+    {
+        LockOrderRecorder::start();
+
+        DB::transaction(function (): void {
+            ClientAgreement::query()->whereKey(1)->tap(Locks::forUpdate());
+            ClientInvoice::query()->whereKey(1)->tap(Locks::forUpdate());
+
+            $this->assertSame(
+                [[LockResource::ClientAgreement, LockResource::ClientInvoice]],
+                LockOrderRecorder::sequences(),
+            );
+        });
+
+        $this->assertSame(
+            [[LockResource::ClientAgreement, LockResource::ClientInvoice]],
+            LockOrderRecorder::sequences(),
+        );
     }
 
     /**

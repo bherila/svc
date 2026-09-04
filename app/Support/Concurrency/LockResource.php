@@ -116,17 +116,19 @@ enum LockResource: string
         $from = $query->from;
 
         if (! is_string($from)) {
-            throw new RuntimeException(
-                'A pessimistic lock was taken on a query whose table is an expression, so it cannot be placed in the '
-                .'lock-order registry. Lock a plain table, or a model.',
-            );
+            throw new RuntimeException('A pessimistic lock was taken on a query whose table is an expression, so it cannot be placed in the lock-order registry. Lock a plain table, or a model.');
         }
 
-        // `from ... as alias` is legal and would not resolve. Aliasing a table
-        // does not change which rows are locked, so the base name is the answer.
-        [$table] = preg_split('/\s+as\s+/i', trim($from)) ?: [$from];
-
-        return self::forTable(trim((string) $table));
+        // Taken whole, so `from ... as alias` is refused rather than resolved.
+        // An earlier revision split it on Laravel's own `\s+as\s+`; that was
+        // defence against a shape nothing here produces - a lock is taken on
+        // rows by key, and no call site aliases the table it locks - and it
+        // bought that defence with a fallback branch and a cast the analyser
+        // requires and no test can reach. Failing closed and naming the table
+        // in full is the direction a registry whose whole point is "an unranked
+        // lock is refused" should be wrong in. Add the split back alongside a
+        // call site that needs it.
+        return self::forTable($from);
     }
 
     /**
@@ -143,8 +145,7 @@ enum LockResource: string
 
         if (! $resource instanceof self) {
             throw new RuntimeException(sprintf(
-                'No lock-order registry entry for table "%s". Add a case to %s in the position the acquisition '
-                .'order puts it, and record why in docs/client-management/concurrency.md.',
+                'No lock-order registry entry for table "%s". Add a case to %s in the position the acquisition order puts it, and record why in docs/client-management/concurrency.md.',
                 $table,
                 self::class,
             ));
