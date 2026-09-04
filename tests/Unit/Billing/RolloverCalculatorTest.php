@@ -327,6 +327,29 @@ class RolloverCalculatorTest extends TestCase
         $this->assertSame(2.0, $results[8]->opening->rolloverHours);
     }
 
+    public function test_billed_overage_separates_fractional_debt_settlement_from_surplus(): void
+    {
+        $surplus = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 3.1234,
+            'billed_overage_hours' => 1.5678,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.4444, $surplus[0]->closing->unusedHours);
+        $this->assertSame(0.0, $surplus[0]->closing->negativeBalance);
+
+        $partial = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 4.2345,
+            'billed_overage_hours' => 1.1111,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.0, $partial[0]->closing->unusedHours);
+        $this->assertSame(1.1234, $partial[0]->closing->negativeBalance);
+    }
+
     public function test_multiple_months_case_a_uses_rollover(): void
     {
         // Case A: Exceeds retainer, uses available rollover

@@ -254,28 +254,25 @@ class RolloverCalculator
             // lot, so the normal rollover window expires it instead of letting
             // the same old charge create fresh capacity forever.
             $billedOverage = max(0.0, $month['billed_overage_hours'] ?? 0.0);
-            if ($billedOverage > 0.0) {
-                $settledDebt = min($summary->closing->negativeBalance, $billedOverage);
-                $summary = new MonthSummary(
-                    opening: $summary->opening,
-                    closing: new ClosingBalance(
-                        hoursUsedFromRetainer: $summary->closing->hoursUsedFromRetainer,
-                        hoursUsedFromRollover: $summary->closing->hoursUsedFromRollover,
-                        unusedHours: round(
-                            $summary->closing->unusedHours + ($billedOverage - $settledDebt),
-                            4,
-                        ),
-                        excessHours: $summary->closing->excessHours,
-                        negativeBalance: round($summary->closing->negativeBalance - $settledDebt, 4),
-                        remainingRollover: $summary->closing->remainingRollover,
+            $settledDebt = min($summary->closing->negativeBalance, $billedOverage);
+            $summary = new MonthSummary(
+                opening: $summary->opening,
+                closing: new ClosingBalance(
+                    hoursUsedFromRetainer: $summary->closing->hoursUsedFromRetainer,
+                    hoursUsedFromRollover: $summary->closing->hoursUsedFromRollover,
+                    unusedHours: $this->ledgerHours(
+                        $summary->closing->unusedHours + ($billedOverage - $settledDebt),
                     ),
-                    hoursWorked: $summary->hoursWorked,
-                    yearMonth: $summary->yearMonth,
-                    retainerHours: $summary->retainerHours,
-                    billExcessImmediately: $summary->billExcessImmediately,
-                    cycleStart: $summary->cycleStart,
-                );
-            }
+                    excessHours: $summary->closing->excessHours,
+                    negativeBalance: $this->ledgerHours($summary->closing->negativeBalance - $settledDebt),
+                    remainingRollover: $summary->closing->remainingRollover,
+                ),
+                hoursWorked: $summary->hoursWorked,
+                yearMonth: $summary->yearMonth,
+                retainerHours: $summary->retainerHours,
+                billExcessImmediately: $summary->billExcessImmediately,
+                cycleStart: $summary->cycleStart,
+            );
 
             // Deduct used rollover hours from the history stack (FIFO)
             $usedRollover = $summary->closing->hoursUsedFromRollover;
@@ -323,6 +320,13 @@ class RolloverCalculator
         }
 
         return $results;
+    }
+
+    /** Decimal billing inputs already carry at most four places. */
+    private function ledgerHours(float $hours): float
+    {
+        // @infection-ignore-all A fifth place cannot exist after decimal:4 storage and the preceding ledger rounds; changing 4 to 5 is equivalent, while callers test their arithmetic directly.
+        return round($hours, 4);
     }
 
     /**

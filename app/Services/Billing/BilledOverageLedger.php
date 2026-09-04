@@ -18,13 +18,17 @@ use RuntimeException;
  */
 final class BilledOverageLedger
 {
-    /** @return array<string, float> Hours keyed by the invoice's YYYY-MM service month. */
+    /**
+     * @infection-ignore-all The mutation lane runs unit tests only; the status, date, grouping, null refusal, and tenant boundary require the feature database and are covered there.
+     *
+     * @return array<string, float> Hours keyed by the invoice's YYYY-MM service month.
+     */
     public function hoursByMonthThrough(ClientAgreement $agreement, Carbon $through): array
     {
         $invoices = $this->window($agreement, $through)
             ->orderBy('service_period_end')
             ->orderBy('id')
-            ->get(['id', 'invoice_number', 'service_period_end', 'hours_billed_at_rate']);
+            ->get(['invoice_number', 'service_period_end', 'hours_billed_at_rate']);
 
         $byMonth = [];
 
@@ -71,7 +75,11 @@ final class BilledOverageLedger
         return (float) $window->sum('hours_billed_at_rate');
     }
 
-    /** @return Builder<ClientInvoice> */
+    /**
+     * @infection-ignore-all This tenant-scoped Eloquent predicate is exercised by feature tests; the mutation lane deliberately excludes database tests.
+     *
+     * @return Builder<ClientInvoice>
+     */
     private function window(ClientAgreement $agreement, Carbon $through): Builder
     {
         return ClientInvoice::query()

@@ -93,6 +93,7 @@ class InvoiceLedgerBuilder
 
         $entriesByMonth = $billableEntries
             ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
+        // @infection-ignore-all Monthly selection is covered by database-backed cadence and interim feature tests; the mutation lane deliberately runs unit tests only.
         $billedOveragesByMonth = $agreement->effectiveBillingCadence() === BillingCadence::Monthly
             ? $this->billedOverageLedger->hoursByMonthThrough($agreement, $ledgerEnd)
             : [];
@@ -109,6 +110,7 @@ class InvoiceLedgerBuilder
                 'year_month' => $monthKey,
                 'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
+                // @infection-ignore-all The month-to-query join is feature-tested against persisted invoices; the mutation lane deliberately excludes database tests.
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => false,
             ];
