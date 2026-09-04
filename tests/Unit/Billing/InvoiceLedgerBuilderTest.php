@@ -119,7 +119,7 @@ class InvoiceLedgerBuilderTest extends TestCase
             'invoice_number' => 'PERIOD-HISTORY-'.uniqid(),
             'status' => 'paid',
             'service_period_end' => '2026-01-31',
-            'hours_billed_at_rate' => '6.0000',
+            'hours_billed_at_rate' => '6.1234',
             'currency' => 'USD',
         ]);
 
@@ -130,7 +130,7 @@ class InvoiceLedgerBuilderTest extends TestCase
         );
 
         $this->assertCount(1, $ledger);
-        $this->assertSame(1.0, $ledger[0]->closing->unusedHours, 'The charge settles five debt hours and restores one');
+        $this->assertSame(1.1234, $ledger[0]->closing->unusedHours, 'The charge settles five debt hours and restores its exact surplus');
         $this->assertSame(0.0, $ledger[0]->closing->negativeBalance);
     }
 
