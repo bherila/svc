@@ -58,6 +58,13 @@ final class EmailAddressListCastTest extends TestCase
             '["ap@synthetic.test",{"email":"ar@synthetic.test"}]',
             ['ap@synthetic.test'],
         ];
+        // The same value first rather than last. Dropped means skipped, not
+        // stopped: giving up at the first unreadable entry would silently lose
+        // every real address behind it, and the record would look complete.
+        yield 'a nested value does not hide the addresses after it' => [
+            '[{"email":"ar@synthetic.test"},"ap@synthetic.test"]',
+            ['ap@synthetic.test'],
+        ];
     }
 
     /**
