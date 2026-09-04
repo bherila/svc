@@ -2,6 +2,7 @@
 
 namespace App\Support\Expenses;
 
+use App\Queries\Expenses\WorkspaceExpenses;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 
@@ -12,7 +13,7 @@ use InvalidArgumentException;
  *
  * Deliberately. Tenancy is the one thing a caller can get wrong in a way the
  * database cannot always catch, so it is not something a caller gets to hand
- * over: {@see \App\Queries\Expenses\WorkspaceExpenses} resolves the company and
+ * over: {@see WorkspaceExpenses} resolves the company and
  * the optional project against the workspace it was constructed for, and adds
  * those columns itself. A DTO that carried a `workspace_id` would be one more
  * place a wrong tenant could enter, and the guard would then live in whichever
@@ -80,7 +81,7 @@ final readonly class NewExpense
      * The columns this object owns, ready for the persistence boundary.
      *
      * Tenant columns and the lifecycle are absent by construction; adding them
-     * is {@see \App\Queries\Expenses\WorkspaceExpenses}' job.
+     * is {@see WorkspaceExpenses}' job.
      *
      * @return array{spent_on: CarbonImmutable, amount: int, currency: string, description: string}
      */

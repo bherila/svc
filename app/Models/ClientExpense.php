@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Queries\Expenses\WorkspaceExpenses;
 use App\Support\Expenses\ExpenseStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * project.
  *
  * Reads here are deliberately thin. The row is written through
- * {@see \App\Queries\Expenses\WorkspaceExpenses}, which is the only place that
+ * {@see WorkspaceExpenses}, which is the only place that
  * resolves a company or a project for a workspace, so a caller cannot assemble
  * an expense out of ids it did not check. Nothing on this model transitions the
  * lifecycle - approval and the claim/release behaviour on draft-invoice

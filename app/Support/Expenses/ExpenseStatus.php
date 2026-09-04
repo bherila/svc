@@ -2,6 +2,8 @@
 
 namespace App\Support\Expenses;
 
+use App\Support\Billing\InvoiceStatus;
+
 /**
  * Where a reimbursable expense sits between being recorded and being billed.
  *
@@ -9,7 +11,7 @@ namespace App\Support\Expenses;
  * an invoice through the same gate as billable time, and two lifecycles that
  * mean the same thing but spell it differently is how a guard comes to enumerate
  * one set of strings while the column holds another. That has already cost this
- * codebase real money arithmetic - see {@see \App\Support\Billing\InvoiceStatus},
+ * codebase real money arithmetic - see {@see InvoiceStatus},
  * which exists because four hand-written lists each omitted the same status.
  *
  * So the strings live here once and the questions callers ask are named methods.
@@ -33,9 +35,7 @@ namespace App\Support\Expenses;
 enum ExpenseStatus: string
 {
     case Draft = 'draft';
-
     case Approved = 'approved';
-
     case Invoiced = 'invoiced';
 
     /**
