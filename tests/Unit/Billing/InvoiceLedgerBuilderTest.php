@@ -134,6 +134,38 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(0.0, $ledger[0]->closing->negativeBalance);
     }
 
+    public function test_a_pre_active_period_retainer_charge_reaches_the_first_active_cycle(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2026-02-01',
+            'billing_cadence' => 'monthly',
+            'monthly_retainer_hours' => 10,
+            'retainer_hours' => 10,
+        ]);
+        ClientInvoice::query()->create([
+            'workspace_id' => $company->workspace_id,
+            'client_company_id' => $company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'PRE-ACTIVE-PERIOD-'.uniqid(),
+            'status' => 'issued',
+            'service_period_end' => '2026-01-31',
+            'hours_billed_at_rate' => '5.1234',
+            'currency' => 'USD',
+        ]);
+
+        $ledger = (new InvoiceLedgerBuilder)->buildAgreementLedgerThrough(
+            $company,
+            $agreement,
+            Carbon::parse('2026-02-28'),
+        );
+
+        $this->assertCount(1, $ledger, 'Period-retainer rows still begin at activation');
+        $this->assertSame('2026-02', $ledger[0]->yearMonth);
+        $this->assertSame(15.1234, $ledger[0]->closing->unusedHours, 'Paid pre-active capacity reaches that first cycle exactly');
+        $this->assertSame(0.0, $ledger[0]->closing->negativeBalance);
+    }
+
     /**
      * An agreement with no rollover term carries nothing forward.
      *

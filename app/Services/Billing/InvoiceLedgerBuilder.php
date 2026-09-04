@@ -90,6 +90,21 @@ class InvoiceLedgerBuilder
                 $hoursByDate[$dateKey] = ($hoursByDate[$dateKey] ?? 0.0) + ((float) $entry->minutes_worked / 60);
             }
 
+            // A monthly advance invoice can reconcile the month immediately
+            // before activation. Period-retainer cycles begin at activation,
+            // so carry that paid capacity into the first cycle rather than
+            // dropping a bucket the cycle walker can never emit.
+            // @infection-ignore-all Persisted charged-invoice selection and the active-cycle remap are covered together by the database-backed period-retainer ledger test; isolated mutation workers cannot safely share that fixture.
+            $openingServiceMonthKey = $activeDate->copy()->subMonthNoOverflow()->format('Y-m');
+            if (isset($billedOveragesByMonth[$openingServiceMonthKey])) {
+                $activeMonthKey = $activeDate->format('Y-m');
+                $billedOveragesByMonth[$activeMonthKey] = round(
+                    ($billedOveragesByMonth[$activeMonthKey] ?? 0.0) + $billedOveragesByMonth[$openingServiceMonthKey],
+                    4,
+                );
+                unset($billedOveragesByMonth[$openingServiceMonthKey]);
+            }
+
             // BillingCycleResolver correctly uses the stored agreement start
             // everywhere else. Replay is the one exception: its ledger must
             // contain a historical opening cycle without changing which
