@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
@@ -17,6 +18,7 @@ class ProposalWorkflow
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
+        private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -102,6 +104,12 @@ class ProposalWorkflow
                 throw new EngagementException('This proposal has expired.');
             }
 
+            $agreement = $this->acceptanceAgreements->linkedAgreement($locked);
+
+            if ($agreement === null && $this->acceptanceAgreements->hasActiveUnlinkedAgreement($locked)) {
+                throw new EngagementException('This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.');
+            }
+
             $acceptedAt = $this->clock->now($locked->workspace);
             $locked->forceFill([
                 'status' => 'accepted',
@@ -110,8 +118,6 @@ class ProposalWorkflow
                 'acceptance_signer_name' => $signerName,
                 'acceptance_signer_title' => $signerTitle,
             ])->save();
-
-            $agreement = $locked->agreements()->first();
 
             if ($agreement === null) {
                 $agreement = $locked->agreements()->create([

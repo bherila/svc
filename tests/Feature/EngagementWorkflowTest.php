@@ -304,25 +304,12 @@ class EngagementWorkflowTest extends TestCase
     }
 
     /**
-     * A null `source_proposal_id` hides an existing agreement from acceptance,
-     * and acceptance writes a second one.
-     *
-     * This pins a defect rather than a guarantee, deliberately. #148 established
-     * that the fix cannot live inside `accept()`: the only evidence tying an
-     * agreement to a proposal is the link that is missing, and matching by
-     * company, title or date inside a write path would trade a duplicate for a
-     * mis-attribution - a worse error, and one nobody would notice. So the
-     * repair is to restore the links, sized by
-     * `svc:engagement:audit-unlinked-proposal-agreements`, and until that lands
-     * this is what the code does.
-     *
-     * Written as an assertion so it fails the moment the behaviour changes. A
-     * defect that is understood and left in place should be a failing test's
-     * worth of noise to alter, not a silent surprise - and the registry entry
-     * for `client_agreements.source_proposal_id` names `accept()` as a live
-     * reader of the null, which #143 requires be pinned by something.
+     * A null `source_proposal_id` hides an existing agreement from the ordinary
+     * linked-agreement lookup. Acceptance must refuse before it records a
+     * signature or creates the second active contract; it cannot safely guess
+     * that the unlinked agreement belongs to this proposal.
      */
-    public function test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created(): void
+    public function test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance(): void
     {
         $owner = User::factory()->create();
         $clientUser = User::factory()->create();
@@ -345,8 +332,8 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
             ->assertOk();
 
-        // The agreement this proposal really produced, with its link lost - the
-        // state the importer reaches when the source proposal does not resolve.
+        // The agreement this proposal may already have produced, with its link
+        // lost. There is no safe evidence here that lets acceptance repair it.
         $existing = ClientAgreement::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
@@ -357,10 +344,8 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2026-01-01',
         ]);
 
-        // The audit names this proposal while it is still preventable. After
-        // acceptance it looks sound - the second agreement carries the link the
-        // first one lost - which is precisely why the warning has to be read
-        // before anyone accepts and not after.
+        // The auditor and write path share the same query definition, so an
+        // operator sees the same population that acceptance refuses.
         $this->assertSame(
             1,
             app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
@@ -369,29 +354,145 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Buyer'],
-        )->assertOk();
+        )->assertUnprocessable()->assertExactJson([
+            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        ]);
 
-        // Two agreements for one engagement, each with its own recurring item,
-        // so the client is billed twice every month.
-        $this->assertSame(2, ClientAgreement::query()->count());
-
-        $created = ClientAgreement::query()->whereKeyNot($existing->id)->sole();
-        $this->assertSame($proposal->id, $created->source_proposal_id);
-        $this->assertSame(1, $created->recurringItems()->count());
-        $this->assertSame(0, $existing->recurringItems()->count());
-
-        // The pre-existing agreement is untouched: the duplicate is additive,
-        // which is why nothing downstream reports a conflict.
+        $proposal->refresh();
+        $this->assertSame('sent', $proposal->status);
+        $this->assertNull($proposal->accepted_at);
+        $this->assertNull($proposal->accepted_by_user_id);
+        $this->assertNull($proposal->acceptance_signer_name);
+        $this->assertSame(1, ClientAgreement::query()->count());
+        $this->assertSame(0, ClientCompanyActivity::query()->count());
         $this->assertSame('active', $existing->fresh()->status);
         $this->assertNull($existing->fresh()->source_proposal_id);
+        $this->assertSame(0, $existing->recurringItems()->count());
 
-        // And the proposal now looks sound to the audit, because the duplicate
-        // it created carries the link. The population shrinks by resolving
-        // itself into a second contract - the reason this cannot be measured
-        // after the fact.
+        // A refusal does not manufacture a clean audit result. The conflict
+        // remains visible until an operator resolves the agreement state.
         $counts = app(UnlinkedProposalAgreementAuditor::class)->count($workspace);
-        $this->assertSame(0, $counts->withAnActiveUnlinkedAgreement);
+        $this->assertSame(1, $counts->withAnActiveUnlinkedAgreement);
         $this->assertSame(0, $counts->acceptedWithoutALinkedAgreement);
+    }
+
+    public function test_an_inactive_unlinked_agreement_does_not_block_a_new_acceptance(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic former agreement',
+            'status' => 'cancelled',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+        ]);
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $this->assertSame('accepted', $proposal->fresh()->status);
+        $this->assertSame(1, ClientAgreement::query()->where('status', 'active')->count());
+        $this->assertSame($proposal->id, ClientAgreement::query()->where('status', 'active')->sole()->source_proposal_id);
+    }
+
+    public function test_an_active_agreement_linked_to_another_proposal_does_not_block_acceptance(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $other = $this->sentProposal($workspace, $company, $owner, 'Synthetic earlier proposal');
+        $proposal = $this->sentProposal($workspace, $company, $owner, 'Synthetic current proposal');
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'source_proposal_id' => $other->id,
+            'title' => 'Synthetic accounted agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+        ]);
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
+    }
+
+    public function test_an_unlinked_agreement_from_another_workspace_does_not_block_acceptance(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Neighbour Workspace',
+            'slug' => 'synthetic-neighbour-workspace-'.uniqid(),
+        ]);
+        $neighbourCompany = ClientCompany::query()->create([
+            'workspace_id' => $neighbour->id,
+            'name' => 'Synthetic Neighbour Client',
+            'slug' => 'synthetic-neighbour-client-'.uniqid(),
+        ]);
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $neighbour->id,
+            'client_company_id' => $neighbourCompany->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic neighbouring agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+        ]);
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $created = ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('source_proposal_id', $proposal->id)
+            ->sole();
+        $this->assertSame($company->id, $created->client_company_id);
+    }
+
+    private function sentProposal(
+        Workspace $workspace,
+        ClientCompany $company,
+        User $owner,
+        string $title = 'Synthetic proposal',
+    ): ClientProposal {
+        $proposal = ClientProposal::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'created_by_user_id' => $owner->id,
+            'title' => $title,
+            'currency' => 'USD',
+            'is_visible_to_client' => true,
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+        $proposal->items()->create([
+            'workspace_id' => $workspace->id,
+            'description' => 'Synthetic monthly support',
+            'quantity' => '1.000',
+            'unit_amount' => 10000,
+            'cadence' => 'monthly',
+            'sort_order' => 0,
+        ]);
+
+        return $proposal;
     }
 
     private function clientFor(User $owner, ?User $clientUser = null): array
