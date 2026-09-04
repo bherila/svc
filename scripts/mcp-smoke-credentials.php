@@ -64,11 +64,22 @@ $principal = AgentPrincipal::query()->findOrFail($user->id);
 
 /** Without the resource indicator the token is not addressed to this API. */
 $issue = static function (string $name, array $scopes) use ($principal, $client): string {
-    $issued = $principal->createToken($name, $scopes);
+    $request = request();
+    $request->attributes->set(
+        OAuthResourceIndicator::REQUEST_ATTRIBUTE,
+        OAuthResourceIndicator::configuredCanonical(),
+    );
+    try {
+        $issued = $principal->createToken($name, $scopes);
+    } finally {
+        $request->attributes->remove(OAuthResourceIndicator::REQUEST_ATTRIBUTE);
+    }
+
     Passport::token()->newQuery()
         ->whereKey($issued->accessTokenId)
         ->where('client_id', $client->id)
-        ->update(['resource_uri' => OAuthResourceIndicator::resource()]);
+        ->where('resource_uri', OAuthResourceIndicator::resource())
+        ->firstOrFail();
 
     return $issued->accessToken;
 };
