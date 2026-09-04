@@ -125,4 +125,39 @@ class ClientExpense extends Model implements WorkspaceOwned
     {
         return ExpenseStatus::hasBeenInvoicedValue($this->getAttribute('status'));
     }
+
+    /**
+     * Carry the workspace into every update and delete this row performs.
+     *
+     * Eloquent keys a save by primary key alone, so `save()` on a model read
+     * through a workspace-scoped query still emits `where id = ?`. The write is
+     * not reachable across tenants - the id came from a scoped read holding
+     * `FOR UPDATE` inside the same transaction, so nothing can move it - but
+     * "not reachable" is an argument about the caller, and the rule this
+     * repository states is about the statement: every tenant-owned write is
+     * workspace-scoped. This makes that true of the SQL rather than of the
+     * reasoning around it, which is the difference between a guarantee and a
+     * paragraph.
+     *
+     * `setKeysForSaveQuery()` is the seam Laravel provides for exactly this,
+     * and taking it keeps `save()`: casts, timestamps and model events all
+     * still run, where hand-writing the update statements would have traded a
+     * scoping guarantee for three subtler ways to be wrong. It backs the update
+     * `save()` issues, both delete paths and `restore()`, so there is no fifth
+     * write to remember.
+     *
+     * The predicate is the *stored* workspace, not the in-memory attribute. A
+     * save that had its `workspace_id` rewritten in memory then matches no row
+     * instead of reaching for one in the tenant it was pointed at.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    protected function setKeysForSaveQuery($query)
+    {
+        return parent::setKeysForSaveQuery($query)->where(
+            'workspace_id',
+            $this->getRawOriginal('workspace_id', $this->getAttribute('workspace_id')),
+        );
+    }
 }

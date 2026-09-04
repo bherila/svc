@@ -85,6 +85,10 @@ workflow. It is intentionally provider-neutral and contains no production data.
   `users`, which is not tenant-owned, so no key can refuse a stranger
 - every transition locks the row and re-reads its status under that lock, through
   the registry in [concurrency](client-management/concurrency.md)
+- every update and delete carries `workspace_id` in its own statement, not only
+  in the read that found the row: `ClientExpense` overrides
+  `setKeysForSaveQuery()`, so `save()`, both delete paths and `restore()` are
+  scoped without giving up casts, timestamps or model events
 
 ## Billing tables
 

@@ -361,32 +361,62 @@ final class ExpenseLifecycleTest extends TestCase
     }
 
     /**
-     * The locked re-read carries the workspace predicate, not just the key.
+     * Every statement the boundary issues names the workspace - the writes as
+     * well as the locked read.
      *
-     * Asserted on the SQL because the effect is invisible in the outcome: a
-     * boundary that locked by primary key alone would refuse the write exactly
-     * as this one does, having first taken a real `FOR UPDATE` on another
-     * tenant's row and held it for the length of the transaction.
+     * Asserted on the SQL because none of it is visible in the outcome. A
+     * boundary that locked by primary key alone would refuse a foreign row
+     * exactly as this one does, having first taken a real `FOR UPDATE` on it
+     * and held that for the length of the transaction. And Eloquent keys a save
+     * by primary key alone, so `save()` on a correctly scoped model still emits
+     * `where id = ?` unless something puts the workspace back - which is what
+     * `ClientExpense::setKeysForSaveQuery()` does, and this is the only place
+     * that can tell whether it is still doing it.
+     *
+     * The three moves cover the three statement shapes: an edit updates, an
+     * approval updates through the transition path, and a discard updates
+     * through the soft-delete path. Each is checked, and the count of writes is
+     * asserted so a change that stopped issuing them cannot pass by having
+     * nothing to inspect.
      */
-    public function test_the_locking_read_is_scoped_to_the_workspace(): void
+    public function test_every_statement_the_boundary_issues_names_the_workspace(): void
     {
-        $workspace = $this->syntheticWorkspace('scoped lock');
-        $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'scoped lock'));
+        $workspace = $this->syntheticWorkspace('scoped writes');
+        $approver = $this->syntheticMember($workspace, 'approver');
+        $expenses = new WorkspaceExpenses($workspace);
+        $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'scoped writes'));
 
         $statements = [];
         DB::listen(static function (QueryExecuted $query) use (&$statements): void {
             $statements[] = $query->sql;
         });
 
-        (new WorkspaceExpenses($workspace))->update($expense, $this->syntheticExpenseFacts('corrected', 30_000));
+        // The caller's copy is deliberately not refreshed between moves. Each
+        // boundary call re-reads under its own lock, so a stale model is the
+        // ordinary case - and `refresh()` would issue an unscoped read of its
+        // own, which is a statement this test would then have to make an
+        // exception for.
+        $expenses->update($expense, $this->syntheticExpenseFacts('corrected', 30_000));
+        $expenses->approve($expense, $approver);
+        $expenses->discard($expense);
 
-        $selects = array_values(array_filter(
+        $touching = array_values(array_filter(
             $statements,
-            static fn (string $sql): bool => str_contains($sql, 'select') && str_contains($sql, 'client_expenses'),
+            static fn (string $sql): bool => str_contains($sql, 'client_expenses'),
         ));
 
-        $this->assertNotEmpty($selects, 'No read of the table was captured, so this asserted nothing.');
-        $this->assertStringContainsString('workspace_id', $selects[0]);
+        $this->assertNotEmpty($touching, 'No statement against the table was captured, so this asserted nothing.');
+
+        foreach ($touching as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql, $sql);
+        }
+
+        $writes = array_values(array_filter(
+            $touching,
+            static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'update'),
+        ));
+
+        $this->assertCount(3, $writes, 'One edit, one transition and one soft delete, or the writes were not inspected.');
     }
 
     public function test_the_scope_still_only_lists_approved_expenses_it_owns(): void
