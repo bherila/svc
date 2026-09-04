@@ -196,7 +196,8 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
         [$owner, $workspace, $company, $project] = $this->tenant();
         $time = $this->approvedTime($owner, $workspace, $company, $project, 'Original allocation');
         $replacement = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');
-        $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE]);
+        // Issuing is a delivery scope, not a write scope.
+        $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
         $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'scoped-writes-create');
 
         $writes = [];
