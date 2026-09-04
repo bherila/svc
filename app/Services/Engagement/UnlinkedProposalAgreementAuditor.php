@@ -8,6 +8,7 @@ use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
 use App\Support\Engagement\UnlinkedProposalAgreementCounts;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -46,12 +47,11 @@ use Illuminate\Support\Facades\DB;
  *
  * ## Why this is a service and not just a console command
  *
- * The same reason as {@see UnplaceableInvoiceAuditor}: the
- * column stays nullable, the importer keeps passing source values through, and
- * an operator can create an unlinked agreement at any time, so this is a
- * standing data-quality question rather than a migration one-off. Console and
- * any later operator screen should consume one definition of "affected" instead
- * of each re-deriving it and drifting apart.
+ * The same reason as {@see UnplaceableInvoiceAuditor}: the column stays
+ * nullable and an operator can create an unlinked agreement at any time, so
+ * this is a standing data-quality question rather than a migration one-off.
+ * Console and any later operator screen should consume one definition of
+ * "affected" instead of each re-deriving it and drifting apart.
  *
  * Scope is a parameter for the same reason. Unscoped is the operator reading;
  * anything tenant-facing must pass its own workspace, because nothing else here
@@ -109,10 +109,7 @@ final class UnlinkedProposalAgreementAuditor
         // or different-project agreement can still exist legitimately, so this
         // is the subset where a second agreement would bill alongside a live
         // one rather than retrospectively muddying the record.
-        $withAnActiveCandidate = $this->acceptanceAgreements->withActiveUnlinkedAgreement(
-            clone $sent,
-            $this->clock->today($workspace),
-        );
+        $withAnActiveCandidate = $this->activeCandidates(clone $sent, $workspace);
 
         return new UnlinkedProposalAgreementCounts(
             proposals: $this->proposals($workspace)->count(),
@@ -134,6 +131,47 @@ final class UnlinkedProposalAgreementAuditor
         return $workspace === null
             ? $proposals
             : $proposals->where('workspace_id', $workspace->id);
+    }
+
+    /**
+     * @param  Builder<ClientProposal>  $sent
+     * @return Builder<ClientProposal>
+     */
+    private function activeCandidates(Builder $sent, ?Workspace $workspace): Builder
+    {
+        if ($workspace !== null) {
+            return $this->acceptanceAgreements->withActiveUnlinkedAgreement(
+                $sent,
+                $this->clock->today($workspace),
+            );
+        }
+
+        /** @var array<string, list<int>> $workspaceIdsByDate */
+        $workspaceIdsByDate = [];
+        $workspaces = Workspace::query()
+            ->whereIn('id', (clone $sent)->select('workspace_id'))
+            ->get();
+
+        foreach ($workspaces as $candidate) {
+            $date = $this->clock->today($candidate)->toDateString();
+            $workspaceIdsByDate[$date][] = $candidate->id;
+        }
+
+        if ($workspaceIdsByDate === []) {
+            return $sent->whereRaw('0 = 1');
+        }
+
+        return $sent->where(function (Builder $byWorkspaceDate) use ($workspaceIdsByDate): void {
+            foreach ($workspaceIdsByDate as $date => $workspaceIds) {
+                $byWorkspaceDate->orWhere(function (Builder $dated) use ($date, $workspaceIds): void {
+                    $dated->whereIn('client_proposals.workspace_id', $workspaceIds);
+                    $this->acceptanceAgreements->withActiveUnlinkedAgreement(
+                        $dated,
+                        CarbonImmutable::parse($date, 'UTC')->startOfDay(),
+                    );
+                });
+            }
+        });
     }
 
     /**

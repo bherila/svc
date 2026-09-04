@@ -160,6 +160,13 @@ class AgreementWorkflow
                 return $locked;
             }
 
+            if ($locked->status === 'active'
+                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes))) {
+                $candidate = clone $locked;
+                $candidate->fill($editable);
+                $this->assertNoOverlappingActiveAgreement($candidate);
+            }
+
             $locked->update($editable);
             $this->activities->record(
                 $locked->workspace,
@@ -187,9 +194,7 @@ class AgreementWorkflow
                 throw new EngagementException('Only draft or paused agreements can be activated.');
             }
 
-            if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($locked)) {
-                throw new EngagementException('This agreement cannot be activated automatically. Ask an operator to verify its overlapping terms.');
-            }
+            $this->assertNoOverlappingActiveAgreement($locked);
 
             $previousStatus = $locked->status;
             $locked->forceFill([
@@ -207,6 +212,15 @@ class AgreementWorkflow
 
             return $locked;
         });
+    }
+
+    private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement): void
+    {
+        $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);
+
+        if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($agreement)) {
+            throw new EngagementException('This agreement cannot overlap another active agreement. Ask an operator to verify its terms.');
+        }
     }
 
     public function sign(ClientAgreement $agreement, ?User $signingUser, string $signerName, ?string $signerTitle): ClientAgreement

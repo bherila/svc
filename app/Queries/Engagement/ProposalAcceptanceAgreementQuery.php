@@ -3,6 +3,7 @@
 namespace App\Queries\Engagement;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
 use App\Models\ClientProposal;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -10,11 +11,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
- * The agreement reads that decide whether a proposal may be accepted.
+ * The agreement reads and shared lock that protect contract transitions.
  *
- * These predicates are shared with the standing auditor. Keeping them here
- * prevents the write path and the operator's count from acquiring subtly
- * different meanings of linked, unlinked, active, company, or workspace.
+ * Proposal acceptance, activation, active-term correction, and the standing
+ * auditor must not acquire subtly different meanings of linked, overlapping,
+ * active, company, project, or workspace.
  */
 final class ProposalAcceptanceAgreementQuery
 {
@@ -27,6 +28,22 @@ final class ProposalAcceptanceAgreementQuery
             ->where('client_company_id', $proposal->client_company_id)
             ->where('source_proposal_id', $proposal->id)
             ->first();
+    }
+
+    /**
+     * Serialize every agreement-state decision for one tenant/company.
+     *
+     * Locking only the proposal or agreement being changed lets two different
+     * rows both observe an empty active set. The shared parent is the row every
+     * acceptance, activation, and active-term correction has in common.
+     */
+    public function lockCompany(int $workspaceId, int $companyId): void
+    {
+        ClientCompany::query()
+            ->whereKey($companyId)
+            ->where('workspace_id', $workspaceId)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     public function hasActiveUnlinkedAgreement(ClientProposal $proposal): bool

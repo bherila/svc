@@ -105,6 +105,7 @@ class ProposalWorkflow
                 throw new EngagementException('This proposal has expired.');
             }
 
+            $this->acceptanceAgreements->lockCompany($locked->workspace_id, $locked->client_company_id);
             $agreement = $this->acceptanceAgreements->linkedAgreement($locked);
 
             if ($agreement === null && $this->acceptanceAgreements->hasActiveUnlinkedAgreement($locked)) {

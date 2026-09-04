@@ -12,12 +12,16 @@ use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class EngagementWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
@@ -539,7 +543,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
         )->assertUnprocessable()->assertExactJson([
-            'message' => 'This agreement cannot be activated automatically. Ask an operator to verify its overlapping terms.',
+            'message' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
         ]);
 
         $this->assertSame('draft', $draft->fresh()->status);
@@ -588,6 +592,57 @@ class EngagementWorkflowTest extends TestCase
 
         $this->assertSame('active', $draft->fresh()->status);
         $this->assertSame(1, ClientCompanyActivity::query()->where('subject_public_id', $draft->public_id)->count());
+    }
+
+    /**
+     * A row retained from before the composite tenant key can carry this
+     * company's id under another workspace. The activation lookup must ignore
+     * it by workspace as well as company and project.
+     */
+    public function test_activation_overlap_lookup_ignores_a_legacy_cross_workspace_agreement(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $project = $this->project($workspace, $company, 'Local project');
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Foreign Workspace',
+            'slug' => 'synthetic-foreign-workspace-'.uniqid(),
+        ]);
+
+        $this->writingLegacyCrossTenantRows(static function () use ($neighbour, $company, $project): void {
+            DB::table('client_agreements')->insert([
+                'public_id' => (string) Str::uuid(),
+                'workspace_id' => $neighbour->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project->id,
+                'source_proposal_id' => null,
+                'title' => 'Private foreign agreement',
+                'status' => 'active',
+                'starts_on' => '2026-01-01',
+                'ends_on' => null,
+                'is_visible_to_client' => false,
+                'currency' => 'USD',
+                'billing_cadence' => 'monthly',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $draft = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'Synthetic local agreement',
+            'status' => 'draft',
+            'currency' => 'USD',
+            'starts_on' => '2026-09-01',
+        ]);
+
+        $this->actingAs($owner)->postJson(
+            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
+        )->assertOk();
+
+        $this->assertSame('active', $draft->fresh()->status);
     }
 
     public function test_an_active_agreement_linked_to_another_proposal_does_not_block_acceptance(): void
