@@ -80,7 +80,11 @@ trait BelongsToWorkspace
 
         // A table keyed by the workspace itself is already scoped by the
         // clause the parent just added; a second identical one would only make
-        // the statement harder to read.
+        // the statement harder to read. The shortcut is taken after the stored
+        // key is resolved, never instead of it: skipping that resolution would
+        // hand an unhydrated model to the parent, which writes `where
+        // workspace_id is null` and matches nothing while `save()` reports
+        // success - the exact failure this whole override refuses elsewhere.
         if ($this->getKeyName() === 'workspace_id') {
             return $query;
         }

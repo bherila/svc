@@ -151,6 +151,29 @@ final class WorkspaceScopedWriteTest extends TestCase
         $partial->save();
     }
 
+    /**
+     * The workspace-keyed table reaches the refusal by the same route. Its
+     * shortcut - the parent's key clause already names the workspace - is taken
+     * only after the stored key has been resolved; taking it first would leave
+     * the parent writing `where workspace_id is null`, matching no row while
+     * `save()` reported success. From review on #230.
+     */
+    public function test_a_workspace_keyed_model_hydrated_without_its_key_is_refused(): void
+    {
+        $workspace = $this->syntheticWorkspace('counter partial read');
+        WorkspaceInvoiceCounter::query()->create(['workspace_id' => $workspace->id, 'next_number' => 1]);
+
+        $partial = WorkspaceInvoiceCounter::query()
+            ->where('workspace_id', $workspace->id)
+            ->select(['next_number'])
+            ->firstOrFail();
+        $partial->setAttribute('next_number', 2);
+
+        $this->expectException(UnscopableWorkspaceWrite::class);
+
+        $partial->save();
+    }
+
     public function test_the_delete_paths_and_restore_carry_the_workspace_too(): void
     {
         $workspace = $this->syntheticWorkspace('deletes');
