@@ -23,8 +23,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * {@see WorkspaceExpenses}, which is the only place that
  * resolves a company or a project for a workspace, so a caller cannot assemble
  * an expense out of ids it did not check. Nothing on this model transitions the
- * lifecycle - approval and the claim/release behaviour on draft-invoice
- * regeneration wait for the centralized lock discipline in #117.
+ * lifecycle either: a transition needs a row lock and a re-read under it, and a
+ * model method is reachable from anywhere, including from outside a
+ * transaction. The boundary owns the moves.
  *
  * ## Why `status` is not cast to its enum
  *
@@ -123,5 +124,49 @@ class ClientExpense extends Model implements WorkspaceOwned
     public function hasBeenInvoiced(): bool
     {
         return ExpenseStatus::hasBeenInvoicedValue($this->getAttribute('status'));
+    }
+
+    /**
+     * Carry the workspace into every update and delete this row performs.
+     *
+     * Eloquent keys a save by primary key alone, so `save()` on a model read
+     * through a workspace-scoped query still emits `where id = ?`. The write is
+     * not reachable across tenants - the id came from a scoped read holding
+     * `FOR UPDATE` inside the same transaction, so nothing can move it - but
+     * "not reachable" is an argument about the caller, and the rule this
+     * repository states is about the statement: every tenant-owned write is
+     * workspace-scoped. This makes that true of the SQL rather than of the
+     * reasoning around it, which is the difference between a guarantee and a
+     * paragraph.
+     *
+     * `setKeysForSaveQuery()` is the seam Laravel provides for exactly this,
+     * and taking it keeps `save()`: casts, timestamps and model events all
+     * still run, where hand-writing the update statements would have traded a
+     * scoping guarantee for three subtler ways to be wrong. It backs the update
+     * `save()` issues, both delete paths and `restore()`, so there is no fifth
+     * write to remember.
+     *
+     * The predicate is the *stored* workspace, not the in-memory attribute. A
+     * save that had its `workspace_id` rewritten in memory then matches no row
+     * instead of reaching for one in the tenant it was pointed at.
+     *
+     * The parent is called for its effect and `$query` is returned rather than
+     * its result. Both are the same object - it configures the builder it was
+     * handed and hands it back - but the analyser reads the parent's return as
+     * `Builder<Model>` and loses the `static` this signature promises. Keeping
+     * the parent call is still the point: the key predicate stays the
+     * framework's to define, and this adds one clause to it.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    protected function setKeysForSaveQuery($query)
+    {
+        parent::setKeysForSaveQuery($query);
+
+        return $query->where(
+            'workspace_id',
+            $this->getRawOriginal('workspace_id', $this->getAttribute('workspace_id')),
+        );
     }
 }

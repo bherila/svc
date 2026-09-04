@@ -58,13 +58,14 @@ the majority order won and the minority is named as an inversion below.
 | 8 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
 | 9 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
 | 10 | `client_tasks` | Milestone claims, composed after time in every path but one |
-| 11 | `client_companies` | Last, and this is the surprise — see below |
-| 12 | `client_projects` | Never co-acquired with anything above |
-| 13 | `users` | Never co-acquired with anything above |
-| 14 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 15 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 16 | `client_stripe_customers` | |
-| 17 | `client_stripe_payment_methods` | |
+| 11 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
+| 12 | `client_companies` | Last, and this is the surprise — see below |
+| 13 | `client_projects` | Never co-acquired with anything above |
+| 14 | `users` | Never co-acquired with anything above |
+| 15 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 16 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 17 | `client_stripe_customers` | |
+| 18 | `client_stripe_payment_methods` | |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -75,6 +76,18 @@ row they started from and then take the company as the shared serialisation
 point added in #209. Writing "company first" here would have been inventing an
 order rather than recording one, and every one of those three paths would then
 have needed changing to match a document.
+
+`client_expenses` is the one entry that does **not** come from a recorded
+sequence, and it is worth saying so rather than letting the table imply
+otherwise. Nothing locks an expense alongside anything else yet: the approval
+moves in `WorkspaceExpenses` lock the expense row and nothing more, so they
+record a sequence of one, which cannot invert against anything. The position
+comes from #75's own design — the expense generator hook sits beside the
+milestone one — so a composer that reaches expenses reaches them after the
+tasks it is written next to. The first transaction that locks an expense with
+an invoice is what settles it, and if that transaction disagrees, the
+conformance test fails and the case moves. That is the registry working, not
+the registry being wrong.
 
 ### Sequences that fix these pairs
 
@@ -144,6 +157,9 @@ gets a follow-up rather than an inline fix.
 | `UndatedCollectibleInvoiceRepairer::repair()` — the set repaired is the set counted | Counts under the lock and refuses if the count differs from the operator's stated expectation |
 | `OAuthLoginController::resolveUser()` — one account per provider subject and per email | Locks by provider subject, then by email; `users.email` unique behind it |
 | `ProposalWorkflow::accept()` — a proposal is accepted once | The proposal row lock, then the company; `client_agreements.source_proposal_id` unique behind it |
+| `WorkspaceExpenses::approve()` / `unapprove()` — only a status the lifecycle allows may move | The expense row lock, taken through the workspace-scoped query so the lock statement itself carries the tenant predicate; the status is then re-read from the **locked** row, never from the model the caller passed in |
+| `WorkspaceExpenses::update()` — only a draft's facts may be rewritten | The same expense row lock and the same re-read. An approved expense is refused, so the amount a manager passed is the amount that is billed |
+| `WorkspaceExpenses::discard()` — an invoiced expense is not withdrawn | The same lock, and `ExpenseStatus::hasBeenInvoicedValue()`, which answers yes to a status it does not recognise |
 | `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
 
 ## Adding a lock

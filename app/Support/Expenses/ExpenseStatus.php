@@ -14,11 +14,11 @@ use App\Support\Billing\InvoiceStatus;
  * codebase real money arithmetic - see {@see InvoiceStatus},
  * which exists because four hand-written lists each omitted the same status.
  *
- * So the strings live here once and the questions callers ask are named methods.
- * Nothing in this slice transitions an expense; approval and the claim/release
- * rules around draft-invoice regeneration wait for the centralized lock
- * discipline in #117. What is settled now is the vocabulary those transitions
- * will move through.
+ * So the strings live here once and the questions callers ask are named methods,
+ * and the legal moves between them live here too - see
+ * {@see transitionsTo()}. What is still absent is the
+ * `approved` -> `invoiced` edge's *caller*: the invoicing hook is #75's third
+ * slice, so this enum knows that move is legal and nothing makes it yet.
  *
  * ## The two fail-closed reads point in opposite directions, and must
  *
@@ -90,5 +90,57 @@ enum ExpenseStatus: string
         $status = self::tryFrom(is_string($value) ? $value : '');
 
         return $status === null || $status === self::Invoiced;
+    }
+
+    /** May a stored status still have its facts rewritten? Unrecognised refuses. */
+    public static function isEditableValue(mixed $value): bool
+    {
+        return self::tryFrom(is_string($value) ? $value : '') === self::Draft;
+    }
+
+    /**
+     * The statuses this one may move to.
+     *
+     * The whole lifecycle, in one place, as data rather than as a chain of
+     * `if`s spread across the methods that perform the moves. Four edges:
+     *
+     * - `draft` → `approved`, the gate #75 requires before an expense can be
+     *   billed;
+     * - `approved` → `draft`, because a manager who approves the wrong receipt
+     *   needs a way back that is not a delete, and the expense has touched no
+     *   invoice yet;
+     * - `approved` → `invoiced`, which the invoicing hook will make;
+     * - nothing out of `invoiced`. It is on a client's bill. Changing it there
+     *   would change what was billed without touching the bill, which is the
+     *   shape of defect the time-entry freeze guards exist to prevent.
+     *
+     * No self-edges. Approving an approved expense is a caller that has read a
+     * stale row, and answering "fine" to it is how a second approval quietly
+     * overwrites the first approver and timestamp.
+     *
+     * @return list<self>
+     */
+    public function transitionsTo(): array
+    {
+        return match ($this) {
+            self::Draft => [self::Approved],
+            self::Approved => [self::Draft, self::Invoiced],
+            self::Invoiced => [],
+        };
+    }
+
+    /**
+     * May a stored status move to this one? Unrecognised refuses.
+     *
+     * The third fail-closed read, and it points the same way as the other two:
+     * a status this code cannot place is not a status it can reason about
+     * moving, so the answer is no and the caller gets a refusal it can see
+     * rather than a write it cannot undo.
+     */
+    public static function mayTransitionValue(mixed $from, self $to): bool
+    {
+        $status = self::tryFrom(is_string($from) ? $from : '');
+
+        return $status !== null && in_array($to, $status->transitionsTo(), true);
     }
 }

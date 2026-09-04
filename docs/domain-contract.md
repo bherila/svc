@@ -73,6 +73,22 @@ workflow. It is intentionally provider-neutral and contains no production data.
   reference carries a composite `(workspace_id, client_company_id)` key; the
   optional project reference is exempt from that key and checked in the
   application, per [tenant foreign keys](client-management/tenant-foreign-keys.md)
+- lifecycle edges: `draft` → `approved`, `approved` → `draft`, and
+  `approved` → `invoiced`. Nothing leaves `invoiced`, and no status moves to
+  itself
+- only a draft's facts may be rewritten; an approved expense is frozen until the
+  approval is withdrawn, and withdrawal clears the approver and the timestamp
+  rather than keeping them as history
+- an expense that has been invoiced cannot be discarded; a status the vocabulary
+  does not recognise refuses every move
+- the approver must be a member of the workspace: `approved_by_user_id` points at
+  `users`, which is not tenant-owned, so no key can refuse a stranger
+- every transition locks the row and re-reads its status under that lock, through
+  the registry in [concurrency](client-management/concurrency.md)
+- every update and delete carries `workspace_id` in its own statement, not only
+  in the read that found the row: `ClientExpense` overrides
+  `setKeysForSaveQuery()`, so `save()`, both delete paths and `restore()` are
+  scoped without giving up casts, timestamps or model events
 
 ## Billing tables
 

@@ -12,11 +12,14 @@ use Tests\TestCase;
 /**
  * What the table and the model promise about one expense.
  *
- * Nothing here transitions an expense: approval and the claim/release rules
- * around draft-invoice regeneration wait for the centralized lock discipline in
- * #117. What is asserted is the shape those transitions will move through - the
- * state a new expense starts in, the types its columns read back as, and the two
- * fail-closed questions that will gate billing.
+ * Nothing here transitions an expense - `ExpenseLifecycleTest` does that, and
+ * the split is on purpose: these are the model's own promises, and they have to
+ * hold for a row that arrived from a migration or a hand-run statement as much
+ * as for one this application moved. What is asserted is the state a new expense
+ * starts in, the types its columns read back as, and the two fail-closed
+ * questions that gate billing - each over a status written directly, so a
+ * lifecycle that refused to produce the value is not what makes the assertion
+ * pass.
  */
 final class ClientExpenseTest extends TestCase
 {
