@@ -118,6 +118,41 @@ final class WorkspaceScopedWriteQueryTest extends TestCase
     }
 
     /**
+     * The gap between the two refusals, which a partial select opens.
+     *
+     * From review on #230. A row read without its workspace, then assigned
+     * one, used to answer that assignment as the stored value: the
+     * immutability check compared it against itself, passed, and predicated
+     * the update on the tenant the row was being moved to - matching nothing
+     * while `save()` reported success. A model whose ownership is fixed now
+     * takes the original alone, so this is refused as unscopable.
+     */
+    public function test_an_immutable_model_cannot_supply_its_own_workspace_after_a_partial_read(): void
+    {
+        $model = $this->hydrate(ClientExpense::class, ['id' => 7]);
+        $model->setAttribute('workspace_id', 9999);
+
+        $this->expectException(UnscopableWorkspaceWrite::class);
+
+        $this->buildSaveQuery($model);
+    }
+
+    /**
+     * A model whose ownership is not fixed keeps the fallback, which is what
+     * a hand-built instance needs - and what the forged-model case in
+     * `WorkspaceScopedWriteTest` relies on to match no row.
+     */
+    public function test_a_mutable_model_still_falls_back_to_its_current_attributes(): void
+    {
+        $model = new ClientTimeEntry;
+        $model->setRawAttributes([], sync: true);
+        $model->exists = true;
+        $model->forceFill(['id' => 7, 'workspace_id' => 4242]);
+
+        $this->assertSame([7, 4242], $this->buildSaveQuery($model)->getBindings());
+    }
+
+    /**
      * A workspace stored as null is answered as null, not refused: the row it
      * came from is the row `workspace_id is null` matches. Only an unloaded
      * column is indistinguishable from a value, and that is the case above.

@@ -76,9 +76,10 @@ trait BelongsToWorkspace
      */
     protected function setKeysForSaveQuery($query)
     {
-        $stored = $this->storedWorkspaceKey();
+        $immutable = $this->workspaceOwnershipIsImmutable();
+        $stored = $this->storedWorkspaceKey($immutable);
 
-        if ($this->workspaceOwnershipIsImmutable() && (int) $stored !== (int) $this->getAttribute('workspace_id')) {
+        if ($immutable && (int) $stored !== (int) $this->getAttribute('workspace_id')) {
             throw new WorkspaceOwnershipImmutable(sprintf(
                 'A %s cannot be moved to another workspace: ownership is fixed when the row is created.',
                 static::class,
@@ -124,11 +125,22 @@ trait BelongsToWorkspace
      * at all is refused, because that one is indistinguishable from a value and
      * would quietly match nothing.
      */
-    private function storedWorkspaceKey(): mixed
+    private function storedWorkspaceKey(bool $originalOnly): mixed
     {
         // Union rather than a pair of lookups: for a duplicate key the
         // left-hand array wins, which is the precedence this needs.
-        $attributes = $this->getRawOriginal() + $this->getAttributes();
+        //
+        // A model whose ownership is fixed takes the original alone. From
+        // review on #230: with the fallback, a caller could partially select a
+        // row without its workspace, assign one, and have that assignment
+        // answer as the stored value - so the immutability check would compare
+        // it against itself, pass, and predicate the write on the tenant the
+        // row is being moved to. The update would match nothing while `save()`
+        // reported success, which is the failure both of these refusals exist
+        // to prevent.
+        $attributes = $originalOnly
+            ? $this->getRawOriginal()
+            : $this->getRawOriginal() + $this->getAttributes();
 
         if (! array_key_exists('workspace_id', $attributes)) {
             throw new UnscopableWorkspaceWrite(sprintf(
