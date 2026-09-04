@@ -23,8 +23,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * {@see WorkspaceExpenses}, which is the only place that
  * resolves a company or a project for a workspace, so a caller cannot assemble
  * an expense out of ids it did not check. Nothing on this model transitions the
- * lifecycle - approval and the claim/release behaviour on draft-invoice
- * regeneration wait for the centralized lock discipline in #117.
+ * lifecycle either: a transition needs a row lock and a re-read under it, and a
+ * model method is reachable from anywhere, including from outside a
+ * transaction. The boundary owns the moves.
  *
  * ## Why `status` is not cast to its enum
  *

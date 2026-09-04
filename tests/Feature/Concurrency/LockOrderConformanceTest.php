@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
@@ -22,6 +23,7 @@ use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
+use App\Support\Expenses\NewExpense;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -236,6 +238,37 @@ final class LockOrderConformanceTest extends TestCase
         $split = $this->approvedEntry('2026-10-05', 180);
         app(TimeEntrySplitter::class)->splitEntry($split, 120);
         app(AllocationService::class)->recombineUnlinkedFragments($this->workspace, $this->company);
+
+        $this->driveTheExpenseLifecycle();
+    }
+
+    /**
+     * The expense approval moves, which lock one row each.
+     *
+     * Included even though a sequence of one cannot invert, and worth saying
+     * why rather than leaving it to look like padding. Two things it does buy:
+     * the moves are *recorded*, so an approval that stopped taking its lock -
+     * checking a status and writing on the strength of a read nothing held -
+     * shows up here as a missing sequence rather than as nothing at all; and
+     * `LockResource::ClientExpense` is exercised through a real transaction, so
+     * the case is reachable rather than merely declared. It also means the
+     * expense invoicing hook in #75's third slice arrives into a test that is
+     * already driving expenses, which is when the position of that case in the
+     * registry stops being derived from design and starts being recorded.
+     */
+    private function driveTheExpenseLifecycle(): void
+    {
+        $expenses = new WorkspaceExpenses($this->workspace);
+        $expense = $expenses->record(
+            $this->company,
+            $this->project,
+            new NewExpense(CarbonImmutable::parse('2026-10-06'), 12_500, 'USD', 'Synthetic travel expense'),
+            $this->user,
+        );
+
+        $expenses->approve($expense, $this->user);
+        $expenses->unapprove($expense->refresh());
+        $expenses->discard($expense->refresh());
     }
 
     /**

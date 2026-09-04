@@ -56,6 +56,16 @@ enum LockResource: string
     case ClientTimeEntry = 'client_time_entries';
     case ClientTask = 'client_tasks';
 
+    // Reimbursable expenses, which are drawn into an invoice the way milestones
+    // are: #75 puts their generator hook beside the milestone one, so a
+    // composer that reaches them reaches them after the tasks it sits next to.
+    // The one case here not yet derived from a recorded multi-lock sequence -
+    // nothing locks an expense alongside anything else until that hook exists,
+    // so approval records a sequence of one, which cannot invert. Stated rather
+    // than glossed: the first sequence that locks an expense with an invoice is
+    // what settles this position, and moving it then is the registry working.
+    case ClientExpense = 'client_expenses';
+
     // The company is last because that is where the code puts it: issuing locks
     // the invoice and then the company whose credit pool it spends, and
     // proposal acceptance and agreement activation both reach it after the row

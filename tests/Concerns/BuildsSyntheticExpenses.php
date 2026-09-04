@@ -43,6 +43,22 @@ trait BuildsSyntheticExpenses
         ]);
     }
 
+    /**
+     * A user who is a member of the workspace, which approval requires.
+     *
+     * Separate from {@see syntheticUser()} on purpose: the difference between a
+     * user and a *member* is the whole of the approver check, so a builder that
+     * enrolled everyone would make that check untestable by making every
+     * fixture pass it.
+     */
+    protected function syntheticMember(Workspace $workspace, string $label, string $role = 'admin'): User
+    {
+        $user = $this->syntheticUser($label);
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => $role]);
+
+        return $user;
+    }
+
     protected function syntheticCompany(Workspace $workspace, string $label): ClientCompany
     {
         return ClientCompany::query()->create([
