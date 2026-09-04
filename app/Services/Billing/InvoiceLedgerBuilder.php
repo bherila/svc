@@ -49,7 +49,18 @@ class InvoiceLedgerBuilder
             $ledgerEnd = $terminationDate->copy();
         }
 
-        if ($activeDate->gt($ledgerEnd)) {
+        $isMonthly = $agreement->effectiveBillingCadence() === BillingCadence::Monthly;
+        // @infection-ignore-all Monthly selection is covered by database-backed cadence and interim feature tests; the mutation lane deliberately runs unit tests only.
+        $billedOveragesByMonth = $isMonthly
+            ? $this->billedOverageLedger->hoursByMonthThrough($agreement, $ledgerEnd)
+            : [];
+        $calculationStart = $activeDate->copy()->startOfMonth();
+        $firstBilledMonth = array_key_first($billedOveragesByMonth);
+        if ($firstBilledMonth !== null) {
+            $calculationStart = min($calculationStart, Carbon::parse($firstBilledMonth.'-01')->startOfDay());
+        }
+
+        if ($calculationStart->gt($ledgerEnd)) {
             return [];
         }
 
@@ -88,27 +99,26 @@ class InvoiceLedgerBuilder
                 $ledgerEnd,
                 $hoursByDate,
                 $billExcessImmediately,
+                $billedOveragesByMonth,
             );
         }
 
         $entriesByMonth = $billableEntries
             ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
-        // @infection-ignore-all Monthly selection is covered by database-backed cadence and interim feature tests; the mutation lane deliberately runs unit tests only.
-        $billedOveragesByMonth = $agreement->effectiveBillingCadence() === BillingCadence::Monthly
-            ? $this->billedOverageLedger->hoursByMonthThrough($agreement, $ledgerEnd)
-            : [];
-
         $months = [];
 
-        $cursor = $activeDate->copy()->startOfMonth();
+        $cursor = $calculationStart->copy();
         while ($cursor->lte($ledgerEnd)) {
             $monthStart = $cursor->copy()->startOfMonth();
             $monthEnd = $cursor->copy()->endOfMonth()->startOfDay();
             $monthKey = $monthStart->format('Y-m');
             $monthEntries = $entriesByMonth->get($monthKey, collect());
+            $isPreAgreement = $monthStart->lt($activeDate->copy()->startOfMonth());
             $months[] = [
                 'year_month' => $monthKey,
-                'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
+                'retainer_hours' => $isPreAgreement
+                    ? 0.0
+                    : $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
                 // @infection-ignore-all The month-to-query join is feature-tested against persisted invoices; the mutation lane deliberately excludes database tests.
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
@@ -215,6 +225,7 @@ class InvoiceLedgerBuilder
      * billing stays consistent with the final cadence reckoning.
      *
      * @param  array<string, float>  $hoursByDate  Billable hours summed per work date (Y-m-d). Date keys outside any cycle window are simply unused.
+     * @param  array<string, float>  $billedOveragesByMonth  Signed charged hours keyed by service month.
      * @return array<int, MonthSummary>
      */
     public function buildPeriodRetainerLedgerThrough(
@@ -222,13 +233,15 @@ class InvoiceLedgerBuilder
         Carbon $ledgerEnd,
         array $hoursByDate,
         bool $billExcessImmediately,
+        array $billedOveragesByMonth = [],
     ): array {
         $ledger = [];
 
         foreach ($this->billingCycleResolver->cyclesForAgreement($agreement, $ledgerEnd) as $cycle) {
             $cyclePool = $this->retainerCalculator->cyclePeriodRetainerHours($agreement, $cycle);
             $cumulativeWorked = 0.0;
-            $cumulativeExcess = 0.0;
+            $previousNetDeficit = 0.0;
+            $cumulativeBilledOverage = 0.0;
             $cycleStartKey = $cycle->start->format('Y-m-d');
 
             $cursor = $cycle->start->copy()->startOfMonth();
@@ -261,22 +274,28 @@ class InvoiceLedgerBuilder
                 }
                 $monthHoursWorked = round($monthHoursWorked, 4);
 
-                $openingPool = round(max(0.0, $cyclePool - $cumulativeWorked), 4);
+                $openingPool = round(max(0.0, $cyclePool + $cumulativeBilledOverage - $cumulativeWorked), 4);
                 $cumulativeWorked = round($cumulativeWorked + $monthHoursWorked, 4);
+                $monthKey = $cursor->format('Y-m');
+                $cumulativeBilledOverage = round(
+                    $cumulativeBilledOverage + ($billedOveragesByMonth[$monthKey] ?? 0.0),
+                    4,
+                );
+                $effectivePool = round($cyclePool + $cumulativeBilledOverage, 4);
+                $netDeficit = round(max(0.0, $cumulativeWorked - $effectivePool), 4);
 
                 $monthFromRetainer = round(min($monthHoursWorked, $openingPool), 4);
 
                 if ($billExcessImmediately) {
-                    $newCumulativeExcess = round(max(0.0, $cumulativeWorked - $cyclePool), 4);
-                    $monthExcess = round($newCumulativeExcess - $cumulativeExcess, 4);
-                    $cumulativeExcess = $newCumulativeExcess;
+                    $monthExcess = round(max(0.0, $netDeficit - $previousNetDeficit), 4);
                     $negativeBalance = 0.0;
                 } else {
                     $monthExcess = 0.0;
-                    $negativeBalance = round(max(0.0, $cumulativeWorked - $cyclePool), 4);
+                    $negativeBalance = $netDeficit;
                 }
+                $previousNetDeficit = $netDeficit;
 
-                $closingPool = round(max(0.0, $cyclePool - $cumulativeWorked), 4);
+                $closingPool = round(max(0.0, $effectivePool - $cumulativeWorked), 4);
 
                 $monthRetainer = $isFirstMonthOfCycle ? $cyclePool : 0.0;
                 $isFirstMonthOfCycle = false;
@@ -301,7 +320,7 @@ class InvoiceLedgerBuilder
                         remainingRollover: 0.0,
                     ),
                     hoursWorked: $monthHoursWorked,
-                    yearMonth: $cursor->format('Y-m'),
+                    yearMonth: $monthKey,
                     retainerHours: $monthRetainer,
                     billExcessImmediately: $billExcessImmediately,
                     cycleStart: $cycleStartKey,
@@ -363,8 +382,8 @@ class InvoiceLedgerBuilder
                 'covered_hours' => $coveredHours,
                 'hours_worked' => $hoursWorked,
                 'rollover_hours_used' => 0.0,
-                'unused_hours' => round(max(0.0, $retainerHours - $hoursWorked), 4),
-                'negative_hours' => round(max(0.0, $hoursWorked - $retainerHours), 4),
+                'unused_hours' => $last ? $last->closing->unusedHours : 0.0,
+                'negative_hours' => $last ? $last->closing->negativeBalance : 0.0,
                 'starting_unused_hours' => 0.0,
                 'starting_negative_hours' => 0.0,
             ];

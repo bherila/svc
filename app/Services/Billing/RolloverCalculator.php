@@ -261,20 +261,25 @@ class RolloverCalculator
             // month. Take back unused hours first; if they were not there to
             // reverse, the remainder is debt again.
             $reversedCharge = max(0.0, -$billedOverage);
-            $reversedCapacity = min($summary->closing->unusedHours, $reversedCharge);
+            $reversedCurrentCapacity = min($summary->closing->unusedHours, $reversedCharge);
+            $correctionAfterCurrentCapacity = $reversedCharge - $reversedCurrentCapacity;
+            $reversedRollover = min($summary->closing->remainingRollover, $correctionAfterCurrentCapacity);
+            $restoredDebt = $correctionAfterCurrentCapacity - $reversedRollover;
             $summary = new MonthSummary(
                 opening: $summary->opening,
                 closing: new ClosingBalance(
                     hoursUsedFromRetainer: $summary->closing->hoursUsedFromRetainer,
                     hoursUsedFromRollover: $summary->closing->hoursUsedFromRollover,
                     unusedHours: $this->ledgerHours(
-                        $summary->closing->unusedHours + $restoredCapacity - $reversedCapacity,
+                        $summary->closing->unusedHours + $restoredCapacity - $reversedCurrentCapacity,
                     ),
                     excessHours: $summary->closing->excessHours,
                     negativeBalance: $this->ledgerHours(
-                        $summary->closing->negativeBalance - $settledDebt + ($reversedCharge - $reversedCapacity),
+                        $summary->closing->negativeBalance - $settledDebt + $restoredDebt,
                     ),
-                    remainingRollover: $summary->closing->remainingRollover,
+                    remainingRollover: $this->ledgerHours(
+                        $summary->closing->remainingRollover - $reversedRollover,
+                    ),
                 ),
                 hoursWorked: $summary->hoursWorked,
                 yearMonth: $summary->yearMonth,
@@ -284,7 +289,7 @@ class RolloverCalculator
             );
 
             // Deduct used rollover hours from the history stack (FIFO)
-            $usedRollover = $summary->closing->hoursUsedFromRollover;
+            $usedRollover = $summary->closing->hoursUsedFromRollover + $reversedRollover;
             if ($usedRollover > 0) {
                 // Re-implementation of deduction logic using monthKeys
                 foreach ($monthKeys as $key) {

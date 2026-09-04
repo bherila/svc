@@ -373,6 +373,25 @@ class RolloverCalculatorTest extends TestCase
         $this->assertSame(0.75, $debt[0]->closing->negativeBalance);
     }
 
+    public function test_negative_billed_overage_consumes_carried_capacity_before_restoring_debt(): void
+    {
+        $results = $this->calculator->calculateMultipleMonths([
+            ['year_month' => '2026-01', 'retainer_hours' => 5.0, 'hours_worked' => 0.0],
+            [
+                'year_month' => '2026-02',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 0.0,
+                'billed_overage_hours' => -6.0,
+            ],
+            ['year_month' => '2026-03', 'retainer_hours' => 0.0, 'hours_worked' => 0.0],
+        ], rolloverMonths: 3);
+
+        $this->assertSame(0.0, $results[1]->closing->unusedHours, 'Current-month capacity is reversed first');
+        $this->assertSame(1.0, $results[1]->closing->remainingRollover, 'Only the uncorrected rollover remains');
+        $this->assertSame(0.0, $results[1]->closing->negativeBalance, 'Available capacity covers the whole correction');
+        $this->assertSame(1.0, $results[2]->opening->rolloverHours, 'Consumed rollover cannot reappear next month');
+    }
+
     public function test_multiple_months_case_a_uses_rollover(): void
     {
         // Case A: Exceeds retainer, uses available rollover
