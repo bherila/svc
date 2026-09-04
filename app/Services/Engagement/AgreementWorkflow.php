@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -127,7 +128,7 @@ class AgreementWorkflow
             $locked = ClientAgreement::query()
                 ->whereKey($agreement->getKey())
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             if (! $locked instanceof ClientAgreement) {
@@ -184,7 +185,7 @@ class AgreementWorkflow
     public function activate(ClientAgreement $agreement): ClientAgreement
     {
         return DB::transaction(function () use ($agreement): ClientAgreement {
-            $locked = ClientAgreement::query()->lockForUpdate()->findOrFail($agreement->id);
+            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
             if ($locked->status === 'active') {
                 return $locked;
@@ -226,7 +227,7 @@ class AgreementWorkflow
     public function sign(ClientAgreement $agreement, ?User $signingUser, string $signerName, ?string $signerTitle): ClientAgreement
     {
         return DB::transaction(function () use ($agreement, $signingUser, $signerName, $signerTitle): ClientAgreement {
-            $locked = ClientAgreement::query()->lockForUpdate()->findOrFail($agreement->id);
+            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
             if ($locked->signed_at !== null) {
                 return $locked;

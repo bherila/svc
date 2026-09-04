@@ -250,6 +250,92 @@ final class InvoiceFromTimeServiceTest extends TestCase
      * tenant's project through unattributed. Both readings are asserted here so
      * the distinction cannot quietly disappear.
      */
+    /**
+     * Selected work with no stored rate is refused rather than billed at zero.
+     *
+     * `selectedTimeTerms()` ends in `billing_rate_amount !== null && currency
+     * === $currency`, and an ad-hoc invoice is built entirely from those terms:
+     * the returned amount becomes the line's `unit_amount`. A null rate that
+     * reached the line would be written as a zero charge for real approved
+     * work, on an invoice an operator assembled by hand and will send.
+     *
+     * The two halves of that `&&` are separate branches, so this test holds the
+     * currency matching and varies only the rate - and the control that follows
+     * is the same entry with a rate, which is what pins the refusal to the null
+     * rather than to something else about the fixture.
+     */
+    public function test_selected_time_with_no_stored_rate_is_refused(): void
+    {
+        [$workspace, $company, $project, $user] = $this->context('unpriced-selection');
+        $entry = $this->modeEntry($workspace, $company, $project, $user, [
+            'billing_rate_amount' => null,
+            'currency' => 'USD',
+        ]);
+
+        try {
+            app(InvoiceFromTimeService::class)->create(
+                $workspace,
+                $company,
+                ['invoice_number' => 'SVC-UNPRICED', 'currency' => 'USD'],
+                [$entry->public_id],
+            );
+            $this->fail('Selected time with no rate must not be invoiced.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('completely priced', $exception->getMessage());
+        }
+
+        // The same row, priced. Nothing else about it changes.
+        $entry->forceFill(['billing_rate_amount' => 12000])->save();
+        $invoice = app(InvoiceFromTimeService::class)->create(
+            $workspace,
+            $company,
+            ['invoice_number' => 'SVC-PRICED', 'currency' => 'USD'],
+            [$entry->public_id],
+        );
+
+        $this->assertSame(12000, $invoice->total_amount);
+    }
+
+    /**
+     * And selected work with no stored currency is refused for the same reason.
+     *
+     * The currency comparison is the other half of that `&&`, and it is a
+     * comparison rather than a null check: `null === 'USD'` is false, so an
+     * entry whose currency was never stamped can never match any invoice. That
+     * is the correct outcome and it has never been pinned here - the rate stays
+     * set throughout, so the refusal below is the currency branch alone.
+     */
+    public function test_selected_time_with_no_stored_currency_is_refused(): void
+    {
+        [$workspace, $company, $project, $user] = $this->context('uncurrencied-selection');
+        $entry = $this->modeEntry($workspace, $company, $project, $user, [
+            'billing_rate_amount' => 12000,
+            'currency' => null,
+        ]);
+
+        try {
+            app(InvoiceFromTimeService::class)->create(
+                $workspace,
+                $company,
+                ['invoice_number' => 'SVC-NOCUR', 'currency' => 'USD'],
+                [$entry->public_id],
+            );
+            $this->fail('Selected time with no currency must not be invoiced.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('currency-compatible', $exception->getMessage());
+        }
+
+        $entry->forceFill(['currency' => 'USD'])->save();
+        $invoice = app(InvoiceFromTimeService::class)->create(
+            $workspace,
+            $company,
+            ['invoice_number' => 'SVC-CUR', 'currency' => 'USD'],
+            [$entry->public_id],
+        );
+
+        $this->assertSame(12000, $invoice->total_amount);
+    }
+
     public function test_a_manual_line_without_a_project_is_accepted_unattributed(): void
     {
         [$workspace, $company] = $this->context('unattributed-line');

@@ -451,6 +451,75 @@ final class CapacityAndScopeGuardsTest extends TestCase
         );
     }
 
+    /**
+     * Flat-hourly work with a currency but no amount is refused on the amount.
+     *
+     * The composer's guard is an `||` over the two snapshot columns, and the
+     * test above nulls both - so either half could be deleted and it would
+     * still fail through the other. This one holds the currency stated and
+     * varies only the amount, and the control that follows is the same entry
+     * with an amount, which is what makes the refusal the amount's.
+     *
+     * A missing amount that reached the line would bill the subcontractor's
+     * hours at `(int) null`, which is zero: the client is charged nothing for
+     * work this workspace has already paid for.
+     */
+    public function test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer(): void
+    {
+        $project = $this->project('Amountless snapshot');
+        $agreement = $this->agreement($project);
+        $entry = $this->entry($project, '2024-02-10', 60);
+        $entry->forceFill([
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => null,
+            'subcontractor_cost_currency' => 'USD',
+        ])->save();
+
+        try {
+            $this->composeFlatHourly($this->invoice($agreement));
+            $this->fail('Flat-hourly time with no cost amount must not compose a line.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('requires a snapshotted amount and currency', $exception->getMessage());
+        }
+
+        $entry->forceFill(['subcontractor_cost_amount' => 5000])->save();
+        $invoice = $this->composeFlatHourly($this->invoice($agreement));
+
+        $this->assertSame(5000, (int) $invoice->lines()->where('type', 'subcontractor')->firstOrFail()->total_amount);
+    }
+
+    /**
+     * And with an amount but no currency, refused on the currency.
+     *
+     * The mirror of the case above, and not redundant with it: the currency
+     * half is what stops a cost stored in minor units of another currency being
+     * billed unconverted, so an amount alone is not a complete snapshot even
+     * though it is a number the composer could use.
+     */
+    public function test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer(): void
+    {
+        $project = $this->project('Currencyless snapshot');
+        $agreement = $this->agreement($project);
+        $entry = $this->entry($project, '2024-02-10', 60);
+        $entry->forceFill([
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 5000,
+            'subcontractor_cost_currency' => null,
+        ])->save();
+
+        try {
+            $this->composeFlatHourly($this->invoice($agreement));
+            $this->fail('Flat-hourly time with no cost currency must not compose a line.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('requires a snapshotted amount and currency', $exception->getMessage());
+        }
+
+        $entry->forceFill(['subcontractor_cost_currency' => 'USD'])->save();
+        $invoice = $this->composeFlatHourly($this->invoice($agreement));
+
+        $this->assertSame(5000, (int) $invoice->lines()->where('type', 'subcontractor')->firstOrFail()->total_amount);
+    }
+
     public function test_direct_subcontractor_time_never_reaches_the_flat_hourly_composer(): void
     {
         $project = $this->project('Direct billing');
@@ -1049,6 +1118,126 @@ final class CapacityAndScopeGuardsTest extends TestCase
         );
     }
 
+    /**
+     * A charged interim missing only its cycle *start* still counts.
+     *
+     * `cycleInvoices()` widens each boundary on its own, so a row that states
+     * one of them is placed by the one it states and admitted on the one it
+     * does not. That asymmetry is the whole design: the sum here tells the
+     * cadence invoice what interim billing has already charged, and dropping a
+     * half-dated row from it bills those hours to the client a second time
+     * (#135). Its `cycle_end`, its service period and its status all stay set
+     * and matching, so the inclusion below can only come from the null.
+     *
+     * The second half is the same row with a start that names another cycle. It
+     * is excluded, which is what makes this a test of the null rather than of a
+     * boundary that has stopped being consulted at all.
+     */
+    public function test_a_charged_interim_missing_only_its_cycle_start_is_still_counted(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-02-01'));
+        $hours = fn (): float => app(InterimOverageGenerator::class)
+            ->interimOverageHoursForCycle($this->company, $agreement, $cycle);
+
+        $interim = $this->invoice($agreement);
+        $interim->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '5',
+            'cycle_start' => null,
+            'cycle_end' => $cycle->end->toDateString(),
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+        ])->save();
+
+        $this->assertSame(5.0, $hours(), 'An unplaceable start cannot rule the row out of this cycle');
+
+        // A *stated* start belonging to another cycle does rule it out.
+        $interim->forceFill(['cycle_start' => $cycle->start->copy()->subYear()->toDateString()])->save();
+        $this->assertSame(0.0, $hours());
+    }
+
+    /** The same asymmetry on the other boundary, and it has to be tested there too. */
+    public function test_a_charged_interim_missing_only_its_cycle_end_is_still_counted(): void
+    {
+        $agreement = $this->quarterlyAgreement();
+        $cycle = app(BillingCycleResolver::class)->cycleContaining($agreement, Carbon::parse('2024-02-01'));
+        $hours = fn (): float => app(InterimOverageGenerator::class)
+            ->interimOverageHoursForCycle($this->company, $agreement, $cycle);
+
+        $interim = $this->invoice($agreement);
+        $interim->forceFill([
+            'invoice_kind' => 'interim_overage',
+            'status' => 'issued',
+            'hours_billed_at_rate' => '7',
+            'cycle_start' => $cycle->start->toDateString(),
+            'cycle_end' => null,
+            'service_period_start' => '2024-01-01',
+            'service_period_end' => '2024-01-31',
+        ])->save();
+
+        $this->assertSame(7.0, $hours(), 'An unplaceable end cannot rule the row out of this cycle');
+
+        $interim->forceFill(['cycle_end' => $cycle->end->copy()->addYear()->toDateString()])->save();
+        $this->assertSame(0.0, $hours());
+    }
+
+    /**
+     * An interim draft with no period end is invisible to the next generation.
+     *
+     * `generateInterimOverageInvoice()` finds the draft it may refresh by
+     * matching both service-period boundaries exactly, and a null matches
+     * neither. The draft does not stop existing - it keeps its lines and its
+     * charge - so generation raises a *second* interim invoice beside it for
+     * the same period and the same hours. An interim line summarises the
+     * overage rather than attaching the entries it billed, so neither invoice
+     * carries any evidence that the other already sold that work.
+     *
+     * The control is the same call on the same rows before the boundary goes,
+     * and `service_period_start` stays exactly matching throughout.
+     */
+    public function test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation(): void
+    {
+        $project = $this->project('Interim period end');
+        $agreement = $this->quarterlyAgreement($project);
+        $this->entry($project, '2024-01-10', 900); // 15h against a 10h retainer
+        $generator = app(InterimOverageGenerator::class);
+        $generate = fn (): ?ClientInvoice => $generator->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-01-01'),
+            $agreement->fresh(),
+        );
+
+        $draft = $generate();
+        $this->assertInstanceOf(ClientInvoice::class, $draft);
+
+        // Control: the same call finds that draft and rebuilds it in place.
+        $this->assertSame($draft->id, $generate()?->id);
+        $this->assertSame(1, ClientInvoice::query()->where('invoice_kind', 'interim_overage')->count());
+
+        // Only the end goes; the start still matches the period exactly.
+        $draft->refresh()->forceFill(['service_period_end' => null])->save();
+        $this->assertNull($draft->refresh()->service_period_end);
+        $this->assertSame('2024-01-01', $draft->service_period_start?->format('Y-m-d'));
+
+        $replacement = $generate();
+        $this->assertInstanceOf(ClientInvoice::class, $replacement);
+        $this->assertNotSame(
+            $draft->id,
+            $replacement->id,
+            'The undated draft is not found, so generation raises a second one beside it',
+        );
+        $this->assertSame(2, ClientInvoice::query()->where('invoice_kind', 'interim_overage')->count());
+
+        // Both now say they billed the same five hours for the same period, and
+        // the interim line carries no pivot to the time it charged for - so
+        // nothing downstream can tell that the second invoice re-sold the first
+        // one's work.
+        $this->assertSame(5.0, (float) $draft->refresh()->hours_billed_at_rate);
+        $this->assertSame(5.0, (float) $replacement->refresh()->hours_billed_at_rate);
+    }
+
     /** Cadence reconciliation also refuses a row no date can place. */
     public function test_cadence_reconciliation_refuses_a_fully_unplaceable_interim(): void
     {
@@ -1608,6 +1797,21 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /** The interim-only subtraction, isolated from allocation and entry caps. */
+    /** February's flat-hourly subcontractor lines for one invoice. */
+    private function composeFlatHourly(ClientInvoice $invoice): ClientInvoice
+    {
+        $sort = 1;
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+
+        return $invoice->refresh();
+    }
+
     private function alreadyBilledInterimHours(ClientAgreement $agreement, string $periodStart): float
     {
         $start = Carbon::parse($periodStart);

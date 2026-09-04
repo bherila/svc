@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -71,7 +72,7 @@ class ClientProjectController extends Controller
                 ->whereKey($clientProject->getKey())
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $clientCompany->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             abort_if($locked === null, 404);

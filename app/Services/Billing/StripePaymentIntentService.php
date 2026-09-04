@@ -8,6 +8,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ final class StripePaymentIntentService
         }
 
         return DB::transaction(function () use ($invoice, $workspace, $paymentMethodId, $idempotencyKey): array {
-            $invoice = ClientInvoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $invoice = ClientInvoice::query()->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
 
             return $this->createLocked($invoice, $workspace, $paymentMethodId, $idempotencyKey);
         });

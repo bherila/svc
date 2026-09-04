@@ -13,6 +13,7 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -191,7 +192,7 @@ final class InvoiceLifecycleService
             // The invoice row lock is not enough: two different drafts lock two
             // different rows, so both could read the same unconsumed pool. The
             // company is what the pool belongs to, so that is what serializes.
-            ClientCompany::query()->whereKey($locked->client_company_id)->lockForUpdate()->first();
+            ClientCompany::query()->whereKey($locked->client_company_id)->tap(Locks::forUpdate())->first();
             $this->capOverpaymentCreditAtIssue($locked);
 
             $locked->forceFill([
@@ -381,7 +382,7 @@ final class InvoiceLifecycleService
         }
 
         return DB::transaction(function () use ($payment, $status, $workspace): ClientInvoicePayment {
-            $query = ClientInvoicePayment::query()->whereKey($payment->id)->lockForUpdate();
+            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
@@ -436,7 +437,7 @@ final class InvoiceLifecycleService
     public function setRefundedAmount(ClientInvoicePayment $payment, int $amount, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return DB::transaction(function () use ($payment, $amount, $workspace): ClientInvoicePayment {
-            $query = ClientInvoicePayment::query()->whereKey($payment->id)->lockForUpdate();
+            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
@@ -538,7 +539,7 @@ final class InvoiceLifecycleService
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_time_entry_id');
         if ($entryIds->isNotEmpty()) {
-            ClientTimeEntry::query()->whereIn('id', $entryIds)->lockForUpdate()->get();
+            ClientTimeEntry::query()->whereIn('id', $entryIds)->tap(Locks::forUpdate())->get();
             ClientTimeEntry::query()->whereIn('id', $entryIds)->where('status', 'invoiced')->update([
                 'status' => 'approved',
                 'lock_version' => DB::raw('lock_version + 1'),
@@ -555,7 +556,7 @@ final class InvoiceLifecycleService
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice
     {
-        $query = ClientInvoice::query()->whereKey($invoice->id)->lockForUpdate();
+        $query = ClientInvoice::query()->whereKey($invoice->id)->tap(Locks::forUpdate());
         if ($workspace !== null) {
             $query->where('workspace_id', $workspace->id);
         }

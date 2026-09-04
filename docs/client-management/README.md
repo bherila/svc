@@ -397,6 +397,7 @@ into a test.
 - **[Overpayment credits](overpayment-credits.md)** — any overpaid amount carries forward as a credit on the next invoice(s) and never expires.
 - **[Subcontractors](overview.md#subcontractors)** — project-scoped subcontractors with scoped portal access, self-logged + admin-approved hours, and flat-hourly / retainer / direct billing modes.
 - **[Tenant foreign keys](tenant-foreign-keys.md)** — the composite `(workspace_id, parent_id)` keys that make a cross-tenant reference unstorable, what every new tenant-owned table has to do, and which columns are exempt and why.
+- **[Lock order and check-then-act](concurrency.md)** — the one order every pessimistic lock is taken in, derived from recorded transactions and enforced by a conformance test and a static rule; the guards that read a condition and then write, with the lock or constraint that makes each sound; and what a green lock-order run does not prove.
 
 
 ## Where this lives in SVC

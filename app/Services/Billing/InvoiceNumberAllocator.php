@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
+use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -16,8 +17,8 @@ final class InvoiceNumberAllocator
             throw new LogicException('Invoice numbers must be allocated inside the invoice creation transaction.');
         }
 
-        Workspace::query()->whereKey($workspace->id)->lockForUpdate()->firstOrFail();
-        $counter = WorkspaceInvoiceCounter::query()->whereKey($workspace->id)->lockForUpdate()->first();
+        Workspace::query()->whereKey($workspace->id)->tap(Locks::forUpdate())->firstOrFail();
+        $counter = WorkspaceInvoiceCounter::query()->whereKey($workspace->id)->tap(Locks::forUpdate())->first();
         if ($counter === null) {
             $highest = 0;
             foreach (ClientInvoice::query()->where('workspace_id', $workspace->id)->pluck('invoice_number') as $invoiceNumber) {

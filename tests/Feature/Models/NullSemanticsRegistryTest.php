@@ -2,15 +2,8 @@
 
 namespace Tests\Feature\Models;
 
-use App\Console\Commands\Billing\ReplayInvoicesCommand;
-use App\Http\Controllers\Api\V1\AgentReadController;
-use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
-use App\Services\Billing\DraftInvoiceTimeRegenerator;
-use App\Services\Billing\InterimOverageGenerator;
-use App\Services\Billing\InvoiceFromTimeService;
-use App\Services\Billing\InvoiceLineComposer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -22,7 +15,10 @@ use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
 use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
+use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
+use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
+use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
 use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
@@ -80,8 +76,15 @@ use Tests\Unit\Billing\RetainerCalculatorTest;
  * with a known reader and no test carries `reader_in` naming that reader, which
  * is checked by reflection exactly as a citation is. It is a weaker claim than a
  * citation and deliberately so - it asserts exposure, not coverage - and it
- * turns 17 invisible holes into a worklist. Pinning them with isolating tests
- * is tracked separately; this file's job is to stop the holes being invisible.
+ * turned 17 invisible holes into a worklist.
+ *
+ * That worklist is now empty: #143 pinned the last of it, and no entry below is
+ * a `reader_in`. The state is kept, and so is every check that resolves it,
+ * because emptying it is not the same as retiring it. The next nullable column
+ * with a live reader and no isolating test has somewhere honest to go, and the
+ * alternative - deleting the state so such a column must be either cited or
+ * declared unexamined - is precisely the two-state registry whose false
+ * citations this file was rebuilt after.
  *
  * ## What is still PENDING-AUDIT
  *
@@ -175,55 +178,55 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
-        'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
-        'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_agreement_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
+        'client_invoice_lines.client_agreement_recurring_item_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
-        'client_invoice_lines.hours => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
-        'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
-        'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\BillingScheduleService::generateDue',
-        'client_invoices.cycle_end => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
-        'client_invoices.cycle_start => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
+        'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
+        'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
+        'client_invoices.due_date => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
-        'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
-        'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
-        'client_invoices.service_period_end => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
-        'client_invoices.service_period_end => reader_in:App\Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice',
-        'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
-        'client_invoices.service_period_start => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
-        'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
         'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_rate_is_refused',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_rate_source_do_not_recombine',
         'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_a_task_do_not_recombine',
-        'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_task_do_not_recombine',
         'client_time_entries.client_visible_description => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
+        'client_time_entries.currency => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_currency_is_refused',
         'client_time_entries.currency => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
-        'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
         'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_an_absent_value_is_not_the_word_null',
-        'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_job_type_do_not_recombine',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_null_billing_mode_is_read_as_ordinary_consultant_time',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused',
+        'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_cost_with_no_mode_is_excluded_from_the_retainer',
-        'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
         'client_time_entries.subcontractor_cost_currency => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
-        'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
-        'client_time_entries.subcontractor_cost_metadata => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.subcontractor_cost_currency => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer',
+        'client_time_entries.subcontractor_cost_metadata => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_absent_cost_metadata_do_not_recombine',
     ];
 
     /**
@@ -316,7 +319,16 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_generated_draft_without_an_agreement_fails_closed',
                 ],
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
+                // The second reading is the companion search, and it is silent
+                // where the first is loud: regeneration asks only for drafts
+                // that name an agreement, so a draft missing one is never
+                // considered for an entry moved into its period, the draft that
+                // owned the entry still gives it up, and the work ends up
+                // billed by nothing.
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
+                ],
             ],
             // What the citation proves is narrower than it reads: it is the
             // default `InvoiceLifecycleService::createDraft` picks when no kind
@@ -338,7 +350,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
                 ],
-                ['reader_in' => BillingScheduleService::class, 'reads' => 'generateDue'],
+                // Pinned by rewinding `next_run_on` and asking the schedule
+                // about a period it has already produced - a replay, a repair
+                // or a corrected cadence - which is when a row missing its link
+                // is most likely to exist. The schedule cannot see its own
+                // invoice and issues a second one for the same month.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
+                ],
             ],
             // Not issued yet - on the draft path, where issuing stamps the
             // workspace's calendar date. Not a global reading: `issue()`
@@ -359,29 +379,48 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
                 ],
-                ['reader_in' => AgentReadController::class, 'reads' => 'summary'],
+                [
+                    'covered_by' => AgentReadApiTest::class,
+                    'method' => 'test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
+                ],
             ],
             // Was cited against the cadence regeneration refusal, but that
             // fixture nulls the cycle columns too and the refusal fires on
-            // either pair, so the citation never isolated this column. The null
-            // is also read during generation, where it initialises to the
-            // earliest dated work line, and by replay, which builds no source
-            // scope at all when either boundary is missing - so the invoice
-            // proves against zero source minutes rather than against its own.
+            // either pair, so the citation never isolated this column. Two
+            // readers now carry their own case instead.
+            //
+            // Regeneration finds the *other* drafts a moved entry belongs to
+            // with `whereDate('service_period_start', '<=', ...)`, and SQL drops
+            // a null: the destination draft is never rebuilt, the source draft
+            // still gives the entry up, and the work ends up billed by nothing.
+            // Replay builds no source scope at all when either boundary is
+            // missing, so the invoice proves against zero source minutes rather
+            // than against its own.
             'service_period_start' => [
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
-                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
+                ],
+                [
+                    'covered_by' => ReplaySourceScopeNullBranchesTest::class,
+                    'method' => 'test_an_invoice_with_no_period_start_proves_no_source_minutes',
+                ],
             ],
-            // Four branches, two of them pinned. The regeneration refusal is
-            // covered; the billed-overage window is covered since #135, where a
-            // `<=` that answers false for a null dropped charged invoices out
-            // of the sum and their overage was billed twice. The interim
-            // generator carries a parallel already-billed sum with its own
-            // `orWhereNull`, added in the #139 fix-forward, and nothing pins it.
-            // The fourth is a coercion rather than a predicate: the composer
-            // hands this column to `Carbon::parse()` unguarded when dating a
-            // deferred-termination line, and `parse(null)` is *now*, so a
-            // malformed invoice dates its line today. That one is #135 item 2.
+            // Five branches, and the widest spread of readings any one column
+            // here carries. The regeneration refusal was already covered; the
+            // billed-overage window has been covered since #135, where a `<=`
+            // that answers false for a null dropped charged invoices out of the
+            // sum and their overage was billed twice.
+            //
+            // The three added since are each a different failure. Interim
+            // generation matches an existing draft on both boundaries exactly,
+            // so an undated draft is invisible and a second invoice is raised
+            // for the same period and the same hours. The composer reads the
+            // column twice and two ways when a termination line is dated - as a
+            // value, which lands as a null `line_date`, and through
+            // `Carbon::parse()`, which for a null is *now*, so the
+            // subcontractor charge is dated to the run rather than the period
+            // (#135 item 2). Replay builds no source scope without it.
             'service_period_end' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
@@ -391,9 +430,18 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
                 ],
-                ['reader_in' => InterimOverageGenerator::class, 'reads' => 'generateInterimOverageInvoice'],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
-                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
+                ],
+                [
+                    'covered_by' => InvoiceLineComposerTest::class,
+                    'method' => 'test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+                ],
+                [
+                    'covered_by' => ReplaySourceScopeNullBranchesTest::class,
+                    'method' => 'test_an_invoice_with_no_period_end_proves_no_source_minutes',
+                ],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -410,20 +458,34 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
                 ],
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
+                // Not a default but a decision: an ad-hoc draft is repriced
+                // from each entry's own rate snapshot, a cadence draft is
+                // rebuilt from the period's work against the agreement's terms.
+                // The rebuild stamps the kind, so the null does not survive the
+                // first edit - and the ad-hoc run beside it, which leaves the
+                // kind alone, is what shows the stamping is the cadence path
+                // and not something regeneration always does.
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
+                ],
             ],
             // Cited against an interim refusal whose fixture nulls both columns,
             // so neither guard was isolated - dropping one leaves the test
             // failing through the other. The consequential reader is the cycle
-            // lookup, which matches on both and cannot see a row missing either
-            // (#141).
+            // lookup, which widens each boundary on its own (#141): a row that
+            // states one of them is placed by the one it states and admitted on
+            // the one it does not, so a half-dated charged interim still counts
+            // towards what this cycle has already billed. Each column now has a
+            // case that nulls it alone and holds the other matching, plus the
+            // stated-but-wrong date that proves the boundary is still consulted.
             'cycle_start' => [
-                'reader_in' => InterimOverageGenerator::class,
-                'reads' => 'interimOverageHoursForCycle',
+                'covered_by' => CapacityAndScopeGuardsTest::class,
+                'method' => 'test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
             ],
             'cycle_end' => [
-                'reader_in' => InterimOverageGenerator::class,
-                'reads' => 'interimOverageHoursForCycle',
+                'covered_by' => CapacityAndScopeGuardsTest::class,
+                'method' => 'test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
             ],
             // The invoice hour-balance columns were restore-repair fields: the
             // ledger backfill filled each only where the destination value was
@@ -505,9 +567,24 @@ final class NullSemanticsRegistryTest extends TestCase
             // to an empty identity that fails the agreement-owned-line check,
             // and a null recurring item is encoded as "no auxiliary owner" in
             // the allocation signature. None is write-only.
-            'hours' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
-            'client_agreement_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
-            'client_agreement_recurring_item_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
+            //
+            // Each is now pinned by its own case on a two-line invoice: the null
+            // line and a populated sibling in the same snapshot, told apart by a
+            // quantity the branch does not touch. That construction is what makes
+            // the three citations separable - deleting one ternary reddens one
+            // test, and inverting it reddens the populated half of the same one.
+            'hours' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
+            ],
+            'client_agreement_id' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
+            ],
+            'client_agreement_recurring_item_id' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
+            ],
         ],
         'client_agreements' => [
             // Was cited against the generic derive-rate test, where setting this
@@ -709,7 +786,17 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_fragments_with_and_without_a_task_do_not_recombine',
                 ],
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // The citation above splits a bare entry, so most of the
+                // signature is null on both halves and any one of those nulls
+                // would hold the pair apart too. #143 added the isolating form:
+                // all twenty fields stated and identical, this one nulled on one
+                // fragment, then nulled on both - which must merge. The second
+                // half is the part that says a null here is a compared value
+                // rather than a blocker.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_task_do_not_recombine',
+                ],
             ],
             // Null is permitted for flat-hourly and direct entries, which is
             // what the citation covers. On ordinary billable time the same null
@@ -720,7 +807,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
                     'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
                 ],
-                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
+                // The other reading: an ad-hoc invoice is built entirely from
+                // these terms, so a null rate reaching the line would be a zero
+                // charge for real approved work on an invoice an operator sends
+                // by hand. Pinned with the currency held matching, so it is the
+                // rate half of that `&&` and not the pair.
+                [
+                    'covered_by' => InvoiceFromTimeServiceTest::class,
+                    'method' => 'test_selected_time_with_no_stored_rate_is_refused',
+                ],
             ],
             // Approval repairs a missing currency on a draft, which is the
             // pinned branch. It does not reach an entry that is already approved
@@ -732,7 +827,13 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => TimeSheetTest::class,
                     'method' => 'test_approval_supplies_a_currency_an_older_entry_lacks',
                 ],
-                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
+                // A comparison rather than a null check, and pinned as one:
+                // `null === 'USD'` is false, so the entry matches no invoice in
+                // any currency. The rate stays stated throughout.
+                [
+                    'covered_by' => InvoiceFromTimeServiceTest::class,
+                    'method' => 'test_selected_time_with_no_stored_currency_is_refused',
+                ],
             ],
             // Missing approval metadata, independently of status. Imported or
             // legacy entries may already be `approved` while either stamp is
@@ -757,10 +858,14 @@ final class NullSemanticsRegistryTest extends TestCase
             // by deleting each half of the OR in turn and watching exactly one
             // test fail.
             //
-            // The composer's reader stays a named reader: it refuses the same
-            // pair, but on an entry that has already been approved, so the
-            // approval guard above it means no such row can reach it in a test
-            // without writing an impossible fixture.
+            // The composer refuses the same pair a second time, on entries that
+            // are already approved. An earlier note here called such a row
+            // unreachable without an impossible fixture; that was wrong. The
+            // approval guard runs when a row is approved, and a row can acquire
+            // an incomplete snapshot afterwards - by import, by repair, by a
+            // direct edit - which is exactly the shape the composer's guard
+            // exists for. Both halves are now pinned there too, each holding
+            // the sibling stated.
             'subcontractor_cost_amount' => [
                 [
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
@@ -773,21 +878,34 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => RetainerDrawConsistencyTest::class,
                     'method' => 'test_a_cost_with_no_mode_is_excluded_from_the_retainer',
                 ],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer',
+                ],
             ],
             'subcontractor_cost_currency' => [
                 [
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
                     'method' => 'test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
                 ],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer',
+                ],
             ],
             // Also part of the fragment signature. #153 replaced the json
             // encoding this note described with a direct typed comparison,
             // because encoding reintroduced the ambiguity it was meant to
             // remove - `?? 'null'` made a real null and the literal string
             // "null" identical. Compared as arrays, a null stays a null.
-            'subcontractor_cost_metadata' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            // It is the field most likely to be dropped from the signature by
+            // someone tidying - the amount and the currency are obviously money
+            // and this reads like a note. It is not: it is where the cost came
+            // from, and two costs agreeing on the number can disagree on that.
+            'subcontractor_cost_metadata' => [
+                'covered_by' => AllocationServiceTest::class,
+                'method' => 'test_populated_fragments_differing_only_in_absent_cost_metadata_do_not_recombine',
+            ],
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
             // No client-safe text was written, and the internal description is
@@ -825,9 +943,14 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 // Third reader, added by #153: provenance survives
                 // recombination, so an `explicit` rate is never replaced by one
-                // re-resolved from the agreement. Not a second citation - that
-                // case diverges two non-null sources, so it pins no null.
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // re-resolved from the agreement. The nearby divergence case
+                // pins no null - it varies two stated sources - so #143 pinned
+                // this one against a stated source, with the stored amount
+                // identical on both fragments.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_rate_source_do_not_recombine',
+                ],
             ],
             // Also in the fragment signature. The dedicated collision test
             // isolates a real null from the literal text `null`, proving the
@@ -837,7 +960,13 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_an_absent_value_is_not_the_word_null',
                 ],
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // Free text a person can type, so the sentinel question and the
+                // populated-siblings question are genuinely different ones. The
+                // citation above answers the first; this answers the second.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_job_type_do_not_recombine',
+                ],
             ],
             // Not a fragment of anything. Lineage is the only thing that makes
             // two rows one entry, so entries that merely look alike - same day,

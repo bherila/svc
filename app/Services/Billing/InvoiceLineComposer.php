@@ -13,6 +13,7 @@ use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Concurrency\Locks;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -147,7 +148,7 @@ class InvoiceLineComposer
             // read the same unclaimed task, both create a milestone line, and
             // the second claim would overwrite the first - two invoices
             // charging one deliverable, with only one of them traceable.
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get();
 
         foreach ($tasks as $task) {

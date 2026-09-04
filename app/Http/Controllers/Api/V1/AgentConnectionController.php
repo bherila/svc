@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
+use App\Support\Concurrency\Locks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Passport\Passport;
@@ -17,7 +18,7 @@ final class AgentConnectionController extends Controller
         Passport::token()->getConnection()->transaction(function () use ($user, $token): void {
             $accessToken = $user->tokens()
                 ->where('revoked', false)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->find($token);
             abort_unless($accessToken !== null, 404);
 

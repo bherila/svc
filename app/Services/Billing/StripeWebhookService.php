@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -249,7 +250,7 @@ final class StripeWebhookService
         return ClientInvoicePayment::query()
             ->where('provider', 'stripe')
             ->whereIn('provider_payment_identifier', $ids)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->first();
     }
 

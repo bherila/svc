@@ -23,6 +23,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\RetainerLineDescription;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -686,7 +687,7 @@ final class ClientInvoicingService
                     ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
             })
             ->whereIn('status', InvoiceStatus::live())
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->first();
     }
 
@@ -702,7 +703,7 @@ final class ClientInvoicingService
         $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
 
         return DB::transaction(function () use ($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart): ClientInvoice {
-            ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
+            ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
 
             // Looked up under the lock, not before it. Two workers generating
             // the same month could both read `null` outside the transaction;
@@ -1011,7 +1012,7 @@ final class ClientInvoicingService
         ): ClientInvoice {
             // The invoice rows this guards against may not exist yet, so the
             // agreement row is what serializes concurrent generation.
-            ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
+            ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
 
             if ((bool) $agreement->bill_overage_interim) {
                 $ledger ??= $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $periodEnd, true);
@@ -1039,7 +1040,7 @@ final class ClientInvoicingService
                 ->whereDate('service_period_start', $periodStart->toDateString())
                 ->whereDate('service_period_end', $periodEnd->toDateString())
                 ->whereIn('status', InvoiceStatus::live())
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             if ($invoice instanceof ClientInvoice && $invoice->isImmutable()) {
