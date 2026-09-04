@@ -886,7 +886,7 @@ class ClientDirectoryController extends Controller
                 'id' => (string) $delivery->public_id,
                 'status' => (string) $delivery->status,
                 'recipients' => $delivery->recipients,
-                'bcc' => $delivery->bcc ?? [],
+                'bcc' => $delivery->bcc,
                 'subject' => (string) $delivery->subject,
                 'sent_at' => $delivery->sent_at?->toISOString(),
                 'failed_at' => $delivery->failed_at?->toISOString(),

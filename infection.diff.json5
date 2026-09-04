@@ -2,6 +2,10 @@
     "$schema": "./vendor/infection/infection/resources/schema.json",
     source: {
         directories: [
+            // The invariants that keep a `json` column readable live here, and
+            // they are exactly the kind of total function that passes a happy
+            // path while quietly dropping a branch.
+            "app/Casts",
             "app/Models",
             "app/Services/Billing",
             "app/Support/Billing",
