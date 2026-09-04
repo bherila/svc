@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TimeSheet from '@/pages/time';
+import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
 import type { WorkspaceNavigation } from '@/types/navigation';
 import type {
+    Capacity,
     CompanyOption,
     Month,
     TimeEntry,
@@ -98,15 +100,58 @@ function quietMonth(key: string, label: string, unusedHours = 0): Month {
                           rollover_in_hours: 0,
                           expired_hours: 0,
                           rollover_months: null,
+                          deficit_offset_hours: 0,
                           worked_hours: 0,
                           unused_hours: unusedHours,
                           over_hours: 0,
                           carried_deficit_hours: 0,
                           remaining_rollover: 0,
+                          balance_hours: unusedHours,
+                          billed_overage_hours: 0,
+                          paid_hours: unusedHours,
                           pending_minutes: 0,
                       },
                   ],
         entries: [],
+    };
+}
+
+/**
+ * A worked month with a capacity strip, for the arithmetic the strip states.
+ *
+ * Defaults describe the plain case - ten hours sold, four worked, nothing
+ * carried and nothing owed - so a test names only the figures it is about.
+ */
+function workedMonth(overrides: Partial<Capacity> = {}): Month {
+    const capacity: Capacity = {
+        agreement: 'Synthetic Monthly Retainer',
+        cycle_start: '',
+        available_hours: 10,
+        retainer_hours: 10,
+        rollover_in_hours: 0,
+        expired_hours: 0,
+        rollover_months: 2,
+        deficit_offset_hours: 0,
+        worked_hours: 4,
+        unused_hours: 6,
+        over_hours: 0,
+        carried_deficit_hours: 0,
+        remaining_rollover: 0,
+        balance_hours: 6,
+        billed_overage_hours: 0,
+        paid_hours: 10,
+        pending_minutes: 0,
+        ...overrides,
+    };
+
+    return {
+        key: '2026-07',
+        label: 'July 2026',
+        total_minutes: Math.round(capacity.worked_hours * 60),
+        billable_minutes: Math.round(capacity.worked_hours * 60),
+        deferred_minutes: 0,
+        capacity: [capacity],
+        entries: [entry({ worked_on: '2026-07-04' })],
     };
 }
 
@@ -385,5 +430,187 @@ describe('months with nothing logged', () => {
         );
 
         expect(screen.getByText('Nothing logged')).toBeInTheDocument();
+    });
+});
+
+/**
+ * The strip reported hours included, hours used and hours over, and left the
+ * two questions an operator actually asks unanswered: where the engagement
+ * stands overall, and how many of the hours worked have been paid for.
+ */
+describe('the capacity breakdown', () => {
+    it('accounts for every hour between the grant and the availability', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            retainer_hours: 10,
+                            deficit_offset_hours: 3,
+                            rollover_in_hours: 5,
+                            available_hours: 12,
+                            worked_hours: 4,
+                            unused_hours: 3,
+                            remaining_rollover: 5,
+                            balance_hours: 8,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        const included = screen.getByText('Included this cycle');
+
+        expect(included.nextSibling).toHaveTextContent('10.00 h');
+        // The hours the client never got: an earlier overrun is repaid out of
+        // this cycle's grant before any of it is available to work.
+        expect(
+            screen.getByText('Repaid earlier overrun').nextSibling,
+        ).toHaveTextContent('\u22123.00 h');
+        expect(screen.getByText('Carried in').nextSibling).toHaveTextContent(
+            '5.00 h',
+        );
+        expect(screen.getByText('Available').nextSibling).toHaveTextContent(
+            '12.00 h',
+        );
+    });
+
+    /**
+     * Unused hours, unspent carry-in and a deficit were three numbers on this
+     * card, and no arrangement of them said whether the client was ahead of the
+     * retainer or behind it.
+     */
+    it('states the carryover balance the cycle closes on', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            unused_hours: 3,
+                            remaining_rollover: 5,
+                            balance_hours: 8,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('Carryover balance').nextSibling,
+        ).toHaveTextContent('8.00 h');
+        expect(
+            screen.getByText(
+                /Including 5\.00 h carried in from earlier cycles/,
+            ),
+        ).toBeInTheDocument();
+    });
+
+    it('shows a balance the client owes as a negative one', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            available_hours: 10,
+                            worked_hours: 14,
+                            unused_hours: 0,
+                            over_hours: 4,
+                            carried_deficit_hours: 6,
+                            balance_hours: -6,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('Carryover balance').nextSibling,
+        ).toHaveTextContent('\u22126.00 h');
+        // Four of those hours are this cycle's; the other two arrived owed.
+        expect(
+            screen.getByText(/Including 2\.00 h owed from earlier cycles/),
+        ).toBeInTheDocument();
+    });
+
+    /**
+     * Hours worked past the retainer and carried forward as a deficit are
+     * unpaid; the same hours once invoiced are paid. A card reporting only
+     * "included" and "over" draws them identically.
+     */
+    it('separates the hours paid for from the hours included', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            retainer_hours: 10,
+                            worked_hours: 13,
+                            unused_hours: 0,
+                            over_hours: 3,
+                            carried_deficit_hours: 0,
+                            balance_hours: 0,
+                            billed_overage_hours: 3,
+                            paid_hours: 13,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Paid for').nextSibling).toHaveTextContent(
+            '13.00 h',
+        );
+        expect(
+            screen.getByText('Billed at the hourly rate').nextSibling,
+        ).toHaveTextContent('3.00 h');
+    });
+
+    it('names a negative charge as the correction it is', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            billed_overage_hours: -2,
+                            paid_hours: 8,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('Reversed by a correction').nextSibling,
+        ).toHaveTextContent('\u22122.00 h');
+    });
+});
+
+/**
+ * The breakdown put a label and a figure on one row inside a card that is one
+ * of several across the width of a month. jsdom measures nothing, so the check
+ * is the shape: an agreement titled with an unbroken run has to have somewhere
+ * for the overflow to go, or the card sizes the row and the row sizes the page.
+ */
+describe('the capacity breakdown under hostile data', () => {
+    it('leaves nothing that can push the page sideways', () => {
+        const { container } = render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            agreement:
+                                'Synthetic-Retainer-Agreement-With-A-Title-Nobody-Would-Type-And-No-Spaces-In-It',
+                            rollover_in_hours: 5,
+                            deficit_offset_hours: 3,
+                            expired_hours: 2,
+                            billed_overage_hours: 3,
+                            pending_minutes: 90,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 });

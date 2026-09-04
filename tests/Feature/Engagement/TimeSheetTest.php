@@ -523,6 +523,93 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * A cycle that opens repaying an earlier overrun says so.
+     *
+     * The screen reported the gross grant and the availability and nothing
+     * between them, so a month that sold ten hours and could offer five read
+     * as an arithmetic error. The offset is the missing term, and the balance
+     * is the figure an operator was left to derive from three others.
+     */
+    public function test_the_capacity_strip_accounts_for_hours_spent_repaying_an_overrun(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Rolling Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'rollover_months' => 1,
+            'starts_on' => '2026-06-01',
+        ]);
+        // Fifteen hours against a ten-hour June: the five over are carried, not
+        // billed, so July opens owing them.
+        $this->entry(['worked_on' => '2026-06-04', 'minutes' => 900, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-07')
+                ->where('months.0.capacity.0.retainer_hours', 10)
+                ->where('months.0.capacity.0.deficit_offset_hours', 5)
+                ->where('months.0.capacity.0.available_hours', 5)
+                ->where('months.0.capacity.0.balance_hours', 5)
+                // And the month that ran up the debt closes on its negative.
+                ->where('months.1.key', '2026-06')
+                ->where('months.1.capacity.0.over_hours', 5)
+                ->where('months.1.capacity.0.balance_hours', -5));
+    }
+
+    /**
+     * Hours worked past the retainer and carried forward are unpaid; the same
+     * hours once invoiced are paid. A strip reporting only what the retainer
+     * included and how far the work went past it draws the two identically.
+     */
+    public function test_the_capacity_strip_separates_hours_paid_for_from_hours_included(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Charged Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'rollover_months' => 1,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 780, 'status' => 'approved']);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SYN-OVERAGE-1',
+            'status' => 'issued',
+            'service_period_end' => '2026-07-31',
+            'hours_billed_at_rate' => '3.0000',
+            'currency' => 'USD',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.capacity.0.retainer_hours', 10)
+                ->where('months.0.capacity.0.over_hours', 3)
+                ->where('months.0.capacity.0.billed_overage_hours', 3)
+                ->where('months.0.capacity.0.paid_hours', 13)
+                // The charge settles the debt it was raised for, so the cycle
+                // closes square rather than three hours down.
+                ->where('months.0.capacity.0.balance_hours', 0));
+    }
+
+    /**
      * Membership of a workspace is not access to every project in it.
      *
      * The `view` gate on the workspace passes for an ordinary member, so

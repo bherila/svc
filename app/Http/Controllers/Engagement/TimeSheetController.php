@@ -397,7 +397,7 @@ class TimeSheetController extends Controller
      * drop the rollover that month inherited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>
+     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float, paid_hours: float, pending_minutes: int}>>
      */
     private function capacityByMonth(
         InvoiceLedgerBuilder $ledgers,
@@ -585,6 +585,12 @@ class TimeSheetController extends Controller
                     'rollover_months' => $agreement->rollover_months === null
                         ? null
                         : (int) $agreement->rollover_months,
+                    // The part of this cycle's grant that never reached the
+                    // client: an earlier overrun is repaid out of it before
+                    // anything is available to work. Without this the breakdown
+                    // does not add up - the screen said "10 h this cycle" over
+                    // an availability of four and offered no account of the six.
+                    'deficit_offset_hours' => round($month->opening->negativeOffset, 2),
                     'worked_hours' => round($month->hoursWorked, 2),
                     'unused_hours' => round($month->closing->unusedHours, 2),
                     'over_hours' => round($over, 2),
@@ -592,6 +598,27 @@ class TimeSheetController extends Controller
                     // carried in - distinct from this month's own overage.
                     'carried_deficit_hours' => round($month->closing->negativeBalance, 2),
                     'remaining_rollover' => round($month->closing->remainingRollover, 2),
+                    // The one figure that says where the agreement stands after
+                    // the cycle closes. `unused_hours` and `remaining_rollover`
+                    // are two halves of the same bank and a deficit is its
+                    // negative, so a reader given the three separately has to
+                    // add them up - and gets it wrong, because whether the
+                    // deficit is already netted against them is not visible.
+                    // Same arithmetic the agent API publishes as
+                    // `signed_available_hours`; one definition, two readers.
+                    'balance_hours' => round(
+                        $month->closing->unusedHours
+                            + $month->closing->remainingRollover
+                            - $month->closing->negativeBalance,
+                        2,
+                    ),
+                    // What the client bought, as against what the retainer
+                    // included. Overage carried forward as a deficit has been
+                    // worked and not yet paid for; overage that has been
+                    // invoiced has. The two read identically on a screen that
+                    // reports only hours included and hours over.
+                    'billed_overage_hours' => round($month->billedOverageHours, 2),
+                    'paid_hours' => round($month->opening->retainerHours + $month->billedOverageHours, 2),
                     'pending_minutes' => (int) $pending,
                 ];
             }
@@ -603,7 +630,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, pending_minutes: int}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float, paid_hours: float, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */

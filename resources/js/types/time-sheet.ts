@@ -66,11 +66,37 @@ export type Capacity = {
      * is the same outcome and a different statement about what was agreed.
      */
     rollover_months: number | null;
+    /**
+     * The part of this cycle's grant spent repaying an earlier overrun.
+     *
+     * Without it the breakdown does not add up: the strip claimed ten hours
+     * this cycle above an availability of four and gave no account of the six.
+     */
+    deficit_offset_hours: number;
     worked_hours: number;
     unused_hours: number;
     over_hours: number;
     carried_deficit_hours: number;
     remaining_rollover: number;
+    /**
+     * Where the agreement stands once the cycle closes: banked hours when
+     * positive, hours owed when negative.
+     *
+     * `unused_hours` and `remaining_rollover` are two halves of one bank and a
+     * deficit is its negative, so a reader given the three separately has to
+     * add them up — and cannot see whether the deficit is already netted
+     * against them. The server states the balance instead.
+     */
+    balance_hours: number;
+    /**
+     * Hours the client bought, as against the hours the retainer included.
+     *
+     * Overage carried forward as a deficit has been worked and not paid for;
+     * overage that has been invoiced has. A screen reporting only "included"
+     * and "over" shows the two identically.
+     */
+    billed_overage_hours: number;
+    paid_hours: number;
     /** Draft work that will draw on *this* retainer once approved. */
     pending_minutes: number;
 };
