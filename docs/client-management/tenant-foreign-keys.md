@@ -83,10 +83,18 @@ same way the inventory test does and fails on a model whose table has a
 `workspace_id` and whose writes are not scoped by it.
 
 The predicate is the workspace as stored, not as the model currently holds it,
-so an attribute rewritten in memory cannot aim the write at another tenant. A
-model hydrated without the column at all - a partial `select()` - is refused
-outright rather than being written with `workspace_id is null`, which would
-match nothing while `save()` still returned true.
+so a model that merely claims a workspace - one keyed at a row in a different
+one - matches nothing rather than rewriting a stranger's row. A model hydrated
+without the column at all - a partial `select()` - is refused outright rather
+than being written with `workspace_id is null`, which would match nothing while
+`save()` still returned true.
+
+A save that *changes* `workspace_id` is refused before the predicate is chosen,
+which is #229's rule for expenses applied to every table with the column.
+Neither resolution is acceptable: the stored value would match the row and move
+it into another tenant, carrying its children with it, and the new value would
+match nothing while `save()` reported success. Ownership is fixed when the row
+is created.
 
 ## Why the delete rule has to match
 

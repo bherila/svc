@@ -3,7 +3,9 @@
 namespace Tests\Feature\Models;
 
 use App\Exceptions\UnscopableWorkspaceWrite;
+use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
+use App\Models\ClientTimeEntry;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\WorkspaceInvoiceCounter;
 use Closure;
@@ -75,21 +77,43 @@ final class WorkspaceScopedWriteTest extends TestCase
     }
 
     /**
-     * A workspace rewritten in memory must not become the predicate: that would
-     * turn a save into a write aimed at whichever tenant the caller named.
+     * #229 made expense ownership immutable; the same holds for every table
+     * with the column, and for the same reason. Neither resolution is
+     * acceptable - predicating on the stored value moves the row into another
+     * tenant, predicating on the new one matches nothing while `save()` reports
+     * success - so the save is refused before a predicate is chosen at all.
      */
-    public function test_the_predicate_is_the_stored_workspace_not_the_one_in_memory(): void
+    public function test_a_row_cannot_be_saved_into_a_different_workspace(): void
+    {
+        foreach ([ClientExpense::class, ClientTimeEntry::class, WorkspaceInvoiceCounter::class] as $class) {
+            $model = new $class;
+            $model->setRawAttributes([$model->getKeyName() => 7, 'workspace_id' => 4242], sync: true);
+            $model->exists = true;
+            $model->setAttribute('workspace_id', 9999);
+
+            try {
+                $this->buildSaveQuery($model, $model->newModelQuery());
+                $this->fail(class_basename($class).' let a save move the row to another workspace.');
+            } catch (WorkspaceOwnershipImmutable $refusal) {
+                $this->assertStringContainsString($class, $refusal->getMessage());
+            }
+        }
+    }
+
+    /**
+     * The stored workspace is what the predicate is built from, so a model that
+     * agrees with the database writes against the tenant it is actually in.
+     */
+    public function test_the_predicate_is_built_from_the_stored_workspace(): void
     {
         $model = new ClientExpense;
         $model->setRawAttributes(['id' => 7, 'workspace_id' => 4242], sync: true);
         $model->exists = true;
-        $model->setAttribute('workspace_id', 9999);
 
         $query = $model->newModelQuery();
         $this->buildSaveQuery($model, $query);
 
-        $this->assertContains(4242, $query->getBindings(), 'The stored workspace is what the row is in.');
-        $this->assertNotContains(9999, $query->getBindings(), 'The in-memory workspace would aim the write at another tenant.');
+        $this->assertContains(4242, $query->getBindings());
     }
 
     public function test_a_forged_model_cannot_write_another_workspaces_row(): void

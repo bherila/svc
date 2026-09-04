@@ -3,6 +3,7 @@
 namespace App\Models\Concerns;
 
 use App\Exceptions\UnscopableWorkspaceWrite;
+use App\Exceptions\WorkspaceOwnershipImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
 trait BelongsToWorkspace
@@ -42,12 +43,17 @@ trait BelongsToWorkspace
      * there is no further write path to remember.
      *
      * The predicate is the *stored* workspace, not the in-memory attribute, so
-     * a caller that rewrote `workspace_id` before saving updates the row it
-     * actually holds rather than aiming a statement at the tenant it named. A
-     * model that merely claims a workspace - a hand-built instance keyed at a
+     * a model that merely claims a workspace - a hand-built instance keyed at a
      * row in a different one, which is what an unchecked id produces - matches
      * nothing, where the id-only predicate would have rewritten a stranger's
      * row.
+     *
+     * A model whose `workspace_id` was changed in memory is refused outright
+     * before the predicate is added, which is #229's rule generalised from
+     * expenses to every table that has the column. Neither resolution is
+     * acceptable: the stored value would match the row and move it into another
+     * tenant, and the new value would match nothing while `save()` still
+     * reported success. Ownership is fixed when the row is created.
      *
      * The parent is called for its effect and `$query` is returned rather than
      * its result. Both are the same object - it configures the builder it was
@@ -61,6 +67,15 @@ trait BelongsToWorkspace
      */
     protected function setKeysForSaveQuery($query)
     {
+        $stored = $this->storedWorkspaceKey();
+
+        if ((int) $stored !== (int) $this->getAttribute('workspace_id')) {
+            throw new WorkspaceOwnershipImmutable(sprintf(
+                'A %s cannot be moved to another workspace: ownership is fixed when the row is created.',
+                static::class,
+            ));
+        }
+
         parent::setKeysForSaveQuery($query);
 
         // A table keyed by the workspace itself is already scoped by the
@@ -70,7 +85,7 @@ trait BelongsToWorkspace
             return $query;
         }
 
-        return $query->where('workspace_id', $this->storedWorkspaceKey());
+        return $query->where('workspace_id', $stored);
     }
 
     /**

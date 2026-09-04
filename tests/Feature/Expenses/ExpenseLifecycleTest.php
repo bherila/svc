@@ -4,6 +4,7 @@ namespace Tests\Feature\Expenses;
 
 use App\Exceptions\CrossTenantReference;
 use App\Exceptions\ExpenseTransitionRefused;
+use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Support\Concurrency\LockOrderRecorder;
@@ -440,5 +441,29 @@ final class ExpenseLifecycleTest extends TestCase
             'One approved expense of this workspace\'s two, and none of the other tenant\'s.',
         );
         $this->assertSame(2, ClientExpense::query()->approved()->count(), 'Both approvals must exist, or the scope proved nothing.');
+    }
+
+    public function test_a_model_save_cannot_move_an_expense_between_workspaces(): void
+    {
+        $home = $this->syntheticWorkspace('ownership home');
+        $foreign = $this->syntheticWorkspace('ownership foreign');
+        $expense = $this->recordSyntheticExpense($home, $this->syntheticCompany($home, 'ownership home'));
+        $foreignCompany = $this->syntheticCompany($foreign, 'ownership foreign');
+
+        $expense->workspace_id = $foreign->id;
+        $expense->client_company_id = $foreignCompany->id;
+
+        try {
+            $expense->save();
+            $this->fail('Workspace ownership must be immutable after an expense is created.');
+        } catch (WorkspaceOwnershipImmutable $refusal) {
+            $this->assertStringContainsString('cannot be moved to another workspace', $refusal->getMessage());
+        }
+
+        $stored = ClientExpense::query()->findOrFail($expense->id);
+
+        $this->assertSame($home->id, $stored->workspace_id);
+        $this->assertNotSame($foreignCompany->id, $stored->client_company_id);
+        $this->assertNull((new WorkspaceExpenses($foreign))->find($expense->public_id));
     }
 }
