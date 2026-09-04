@@ -69,7 +69,9 @@ class AgentApiOAuthFoundationTest extends TestCase
             'application_type' => 'native',
         ])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->assertJsonPath('scope', $scope)->assertJsonPath('application_type', 'native')->assertJsonStructure(['client_id']);
         $this->assertDatabaseHas('oauth_clients', ['name' => 'SVC MCP Test', 'secret' => null]);
-        $this->assertNotNull(Passport::client()->newQuery()->where('name', 'SVC MCP Test')->value('dynamically_registered_at'));
+        $client = Passport::client()->newQuery()->where('name', 'SVC MCP Test')->firstOrFail();
+        $this->assertNotNull($client->dynamically_registered_at);
+        $this->assertSame(array_keys(AgentApiScopes::descriptions()), $client->scopes);
 
         $this->postJson('/oauth/register', [
             'client_name' => 'Unsafe Client',
@@ -107,5 +109,29 @@ class AgentApiOAuthFoundationTest extends TestCase
             'scope' => 'mcp:use  mcp:use identity:read',
             'software_id' => 'synthetic-harness',
         ])->assertCreated()->assertJsonPath('scope', 'mcp:use identity:read');
+    }
+
+    public function test_registration_persists_distinct_omitted_and_explicit_empty_scope_ceilings(): void
+    {
+        $omitted = $this->postJson('/oauth/register', [
+            'client_name' => 'Catalog client',
+            'redirect_uris' => ['https://client.example.test/catalog-callback'],
+            'application_type' => 'web',
+        ])->assertCreated();
+        $this->assertSame(
+            array_keys(AgentApiScopes::descriptions()),
+            Passport::client()->newQuery()->findOrFail($omitted->json('client_id'))->scopes,
+        );
+
+        $empty = $this->postJson('/oauth/register', [
+            'client_name' => 'No-scope client',
+            'redirect_uris' => ['https://client.example.test/empty-callback'],
+            'application_type' => 'web',
+            'scope' => '',
+        ])->assertCreated()->assertJsonPath('scope', '');
+        $this->assertSame(
+            [],
+            Passport::client()->newQuery()->findOrFail($empty->json('client_id'))->scopes,
+        );
     }
 }

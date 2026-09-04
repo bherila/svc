@@ -12,12 +12,17 @@ customer data. Preserve those constraints in incident tickets and logs.
    receive a no-store `503` with `Retry-After: 60`; no server or session is
    constructed. `OPTIONS` remains available for browser preflight. Existing
    sessions cannot recover a capability on a subsequent request.
-2. For a single capability, set its named entry in
+2. To stop new OAuth metadata discovery, client registration, authorization,
+   token exchange, and refresh without invalidating an already-issued bound
+   credential, set `AGENT_API_OAUTH_SERVER_ENABLED=false`, deploy, and clear the
+   configuration cache. Those issuance routes return non-cacheable 404 responses.
+   This is not credential revocation and does not replace the MCP kill switch.
+3. For a single capability, set its named entry in
    `agent_api.mcp_feature_flags` to `false` (the stable feature-flag name in
    `docs/mcp.md` is preferred; the public capability name is a compatibility
    fallback). Deploy and clear configuration cache. Do not remove a route or
    rename a capability during an incident.
-3. Preserve only metadata needed for investigation: request ID, UTC timestamp,
+4. Preserve only metadata needed for investigation: request ID, UTC timestamp,
    public workspace ID when already known, OAuth client ID, capability name,
    and safe error category. Never copy authorization headers, MCP arguments,
    results, invoice documents, free text, or user email addresses.
@@ -27,7 +32,8 @@ customer data. Preserve those constraints in incident tickets and logs.
 MCP authentication is Passport OAuth, not a separate MCP password or API-key
 store. Revoke the affected OAuth connection through the authenticated
 `DELETE /api/v1/connections/{token}` workflow where the affected user can do
-so. The endpoint calls Passport's token revocation and the MCP principal
+so. The endpoint transaction revokes the refresh credential attached to that
+access token before revoking the access token itself, and the MCP principal
 resolver rereads the persisted access-token row on every request, so a revoked,
 expired, wrong-audience, or wrong-client credential is rejected before
 discovery and execution.
@@ -53,9 +59,39 @@ rotation, and a key rotation is a separate authorization-server incident.
    discovery and direct-call denial behavior, then remove the containment flag.
    Global MCP enablement is last.
 
-MCP has no schema migration of its own. Roll back application code/configuration
-using the normal deployment mechanism; do not roll back unrelated database
-migrations or delete OAuth rows merely to recover the endpoint.
+The v0.11 adoption adds nullable `oauth_clients.scopes` and
+`oauth_refresh_tokens.resource_uri` columns through an idempotent, no-op-on-
+rollback migration. Roll back application code/configuration using the normal
+deployment mechanism; leaving those nullable columns in place is safe. Do not
+delete OAuth rows merely to recover the endpoint.
+
+## v0.11 deployment and legacy-client cutover
+
+1. Deploy the code and run the normal migration step before accepting OAuth
+   traffic. Confirm `oauth_clients.scopes`, `oauth_auth_codes.resource_uri`,
+   `oauth_access_tokens.resource_uri`, and `oauth_refresh_tokens.resource_uri`
+   exist. The migration preserves SVC's pre-existing columns.
+2. Confirm `AGENT_API_OAUTH_SERVER_ENABLED=true` and clear the configuration
+   cache. Verify authorization-server and protected-resource metadata before
+   attempting registration.
+3. Existing dynamic clients with a null `oauth_clients.scopes` value are
+   deliberately unusable for new authorization. Do not backfill a guessed or
+   catalog-wide ceiling. Re-register the client and obtain fresh user consent.
+4. Treat connections issued before v0.11 as requiring re-authorization.
+   Legacy refresh tokens have no independent resource binding, and legacy
+   access tokens generally lack the signed issuer/audience/resource claims;
+   both fail closed. An access token continues only when its database binding
+   and signed claims pass the route-specific expected-resource check.
+5. Run `scripts/mcp-smoke-ci.sh`, then the authenticated deployment smoke. The
+   smoke credential issuer establishes the resource before Passport signs the
+   JWT; never patch `resource_uri` after token issuance.
+
+Passport may purge an expired access-token row while its longer-lived refresh
+credential remains valid. Because Passport's refresh table does not retain the
+client identifier independently, dynamic-client pruning conservatively defers
+all deletions while any such active, unattributed refresh credential exists.
+This favors connection continuity over cleanup; pruning resumes after the
+credential expires or is revoked.
 
 ## Security release checks
 

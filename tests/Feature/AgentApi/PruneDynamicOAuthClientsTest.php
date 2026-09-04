@@ -50,6 +50,26 @@ final class PruneDynamicOAuthClientsTest extends TestCase
         $this->assertDatabaseHas('oauth_clients', ['id' => $stale->id]);
     }
 
+    public function test_pruning_defers_when_an_active_refresh_token_has_lost_its_access_row(): void
+    {
+        $client = $this->client('Refresh without access row', now()->subDays(45));
+        $user = User::factory()->create();
+        $accessToken = $this->token($client->id, $user->id, false, now()->subHour());
+        Passport::refreshToken()->forceFill([
+            'id' => Str::random(80),
+            'access_token_id' => $accessToken,
+            'revoked' => false,
+            'expires_at' => now()->addDays(10),
+        ])->save();
+        Passport::token()->newQuery()->whereKey($accessToken)->delete();
+
+        $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 30])
+            ->expectsOutput('An active refresh credential has no access-token row; dynamic OAuth client pruning was deferred.')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('oauth_clients', ['id' => $client->id]);
+    }
+
     private function client(string $name, mixed $registeredAt): Client
     {
         $client = Passport::client();

@@ -200,15 +200,26 @@ final class DeploySmokeCredentialsCommand extends Command
     /** @param  list<string>  $scopes */
     private function issue(AgentPrincipal $principal, string $clientId, string $label, array $scopes): string
     {
-        $issued = $principal->createToken(self::PRINCIPAL_NAME.' '.$label, $scopes);
+        $request = request();
+        $request->attributes->set(
+            OAuthResourceIndicator::REQUEST_ATTRIBUTE,
+            OAuthResourceIndicator::configuredCanonical(),
+        );
+        try {
+            $issued = $principal->createToken(self::PRINCIPAL_NAME.' '.$label, $scopes);
+        } finally {
+            $request->attributes->remove(OAuthResourceIndicator::REQUEST_ATTRIBUTE);
+        }
 
-        // Without the resource indicator the token is not addressed to this API
-        // and the MCP endpoint refuses it - the same binding the pre-merge smoke
-        // credentials set, for the same reason.
+        // v0.11 binds the database row and signed JWT during issuance. Checking
+        // the selected personal-access client here prevents a misconfigured
+        // Passport client from producing a credential the deploy cannot revoke
+        // through the expected connection.
         Passport::token()->newQuery()
             ->whereKey($issued->accessTokenId)
             ->where('client_id', $clientId)
-            ->update(['resource_uri' => OAuthResourceIndicator::resource()]);
+            ->where('resource_uri', OAuthResourceIndicator::resource())
+            ->firstOrFail();
 
         return $issued->accessToken;
     }

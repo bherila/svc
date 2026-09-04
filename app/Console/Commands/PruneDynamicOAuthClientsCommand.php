@@ -3,8 +3,6 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Laravel\Passport\Passport;
 
 final class PruneDynamicOAuthClientsCommand extends Command
@@ -15,7 +13,11 @@ final class PruneDynamicOAuthClientsCommand extends Command
 
     public function handle(): int
     {
-        if (! Schema::hasColumns('oauth_clients', ['dynamically_registered_at', 'last_used_at'])) {
+        $clientModel = Passport::client();
+        if (! $clientModel->getConnection()->getSchemaBuilder()->hasColumns(
+            $clientModel->getTable(),
+            ['dynamically_registered_at', 'last_used_at'],
+        )) {
             $this->warn('Dynamic OAuth client metadata is not migrated yet; nothing was pruned.');
 
             return self::SUCCESS;
@@ -26,6 +28,11 @@ final class PruneDynamicOAuthClientsCommand extends Command
             $this->error('Retention days must be an integer from 1 through 3650.');
 
             return self::INVALID;
+        }
+        if ($this->hasUnattributedActiveRefreshCredential()) {
+            $this->warn('An active refresh credential has no access-token row; dynamic OAuth client pruning was deferred.');
+
+            return self::SUCCESS;
         }
         $cutoff = now()->subDays($days);
         $candidates = Passport::client()->newQuery()
@@ -43,7 +50,7 @@ final class PruneDynamicOAuthClientsCommand extends Command
             if ($this->option('pretend')) {
                 continue;
             }
-            DB::transaction(function () use ($client): void {
+            $client->getConnection()->transaction(function () use ($client): void {
                 $tokenIds = Passport::token()->newQuery()->where('client_id', $client->getKey())->pluck('id');
                 if ($tokenIds->isNotEmpty()) {
                     Passport::refreshToken()->newQuery()->whereIn('access_token_id', $tokenIds)->delete();
@@ -69,7 +76,16 @@ final class PruneDynamicOAuthClientsCommand extends Command
         return Passport::refreshToken()->newQuery()
             ->where('revoked', false)
             ->where('expires_at', '>', $now)
-            ->whereIn('access_token_id', Passport::token()->newQuery()->select('id')->where('client_id', $clientId)->where('revoked', false))
+            ->whereIn('access_token_id', Passport::token()->newQuery()->select('id')->where('client_id', $clientId))
+            ->exists();
+    }
+
+    private function hasUnattributedActiveRefreshCredential(): bool
+    {
+        return Passport::refreshToken()->newQuery()
+            ->where('revoked', false)
+            ->where('expires_at', '>', now())
+            ->whereNotIn('access_token_id', Passport::token()->newQuery()->select('id'))
             ->exists();
     }
 }

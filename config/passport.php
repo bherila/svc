@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\OAuthSecurityHeaders;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
+use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
+use BWH\Auth\Http\Middleware\EnsureOAuthServerEnabled;
 
 return [
 
@@ -19,7 +21,9 @@ return [
     'guard' => 'web',
 
     'middleware' => [
+        EnsureOAuthServerEnabled::class,
         EnforceOAuthPkce::class,
+        EnforceOAuthResourceIndicator::class,
         OAuthSecurityHeaders::class,
     ],
 
