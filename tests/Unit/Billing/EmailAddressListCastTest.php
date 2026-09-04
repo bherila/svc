@@ -82,6 +82,22 @@ final class EmailAddressListCastTest extends TestCase
         $this->assertStringStartsWith('[', (string) json_encode($read));
     }
 
+    public function test_the_delivery_model_reads_its_address_columns_through_this_cast(): void
+    {
+        // Through the model rather than the cast object, because the wiring is
+        // half the fix: a cast nobody applied is an invariant nobody has, and
+        // dropping either line from `casts()` restores the exact production
+        // failure. No database - this asserts casting, not persistence, and it
+        // has to run in the suite the mutation gate uses.
+        $delivery = (new ClientInvoiceEmailDelivery)->setRawAttributes([
+            'recipients' => '"ap@synthetic.test"',
+            'bcc' => null,
+        ]);
+
+        $this->assertSame(['ap@synthetic.test'], $delivery->recipients);
+        $this->assertSame([], $delivery->bcc);
+    }
+
     public function test_a_malformed_value_is_normalised_on_the_way_in_as_well(): void
     {
         // A writer that has not been through `InvoiceEmailDraft` - an importer,
