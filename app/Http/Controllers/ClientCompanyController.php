@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateClientCompanyRequest;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -68,7 +69,7 @@ class ClientCompanyController extends Controller
             $locked = ClientCompany::query()
                 ->whereKey($clientCompany->getKey())
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             // Gone, or no longer this workspace's. 404 rather than 403 for the

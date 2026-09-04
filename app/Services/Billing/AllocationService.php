@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Support\Concurrency\Locks;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -89,7 +90,7 @@ final class AllocationService
             })
             ->with('invoiceLines')
             ->orderBy('id')
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get();
 
         // Validate after taking the same row locks recombination relies on, so

@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
+use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ final class BillingScheduleService
     public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through): array
     {
         return DB::transaction(function () use ($schedule, $through): array {
-            $locked = ClientBillingSchedule::query()->whereKey($schedule->id)->lockForUpdate()->firstOrFail();
+            $locked = ClientBillingSchedule::query()->whereKey($schedule->id)->tap(Locks::forUpdate())->firstOrFail();
             if (! $locked->is_active) {
                 return [];
             }

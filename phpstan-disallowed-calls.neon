@@ -37,3 +37,6 @@ services:
     -
         class: Tests\PHPStan\DisallowBillingEnumDefaultArmRule
         tags: [phpstan.rules.rule]
+    -
+        class: Tests\PHPStan\DisallowRawLockForUpdateRule
+        tags: [phpstan.rules.rule]

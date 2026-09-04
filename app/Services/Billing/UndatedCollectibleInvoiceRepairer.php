@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Support\Billing\EligibleSetChanged;
 use App\Support\Billing\UndatedCollectibleInvoiceRepairCounts;
+use App\Support\Concurrency\Locks;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -78,7 +79,7 @@ final class UndatedCollectibleInvoiceRepairer
             // written. Without this an invoice could be issued between the count
             // and the update and be repaired without ever being counted, or
             // counted and then paid.
-            $eligible = $this->repairable($workspace)->lockForUpdate()->count();
+            $eligible = $this->repairable($workspace)->tap(Locks::forUpdate())->count();
 
             if ($apply && $expected !== null && $expected !== $eligible) {
                 throw new EligibleSetChanged($expected, $eligible);

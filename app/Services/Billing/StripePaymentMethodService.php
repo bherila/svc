@@ -7,6 +7,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -47,7 +48,7 @@ final class StripePaymentMethodService
             ->where('client_company_id', $company->id)
             ->where('client_stripe_customer_id', $customer->id)
             ->where('stripe_payment_method_id', $providerId)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->first();
 
         $type = $this->string($object['type'] ?? null) ?? 'unknown';
@@ -128,7 +129,7 @@ final class StripePaymentMethodService
                 ->where('client_company_id', $company->id)
                 ->where('client_stripe_customer_id', $customerId)
                 ->where('stripe_payment_method_id', $providerId)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first()
             : null;
 
@@ -179,7 +180,7 @@ final class StripePaymentMethodService
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->where('client_stripe_customer_id', $customer->id)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get();
         $current = $methods->firstWhere('is_default', true);
         $next = $providerMethodId === null
@@ -235,7 +236,7 @@ final class StripePaymentMethodService
     {
         $customer = ClientStripeCustomer::query()
             ->where('stripe_customer_id', $providerCustomerId)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->first();
         if (! $customer instanceof ClientStripeCustomer) {
             return null;
@@ -263,7 +264,7 @@ final class StripePaymentMethodService
         return StripePaymentMethodState::fromDatabaseRow(
             DB::table('stripe_payment_method_states')
                 ->where('provider_id_hash', $providerHash)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first(),
         );
     }

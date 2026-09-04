@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\MoneyService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -58,7 +59,7 @@ final class PaymentReconciliationService
             $lockedPayment = ClientInvoicePayment::query()
                 ->whereKey($payment->id)
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
             if ($lockedPayment->status !== 'succeeded') {
@@ -73,7 +74,7 @@ final class PaymentReconciliationService
                 ->where('client_invoice_payment_id', $lockedPayment->id)
                 ->where('external_system_slug', $systemSlug)
                 ->where('external_transaction_uuid', $transactionUuid)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             if ($existing !== null) {
@@ -86,7 +87,7 @@ final class PaymentReconciliationService
                     ->where('client_invoice_payment_id', $lockedPayment->id)
                     ->where('is_active', true)
                     ->when($existing !== null, fn ($query) => $query->whereKeyNot($existing->id))
-                    ->lockForUpdate()
+                    ->tap(Locks::forUpdate())
                     ->sum('allocated_amount');
                 $netAmount = max(0, (int) $lockedPayment->amount - (int) $lockedPayment->refunded_amount);
 
@@ -141,7 +142,7 @@ final class PaymentReconciliationService
             $lockedPayment = ClientInvoicePayment::query()
                 ->whereKey($payment->id)
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
             $reconciliation = PaymentReconciliation::query()
@@ -149,7 +150,7 @@ final class PaymentReconciliationService
                 ->where('client_invoice_payment_id', $lockedPayment->id)
                 ->where('external_system_slug', $systemSlug)
                 ->where('external_transaction_uuid', $transactionUuid)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
             $reconciliation->forceFill(['is_active' => false])->save();

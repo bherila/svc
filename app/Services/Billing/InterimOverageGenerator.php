@@ -17,6 +17,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\Unattributable;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -147,7 +148,7 @@ final class InterimOverageGenerator
         return DB::transaction(function () use ($company, $agreement, $cycle, $periodStart, $periodEnd, $immediateLedger, $refreshInvoice): ?ClientInvoice {
             // Serialize generation for this agreement; the invoice rows this
             // guards against may not exist yet, so the agreement is the lock.
-            ClientAgreement::query()->whereKey($agreement->getKey())->lockForUpdate()->first();
+            ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
 
             // Callers may supply a cached ledger, bypassing its own integrity
             // check. Keep the assertion at this public write boundary so no
@@ -156,7 +157,7 @@ final class InterimOverageGenerator
 
             $issuedCycleInvoice = $this->cycleInvoices($company, $agreement, InvoiceKind::CadencePeriod, $cycle, Unattributable::Include)
                 ->whereIn('status', InvoiceStatus::charged())
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
 
             if ($issuedCycleInvoice instanceof ClientInvoice) {
@@ -165,7 +166,7 @@ final class InterimOverageGenerator
 
             $existingInvoice = $this->selectSingleInterimInvoice(
                 $this->interimInvoiceCandidates($company, $agreement, $cycle, $periodStart, $periodEnd)
-                    ->lockForUpdate()
+                    ->tap(Locks::forUpdate())
                     ->get(),
                 $refreshInvoice,
             );
@@ -442,7 +443,7 @@ final class InterimOverageGenerator
             // company - so nothing stops an operator issuing this draft between
             // the read and the delete, and the lines would then be stripped from
             // an invoice that had just been sent.
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get();
 
         $released = 0;
@@ -656,7 +657,7 @@ final class InterimOverageGenerator
                     ->orWhereNull('service_period_end');
             })
             ->whereIn('status', InvoiceStatus::charged())
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get();
 
         return $this->attributableInterimHours($candidates, $cycle);

@@ -5,6 +5,7 @@ namespace App\Queries\Engagement;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProposal;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,7 +43,7 @@ final class ProposalAcceptanceAgreementQuery
         ClientCompany::query()
             ->whereKey($companyId)
             ->where('workspace_id', $workspaceId)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->firstOrFail();
     }
 

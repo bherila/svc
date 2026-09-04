@@ -15,6 +15,7 @@ use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -160,7 +161,7 @@ final class TimeEntryMutationService
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $probe->client_company_id)
                 ->orderBy('id')
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->get(['id']);
 
             $prelinkedInvoiceIds = $this->allocatedInvoiceIds($probe);
@@ -173,7 +174,7 @@ final class TimeEntryMutationService
                     }
                 })
                 ->orderBy('id')
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->pluck('id')
                 ->map(fn ($id): int => (int) $id)
                 ->all();
@@ -186,7 +187,7 @@ final class TimeEntryMutationService
             $locked = ClientTimeEntry::query()
                 ->whereKey($entry->id)
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->first();
             abort_unless($locked instanceof ClientTimeEntry, 404);
 
@@ -206,7 +207,7 @@ final class TimeEntryMutationService
     {
         DB::transaction(function () use ($workspace, $actor, $entries): void {
             foreach ($entries as $item) {
-                $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->lockForUpdate()->firstOrFail();
+                $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->tap(Locks::forUpdate())->firstOrFail();
                 abort_unless($this->access->canApproveTime($actor, $this->projectOf($workspace, $entry)), 403);
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
                 // The same freeze update and delete carry, for the same

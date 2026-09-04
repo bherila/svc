@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -68,7 +69,7 @@ class ProposalWorkflow
     public function send(ClientProposal $proposal): ClientProposal
     {
         return DB::transaction(function () use ($proposal): ClientProposal {
-            $locked = ClientProposal::query()->lockForUpdate()->findOrFail($proposal->id);
+            $locked = ClientProposal::query()->tap(Locks::forUpdate())->findOrFail($proposal->id);
 
             if ($locked->status === 'sent') {
                 return $locked->load('items');
@@ -91,7 +92,7 @@ class ProposalWorkflow
     public function accept(ClientProposal $proposal, ?User $acceptingUser, string $signerName, ?string $signerTitle): ClientProposal
     {
         return DB::transaction(function () use ($proposal, $acceptingUser, $signerName, $signerTitle): ClientProposal {
-            $locked = ClientProposal::query()->lockForUpdate()->findOrFail($proposal->id);
+            $locked = ClientProposal::query()->tap(Locks::forUpdate())->findOrFail($proposal->id);
 
             if ($locked->status === 'accepted') {
                 return $locked->load(['items', 'agreements']);

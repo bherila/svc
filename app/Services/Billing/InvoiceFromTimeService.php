@@ -12,6 +12,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -48,7 +49,7 @@ final class InvoiceFromTimeService
     public function updateDraft(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $attributes, array $timeEntryIds, array $manualLines): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $attributes, $timeEntryIds, $manualLines): ClientInvoice {
-            $locked = ClientInvoice::query()->whereKey($invoice->id)->where('workspace_id', $workspace->id)->lockForUpdate()->with('clientCompany')->firstOrFail();
+            $locked = ClientInvoice::query()->whereKey($invoice->id)->where('workspace_id', $workspace->id)->tap(Locks::forUpdate())->with('clientCompany')->firstOrFail();
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
             }
@@ -82,7 +83,7 @@ final class InvoiceFromTimeService
             $locked = ClientInvoice::query()
                 ->whereKey($invoice->id)
                 ->where('workspace_id', $workspace->id)
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
             if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
@@ -117,7 +118,7 @@ final class InvoiceFromTimeService
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('id', $entryIds)
                 ->orderBy('id')
-                ->lockForUpdate()
+                ->tap(Locks::forUpdate())
                 ->get()
                 ->keyBy('id');
 
@@ -208,7 +209,7 @@ final class InvoiceFromTimeService
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('public_id', $timeEntryIds)
-            ->lockForUpdate()
+            ->tap(Locks::forUpdate())
             ->get()
             ->keyBy('public_id');
         if ($entriesById->count() !== count($timeEntryIds)) {

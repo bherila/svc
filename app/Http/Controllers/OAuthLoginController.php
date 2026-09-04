@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\Navigation\WorkspaceReturnPoint;
+use App\Support\Concurrency\Locks;
 use BWH\Auth\Concerns\SignsOutThroughProvider;
 use BWH\Auth\OAuth\OAuthClient;
 use BWH\Auth\OAuth\ProviderApplications;
@@ -75,10 +76,10 @@ class OAuthLoginController extends Controller
                 $user = User::query()
                     ->where('oauth_provider', $provider)
                     ->where('oauth_subject', $subject)
-                    ->lockForUpdate()
+                    ->tap(Locks::forUpdate())
                     ->first();
 
-                $emailOwner = User::query()->where('email', $email)->lockForUpdate()->first();
+                $emailOwner = User::query()->where('email', $email)->tap(Locks::forUpdate())->first();
 
                 abort_if(
                     $emailOwner !== null && ($user === null || $emailOwner->id !== $user->id),
