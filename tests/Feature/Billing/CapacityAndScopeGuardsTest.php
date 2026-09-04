@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\AgreementSelector;
+use App\Services\Billing\BilledOverageLedger;
 use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
@@ -193,6 +194,53 @@ final class CapacityAndScopeGuardsTest extends TestCase
 
         $this->assertSame(5.0, $this->billedOverages($agreement, '2024-02-29'), 'Its own charged hours do count');
         $this->assertSame(7.0, $this->billedOverages($other, '2024-02-29'), 'Each against its own agreement');
+    }
+
+    /** A legacy cross-tenant row cannot contribute capacity to this ledger. */
+    public function test_billed_overage_ledger_is_workspace_scoped(): void
+    {
+        $agreement = $this->agreement();
+        $own = $this->invoice($agreement);
+        $own->forceFill([
+            'status' => 'issued', 'hours_billed_at_rate' => '5', 'service_period_end' => '2024-01-31',
+        ])->save();
+
+        $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-overage']);
+        $this->writingLegacyCrossTenantRows(function () use ($agreement, $otherWorkspace): void {
+            ClientInvoice::query()->create([
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => 'FOREIGN-'.uniqid(),
+                'status' => 'issued',
+                'currency' => 'USD',
+                'hours_billed_at_rate' => '7',
+                'service_period_end' => '2024-01-31',
+            ]);
+        });
+
+        $ledger = app(BilledOverageLedger::class);
+
+        $this->assertSame(5.0, $ledger->totalThrough($agreement, Carbon::parse('2024-02-29')));
+        $this->assertSame(
+            ['2024-01' => 5.0],
+            $ledger->hoursByMonthThrough($agreement, Carbon::parse('2024-02-29')),
+        );
+    }
+
+    /** Positive catch-up cannot be made into expiring capacity without a month. */
+    public function test_chronological_overage_ledger_refuses_an_unplaceable_charge(): void
+    {
+        $agreement = $this->agreement();
+        $invoice = $this->invoice($agreement);
+        $invoice->forceFill([
+            'status' => 'issued', 'hours_billed_at_rate' => '5', 'service_period_end' => null,
+        ])->save();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('no service period end');
+
+        app(BilledOverageLedger::class)->hoursByMonthThrough($agreement, Carbon::parse('2024-02-29'));
     }
 
     /**
@@ -924,8 +972,8 @@ final class CapacityAndScopeGuardsTest extends TestCase
      * `service_period_end < period start` - UNKNOWN for SQL `NULL` and therefore
      * excluded by a `WHERE` clause, so a charged interim invoice whose period
      * was lost would leave the subtraction and
-     * its hours would be billed a second time. The same fail-closed widening
-     * as `totalBilledOveragesThrough`: a null period reads as already billed.
+     * its hours would be billed a second time. Like the shared billed-overage
+     * ledger, the interim reader fails closed rather than dropping the charge.
      */
     public function test_a_charged_interim_invoice_with_no_service_period_still_reduces_the_next_interim(): void
     {
@@ -1784,16 +1832,10 @@ final class CapacityAndScopeGuardsTest extends TestCase
         );
     }
 
-    /**
-     * The private sum that decides how much overage debt is already settled.
-     * Reached directly because generation exposes it only as one term inside a
-     * balance, where a wrong answer is indistinguishable from ordinary rounding.
-     */
+    /** The shared charged-overage selector, isolated from capacity arithmetic. */
     private function billedOverages(ClientAgreement $agreement, string $through): float
     {
-        $method = new \ReflectionMethod(ClientInvoicingService::class, 'totalBilledOveragesThrough');
-
-        return (float) $method->invoke(app(ClientInvoicingService::class), $agreement, Carbon::parse($through));
+        return app(BilledOverageLedger::class)->totalThrough($agreement, Carbon::parse($through));
     }
 
     /** The interim-only subtraction, isolated from allocation and entry caps. */

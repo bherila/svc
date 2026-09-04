@@ -22,10 +22,10 @@ use Illuminate\Support\Facades\DB;
  * raise, does not warn, and does not appear - it is quietly treated as being
  * outside whatever window is being asked about.
  *
- * The sum in `ClientInvoicingService::totalBilledOveragesThrough()` is where
- * that costs money, and its read is now fail-closed (#135), which turns a
- * double charge into capacity credited a period early. This exists to find the
- * rows behind that fallback so they can be given a real period instead.
+ * The chronological `BilledOverageLedger` is where that costs money, and its
+ * read is fail-closed (#135): a positive charge with no service month stops
+ * pricing rather than being dropped or guessed. This exists to find those rows
+ * so they can be given a real period instead.
  *
  * The same class applies to `cycle_start`/`cycle_end` (#141), reported in two
  * counts because they endanger two different things - see the funnel below.

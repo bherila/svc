@@ -123,6 +123,7 @@ final class ClientInvoicingService
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         private readonly TimeEntrySplitter $timeEntrySplitter = new TimeEntrySplitter,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+        private readonly BilledOverageLedger $billedOverageLedger = new BilledOverageLedger,
         ?RetainerCalculator $retainerCalculator = null,
         ?InvoiceLedgerBuilder $invoiceLedgerBuilder = null,
         ?InterimOverageGenerator $interimOverageGenerator = null,
@@ -138,6 +139,7 @@ final class ClientInvoicingService
             $this->rolloverCalculator,
             $this->billingCycleResolver,
             $this->retainerCalculator,
+            billedOverageLedger: $this->billedOverageLedger,
             replayHistoryBasis: $this->replayHistoryBasis,
         );
         $this->activities = $activities ?? app(ClientActivityRecorder::class);
@@ -738,16 +740,14 @@ final class ClientInvoicingService
             $currentMonthBalance = $this->balanceForMonth($allBalances, $retainerMonthStart->format('Y-m'))
                 ?? $this->openingMonthSummary($agreement, $retainerMonthStart->format('Y-m'));
 
-            $cumulativeSnapshot = $this->calculateCumulativeBalanceSnapshot($agreement, $periodEnd, $allBalances);
+            $cumulativeSnapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $allBalances);
 
-            // End-of-work-period state, adjusted for any overage already paid.
+            // The chronological ledger has already settled each charged
+            // overage in the month where it happened.
             $rawWorkPeriodNegative = $workMonthBalance?->closing->negativeBalance ?? 0.0;
             $rawWorkPeriodUnused = $workMonthBalance?->closing->unusedHours ?? 0.0;
-            [$netWorkPeriodUnused, $netWorkPeriodNegative] = $this->applyBilledOverages(
-                $rawWorkPeriodUnused,
-                $rawWorkPeriodNegative,
-                $this->totalBilledOveragesThrough($agreement, $periodEnd),
-            );
+            $netWorkPeriodUnused = $rawWorkPeriodUnused;
+            $netWorkPeriodNegative = $rawWorkPeriodNegative;
 
             $invoiceData = [
                 'client_agreement_id' => $agreement->id,
@@ -879,18 +879,24 @@ final class ClientInvoicingService
 
                 $invoice->update(['hours_billed_at_rate' => $totalCatchupHours]);
 
-                // The balances above were computed before this charge existed,
-                // so they have to be taken again now that the debt is paid.
-                $snapshot = $this->calculateCumulativeBalanceSnapshot($agreement, $periodEnd, $allBalances);
-                [$netUnused, $netNegative] = $this->applyBilledOverages(
-                    $rawWorkPeriodUnused,
-                    $rawWorkPeriodNegative,
-                    $this->totalBilledOveragesThrough($agreement, $periodEnd),
+                // The balances above were computed before this charge existed.
+                // Replay it in the work month rather than adding it to the end
+                // result, so any surplus crosses (or does not cross) the month
+                // boundary under the agreement's normal rollover rule.
+                $balancesAfterCharge = $this->monthlyBalances(
+                    $company,
+                    $agreement,
+                    $periodEnd,
+                    $retainerMonthStart,
+                    $terminationMonthKey,
+                    [$workMonthKey => $totalCatchupHours],
                 );
+                $chargedWorkMonth = $this->balanceForMonth($balancesAfterCharge, $workMonthKey);
+                $snapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $balancesAfterCharge);
 
                 $invoice->update([
-                    'negative_hours_balance' => $netNegative,
-                    'unused_hours_balance' => $netUnused,
+                    'negative_hours_balance' => $chargedWorkMonth?->closing->negativeBalance ?? 0.0,
+                    'unused_hours_balance' => $chargedWorkMonth?->closing->unusedHours ?? 0.0,
                     'starting_unused_hours' => $snapshot['unused'],
                     'starting_negative_hours' => $snapshot['negative'],
                 ]);
@@ -1394,6 +1400,7 @@ final class ClientInvoicingService
      * billable entry, because work recorded before the agreement was signed
      * still consumed nothing and must not appear as a debt.
      *
+     * @param  array<string, float>  $additionalBilledOveragesByMonth
      * @return array<int, MonthSummary>
      */
     private function monthlyBalances(
@@ -1402,6 +1409,7 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         Carbon $retainerMonthStart,
         ?string $terminationMonthKey,
+        array $additionalBilledOveragesByMonth = [],
     ): array {
         $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
         $agreementStart = $this->agreementStart($ledgerAgreement)->startOfMonth();
@@ -1435,6 +1443,11 @@ final class ClientInvoicingService
             ->map(fn ($group): int => (int) $group->sum('minutes'));
 
         $months = [];
+        $billedOveragesByMonth = $this->billedOverageLedger->hoursByMonthThrough($agreement, $periodEnd);
+        // @infection-ignore-all This merge joins persisted invoice history to one in-flight draft and is covered by database-backed generation tests; the mutation lane deliberately runs unit tests only.
+        foreach ($additionalBilledOveragesByMonth as $month => $hours) {
+            $billedOveragesByMonth[$month] = round(($billedOveragesByMonth[$month] ?? 0.0) + $hours, 4);
+        }
         $firstPostTerminationSeen = false;
         $cursor = $calculationStart->copy();
 
@@ -1467,6 +1480,7 @@ final class ClientInvoicingService
                         Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
                     ),
                 'hours_worked' => $isPreAgreement ? 0.0 : ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
+                'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => $resetRollover,
             ];
 
@@ -1526,16 +1540,13 @@ final class ClientInvoicingService
     }
 
     /**
-     * Balance the invoice opens with, once catch-up billing has paid off debt.
-     *
-     * The rollover calculator knows only retainer against worked hours; it has
-     * no idea that some of the overage was already charged. This applies that
-     * payment: debt first, and any surplus becomes available capacity.
+     * Balance the invoice opens with after the chronological ledger has applied
+     * every earlier catch-up charge and expired its surplus normally.
      *
      * @param  array<int, MonthSummary>  $allBalances
      * @return array{unused: float, negative: float}
      */
-    private function calculateCumulativeBalanceSnapshot(ClientAgreement $agreement, Carbon $periodEnd, array $allBalances): array
+    private function calculateCumulativeBalanceSnapshot(Carbon $periodEnd, array $allBalances): array
     {
         $summary = $this->balanceForMonth($allBalances, $periodEnd->copy()->addDay()->startOfMonth()->format('Y-m'));
 
@@ -1543,116 +1554,10 @@ final class ClientInvoicingService
             return ['unused' => 0.0, 'negative' => 0.0];
         }
 
-        [$netUnused, $netNegative] = $this->applyBilledOverages(
-            $summary->opening->totalAvailable,
-            $summary->opening->remainingNegativeBalance,
-            $this->totalBilledOveragesThrough($agreement, $periodEnd),
-        );
-
-        return ['unused' => round($netUnused, 4), 'negative' => round($netNegative, 4)];
-    }
-
-    /**
-     * Pay billed overage against debt first, then into available capacity.
-     *
-     * @return array{0: float, 1: float} Net unused hours, net negative hours.
-     */
-    private function applyBilledOverages(float $rawUnused, float $rawNegative, float $billedOverages): array
-    {
-        $netNegative = max(0.0, $rawNegative - $billedOverages);
-        $netUnused = $billedOverages > $rawNegative
-            ? $rawUnused + ($billedOverages - $rawNegative)
-            : $rawUnused;
-
-        return [$netUnused, $netNegative];
-    }
-
-    /**
-     * Overage this agreement has already charged, through a period end.
-     *
-     * The window is deliberately fail-closed on a missing service period. `<=`
-     * answers false for a null, so an invoice whose period cannot be placed
-     * would drop out of the sum silently, and overage the client has already
-     * been charged for would be invisible to the next period's balance - which
-     * would then bill it a second time.
-     *
-     * Counting it instead errs the other way: capacity credited a period early,
-     * understating one invoice and coming back on the next. That is a recoverable
-     * error. A second charge already sent to a client is not.
-     *
-     * A fallback chain onto `cycle_end` or `issue_date` would place most of these
-     * rows more precisely, and is still the wrong trade: it would decide which
-     * period an invoice belongs to by a different column than every other query
-     * in this class uses, so two reads in the same generation could disagree
-     * about the same invoice. `svc:billing:audit-unplaceable-invoices` surfaces
-     * the rows so they can be given a real period rather than a guessed one.
-     */
-    private function totalBilledOveragesThrough(ClientAgreement $agreement, Carbon $periodEnd): float
-    {
-        // Asked before the aggregate, because the aggregate cannot answer it.
-        // `SUM` contributes nothing for a NULL, so a charged invoice with no
-        // recorded figure is indistinguishable from one that billed zero - and
-        // this figure is subtracted from what the next period charges, so
-        // reading it low charges the client twice for the same hours (#144).
-        //
-        // The same window, built once and asked twice. A second predicate
-        // restating this one could drift from it, and then the check would be
-        // guarding a different set from the one being summed.
-        $window = $this->billedOverageWindow($agreement, $periodEnd);
-        $unknown = (clone $window)->whereNull('hours_billed_at_rate')->first();
-
-        if ($unknown instanceof ClientInvoice) {
-            // Raised through the invoice itself so the message names the row an
-            // operator has to repair, and so every reader of this column
-            // refuses in the same words.
-            $unknown->billedOverageHoursOrFail();
-        }
-
-        // The cast is required by the strict analysis lane - the sum is
-        // statically float|int|string - and is invisible to every test, because
-        // the declared return type coerces the same value without it. It is
-        // named as an equivalent mutant in infection.diff.json5 rather than
-        // tested around.
-        return (float) $window->sum('hours_billed_at_rate');
-    }
-
-    /**
-     * The already-billed overage window for an agreement, up to a period end.
-     *
-     * Extracted so {@see totalBilledOveragesThrough()} can ask the same set
-     * whether it is knowable before asking what it sums to.
-     *
-     * @return Builder<ClientInvoice>
-     */
-    private function billedOverageWindow(ClientAgreement $agreement, Carbon $periodEnd): Builder
-    {
-        return ClientInvoice::query()
-            ->where('workspace_id', $agreement->workspace_id)
-            ->where('client_agreement_id', $agreement->id)
-            // Charged, not merely non-void. A draft catch-up invoice may never
-            // be issued, and counting its hours as debt the client has already
-            // settled grants capacity against money nobody has been asked for.
-            ->whereIn('status', InvoiceStatus::charged())
-            ->where(function (Builder $window) use ($periodEnd): void {
-                // `whereDate`, like every sibling query in this class. The
-                // column carries a `date` cast, which serialises to
-                // `Y-m-d H:i:s`, so a plain string comparison asks
-                // `'2024-02-29 00:00:00' <= '2024-02-29'` and answers false -
-                // dropping the invoice whose period ends exactly on the
-                // boundary out of the sum of what has already been charged, and
-                // charging its overage a second time (#140).
-                //
-                // Safe to widen at all three call sites because all three are
-                // in the monthly path: :748 and :887 are
-                // `generateMonthlyInvoiceForWorkPeriod`, and :1546 is
-                // `calculateCumulativeBalanceSnapshot`, which only that method
-                // calls. `generateNonMonthlyInvoiceForPeriod` subtracts interim
-                // hours separately and would double-count if this sum reached
-                // it - but it never calls this sum.
-                $window
-                    ->whereDate('service_period_end', '<=', $periodEnd->toDateString())
-                    ->orWhereNull('service_period_end');
-            });
+        return [
+            'unused' => round($summary->opening->totalAvailable, 4),
+            'negative' => round($summary->opening->remainingNegativeBalance, 4),
+        ];
     }
 
     /**

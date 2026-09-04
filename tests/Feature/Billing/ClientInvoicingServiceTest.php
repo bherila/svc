@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
 use DomainException;
@@ -514,8 +515,8 @@ final class ClientInvoicingServiceTest extends TestCase
      * An invoice whose period ends exactly on the boundary counts as already
      * billed.
      *
-     * `totalBilledOveragesThrough()` bounded its sum with a plain string
-     * comparison while every sibling query in the class used `whereDate()`.
+     * The billed-overage selector bounded its sum with a plain string
+     * comparison while every sibling query used `whereDate()`.
      * `service_period_end` carries a `date` cast, which serialises to
      * `Y-m-d H:i:s`, so the comparison asked `'2024-02-29 00:00:00' <=
      * '2024-02-29'` and answered false: the invoice ending exactly on the
@@ -565,6 +566,86 @@ final class ClientInvoicingServiceTest extends TestCase
         $invoice = $this->generate('2024-02-01', '2024-02-29');
 
         $this->assertSame($expectedUnusedHours, $invoice->unused_hours_balance);
+    }
+
+    /**
+     * Catch-up was previously summed once at the end of the entire history.
+     * That made an old charge a fresh capacity grant in every later month, so
+     * a one-month rollover never expired it. Place each charge in its own work
+     * month and the September invoice can inherit only August's unused hours.
+     */
+    public function test_old_billed_overage_does_not_become_timeless_capacity(): void
+    {
+        $agreement = $this->monthlyAgreement('2026-01-01');
+        $agreement->forceFill([
+            'retainer_minutes' => 120,
+            'retainer_amount' => 60000,
+            'catch_up_threshold_minutes' => 60,
+            'hourly_rate_amount' => 25000,
+            'rollover_months' => 1,
+        ])->save();
+
+        foreach ([
+            ['2026-01-30', 600],
+            ['2026-02-20', 155],
+            ['2026-03-20', 60],
+            ['2026-04-20', 105],
+            ['2026-05-20', 165],
+        ] as [$workedOn, $minutes]) {
+            $this->entry($workedOn, $minutes);
+        }
+
+        foreach ([
+            ['HIST-JAN', '2026-01-01', '2026-01-31', '7.0000'],
+            ['HIST-FEB', '2026-02-01', '2026-02-28', '1.5833'],
+        ] as [$number, $start, $end, $billedHours]) {
+            ClientInvoice::query()->create([
+                'workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $agreement->id,
+                'invoice_number' => $number,
+                'status' => 'paid',
+                'invoice_kind' => InvoiceKind::CadencePeriod->value,
+                'service_period_start' => $start,
+                'service_period_end' => $end,
+                'hours_billed_at_rate' => $billedHours,
+                'currency' => 'USD',
+            ]);
+        }
+
+        $ledger = app(InvoiceLedgerBuilder::class)->buildAgreementLedgerThrough(
+            $this->company,
+            $agreement,
+            Carbon::parse('2026-09-30'),
+        );
+        $september = collect($ledger)->firstWhere('yearMonth', '2026-09');
+
+        $this->assertNotNull($september);
+        $this->assertSame(4.0, $september->opening->totalAvailable);
+        $this->assertSame(2.0, $september->opening->rolloverHours);
+
+        $invoice = $this->generate('2026-08-01', '2026-08-31', $agreement);
+
+        $this->assertSame('4.0000', $invoice->starting_unused_hours);
+        $this->assertSame('0.0000', $invoice->starting_negative_hours);
+    }
+
+    /** An in-flight charge follows the same expiry rule as stored history. */
+    public function test_current_catchup_surplus_does_not_bypass_zero_month_rollover(): void
+    {
+        $agreement = $this->monthlyAgreement('2026-02-01');
+        $agreement->forceFill([
+            'retainer_minutes' => 120,
+            'catch_up_threshold_minutes' => 60,
+            'rollover_months' => 0,
+        ])->save();
+        $this->entry('2026-01-20', 120);
+
+        $invoice = $this->generate('2026-01-01', '2026-01-31', $agreement);
+
+        $this->assertSame('1.0000', $invoice->hours_billed_at_rate, 'The minimum-availability charge still appears');
+        $this->assertSame('2.0000', $invoice->starting_unused_hours, 'Its January surplus expires before February');
+        $this->assertSame('0.0000', $invoice->starting_negative_hours);
     }
 
     /**
