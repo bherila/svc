@@ -88,7 +88,7 @@ trait BelongsToWorkspace
     {
         $original = $this->getRawOriginal();
 
-        if (is_array($original) && array_key_exists('workspace_id', $original)) {
+        if (array_key_exists('workspace_id', $original)) {
             return $original['workspace_id'];
         }
 
