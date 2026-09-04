@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use LogicException;
 
 /**
  * A reimbursable client expense: an amount, a date, a company, and optionally a
@@ -146,9 +147,13 @@ class ClientExpense extends Model implements WorkspaceOwned
      * `save()` issues, both delete paths and `restore()`, so there is no fifth
      * write to remember.
      *
-     * The predicate is the *stored* workspace, not the in-memory attribute. A
-     * save that had its `workspace_id` rewritten in memory then matches no row
-     * instead of reaching for one in the tenant it was pointed at.
+     * The predicate is the *stored* workspace, not only the in-memory
+     * attribute. Before adding it, refuse a changed workspace explicitly. A
+     * predicate on the stored value alone would still match the original row
+     * and let the update move it to another workspace; a predicate on the new
+     * value alone would fail silently and leave the model disagreeing with the
+     * database. Workspace ownership is immutable here, so neither outcome is
+     * acceptable.
      *
      * The parent is called for its effect and `$query` is returned rather than
      * its result. Both are the same object - it configures the builder it was
@@ -162,11 +167,14 @@ class ClientExpense extends Model implements WorkspaceOwned
      */
     protected function setKeysForSaveQuery($query)
     {
+        $storedWorkspaceId = $this->getRawOriginal('workspace_id', $this->getAttribute('workspace_id'));
+
+        if ((int) $storedWorkspaceId !== (int) $this->getAttribute('workspace_id')) {
+            throw new LogicException('An expense cannot be moved to another workspace.');
+        }
+
         parent::setKeysForSaveQuery($query);
 
-        return $query->where(
-            'workspace_id',
-            $this->getRawOriginal('workspace_id', $this->getAttribute('workspace_id')),
-        );
+        return $query->where('workspace_id', $storedWorkspaceId);
     }
 }
