@@ -4,40 +4,40 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "da80798fb3da79b8c64f56f1460e3293",
+    "content-hash": "6029b63ca4cfc1b87b53cff89a536c9b",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.9.0",
+            "version": "v0.11.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "0b5e600a5064125a2459da3582165cc5c7b8d30f"
+                "reference": "93eb535d4394947ed6980497a2154603d18c4807"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/0b5e600a5064125a2459da3582165cc5c7b8d30f",
-                "reference": "0b5e600a5064125a2459da3582165cc5c7b8d30f",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/93eb535d4394947ed6980497a2154603d18c4807",
+                "reference": "93eb535d4394947ed6980497a2154603d18c4807",
                 "shasum": ""
             },
             "require": {
-                "illuminate/auth": "^12.0 || ^13.0",
-                "illuminate/contracts": "^12.0 || ^13.0",
-                "illuminate/database": "^12.0 || ^13.0",
-                "illuminate/hashing": "^12.0 || ^13.0",
-                "illuminate/http": "^12.0 || ^13.0",
-                "illuminate/mail": "^12.0 || ^13.0",
-                "illuminate/queue": "^12.0 || ^13.0",
-                "illuminate/routing": "^12.0 || ^13.0",
-                "illuminate/support": "^12.0 || ^13.0",
-                "illuminate/validation": "^12.0 || ^13.0",
-                "php": "^8.2",
-                "symfony/uid": "^7.0 || ^8.0",
-                "web-auth/webauthn-lib": "^5.2"
+                "illuminate/auth": "^13.0",
+                "illuminate/contracts": "^13.0",
+                "illuminate/database": "^13.0",
+                "illuminate/hashing": "^13.0",
+                "illuminate/http": "^13.0",
+                "illuminate/mail": "^13.0",
+                "illuminate/queue": "^13.0",
+                "illuminate/routing": "^13.0",
+                "illuminate/support": "^13.0",
+                "illuminate/validation": "^13.0",
+                "php": "^8.4",
+                "symfony/uid": "^7.4 || ^8.0",
+                "web-auth/webauthn-lib": "^5.3.5"
             },
             "require-dev": {
                 "laravel/passport": "^13.0",
-                "orchestra/testbench": "^10.0"
+                "orchestra/testbench": "^11.0"
             },
             "suggest": {
                 "laravel/passport": "Required only when using the optional OAuth authorization-server helpers."
@@ -65,7 +65,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-08-26T04:57:31+00:00"
+            "time": "2026-09-04T04:42:31+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

@@ -4,7 +4,7 @@ use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RejectMcpQueryCredentials;
-use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
+use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -24,8 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(RejectMcpQueryCredentials::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, EnforceAgentMcpOrigin::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
         $middleware->web(append: [
-            EnforceOAuthResourceIndicator::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
