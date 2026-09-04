@@ -11,6 +11,7 @@ use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class ProposalWorkflow
@@ -120,25 +121,37 @@ class ProposalWorkflow
             ])->save();
 
             if ($agreement === null) {
-                $agreement = $locked->agreements()->create([
-                    'workspace_id' => $locked->workspace_id,
-                    'client_company_id' => $locked->client_company_id,
-                    'client_project_id' => $locked->client_project_id,
-                    'source_proposal_id' => $locked->id,
-                    'title' => $locked->title,
-                    'status' => 'active',
-                    'starts_on' => $acceptedAt->toDateString(),
-                    'ends_on' => null,
-                    'agreement_text' => $this->agreementText($locked->summary, $locked->terms),
-                    'is_visible_to_client' => $locked->is_visible_to_client,
-                    'currency' => $locked->currency,
-                    'billing_cadence' => $this->agreementCadence($locked),
-                    'activated_at' => $acceptedAt,
-                    'signed_at' => $acceptedAt,
-                    'signed_by_user_id' => $acceptingUser?->id,
-                    'signer_name' => $signerName,
-                    'signer_title' => $signerTitle,
-                ]);
+                try {
+                    $agreement = $locked->agreements()->create([
+                        'workspace_id' => $locked->workspace_id,
+                        'client_company_id' => $locked->client_company_id,
+                        'client_project_id' => $locked->client_project_id,
+                        'source_proposal_id' => $locked->id,
+                        'title' => $locked->title,
+                        'status' => 'active',
+                        'starts_on' => $acceptedAt->toDateString(),
+                        'ends_on' => null,
+                        'agreement_text' => $this->agreementText($locked->summary, $locked->terms),
+                        'is_visible_to_client' => $locked->is_visible_to_client,
+                        'currency' => $locked->currency,
+                        'billing_cadence' => $this->agreementCadence($locked),
+                        'activated_at' => $acceptedAt,
+                        'signed_at' => $acceptedAt,
+                        'signed_by_user_id' => $acceptingUser?->id,
+                        'signer_name' => $signerName,
+                        'signer_title' => $signerTitle,
+                    ]);
+                } catch (UniqueConstraintViolationException $collision) {
+                    // The source-proposal key is globally unique. A malformed
+                    // row in another tenant can therefore claim this proposal
+                    // without being visible to the scoped linked lookup. Let
+                    // the database arbitrate that race, roll back every earlier
+                    // acceptance write, and disclose no foreign row details.
+                    throw new EngagementException(
+                        'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+                        previous: $collision,
+                    );
+                }
 
                 foreach ($locked->items as $item) {
                     $agreement->recurringItems()->create([

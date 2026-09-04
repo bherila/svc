@@ -8,6 +8,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
@@ -37,6 +38,7 @@ class AgreementWorkflow
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
+        private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -183,6 +185,10 @@ class AgreementWorkflow
 
             if ($locked->status !== 'draft' && $locked->status !== 'paused') {
                 throw new EngagementException('Only draft or paused agreements can be activated.');
+            }
+
+            if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($locked)) {
+                throw new EngagementException('This agreement cannot be activated automatically. Ask an operator to verify its overlapping terms.');
             }
 
             $previousStatus = $locked->status;

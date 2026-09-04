@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
 use App\Support\Engagement\UnlinkedProposalAgreementCounts;
+use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +19,8 @@ use Illuminate\Support\Facades\DB;
  * proposal has already produced an agreement. The linking column is nullable,
  * so an agreement whose `source_proposal_id` is null is invisible to that
  * question regardless of how it was actually created. Acceptance now refuses
- * the active same-company state rather than creating a second agreement.
+ * the currently-effective, same-project-scope state rather than creating a
+ * second agreement.
  *
  * This is the null-semantics class of #141 on a foreign key rather than a date.
  * The others drop a row out of a window; this one makes a duplicate guard fail
@@ -57,7 +59,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class UnlinkedProposalAgreementAuditor
 {
-    public function __construct(private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements) {}
+    public function __construct(
+        private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
     /**
      * Count the affected proposals, optionally within one workspace.
@@ -77,8 +82,9 @@ final class UnlinkedProposalAgreementAuditor
         // The status guard is the whole difference between live and latent, so
         // the two populations are counted separately rather than summed.
         //
-        // `sent` is the actionable one: accept() refuses its active-unlinked
-        // subset until an operator resolves the agreement state.
+        // `sent` is the actionable one: accept() refuses its currently-active,
+        // same-project-scope subset until an operator resolves the agreement
+        // state.
         // `accepted` takes the early return today and creates nothing, so it is
         // inert - but it is the same broken link, and it is worth sizing
         // because it is the population that would become dangerous if that
@@ -98,13 +104,15 @@ final class UnlinkedProposalAgreementAuditor
         // population with companies whose proposals are all properly linked.
         $withACandidate = $this->acceptanceAgreements->withUnlinkedAgreement(clone $sent);
 
-        // Narrowed once more to an agreement that is currently active. A
-        // cancelled or expired agreement can still be the proposal's true
-        // origin, so this is not a smaller count of the same thing - it is the
-        // subset where a second agreement would bill alongside a live one, and
-        // therefore where the duplicate costs money now rather than
-        // retrospectively muddying the record.
-        $withAnActiveCandidate = $this->acceptanceAgreements->withActiveUnlinkedAgreement(clone $sent);
+        // Narrowed once more to an agreement that is currently in force for the
+        // proposal's same project scope. A cancelled, ended, not-yet-started,
+        // or different-project agreement can still exist legitimately, so this
+        // is the subset where a second agreement would bill alongside a live
+        // one rather than retrospectively muddying the record.
+        $withAnActiveCandidate = $this->acceptanceAgreements->withActiveUnlinkedAgreement(
+            clone $sent,
+            $this->clock->today($workspace),
+        );
 
         return new UnlinkedProposalAgreementCounts(
             proposals: $this->proposals($workspace)->count(),

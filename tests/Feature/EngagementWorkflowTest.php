@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
+use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
@@ -403,6 +404,192 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame($proposal->id, ClientAgreement::query()->where('status', 'active')->sole()->source_proposal_id);
     }
 
+    public function test_active_unlinked_agreements_outside_the_current_term_do_not_block_acceptance(): void
+    {
+        $this->travelTo('2026-09-04 12:00:00');
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic ended agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+            'ends_on' => '2026-09-03',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic future agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-09-05',
+            'ends_on' => null,
+        ]);
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $this->assertSame('accepted', $proposal->fresh()->status);
+        $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
+    }
+
+    public function test_an_active_unlinked_agreement_for_another_project_does_not_block_acceptance(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposalProject = $this->project($workspace, $company, 'Proposal project');
+        $otherProject = $this->project($workspace, $company, 'Other project');
+        $proposal = $this->sentProposal($workspace, $company, $owner, project: $proposalProject);
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $otherProject->id,
+            'source_proposal_id' => null,
+            'title' => 'Synthetic other-project agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+        ]);
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $created = ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole();
+        $this->assertSame($proposalProject->id, $created->client_project_id);
+    }
+
+    public function test_a_cross_workspace_source_link_collision_fails_closed_without_leaking_the_foreign_row(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Collision Workspace',
+            'slug' => 'synthetic-collision-workspace-'.uniqid(),
+        ]);
+        $neighbourCompany = ClientCompany::query()->create([
+            'workspace_id' => $neighbour->id,
+            'name' => 'Private Foreign Client',
+            'slug' => 'private-foreign-client-'.uniqid(),
+        ]);
+        $foreign = ClientAgreement::query()->create([
+            'workspace_id' => $neighbour->id,
+            'client_company_id' => $neighbourCompany->id,
+            'source_proposal_id' => $proposal->id,
+            'title' => 'Private Foreign Agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2025-01-01',
+        ]);
+
+        $response = $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertUnprocessable()->assertExactJson([
+            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        ]);
+
+        $this->assertStringNotContainsString($foreign->title, $response->getContent());
+        $this->assertSame('sent', $proposal->fresh()->status);
+        $this->assertNull($proposal->accepted_at);
+        $this->assertDatabaseCount('client_agreements', 1);
+        $this->assertDatabaseCount('client_company_activity', 0);
+    }
+
+    public function test_an_overlapping_same_project_agreement_cannot_be_activated(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $project = $this->project($workspace, $company, 'Shared project');
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'Synthetic live agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+        $draft = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'Synthetic overlapping draft',
+            'status' => 'draft',
+            'currency' => 'USD',
+            'starts_on' => '2026-09-01',
+        ]);
+
+        $this->actingAs($owner)->postJson(
+            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
+        )->assertUnprocessable()->assertExactJson([
+            'message' => 'This agreement cannot be activated automatically. Ask an operator to verify its overlapping terms.',
+        ]);
+
+        $this->assertSame('draft', $draft->fresh()->status);
+        $this->assertDatabaseCount('client_company_activity', 0);
+    }
+
+    public function test_non_overlapping_and_different_project_agreements_do_not_block_activation(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $project = $this->project($workspace, $company, 'Target project');
+        $otherProject = $this->project($workspace, $company, 'Independent project');
+
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'Synthetic preceding agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+            'ends_on' => '2026-08-31',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $otherProject->id,
+            'title' => 'Synthetic independent agreement',
+            'status' => 'active',
+            'currency' => 'USD',
+            'starts_on' => '2026-01-01',
+        ]);
+        $draft = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'client_project_id' => $project->id,
+            'title' => 'Synthetic successor agreement',
+            'status' => 'draft',
+            'currency' => 'USD',
+            'starts_on' => '2026-09-01',
+        ]);
+
+        $this->actingAs($owner)->postJson(
+            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
+        )->assertOk();
+
+        $this->assertSame('active', $draft->fresh()->status);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('subject_public_id', $draft->public_id)->count());
+    }
+
     public function test_an_active_agreement_linked_to_another_proposal_does_not_block_acceptance(): void
     {
         $owner = User::factory()->create();
@@ -472,10 +659,12 @@ class EngagementWorkflowTest extends TestCase
         ClientCompany $company,
         User $owner,
         string $title = 'Synthetic proposal',
+        ?ClientProject $project = null,
     ): ClientProposal {
         $proposal = ClientProposal::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
+            'client_project_id' => $project?->id,
             'created_by_user_id' => $owner->id,
             'title' => $title,
             'currency' => 'USD',
@@ -493,6 +682,16 @@ class EngagementWorkflowTest extends TestCase
         ]);
 
         return $proposal;
+    }
+
+    private function project(Workspace $workspace, ClientCompany $company, string $name): ClientProject
+    {
+        return ClientProject::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'name' => $name,
+            'status' => 'active',
+        ]);
     }
 
     private function clientFor(User $owner, ?User $clientUser = null): array
