@@ -1,0 +1,127 @@
+<?php
+
+namespace App\Models;
+
+use App\Contracts\WorkspaceOwned;
+use App\Models\Concerns\BelongsToWorkspace;
+use App\Models\Concerns\HasPublicId;
+use App\Queries\Expenses\WorkspaceExpenses;
+use App\Support\Expenses\ExpenseStatus;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+/**
+ * A reimbursable client expense: an amount, a date, a company, and optionally a
+ * project.
+ *
+ * Reads here are deliberately thin. The row is written through
+ * {@see WorkspaceExpenses}, which is the only place that
+ * resolves a company or a project for a workspace, so a caller cannot assemble
+ * an expense out of ids it did not check. Nothing on this model transitions the
+ * lifecycle - approval and the claim/release behaviour on draft-invoice
+ * regeneration wait for the centralized lock discipline in #117.
+ *
+ * ## Why `status` is not cast to its enum
+ *
+ * Laravel's backed-enum cast throws on a value the enum does not know, so a
+ * single unrecognised row would take down every list that touches it - and this
+ * column is exactly where a value from an older release or a hand-run statement
+ * shows up. {@see ExpenseStatus} therefore stays a vocabulary with fail-closed
+ * readers over the stored string, matching `client_time_entries` and
+ * `client_invoices`, both of which keep `status` a string for the same reason.
+ *
+ * @property int $id
+ * @property string $public_id
+ * @property int $workspace_id
+ * @property int $client_company_id
+ * @property int|null $client_project_id
+ * @property int|null $created_by_user_id
+ * @property CarbonImmutable $spent_on
+ * @property int $amount
+ * @property string $currency
+ * @property string $description
+ * @property string $status
+ * @property int|null $approved_by_user_id
+ * @property CarbonImmutable|null $approved_at
+ */
+#[Fillable([
+    'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id',
+    'spent_on', 'amount', 'currency', 'description',
+    'status', 'approved_by_user_id', 'approved_at',
+])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id'])]
+class ClientExpense extends Model implements WorkspaceOwned
+{
+    use BelongsToWorkspace, HasPublicId, SoftDeletes;
+
+    protected function casts(): array
+    {
+        return [
+            'spent_on' => 'immutable_date',
+            'amount' => 'integer',
+            'approved_at' => 'immutable_datetime',
+        ];
+    }
+
+    /** @return BelongsTo<Workspace, $this> */
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
+    }
+
+    /** @return BelongsTo<ClientCompany, $this> */
+    public function clientCompany(): BelongsTo
+    {
+        return $this->belongsTo(ClientCompany::class);
+    }
+
+    /** @return BelongsTo<ClientProject, $this> */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(ClientProject::class, 'client_project_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by_user_id');
+    }
+
+    /**
+     * Expenses a manager has passed.
+     *
+     * `invoiced` is included for the reason {@see ExpenseStatus::approved()}
+     * gives: billing rewrites the status, so reading the literal `approved`
+     * alone hides every expense already charged to the client.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeApproved(Builder $query): Builder
+    {
+        return $query->whereIn('status', ExpenseStatus::approved());
+    }
+
+    /** Has a manager passed this expense? Fail-closed on an unrecognised status. */
+    public function isApproved(): bool
+    {
+        return ExpenseStatus::isApprovedValue($this->getAttribute('status'));
+    }
+
+    /** Is this expense already on a client's bill? Fail-closed on an unrecognised status. */
+    public function hasBeenInvoiced(): bool
+    {
+        return ExpenseStatus::hasBeenInvoicedValue($this->getAttribute('status'));
+    }
+}
