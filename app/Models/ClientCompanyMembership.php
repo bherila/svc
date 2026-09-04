@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\ScopesPivotDeletesToWorkspace;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,6 +26,7 @@ class ClientCompanyMembership extends Pivot implements WorkspaceOwned
 {
     use BelongsToWorkspace;
     use HasPublicId;
+    use ScopesPivotDeletesToWorkspace;
 
     public $incrementing = true;
 

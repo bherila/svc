@@ -89,6 +89,15 @@ without the column at all - a partial `select()` - is refused outright rather
 than being written with `workspace_id is null`, which would match nothing while
 `save()` still returned true.
 
+A tenant-owned *pivot* needs one thing more. `detach()` on a relation declaring
+`using()` never loads the row: it synthesises a pivot from the two relationship
+keys, and `AsPivot::delete()` builds its own statement from those rather than
+going through the save-query hook. `ScopesPivotDeletesToWorkspace` adds the
+workspace to that statement, taking it from the pivot's own attributes or from
+the parent the relation was reached through, and refusing when neither has one -
+`$user->clientCompanies()` reaches a tenant-owned pivot from a parent that
+belongs to no workspace. The three membership pivots use it.
+
 A model may also declare its ownership fixed, by overriding
 `workspaceOwnershipIsImmutable()` to return true. A save that then changes
 `workspace_id` is refused before the predicate is chosen, because neither

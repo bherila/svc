@@ -10,7 +10,9 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - Every update and delete of a tenant-owned row names `workspace_id` in its own
   statement, not only in the read that found the row:
   `App\Models\Concerns\BelongsToWorkspace` overrides `setKeysForSaveQuery()`,
-  which Eloquent would otherwise key by primary key alone. A model may
+  which Eloquent would otherwise key by primary key alone. A tenant-owned pivot
+  adds `ScopesPivotDeletesToWorkspace`, because `detach()` through a custom
+  pivot class writes its own delete without that hook. A model may
   additionally declare `workspaceOwnershipIsImmutable()`, and the same override
   then refuses a save that changes `workspace_id`; expenses do, the Stripe event
   ledger deliberately does not.

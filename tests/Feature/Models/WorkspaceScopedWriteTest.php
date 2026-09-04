@@ -5,6 +5,7 @@ namespace Tests\Feature\Models;
 use App\Exceptions\UnscopableWorkspaceWrite;
 use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
+use App\Models\ClientProjectMembership;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\WorkspaceInvoiceCounter;
 use Closure;
@@ -196,6 +197,43 @@ final class WorkspaceScopedWriteTest extends TestCase
     }
 
     /**
+     * The relationship deletion path, which the save-query hook never sees.
+     *
+     * `detach()` on a relation declaring `using()` synthesises a pivot from the
+     * two relationship keys, and `AsPivot::delete()` writes its own statement
+     * from those rather than going through `setKeysForSaveQuery()`. Both halves
+     * are asserted: the statement names the workspace, and the row is actually
+     * gone - a predicate carrying the wrong workspace would leave a detach that
+     * deletes nothing and reports success. From review on #230.
+     */
+    public function test_detaching_through_a_custom_pivot_names_the_workspace(): void
+    {
+        $workspace = $this->syntheticWorkspace('detach');
+        $project = $this->syntheticProject($this->syntheticCompany($workspace, 'detach'), 'detach');
+        $member = $this->syntheticUser('detached member');
+
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $statements = $this->capture(static function () use ($project, $member): void {
+            $project->members()->detach($member->id);
+        });
+
+        $deletes = array_values(array_filter(
+            $statements,
+            static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'delete'),
+        ));
+
+        $this->assertCount(1, $deletes, 'One detach, one delete statement.');
+        $this->assertStringContainsString('workspace_id', $deletes[0], $deletes[0]);
+        $this->assertSame(0, ClientProjectMembership::query()->where('user_id', $member->id)->count());
+    }
+
+    /**
      * A table keyed by the workspace is already scoped by the key predicate,
      * and the trait leaves it alone rather than saying the same thing twice.
      */
@@ -235,7 +273,9 @@ final class WorkspaceScopedWriteTest extends TestCase
         $statements = [];
 
         DB::listen(static function (QueryExecuted $query) use (&$statements): void {
-            if (str_contains($query->sql, 'client_expenses') || str_contains($query->sql, 'workspace_invoice_counters')) {
+            if (str_contains($query->sql, 'client_expenses')
+                || str_contains($query->sql, 'workspace_invoice_counters')
+                || str_contains($query->sql, 'client_project_memberships')) {
                 $statements[] = $query->sql;
             }
         });

@@ -5,8 +5,12 @@ namespace Tests\Unit\Models;
 use App\Exceptions\UnscopableWorkspaceWrite;
 use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
+use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTimeEntry;
+use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
+use App\Models\WorkspaceMembership;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -124,6 +128,91 @@ final class WorkspaceScopedWriteQueryTest extends TestCase
 
         $this->assertStringContainsString('workspace_id', $query->toSql());
         $this->assertSame([7], $query->getBindings(), 'A null is compiled as `is null`, so it binds nothing.');
+    }
+
+    /**
+     * A `detach()` through a custom pivot never loads the row: it synthesises a
+     * pivot holding the two relationship keys, which `AsPivot::delete()` turns
+     * into a statement of its own without passing the save-query hook. The
+     * workspace has to be added there separately, and it comes from the parent
+     * the relation was reached through. From review on #230.
+     */
+    public function test_a_synthesised_pivot_delete_names_the_workspace(): void
+    {
+        $query = $this->pivotDeleteQuery(4242);
+
+        $this->assertStringContainsString('workspace_id', $query->toSql(), $query->toSql());
+        $this->assertSame([9, 5, 4242], $query->getBindings());
+    }
+
+    /**
+     * `WorkspaceMembership` carries `workspace_id` as one of its two
+     * relationship keys, so the synthesised pivot already has it and no parent
+     * lookup is needed. Asserted rather than assumed: it is the reason there is
+     * no special case for the workspace being its own pivot parent.
+     */
+    public function test_a_membership_pivot_scopes_by_the_key_it_already_carries(): void
+    {
+        $workspace = new Workspace;
+        $workspace->setRawAttributes(['id' => 4242], sync: true);
+        $workspace->exists = true;
+
+        $pivot = WorkspaceMembership::fromRawAttributes(
+            $workspace,
+            ['workspace_id' => 4242, 'user_id' => 5],
+            'workspace_memberships',
+            exists: true,
+        );
+        $pivot->setPivotKeys('workspace_id', 'user_id');
+
+        $build = function (): Builder {
+            return $this->getDeleteQuery();
+        };
+
+        $this->assertSame([4242, 5, 4242], Closure::bind($build, $pivot, $pivot::class)()->getBindings());
+    }
+
+    /**
+     * And a parent that owns no workspace - `users` is not tenant-owned, so
+     * `$user->clientCompanies()` is one - is refused rather than falling back to
+     * the unscoped statement the override exists to replace.
+     */
+    public function test_a_synthesised_pivot_with_no_workspace_anywhere_is_refused(): void
+    {
+        $this->expectException(UnscopableWorkspaceWrite::class);
+        $this->expectExceptionMessage(ClientProjectMembership::class);
+
+        $this->pivotDeleteQuery(null)->toSql();
+    }
+
+    /**
+     * The pivot `detach()` builds: the two relationship keys and no primary
+     * key, with the parent carrying the workspace (or not, when null).
+     *
+     * @return Builder<Model>
+     */
+    private function pivotDeleteQuery(?int $parentWorkspaceId): Builder
+    {
+        $parent = new ClientProject;
+        $parent->setRawAttributes(
+            $parentWorkspaceId === null ? ['id' => 9] : ['id' => 9, 'workspace_id' => $parentWorkspaceId],
+            sync: true,
+        );
+        $parent->exists = true;
+
+        $pivot = ClientProjectMembership::fromRawAttributes(
+            $parent,
+            ['client_project_id' => 9, 'user_id' => 5],
+            'client_project_memberships',
+            exists: true,
+        );
+        $pivot->setPivotKeys('client_project_id', 'user_id');
+
+        $build = function (): Builder {
+            return $this->getDeleteQuery();
+        };
+
+        return Closure::bind($build, $pivot, $pivot::class)();
     }
 
     /**
