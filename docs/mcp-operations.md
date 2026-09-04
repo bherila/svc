@@ -86,6 +86,13 @@ delete OAuth rows merely to recover the endpoint.
    smoke credential issuer establishes the resource before Passport signs the
    JWT; never patch `resource_uri` after token issuance.
 
+Passport may purge an expired access-token row while its longer-lived refresh
+credential remains valid. Because Passport's refresh table does not retain the
+client identifier independently, dynamic-client pruning conservatively defers
+all deletions while any such active, unattributed refresh credential exists.
+This favors connection continuity over cleanup; pruning resumes after the
+credential expires or is revoked.
+
 ## Security release checks
 
 Before publishing an MCP head, run `composer audit --no-interaction` and

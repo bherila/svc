@@ -40,13 +40,22 @@ return new class extends Migration
      */
     public function down(): void {}
 
+    /**
+     * Use the same connection as Passport's models and original migrations.
+     */
+    public function getConnection(): ?string
+    {
+        return $this->connection ?? config('passport.connection');
+    }
+
     /** @param Closure(Blueprint): void $definition */
     private function addColumn(string $tableName, string $column, Closure $definition): void
     {
-        if (! Schema::hasTable($tableName) || Schema::hasColumn($tableName, $column)) {
+        $schema = Schema::connection($this->getConnection());
+        if (! $schema->hasTable($tableName) || $schema->hasColumn($tableName, $column)) {
             return;
         }
 
-        Schema::table($tableName, $definition);
+        $schema->table($tableName, $definition);
     }
 };

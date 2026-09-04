@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Passport;
 
 final class AgentConnectionController extends Controller
@@ -15,7 +14,7 @@ final class AgentConnectionController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof AgentPrincipal, 401);
-        DB::transaction(function () use ($user, $token): void {
+        Passport::token()->getConnection()->transaction(function () use ($user, $token): void {
             $accessToken = $user->tokens()
                 ->where('revoked', false)
                 ->lockForUpdate()
