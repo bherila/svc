@@ -288,7 +288,7 @@ null-semantics audit rather than by review of a change.
 | Time-entry write paths disagree | `store()` routes through a collaborator that performs no authorization of its own, while update, destroy and approve all go through the service that owns the policy. Resolved in favour of project-level parity; not yet implemented. | #101 |
 | Load-bearing NULLs on billing columns | The registry pins each nullable billing column to the behaviour its null selects. 28 of 66 columns are cited against tests; 38 remain audited-but-uncited, having no null branch to cite. | #115 |
 | Lock-order registry | Pessimistic lock acquisition order is neither documented nor asserted. Unblocked now that the composite tenant keys have landed. | #117 |
-| Mutation gate is not yet honest | The diff-scoped gate scopes to three billing directories, so a diff touching only UI or controllers reports green without having run. Its cost is also unbudgeted: the mutation phase ran forty minutes against a four-minute suite. | #132, #133 |
+| Replay correction mutants | The diff gate now covers changed PHP throughout `app/`, reports no-op results explicitly, and gates covered-code MSI. The known replay DTO survivors remain the next focused test-quality slice. | #132 |
 | The rest of the operator and portal surface | Agreement detail, project detail, invoice detail, the all-invoices view, inviting people, and the portal's four manage pages. Client list and detail are in flight. Unlike everything else in this table, most of this is not yet tracked as issues. | #14 |
 
 ### What the replay says now
