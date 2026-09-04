@@ -121,7 +121,10 @@ final class InvoiceLifecycleService
                 }
             }
 
-            $locked->lines()->delete();
+            // Named on the statement, not only on the invoice it hangs off.
+            // A relation delete is a builder write: it never reaches
+            // `setKeysForSaveQuery()`, so the workspace has to be said here.
+            $locked->lines()->where('workspace_id', $workspace->id)->delete();
             $locked->forceFill($updates)->save();
             $this->createLines($locked, $workspace, $lines, $subtotalOverrides);
             $this->activities->record(

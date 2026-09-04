@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
 use App\Support\AgentApi\AgentApiScopes;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
@@ -170,6 +172,50 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
     }
 
     /** @return array{User, Workspace, ClientCompany, ClientProject} */
+    /**
+     * Rewriting a draft's lines deletes the old ones through the relation, and
+     * a relation delete is a builder write: it never reaches
+     * `setKeysForSaveQuery()`, so the workspace has to be named on the
+     * statement itself. From review on #230.
+     */
+    public function test_rewriting_a_draft_deletes_its_lines_with_the_workspace_named(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $time = $this->approvedTime($owner, $workspace, $company, $project, 'Original allocation');
+        $replacement = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');
+        $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE]);
+        $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'draft-scoped-delete');
+
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            if (str_starts_with(ltrim(strtolower($query->sql)), 'delete')
+                && str_contains($query->sql, 'client_invoice_lines')) {
+                $statements[] = $query->sql;
+            }
+        });
+
+        $this->withHeader('Idempotency-Key', 'draft-scoped-delete-update')->patchJson(
+            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
+            [
+                'expected_version' => $draft['version'],
+                'time_entry_ids' => [$replacement->public_id],
+                'manual_lines' => [],
+            ],
+        )->assertOk();
+
+        $this->assertNotEmpty($statements, 'No line delete was captured, so this asserted nothing.');
+
+        foreach ($statements as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql, $sql);
+        }
+
+        // And the rewrite still happened: a predicate naming the wrong
+        // workspace would delete nothing and leave both sets of lines behind.
+        $this->assertSame(0, $time->invoiceLines()->count());
+        $this->assertSame(1, $replacement->invoiceLines()->count());
+    }
+
     private function tenant(): array
     {
         $owner = User::factory()->create();

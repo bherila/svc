@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Exceptions\UnscopableWorkspaceWrite;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * The one write path `BelongsToWorkspace` cannot reach, for a tenant-owned pivot.
@@ -52,16 +53,20 @@ trait ScopesPivotDeletesToWorkspace
             return $attributes['workspace_id'];
         }
 
-        // Read straight off the parent rather than through an `instanceof`.
-        // `AsPivot` types `$pivotParent` as a model and the analyser refuses a
-        // check that can never be false; the only pivot without one is a
-        // hand-built instance, which does not reach here - `delete()` takes
-        // this path only for a pivot synthesised by a relation, and a relation
-        // always sets its parent.
-        $parent = $this->pivotParent->getAttributes();
+        // `AsPivot` types `$pivotParent` as a model, so the analyser calls an
+        // `instanceof` against it always-true - but it is only ever set by a
+        // relation. A pivot loaded straight from a query has none, and reading
+        // through it there is a PHP error rather than the refusal below. The
+        // annotation says what the runtime actually offers; the check is real.
+        //
+        // From review on #230, which is also where the first version of this
+        // comment claimed such a pivot could not reach here. It can: a partial
+        // select naming neither the key nor the workspace lands exactly here.
+        /** @var mixed $parent */
+        $parent = $this->pivotParent;
 
-        if (array_key_exists('workspace_id', $parent)) {
-            return $parent['workspace_id'];
+        if ($parent instanceof Model && array_key_exists('workspace_id', $parent->getAttributes())) {
+            return $parent->getAttributes()['workspace_id'];
         }
 
         throw new UnscopableWorkspaceWrite(sprintf(

@@ -98,6 +98,11 @@ the parent the relation was reached through, and refusing when neither has one -
 `$user->clientCompanies()` reaches a tenant-owned pivot from a parent that
 belongs to no workspace. The three membership pivots use it.
 
+Neither hook covers a *builder* write - `$invoice->lines()->delete()`, or any
+`Model::query()->...->update()`. Those never touch a model instance, so the
+workspace has to be named in the call. There is one relation write of that shape
+in the application, in `InvoiceLifecycleService::updateDraft()`, and it names it.
+
 A model may also declare its ownership fixed, by overriding
 `workspaceOwnershipIsImmutable()` to return true. A save that then changes
 `workspace_id` is refused before the predicate is chosen, because neither

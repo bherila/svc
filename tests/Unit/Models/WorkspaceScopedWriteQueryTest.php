@@ -173,6 +173,28 @@ final class WorkspaceScopedWriteQueryTest extends TestCase
     }
 
     /**
+     * A pivot loaded straight from a query has no relation parent at all, so
+     * the parent lookup must be a check rather than a dereference. From review
+     * on #230: the first version read through it and would have raised a PHP
+     * error here instead of the refusal.
+     */
+    public function test_a_pivot_loaded_without_a_relation_parent_is_refused(): void
+    {
+        $pivot = new ClientProjectMembership;
+        $pivot->setRawAttributes(['client_project_id' => 9, 'user_id' => 5], sync: true);
+        $pivot->exists = true;
+        $pivot->setPivotKeys('client_project_id', 'user_id');
+
+        $build = function (): Builder {
+            return $this->getDeleteQuery();
+        };
+
+        $this->expectException(UnscopableWorkspaceWrite::class);
+
+        Closure::bind($build, $pivot, $pivot::class)();
+    }
+
+    /**
      * And a parent that owns no workspace - `users` is not tenant-owned, so
      * `$user->clientCompanies()` is one - is refused rather than falling back to
      * the unscoped statement the override exists to replace.
