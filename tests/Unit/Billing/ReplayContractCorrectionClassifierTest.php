@@ -704,8 +704,23 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
         $validLine = $this->line('retainer', 150000, 150000, '1.0000', 600, 'retainer-fee');
         $validLine['line_date'] = '2026-01-01';
         $invalidContracts = [
+            'agreement' => static function (array $line): array {
+                $line['agreement_id'] = '8';
+
+                return $line;
+            },
             'unit amount' => static function (array $line): array {
                 $line['unit_amount']--;
+
+                return $line;
+            },
+            'tax amount' => static function (array $line): array {
+                $line['tax_amount'] = 1;
+
+                return $line;
+            },
+            'total amount' => static function (array $line): array {
+                $line['total_amount']--;
 
                 return $line;
             },
@@ -726,6 +741,26 @@ final class ReplayContractCorrectionClassifierTest extends TestCase
             },
             'source allocation' => static function (array $line): array {
                 $line['source_minutes'] = 1;
+
+                return $line;
+            },
+            'agreement-rate source allocation' => static function (array $line): array {
+                $line['source_agreement_rate_minutes'] = 1;
+
+                return $line;
+            },
+            'recurring item ownership' => static function (array $line): array {
+                $line['recurring_item_id'] = '9';
+
+                return $line;
+            },
+            'project ownership' => static function (array $line): array {
+                $line['project_id'] = '10';
+
+                return $line;
+            },
+            'task claim' => static function (array $line): array {
+                $line['claimed_by'] = 'synthetic-claim';
 
                 return $line;
             },
