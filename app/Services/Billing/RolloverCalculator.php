@@ -187,15 +187,11 @@ class RolloverCalculator
     /**
      * Calculate hour balances for multiple months in sequence.
      *
-     * @param  array<int, array<string, mixed>>  $months  Array of month descriptors. Each entry supports:
-     *                                                    - `year_month` (string): 'YYYY-MM' identifier
-     *                                                    - `retainer_hours` (float): hours included in this month's retainer
-     *                                                    - `hours_worked` (float): hours worked during this month
-     *                                                    - `reset_rollover` (bool, optional): when true, clears the accumulated
-     *                                                    rollover history before processing this month. Use this at the first
-     *                                                    post-termination month so unused pre-termination hours are forfeited
-     *                                                    rather than carried forward. The negative balance (unbilled overage)
-     *                                                    is intentionally preserved across a reset.
+     * `billed_overage_hours` settles debt in that month. `reset_rollover`
+     * clears accumulated unused hours at the first post-termination month but
+     * deliberately preserves unbilled negative hours.
+     *
+     * @param  array<int, array{year_month?: string, retainer_hours?: float, hours_worked?: float, billed_overage_hours?: float, reset_rollover?: bool}>  $months
      * @param  int  $rolloverMonths  Number of months hours can roll over
      * @param  bool  $billExcessImmediately  Whether to bill excess hours immediately or carry them forward as negative balance.
      *                                       MonthSummary::closing->excessHours is populated only when this is true.
@@ -253,8 +249,47 @@ class RolloverCalculator
                 $yearMonth
             );
 
+            // Settle a charge where it happened. A surplus is the deliberate
+            // minimum-availability buffer and belongs to this month's capacity
+            // lot, so the normal rollover window expires it instead of letting
+            // the same old charge create fresh capacity forever.
+            $billedOverage = $month['billed_overage_hours'] ?? 0.0;
+            $settledDebt = min($summary->closing->negativeBalance, max(0.0, $billedOverage));
+            $restoredCapacity = max(0.0, $billedOverage - $settledDebt);
+
+            // A negative correcting invoice unwinds capacity from its service
+            // month. Take back unused hours first; if they were not there to
+            // reverse, the remainder is debt again.
+            $reversedCharge = max(0.0, -$billedOverage);
+            $reversedCurrentCapacity = min($summary->closing->unusedHours, $reversedCharge);
+            $correctionAfterCurrentCapacity = $reversedCharge - $reversedCurrentCapacity;
+            $reversedRollover = min($summary->closing->remainingRollover, $correctionAfterCurrentCapacity);
+            $restoredDebt = $correctionAfterCurrentCapacity - $reversedRollover;
+            $summary = new MonthSummary(
+                opening: $summary->opening,
+                closing: new ClosingBalance(
+                    hoursUsedFromRetainer: $summary->closing->hoursUsedFromRetainer,
+                    hoursUsedFromRollover: $summary->closing->hoursUsedFromRollover,
+                    unusedHours: $this->ledgerHours(
+                        $summary->closing->unusedHours + $restoredCapacity - $reversedCurrentCapacity,
+                    ),
+                    excessHours: $summary->closing->excessHours,
+                    negativeBalance: $this->ledgerHours(
+                        $summary->closing->negativeBalance - $settledDebt + $restoredDebt,
+                    ),
+                    remainingRollover: $this->ledgerHours(
+                        $summary->closing->remainingRollover - $reversedRollover,
+                    ),
+                ),
+                hoursWorked: $summary->hoursWorked,
+                yearMonth: $summary->yearMonth,
+                retainerHours: $summary->retainerHours,
+                billExcessImmediately: $summary->billExcessImmediately,
+                cycleStart: $summary->cycleStart,
+            );
+
             // Deduct used rollover hours from the history stack (FIFO)
-            $usedRollover = $summary->closing->hoursUsedFromRollover;
+            $usedRollover = $summary->closing->hoursUsedFromRollover + $reversedRollover;
             if ($usedRollover > 0) {
                 // Re-implementation of deduction logic using monthKeys
                 foreach ($monthKeys as $key) {
@@ -299,6 +334,13 @@ class RolloverCalculator
         }
 
         return $results;
+    }
+
+    /** Decimal billing inputs already carry at most four places. */
+    private function ledgerHours(float $hours): float
+    {
+        // @infection-ignore-all A fifth place cannot exist after decimal:4 storage and the preceding ledger rounds; changing 4 to 5 is equivalent, while callers test their arithmetic directly.
+        return round($hours, 4);
     }
 
     /**

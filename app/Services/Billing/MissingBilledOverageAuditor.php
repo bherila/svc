@@ -13,12 +13,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Count charged invoices whose billed-overage figure is null (#144).
  *
- * Three sums total the overage an agreement has already been charged, so the
- * next period does not charge it again:
- * `ClientInvoicingService::totalBilledOveragesThrough()` and the interim
- * generator's two. All three are `SUM(hours_billed_at_rate)`, and SQL
- * aggregation contributes nothing for a null - so a charged invoice with a null
- * there reads as *zero already billed*, and its hours are sold a second time.
+ * The shared billed-overage ledger and the interim generator read what an
+ * agreement has already charged so the next period does not charge it again.
+ * SQL aggregation contributes nothing for a null, so every reader first asks
+ * the invoice for a known figure and refuses rather than silently treating an
+ * unknown charge as zero.
  *
  * This is the same defect class as #135 by a different route. There, a `<=`
  * answered false for a null and the whole row fell out of the window. Here the

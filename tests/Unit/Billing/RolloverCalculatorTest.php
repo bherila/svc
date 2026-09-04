@@ -297,6 +297,101 @@ class RolloverCalculatorTest extends TestCase
         $this->assertEquals(2.0, $results[1]->closing->unusedHours);
     }
 
+    public function test_billed_overage_settles_in_its_month_and_its_surplus_expires(): void
+    {
+        $results = $this->calculator->calculateMultipleMonths([
+            [
+                'year_month' => '2026-01',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 10.0,
+                'billed_overage_hours' => 7.0,
+            ],
+            [
+                'year_month' => '2026-02',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 2.5833,
+                'billed_overage_hours' => 1.5833,
+            ],
+            ['year_month' => '2026-03', 'retainer_hours' => 2.0, 'hours_worked' => 1.0],
+            ['year_month' => '2026-04', 'retainer_hours' => 2.0, 'hours_worked' => 1.75],
+            ['year_month' => '2026-05', 'retainer_hours' => 2.0, 'hours_worked' => 2.75],
+            ['year_month' => '2026-06', 'retainer_hours' => 2.0, 'hours_worked' => 0.0],
+            ['year_month' => '2026-07', 'retainer_hours' => 2.0, 'hours_worked' => 0.0],
+            ['year_month' => '2026-08', 'retainer_hours' => 2.0, 'hours_worked' => 0.0],
+            ['year_month' => '2026-09', 'retainer_hours' => 2.0, 'hours_worked' => 0.0],
+        ], rolloverMonths: 1);
+
+        $this->assertSame(1.0, $results[0]->closing->negativeBalance, 'January charge settles seven of eight debt hours');
+        $this->assertSame(0.0, $results[1]->closing->negativeBalance, 'February charge settles the remaining overage where it occurs');
+        $this->assertSame(4.0, $results[8]->opening->totalAvailable, 'Only August capacity survives into September');
+        $this->assertSame(2.0, $results[8]->opening->rolloverHours);
+    }
+
+    public function test_billed_overage_separates_fractional_debt_settlement_from_surplus(): void
+    {
+        $surplus = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 3.1234,
+            'billed_overage_hours' => 1.5678,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.4444, $surplus[0]->closing->unusedHours);
+        $this->assertSame(0.0, $surplus[0]->closing->negativeBalance);
+
+        $partial = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 4.2345,
+            'billed_overage_hours' => 1.1111,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.0, $partial[0]->closing->unusedHours);
+        $this->assertSame(1.1234, $partial[0]->closing->negativeBalance);
+    }
+
+    public function test_negative_billed_overage_reverses_capacity_before_restoring_debt(): void
+    {
+        $capacity = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 0.5,
+            'billed_overage_hours' => -1.25,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.25, $capacity[0]->closing->unusedHours);
+        $this->assertSame(0.0, $capacity[0]->closing->negativeBalance);
+
+        $debt = $this->calculator->calculateMultipleMonths([[
+            'year_month' => '2026-01',
+            'retainer_hours' => 2.0,
+            'hours_worked' => 1.5,
+            'billed_overage_hours' => -1.25,
+        ]], rolloverMonths: 1);
+
+        $this->assertSame(0.0, $debt[0]->closing->unusedHours);
+        $this->assertSame(0.75, $debt[0]->closing->negativeBalance);
+    }
+
+    public function test_negative_billed_overage_consumes_carried_capacity_before_restoring_debt(): void
+    {
+        $results = $this->calculator->calculateMultipleMonths([
+            ['year_month' => '2026-01', 'retainer_hours' => 5.0, 'hours_worked' => 0.0],
+            [
+                'year_month' => '2026-02',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 0.0,
+                'billed_overage_hours' => -6.0,
+            ],
+            ['year_month' => '2026-03', 'retainer_hours' => 0.0, 'hours_worked' => 0.0],
+        ], rolloverMonths: 3);
+
+        $this->assertSame(0.0, $results[1]->closing->unusedHours, 'Current-month capacity is reversed first');
+        $this->assertSame(1.0, $results[1]->closing->remainingRollover, 'Only the uncorrected rollover remains');
+        $this->assertSame(0.0, $results[1]->closing->negativeBalance, 'Available capacity covers the whole correction');
+        $this->assertSame(1.0, $results[2]->opening->rolloverHours, 'Consumed rollover cannot reappear next month');
+    }
+
     public function test_multiple_months_case_a_uses_rollover(): void
     {
         // Case A: Exceeds retainer, uses available rollover

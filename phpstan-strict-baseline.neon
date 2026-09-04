@@ -260,36 +260,6 @@ parameters:
 			path: app/Services/Billing/RecurringItemBiller.php
 
 		-
-			message: '#^Parameter \#1 \$retainerHours of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects float, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Services/Billing/RolloverCalculator.php
-
-		-
-			message: '#^Parameter \#2 \$hoursWorked of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects float, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Services/Billing/RolloverCalculator.php
-
-		-
-			message: '#^Parameter \#2 \$to of method App\\Services\\Billing\\RolloverCalculator\:\:monthsBetween\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 3
-			path: app/Services/Billing/RolloverCalculator.php
-
-		-
-			message: '#^Parameter \#7 \$yearMonth of method App\\Services\\Billing\\RolloverCalculator\:\:calculateMonthSummary\(\) expects string, mixed given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Services/Billing/RolloverCalculator.php
-
-		-
-			message: '#^Possibly invalid array key type mixed\.$#'
-			identifier: offsetAccess.invalidOffset
-			count: 1
-			path: app/Services/Billing/RolloverCalculator.php
-
-		-
 			message: '#^Cannot access property \$public_id on App\\Models\\Workspace\|null\.$#'
 			identifier: property.nonObject
 			count: 1
