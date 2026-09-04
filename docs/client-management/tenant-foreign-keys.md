@@ -102,6 +102,7 @@ the child with it.
 | `client_agreements` | `client_project_id` | `client_projects` |
 | `client_agreements` | `source_proposal_id` | `client_proposals` |
 | `client_invoice_lines` | `client_project_id` | `client_projects` |
+| `client_expenses` | `client_project_id` | `client_projects` |
 | `client_tasks` | `client_invoice_line_id` | `client_invoice_lines` |
 | `client_time_entries` | `client_task_id` | `client_tasks` |
 | `client_time_entries` | `split_from_time_entry_id` | `client_time_entries` |
