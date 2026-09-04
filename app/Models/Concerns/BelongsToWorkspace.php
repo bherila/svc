@@ -105,21 +105,17 @@ trait BelongsToWorkspace
      */
     private function storedWorkspaceKey(): mixed
     {
-        $original = $this->getRawOriginal();
+        // Union rather than a pair of lookups: for a duplicate key the
+        // left-hand array wins, which is the precedence this needs.
+        $attributes = $this->getRawOriginal() + $this->getAttributes();
 
-        if (array_key_exists('workspace_id', $original)) {
-            return $original['workspace_id'];
+        if (! array_key_exists('workspace_id', $attributes)) {
+            throw new UnscopableWorkspaceWrite(sprintf(
+                'A write to %s was refused because the model carries no workspace_id, so the statement could not be scoped to a workspace. Load the column before saving or deleting the row.',
+                static::class,
+            ));
         }
 
-        $attributes = $this->getAttributes();
-
-        if (array_key_exists('workspace_id', $attributes)) {
-            return $attributes['workspace_id'];
-        }
-
-        throw new UnscopableWorkspaceWrite(sprintf(
-            'A write to %s was refused because the model carries no workspace_id, so the statement could not be scoped to a workspace. Load the column before saving or deleting the row.',
-            static::class,
-        ));
+        return $attributes['workspace_id'];
     }
 }
