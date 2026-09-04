@@ -41,6 +41,7 @@ final class MutationGateConfigurationTest extends TestCase
 
         $this->assertIsString($workflow);
         $this->assertStringContainsString("':(glob)app/**/*.php'", $workflow);
+        $this->assertStringContainsString('ref: ${{ github.event.pull_request.head.sha }}', $workflow);
         $this->assertStringContainsString('merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")', $workflow);
         $this->assertStringContainsString('git -c diff.renames=false diff', $workflow);
         $this->assertStringContainsString('MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}', $workflow);
