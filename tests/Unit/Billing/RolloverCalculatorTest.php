@@ -357,6 +357,17 @@ class RolloverCalculatorTest extends TestCase
         $this->assertSame(3.0, $results[0]->billedOverageHours);
         $this->assertSame(0.0, $results[1]->billedOverageHours, 'A month with no charge reports none rather than the previous one');
         $this->assertSame(-1.25, $results[2]->billedOverageHours, 'A correction keeps its sign');
+
+        // The single-month API takes no charge at all, and none is a claim
+        // about the month rather than a placeholder: a reader adding this to
+        // the retainer hours to get what the client paid for is entitled to a
+        // zero when nothing was charged.
+        $this->assertSame(0.0, $this->calculator->calculateMonthSummary(
+            retainerHours: 2.0,
+            hoursWorked: 5.0,
+            previousMonthsUnused: [],
+            rolloverMonths: 1,
+        )->billedOverageHours);
     }
 
     public function test_billed_overage_separates_fractional_debt_settlement_from_surplus(): void
