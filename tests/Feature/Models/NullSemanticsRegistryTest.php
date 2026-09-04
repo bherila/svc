@@ -11,7 +11,6 @@ use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLineComposer;
-use App\Services\Engagement\ProposalWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -176,7 +175,6 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
-        'client_agreements.source_proposal_id => reader_in:App\Services\Engagement\ProposalWorkflow::accept',
         'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
@@ -538,11 +536,8 @@ final class NullSemanticsRegistryTest extends TestCase
             // exists on the same tenant and company, it refuses before recording
             // acceptance or creating another contract (#148).
             'source_proposal_id' => [
-                [
-                    'covered_by' => EngagementWorkflowTest::class,
-                    'method' => 'test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
-                ],
-                ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
+                'covered_by' => EngagementWorkflowTest::class,
+                'method' => 'test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
             ],
             // `starts_on` is gone from this registry, not demoted in it. It had
             // three entries here and seven readings in the code - the resolver
