@@ -110,7 +110,7 @@ final class AuditUnlinkedProposalAgreementsCommandTest extends TestCase
         $this->exposedProposal();
 
         $this->artisan('svc:engagement:audit-unlinked-proposal-agreements')
-            ->expectsOutputToContain('writes a second agreement')
+            ->expectsOutputToContain('refuses these proposals')
             ->assertExitCode(0);
     }
 
@@ -174,7 +174,7 @@ final class AuditUnlinkedProposalAgreementsCommandTest extends TestCase
 
     /**
      * One sent proposal on a company holding an active agreement that names no
-     * proposal: the exact state in which accepting creates a second contract.
+     * proposal: the exact state in which acceptance now refuses to guess.
      */
     private function exposedProposal(): void
     {

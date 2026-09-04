@@ -4,23 +4,21 @@ namespace App\Services\Engagement;
 
 use App\Models\ClientProposal;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
 use App\Support\Engagement\UnlinkedProposalAgreementCounts;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Count the proposals whose agreement cannot be found through the link that
- * decides whether accepting them creates a second one.
+ * decides whether acceptance proceeds or asks an operator to intervene.
  *
- * `ProposalWorkflow::accept()` asks `$locked->agreements()->first()` whether a
- * proposal has already produced an agreement. That relationship is
- * `hasMany(ClientAgreement::class, 'source_proposal_id')`, and the column is
- * nullable, so an agreement whose `source_proposal_id` is null is invisible to
- * the question regardless of how it was actually created. Accepting such a
- * proposal writes a second agreement and a second set of recurring items, and
- * the client is billed twice for one engagement.
+ * `ProposalWorkflow::accept()` asks the shared acceptance query whether a
+ * proposal has already produced an agreement. The linking column is nullable,
+ * so an agreement whose `source_proposal_id` is null is invisible to that
+ * question regardless of how it was actually created. Acceptance now refuses
+ * the active same-company state rather than creating a second agreement.
  *
  * This is the null-semantics class of #141 on a foreign key rather than a date.
  * The others drop a row out of a window; this one makes a duplicate guard fail
@@ -30,15 +28,15 @@ use Illuminate\Support\Facades\DB;
  * ## Why the column stays nullable, and why that is correct
  *
  * Not every agreement comes from a proposal. An operator can write one
- * directly, and the external importer maps the column through `internalId(...)`,
- * which yields null when the source proposal does not resolve. So a null means
- * two different things - "this agreement had no proposal" and "this agreement's
- * proposal is no longer known" - and nothing in the schema separates them.
+ * directly, and retained historical agreements may not have a source proposal.
+ * So a null means two different things - "this agreement had no proposal" and
+ * "this agreement's proposal is no longer known" - and nothing in the schema
+ * separates them.
  * Making the column non-nullable would be wrong for the first meaning and would
  * not recover the second.
  *
- * That ambiguity is exactly why this audit exists before any fix. The repair is
- * to restore known links, and #148 is explicit that acceptance must not guess:
+ * That ambiguity is exactly why this audit remains useful after the guard. The
+ * repair is to restore known links, and #148 is explicit that acceptance must not guess:
  * matching an existing agreement by company, title or date inside a write path
  * trades a duplicate for a mis-attribution, which is worse and far harder to
  * detect afterwards. Sizing the population is what decides whether the defect is
@@ -59,6 +57,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class UnlinkedProposalAgreementAuditor
 {
+    public function __construct(private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements) {}
+
     /**
      * Count the affected proposals, optionally within one workspace.
      *
@@ -68,23 +68,17 @@ final class UnlinkedProposalAgreementAuditor
      */
     public function count(?Workspace $workspace = null): UnlinkedProposalAgreementCounts
     {
-        // A proposal is only at risk if the lookup accept() performs comes back
-        // empty. Ask it exactly as the relationship does - by the foreign key,
-        // in the proposal's own workspace - rather than by any other notion of
-        // relatedness, because the guard's blind spot is the thing being sized
-        // and a more generous join would hide it.
-        $unlinked = fn (Builder $proposals): Builder => $proposals->whereNotExists(
-            fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
-                ->from('client_agreements')
-                ->whereColumn('client_agreements.source_proposal_id', 'client_proposals.id')
-                ->whereColumn('client_agreements.workspace_id', 'client_proposals.workspace_id'),
-        );
+        // A proposal needs intervention if the linked-agreement lookup comes
+        // back empty. Use the same tenant-scoped predicate as acceptance so the
+        // operator's count and the write guard cannot drift apart.
+        $unlinked = fn (Builder $proposals): Builder => $this->acceptanceAgreements
+            ->withoutLinkedAgreement($proposals);
 
         // The status guard is the whole difference between live and latent, so
         // the two populations are counted separately rather than summed.
         //
-        // `sent` is the dangerous one: accept() runs the create path for it.
+        // `sent` is the actionable one: accept() refuses its active-unlinked
+        // subset until an operator resolves the agreement state.
         // `accepted` takes the early return today and creates nothing, so it is
         // inert - but it is the same broken link, and it is worth sizing
         // because it is the population that would become dangerous if that
@@ -102,14 +96,7 @@ final class UnlinkedProposalAgreementAuditor
         // proposal. One that names a different proposal is accounted for and
         // cannot be this proposal's lost link, so counting it would inflate the
         // population with companies whose proposals are all properly linked.
-        $withACandidate = (clone $sent)->whereExists(
-            fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
-                ->from('client_agreements')
-                ->whereColumn('client_agreements.client_company_id', 'client_proposals.client_company_id')
-                ->whereColumn('client_agreements.workspace_id', 'client_proposals.workspace_id')
-                ->whereNull('client_agreements.source_proposal_id'),
-        );
+        $withACandidate = $this->acceptanceAgreements->withUnlinkedAgreement(clone $sent);
 
         // Narrowed once more to an agreement that is currently active. A
         // cancelled or expired agreement can still be the proposal's true
@@ -117,15 +104,7 @@ final class UnlinkedProposalAgreementAuditor
         // subset where a second agreement would bill alongside a live one, and
         // therefore where the duplicate costs money now rather than
         // retrospectively muddying the record.
-        $withAnActiveCandidate = (clone $sent)->whereExists(
-            fn (QueryBuilder $query): QueryBuilder => $query
-                ->select(DB::raw(1))
-                ->from('client_agreements')
-                ->whereColumn('client_agreements.client_company_id', 'client_proposals.client_company_id')
-                ->whereColumn('client_agreements.workspace_id', 'client_proposals.workspace_id')
-                ->whereNull('client_agreements.source_proposal_id')
-                ->where('client_agreements.status', 'active'),
-        );
+        $withAnActiveCandidate = $this->acceptanceAgreements->withActiveUnlinkedAgreement(clone $sent);
 
         return new UnlinkedProposalAgreementCounts(
             proposals: $this->proposals($workspace)->count(),
