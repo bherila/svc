@@ -98,7 +98,7 @@
         ],
         "test:mutation-diff": [
             "Composer\\Config::disableProcessTimeout",
-            "@php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection --configuration=infection.diff.json5 --git-diff-lines --git-diff-base=origin/main --only-covering-test-cases --min-covered-msi=82 --threads=max --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G'"
+            "bash scripts/run-mutation-diff.sh"
         ],
         "test:mutation": [
             "Composer\\Config::disableProcessTimeout",

@@ -72,12 +72,13 @@ it does not by itself reopen unrelated review. That does not waive the local
 rule: before re-requesting review after a code fix, refresh `origin/main` and
 require `composer test:mutation-diff` to pass for the candidate head.
 
-For an escaped mutant, either add the missing assertion or document a truly
-equivalent mutation with the narrowest supported per-method ignore and a reason
-that explains why no observable test can distinguish it. Do not lower the
-threshold to make a branch green. Very small diffs can make one equivalent
-mutant dominate a percentage, so named equivalence is part of the denominator
-policy rather than a reason to ignore a real survivor.
+For an escaped mutant, either add the missing assertion or put a code-local
+`@infection-ignore-all` annotation on the narrowest method with an adjacent
+reason explaining why no observable test can distinguish it. Do not add a new
+configuration-only exemption and do not lower the threshold to make a branch
+green. Very small diffs can make one equivalent mutant dominate a percentage,
+so a reviewed, nearby equivalence reason is part of the denominator policy
+rather than a reason to ignore a real survivor.
 
 The scheduled/full command remains limited to the established billing money
 paths and keeps its historical uncovered-code baseline:

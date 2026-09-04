@@ -210,20 +210,22 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           diff_status=0
-          git diff --quiet --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" -- \
+          git -c diff.renames=false diff --quiet --diff-filter=AM "$merge_base" "$HEAD_SHA" -- \
             ':(glob)app/**/*.php' || diff_status=$?
           if [ "$diff_status" -eq 0 ]; then
             echo "required=false" >> "$GITHUB_OUTPUT"
             echo "changed_count=0" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Mutation gate not applicable::No added or modified PHP application source under app/ is present in this diff."
+            echo "::notice title=Mutation gate not applicable::No added, modified, or renamed PHP application source under app/ is present in this diff."
             {
               echo "### Mutation gate"
               echo
-              echo "Not run: this diff has no added or modified PHP application source under \`app/\`."
+              echo "Not run: this diff has no added, modified, or renamed PHP application source under \`app/\`."
             } >> "$GITHUB_STEP_SUMMARY"
           elif [ "$diff_status" -eq 1 ]; then
-            changed_count=$(git diff --name-only --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" -- ':(glob)app/**/*.php' | wc -l)
+            changed_count=$(git -c diff.renames=false diff --name-only --diff-filter=AM "$merge_base" "$HEAD_SHA" -- ':(glob)app/**/*.php' | wc -l)
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "changed_count=$changed_count" >> "$GITHUB_OUTPUT"
             {
@@ -256,6 +258,8 @@ jobs:
       - name: Run mutations on changed lines
         id: mutation_run
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        env:
+          MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
         run: composer test:mutation-diff
 
       - name: Report mutation result
@@ -276,7 +280,7 @@ jobs:
           total=$(jq -r '.stats.totalMutantsCount' "$summary")
           killed=$(jq -r '.stats.killedCount' "$summary")
           escaped=$(jq -r '.stats.escapedCount' "$summary")
-          covered_msi=$(jq -r '.stats.coveredCodeMsi' "$summary")
+          covered_msi=$(jq -er '.stats.coveredCodeMsi // .coveredCodeMutationScoreIndicator' "$summary")
 
           if [ "$total" -eq 0 ]; then
             echo "::notice title=Mutation gate produced zero mutants::The changed PHP source was analyzed, but no covered changed line produced a mutant."
