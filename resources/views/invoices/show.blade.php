@@ -24,7 +24,7 @@
 <body>
 <header>
     <div><h1>Invoice</h1><div class="muted">{{ $invoice->invoice_number }}</div></div>
-    <div class="right"><strong>{{ strtoupper($invoice->status) }}</strong><br>{{ $invoice->currency }}</div>
+    <div class="right"><strong>{{ $statusLabel }}</strong><br>{{ $invoice->currency }}</div>
 </header>
 <p><strong>Bill to:</strong> {{ $invoice->clientCompany->name }}</p>
 <p class="muted">Issue date: {{ optional($invoice->issue_date)->format('Y-m-d') }} &nbsp; Due: {{ optional($invoice->due_date)->format('Y-m-d') }}</p>
@@ -33,7 +33,7 @@
     <thead><tr><th>Description</th><th>Type</th><th class="right">Quantity</th><th class="right">Unit</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>
     <tbody>
     @foreach ($lines as $line)
-        <tr><td>{{ $line->description }}</td><td>{{ $line->type }}</td><td class="right">{{ $line->quantity }}</td><td class="right">{{ number_format($line->unit_amount / 100, 2) }}</td><td class="right">{{ number_format($line->tax_amount / 100, 2) }}</td><td class="right">{{ number_format($line->total_amount / 100, 2) }}</td></tr>
+        <tr><td>{{ $line->description }}</td><td>{{ $lineTypeLabels[$line->public_id] }}</td><td class="right">{{ $line->quantity }}</td><td class="right">{{ number_format($line->unit_amount / 100, 2) }}</td><td class="right">{{ number_format($line->tax_amount / 100, 2) }}</td><td class="right">{{ number_format($line->total_amount / 100, 2) }}</td></tr>
     @endforeach
     </tbody>
 </table>

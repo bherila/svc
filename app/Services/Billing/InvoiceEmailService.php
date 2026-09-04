@@ -256,7 +256,7 @@ final class InvoiceEmailService
      * bounced event names an address and a timestamp and nothing that ties it
      * back to an invoice.
      *
-     * @throws DomainException when the mailer refused it
+     * @throws DomainException when the document or message could not be delivered
      */
     private function deliver(
         ClientInvoice $invoice,
@@ -296,9 +296,10 @@ final class InvoiceEmailService
             // this object.
             return $delivery;
         } catch (Throwable $exception) {
-            // The class name, not the message. A transport failure can quote
-            // the address it was refused for and the credentials it used, and
-            // this string is rendered on a screen and kept in a row.
+            // The class name, not the message. A rendering or transport
+            // failure can quote private invoice data, the address it was
+            // refused for, or credentials; this string is rendered on a
+            // screen and kept in a row.
             $delivery->forceFill([
                 'status' => 'failed',
                 'failed_at' => $this->clock->now($invoice->workspace),
@@ -312,7 +313,7 @@ final class InvoiceEmailService
             ]);
 
             throw new DomainException(
-                'The mail server refused this message ('.class_basename($exception).'). Nothing was sent.',
+                'Invoice delivery failed ('.class_basename($exception).'). Nothing was sent.',
             );
         }
     }

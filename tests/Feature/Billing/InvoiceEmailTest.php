@@ -150,7 +150,7 @@ class InvoiceEmailTest extends TestCase
         // is the entire explanation an operator gets for a message that did
         // not go.
         $this->assertSame(
-            'The mail server refused this message (TransportException). Nothing was sent.',
+            'Invoice delivery failed (TransportException). Nothing was sent.',
             $response->json('message'),
         );
         // Never the transport's own words: those quote the address it was
