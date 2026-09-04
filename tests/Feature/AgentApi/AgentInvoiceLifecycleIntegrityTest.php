@@ -245,7 +245,13 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
         // The flow has to have written to the tables this is about, or the
         // assertion above passed by inspecting nothing.
-        foreach (['client_invoices', 'client_invoice_lines', 'client_invoice_line_time_entries', 'client_time_entries'] as $table) {
+        //
+        // `client_invoice_line_time_entries` is deliberately not among them:
+        // `client_invoice_line_id` cascades on delete, so clearing the lines
+        // takes the pivot rows with them and issues no statement of its own.
+        // A detach that does run is still caught by the loop above, which asks
+        // the schema rather than this list.
+        foreach (['client_invoices', 'client_invoice_lines', 'client_time_entries'] as $table) {
             $this->assertArrayHasKey($table, $touched, $table.' was never written to, so this test proved nothing about it.');
         }
 
