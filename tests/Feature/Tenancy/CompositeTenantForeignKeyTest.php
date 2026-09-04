@@ -159,6 +159,29 @@ final class CompositeTenantForeignKeyTest extends TestCase
         ]);
     }
 
+    public function test_the_database_refuses_an_expense_charged_to_another_workspaces_company(): void
+    {
+        $this->assertForeignKeysAreEnforced();
+
+        [$home, $foreign] = $this->twoWorkspaces();
+        $foreignCompany = $this->company($foreign, 'foreign');
+
+        $this->expectException(QueryException::class);
+
+        DB::table('client_expenses')->insert([
+            'public_id' => (string) Str::uuid(),
+            'workspace_id' => $home->id,
+            'client_company_id' => $foreignCompany->id,
+            'spent_on' => '2026-08-15',
+            'amount' => 12500,
+            'currency' => 'USD',
+            'description' => 'Smuggled expense',
+            'status' => 'draft',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     public function test_a_portal_membership_derives_its_workspace_from_the_company(): void
     {
         [$home] = $this->twoWorkspaces();
