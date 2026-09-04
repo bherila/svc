@@ -7,6 +7,7 @@ use App\Support\Billing\InvoiceLineDetail;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
 
 /**
  * The invoice as a document.
@@ -20,6 +21,12 @@ use Illuminate\Contracts\View\View;
  */
 final class InvoiceDocumentService
 {
+    /** A stable, filesystem-safe name for this invoice's PDF. */
+    public function filename(ClientInvoice $invoice): string
+    {
+        return 'invoice-'.(Str::slug($invoice->invoice_number) ?: $invoice->public_id).'.pdf';
+    }
+
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
     public function html(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT): View
     {

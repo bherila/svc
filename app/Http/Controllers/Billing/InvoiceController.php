@@ -26,7 +26,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class InvoiceController extends Controller
@@ -266,7 +265,7 @@ class InvoiceController extends Controller
             // still stated, so "save as" from the viewer keeps a useful name.
             'Content-Disposition' => HeaderUtils::makeDisposition(
                 HeaderUtils::DISPOSITION_INLINE,
-                'invoice-'.(Str::slug($clientInvoice->invoice_number) ?: $clientInvoice->public_id).'.pdf',
+                $documents->filename($clientInvoice),
             ),
         ]);
     }

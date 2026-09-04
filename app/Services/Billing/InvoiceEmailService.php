@@ -8,6 +8,7 @@ use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\WorkspaceClock;
 use DomainException;
@@ -56,6 +57,7 @@ final class InvoiceEmailService
 {
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
+        private readonly InvoiceDocumentService $documents,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -262,13 +264,24 @@ final class InvoiceEmailService
         InvoiceEmailDraft $draft,
     ): ClientInvoiceEmailDelivery {
         try {
+            // Email is a client-facing boundary, so the audience is explicit.
+            // Reuse the same document service as the authenticated PDF route;
+            // keeping a second email-only renderer would let their disclosure
+            // rules drift apart.
+            $pdf = $this->documents->pdf($invoice, InvoiceLineDetail::CLIENT);
             $mailer = Mail::to($draft->recipients);
 
             if ($draft->bcc !== []) {
                 $mailer->bcc($draft->bcc);
             }
 
-            $sent = $mailer->send(new InvoiceMail($invoice, $draft->subject, $draft->body));
+            $sent = $mailer->send(new InvoiceMail(
+                $invoice,
+                $draft->subject,
+                $draft->body,
+                $pdf,
+                $this->documents->filename($invoice),
+            ));
 
             $delivery->forceFill([
                 'status' => 'sent',
