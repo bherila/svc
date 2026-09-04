@@ -9,6 +9,7 @@ use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\Balances\ClosingBalance;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Services\Billing\Balances\OpeningBalance;
+use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 
 class InvoiceLedgerBuilder
@@ -20,6 +21,7 @@ class InvoiceLedgerBuilder
         private readonly BillingCycleResolver $billingCycleResolver = new BillingCycleResolver,
         private readonly RetainerCalculator $retainerCalculator = new RetainerCalculator,
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+        private readonly BilledOverageLedger $billedOverageLedger = new BilledOverageLedger,
         ?ReplayHistoryBasis $replayHistoryBasis = null,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
@@ -91,6 +93,9 @@ class InvoiceLedgerBuilder
 
         $entriesByMonth = $billableEntries
             ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
+        $billedOveragesByMonth = $agreement->effectiveBillingCadence() === BillingCadence::Monthly
+            ? $this->billedOverageLedger->hoursByMonthThrough($agreement, $ledgerEnd)
+            : [];
 
         $months = [];
 
@@ -104,6 +109,7 @@ class InvoiceLedgerBuilder
                 'year_month' => $monthKey,
                 'retainer_hours' => $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
                 'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
+                'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => false,
             ];
 
@@ -148,8 +154,8 @@ class InvoiceLedgerBuilder
      * history it can be checked against. The tests are the only exercise this
      * has.
      *
-     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>  $months
-     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, reset_rollover: bool}>
+     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>  $months
+     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>
      */
     private function withOpeningRollover(ClientAgreement $agreement, array $months): array
     {

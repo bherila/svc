@@ -264,11 +264,11 @@ final class UnknownBilledOverageRefusalTest extends TestCase
     /**
      * And the period after one is priced rather than refused.
      *
-     * The end-to-end half of the case above: the sum that reads this column is
-     * `totalBilledOveragesThrough()`, and the failure it was reported for was
-     * generation stopping for the agreement rather than a value being wrong. So
-     * this issues the native invoice and then generates the following period,
-     * which is where the refusal would have fired.
+     * The end-to-end half of the case above: the billed-overage ledger reads
+     * this column, and the reported failure was generation stopping for the
+     * agreement rather than a value being wrong. So this issues the native
+     * invoice and then generates the following period, where the refusal would
+     * have fired.
      */
     public function test_generation_continues_after_a_natively_created_invoice_is_issued(): void
     {
