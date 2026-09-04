@@ -11,7 +11,6 @@ use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLineComposer;
-use App\Services\Engagement\ProposalWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -175,8 +174,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.retainer_minutes => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_an_agreement_with_no_retainer_reports_no_capacity',
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
-        'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created',
-        'client_agreements.source_proposal_id => reader_in:App\Services\Engagement\ProposalWorkflow::accept',
+        'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
         'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
@@ -531,25 +529,15 @@ final class NullSemanticsRegistryTest extends TestCase
                 'covered_by' => DeriveTimeEntryRatesTest::class,
                 'method' => 'test_an_agreement_with_no_project_covers_work_on_any_project',
             ],
-            // Proposal acceptance is idempotent only through this column: it
-            // asks the proposal's `agreements()` relationship whether one
-            // already exists, and a null makes the row invisible to that
-            // relationship, so accepting again creates a second active agreement
-            // and a second set of recurring items (#148).
-            //
-            // The covering test pins that as the behaviour rather than
-            // asserting it is prevented. #148 established the fix cannot live in
-            // `accept()` - the only evidence of the tie is the missing link, and
-            // guessing at it inside a write path trades a duplicate for a
-            // mis-attribution - so the population is sized by
-            // `svc:engagement:audit-unlinked-proposal-agreements` and the links
-            // repaired outside. Pinned so that changing it has to be deliberate.
+            // Proposal acceptance reads this column to find an agreement already
+            // linked to the proposal. A null stays ambiguous: it may mean there
+            // was no proposal, or that the link was lost. Acceptance never
+            // guesses between those meanings. When an active unlinked agreement
+            // exists on the same tenant and company, it refuses before recording
+            // acceptance or creating another contract (#148).
             'source_proposal_id' => [
-                [
-                    'covered_by' => EngagementWorkflowTest::class,
-                    'method' => 'test_an_agreement_whose_proposal_link_is_missing_does_not_stop_a_second_being_created',
-                ],
-                ['reader_in' => ProposalWorkflow::class, 'reads' => 'accept'],
+                'covered_by' => EngagementWorkflowTest::class,
+                'method' => 'test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
             ],
             // `starts_on` is gone from this registry, not demoted in it. It had
             // three entries here and seven readings in the code - the resolver

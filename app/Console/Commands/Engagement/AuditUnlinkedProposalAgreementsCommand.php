@@ -23,7 +23,7 @@ use Illuminate\Console\Command;
  *
  * It exits clean whatever it finds. #148 is explicit that acceptance must not
  * repair the link by guessing, so this is a prompt to restore known links by
- * hand rather than a gate on anything - and a non-zero exit would make it one.
+ * hand rather than a deployment gate - and a non-zero exit would make it one.
  */
 final class AuditUnlinkedProposalAgreementsCommand extends Command
 {
@@ -68,7 +68,7 @@ final class AuditUnlinkedProposalAgreementsCommand extends Command
 
         if ($counts->isLive()) {
             $this->components->warn(
-                $counts->withAnActiveUnlinkedAgreement.' sent proposal(s) sit on a company with an active agreement that names no proposal. Accepting one writes a second agreement and a second set of recurring items, because the guard looks for the link and the link is missing. Restore the link before accepting; do not let acceptance guess which agreement it was.'
+                $counts->withAnActiveUnlinkedAgreement.' sent proposal(s) sit on a company with an active agreement that names no proposal. Acceptance refuses these proposals before writing a second agreement. Verify and restore the correct link before accepting; do not guess which agreement it was.'
             );
         } else {
             $this->components->info(

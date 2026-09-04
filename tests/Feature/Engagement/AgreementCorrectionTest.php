@@ -137,6 +137,35 @@ class AgreementCorrectionTest extends TestCase
         $this->assertNull($agreement->fresh()->catch_up_threshold_minutes);
     }
 
+    public function test_an_active_term_cannot_be_edited_across_another_active_term(): void
+    {
+        [$owner, $workspace, $agreement] = $this->agreement([
+            'title' => 'Synthetic first segment',
+            'status' => 'active',
+            'starts_on' => '2026-01-01',
+            'ends_on' => '2026-06-30',
+        ]);
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $agreement->client_company_id,
+            'title' => 'Synthetic second segment',
+            'status' => 'active',
+            'starts_on' => '2026-07-01',
+            'ends_on' => null,
+            'currency' => 'USD',
+        ]);
+
+        $this->actingAs($owner)
+            ->patchJson($this->url($workspace, $agreement), ['ends_on' => '2026-07-31'])
+            ->assertUnprocessable()
+            ->assertExactJson([
+                'message' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+            ]);
+
+        $this->assertSame('2026-06-30', $agreement->fresh()->ends_on?->toDateString());
+        $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'agreement.updated')->count());
+    }
+
     public function test_a_member_who_cannot_manage_the_workspace_cannot_correct_its_agreements(): void
     {
         [, $workspace, $agreement] = $this->agreement(['title' => 'Legacy Agreement']);

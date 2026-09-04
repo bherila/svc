@@ -1,4 +1,5 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
@@ -92,6 +93,35 @@ const buttonClass =
     'rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50';
 const secondaryButtonClass =
     'rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-card-foreground hover:bg-muted disabled:opacity-50';
+
+export function AgreementActivationButton({ href }: { href: string }) {
+    const [error, setError] = useState<string | null>(null);
+
+    return (
+        <>
+            <button
+                className="ml-3 font-semibold text-cyan-700"
+                onClick={() => {
+                    setError(null);
+                    router.post(href, undefined, {
+                        onError: (errors) =>
+                            setError(
+                                errors.engagement ??
+                                    'Agreement activation failed.',
+                            ),
+                    });
+                }}
+            >
+                Activate
+            </button>
+            {error !== null && (
+                <p role="alert" className="mt-2 text-sm text-red-700">
+                    {error}
+                </p>
+            )}
+        </>
+    );
+}
 
 function toMinorUnits(value: string): number | null {
     if (value.trim() === '') {
@@ -752,16 +782,9 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                 {agreement.status}
                                                 {agreement.status ===
                                                     'draft' && (
-                                                    <button
-                                                        className="ml-3 font-semibold text-cyan-700"
-                                                        onClick={() =>
-                                                            router.post(
-                                                                `/workspaces/${workspace.id}/agreements/${agreement.id}/activate`,
-                                                            )
-                                                        }
-                                                    >
-                                                        Activate
-                                                    </button>
+                                                    <AgreementActivationButton
+                                                        href={`/workspaces/${workspace.id}/agreements/${agreement.id}/activate`}
+                                                    />
                                                 )}
                                                 <AttachmentPanel
                                                     workspaceId={workspace.id}

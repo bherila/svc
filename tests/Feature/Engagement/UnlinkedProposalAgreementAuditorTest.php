@@ -189,6 +189,28 @@ final class UnlinkedProposalAgreementAuditorTest extends TestCase
         $this->assertSame(2, $counts->unlinkedAgreements);
     }
 
+    public function test_an_unscoped_audit_uses_each_workspaces_local_date(): void
+    {
+        $this->travelTo('2026-09-04 00:30:00 UTC');
+        $workspace = $this->workspace('los-angeles');
+        $workspace->update(['timezone' => 'America/Los_Angeles']);
+        $company = $this->company($workspace, 'los-angeles');
+        $agreement = $this->agreement($workspace, $company, null, 'active');
+        $agreement->update(['ends_on' => '2026-09-03']);
+        $this->proposal($workspace, $company, 'sent');
+
+        // It is still September 3 in this workspace. A global UTC date would
+        // omit the agreement even though acceptance in its tenant refuses it.
+        $this->assertSame(
+            1,
+            app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
+        );
+        $this->assertSame(
+            1,
+            app(UnlinkedProposalAgreementAuditor::class)->count()->withAnActiveUnlinkedAgreement,
+        );
+    }
+
     /**
      * A clean workspace reports nothing while its neighbour is broken.
      *

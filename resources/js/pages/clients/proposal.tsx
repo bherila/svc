@@ -66,6 +66,8 @@ export default function ClientProposalDetail({
     accept_href: string | null;
 }) {
     const form = useForm({ signer_name: '', signer_title: '' });
+    const engagementError = (form.errors as Record<string, string | undefined>)
+        .engagement;
 
     return (
         <WorkspaceShell activeModule="home">
@@ -174,6 +176,14 @@ export default function ClientProposalDetail({
                                 form.post(acceptHref);
                             }}
                         >
+                            {engagementError !== undefined && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive sm:col-span-3"
+                                >
+                                    {engagementError}
+                                </p>
+                            )}
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="signer-name">Your name</Label>
                                 <Input

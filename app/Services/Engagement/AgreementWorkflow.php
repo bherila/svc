@@ -8,6 +8,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
@@ -37,6 +38,7 @@ class AgreementWorkflow
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
+        private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -158,6 +160,13 @@ class AgreementWorkflow
                 return $locked;
             }
 
+            if ($locked->status === 'active'
+                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes))) {
+                $candidate = clone $locked;
+                $candidate->fill($editable);
+                $this->assertNoOverlappingActiveAgreement($candidate);
+            }
+
             $locked->update($editable);
             $this->activities->record(
                 $locked->workspace,
@@ -185,6 +194,8 @@ class AgreementWorkflow
                 throw new EngagementException('Only draft or paused agreements can be activated.');
             }
 
+            $this->assertNoOverlappingActiveAgreement($locked);
+
             $previousStatus = $locked->status;
             $locked->forceFill([
                 'status' => 'active',
@@ -201,6 +212,15 @@ class AgreementWorkflow
 
             return $locked;
         });
+    }
+
+    private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement): void
+    {
+        $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);
+
+        if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($agreement)) {
+            throw new EngagementException('This agreement cannot overlap another active agreement. Ask an operator to verify its terms.');
+        }
     }
 
     public function sign(ClientAgreement $agreement, ?User $signingUser, string $signerName, ?string $signerTitle): ClientAgreement
