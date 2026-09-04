@@ -451,6 +451,75 @@ final class CapacityAndScopeGuardsTest extends TestCase
         );
     }
 
+    /**
+     * Flat-hourly work with a currency but no amount is refused on the amount.
+     *
+     * The composer's guard is an `||` over the two snapshot columns, and the
+     * test above nulls both - so either half could be deleted and it would
+     * still fail through the other. This one holds the currency stated and
+     * varies only the amount, and the control that follows is the same entry
+     * with an amount, which is what makes the refusal the amount's.
+     *
+     * A missing amount that reached the line would bill the subcontractor's
+     * hours at `(int) null`, which is zero: the client is charged nothing for
+     * work this workspace has already paid for.
+     */
+    public function test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer(): void
+    {
+        $project = $this->project('Amountless snapshot');
+        $agreement = $this->agreement($project);
+        $entry = $this->entry($project, '2024-02-10', 60);
+        $entry->forceFill([
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => null,
+            'subcontractor_cost_currency' => 'USD',
+        ])->save();
+
+        try {
+            $this->composeFlatHourly($this->invoice($agreement));
+            $this->fail('Flat-hourly time with no cost amount must not compose a line.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('requires a snapshotted amount and currency', $exception->getMessage());
+        }
+
+        $entry->forceFill(['subcontractor_cost_amount' => 5000])->save();
+        $invoice = $this->composeFlatHourly($this->invoice($agreement));
+
+        $this->assertSame(5000, (int) $invoice->lines()->where('type', 'subcontractor')->firstOrFail()->total_amount);
+    }
+
+    /**
+     * And with an amount but no currency, refused on the currency.
+     *
+     * The mirror of the case above, and not redundant with it: the currency
+     * half is what stops a cost stored in minor units of another currency being
+     * billed unconverted, so an amount alone is not a complete snapshot even
+     * though it is a number the composer could use.
+     */
+    public function test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer(): void
+    {
+        $project = $this->project('Currencyless snapshot');
+        $agreement = $this->agreement($project);
+        $entry = $this->entry($project, '2024-02-10', 60);
+        $entry->forceFill([
+            'subcontractor_billing_mode' => 'flat_hourly',
+            'subcontractor_cost_amount' => 5000,
+            'subcontractor_cost_currency' => null,
+        ])->save();
+
+        try {
+            $this->composeFlatHourly($this->invoice($agreement));
+            $this->fail('Flat-hourly time with no cost currency must not compose a line.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('requires a snapshotted amount and currency', $exception->getMessage());
+        }
+
+        $entry->forceFill(['subcontractor_cost_currency' => 'USD'])->save();
+        $invoice = $this->composeFlatHourly($this->invoice($agreement));
+
+        $this->assertSame(5000, (int) $invoice->lines()->where('type', 'subcontractor')->firstOrFail()->total_amount);
+    }
+
     public function test_direct_subcontractor_time_never_reaches_the_flat_hourly_composer(): void
     {
         $project = $this->project('Direct billing');
@@ -1728,6 +1797,21 @@ final class CapacityAndScopeGuardsTest extends TestCase
     }
 
     /** The interim-only subtraction, isolated from allocation and entry caps. */
+    /** February's flat-hourly subcontractor lines for one invoice. */
+    private function composeFlatHourly(ClientInvoice $invoice): ClientInvoice
+    {
+        $sort = 1;
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $this->company,
+            $invoice,
+            Carbon::parse('2024-02-01'),
+            Carbon::parse('2024-02-29'),
+            $sort,
+        );
+
+        return $invoice->refresh();
+    }
+
     private function alreadyBilledInterimHours(ClientAgreement $agreement, string $periodStart): float
     {
         $start = Carbon::parse($periodStart);

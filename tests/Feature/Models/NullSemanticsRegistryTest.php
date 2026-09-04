@@ -3,12 +3,9 @@
 namespace Tests\Feature\Models;
 
 use App\Http\Controllers\Api\V1\AgentReadController;
-use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
-use App\Services\Billing\InvoiceFromTimeService;
-use App\Services\Billing\InvoiceLineComposer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -204,27 +201,27 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
         'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_amount => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
+        'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_rate_is_refused',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
-        'client_time_entries.billing_rate_source => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.billing_rate_source => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_rate_source_do_not_recombine',
         'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_a_task_do_not_recombine',
-        'client_time_entries.client_task_id => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.client_task_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_task_do_not_recombine',
         'client_time_entries.client_visible_description => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_legacy_client_visible_time_never_falls_back_to_internal_description',
+        'client_time_entries.currency => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_currency_is_refused',
         'client_time_entries.currency => covered_by:Tests\Feature\Engagement\TimeSheetTest::test_approval_supplies_a_currency_an_older_entry_lacks',
-        'client_time_entries.currency => reader_in:App\Services\Billing\InvoiceFromTimeService::selectedTimeTerms',
         'client_time_entries.deleted_at => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_deleting_approved_time_rebuilds_the_cadence_draft_without_it',
         'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_an_absent_value_is_not_the_word_null',
-        'client_time_entries.job_type => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.job_type => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_an_absent_job_type_do_not_recombine',
         'client_time_entries.split_from_time_entry_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_entries_that_merely_look_alike_are_never_merged',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_null_billing_mode_is_read_as_ordinary_consultant_time',
         'client_time_entries.subcontractor_billing_mode => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_each_subcontractor_mode_has_one_consistent_billing_path',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused',
+        'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer',
         'client_time_entries.subcontractor_cost_amount => covered_by:Tests\Feature\Billing\RetainerDrawConsistencyTest::test_a_cost_with_no_mode_is_excluded_from_the_retainer',
-        'client_time_entries.subcontractor_cost_amount => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
         'client_time_entries.subcontractor_cost_currency => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
-        'client_time_entries.subcontractor_cost_currency => reader_in:App\Services\Billing\InvoiceLineComposer::addFlatHourlySubcontractorEntries',
-        'client_time_entries.subcontractor_cost_metadata => reader_in:App\Services\Billing\AllocationService::canMerge',
+        'client_time_entries.subcontractor_cost_currency => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer',
+        'client_time_entries.subcontractor_cost_metadata => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_populated_fragments_differing_only_in_absent_cost_metadata_do_not_recombine',
     ];
 
     /**
@@ -754,7 +751,17 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_fragments_with_and_without_a_task_do_not_recombine',
                 ],
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // The citation above splits a bare entry, so most of the
+                // signature is null on both halves and any one of those nulls
+                // would hold the pair apart too. #143 added the isolating form:
+                // all twenty fields stated and identical, this one nulled on one
+                // fragment, then nulled on both - which must merge. The second
+                // half is the part that says a null here is a compared value
+                // rather than a blocker.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_task_do_not_recombine',
+                ],
             ],
             // Null is permitted for flat-hourly and direct entries, which is
             // what the citation covers. On ordinary billable time the same null
@@ -765,7 +772,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
                     'method' => 'test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
                 ],
-                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
+                // The other reading: an ad-hoc invoice is built entirely from
+                // these terms, so a null rate reaching the line would be a zero
+                // charge for real approved work on an invoice an operator sends
+                // by hand. Pinned with the currency held matching, so it is the
+                // rate half of that `&&` and not the pair.
+                [
+                    'covered_by' => InvoiceFromTimeServiceTest::class,
+                    'method' => 'test_selected_time_with_no_stored_rate_is_refused',
+                ],
             ],
             // Approval repairs a missing currency on a draft, which is the
             // pinned branch. It does not reach an entry that is already approved
@@ -777,7 +792,13 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => TimeSheetTest::class,
                     'method' => 'test_approval_supplies_a_currency_an_older_entry_lacks',
                 ],
-                ['reader_in' => InvoiceFromTimeService::class, 'reads' => 'selectedTimeTerms'],
+                // A comparison rather than a null check, and pinned as one:
+                // `null === 'USD'` is false, so the entry matches no invoice in
+                // any currency. The rate stays stated throughout.
+                [
+                    'covered_by' => InvoiceFromTimeServiceTest::class,
+                    'method' => 'test_selected_time_with_no_stored_currency_is_refused',
+                ],
             ],
             // Missing approval metadata, independently of status. Imported or
             // legacy entries may already be `approved` while either stamp is
@@ -802,10 +823,14 @@ final class NullSemanticsRegistryTest extends TestCase
             // by deleting each half of the OR in turn and watching exactly one
             // test fail.
             //
-            // The composer's reader stays a named reader: it refuses the same
-            // pair, but on an entry that has already been approved, so the
-            // approval guard above it means no such row can reach it in a test
-            // without writing an impossible fixture.
+            // The composer refuses the same pair a second time, on entries that
+            // are already approved. An earlier note here called such a row
+            // unreachable without an impossible fixture; that was wrong. The
+            // approval guard runs when a row is approved, and a row can acquire
+            // an incomplete snapshot afterwards - by import, by repair, by a
+            // direct edit - which is exactly the shape the composer's guard
+            // exists for. Both halves are now pinned there too, each holding
+            // the sibling stated.
             'subcontractor_cost_amount' => [
                 [
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
@@ -818,21 +843,34 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => RetainerDrawConsistencyTest::class,
                     'method' => 'test_a_cost_with_no_mode_is_excluded_from_the_retainer',
                 ],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_flat_hourly_time_with_a_currency_but_no_amount_is_refused_by_the_composer',
+                ],
             ],
             'subcontractor_cost_currency' => [
                 [
                     'covered_by' => AgentTimeBillingWorkflowTest::class,
                     'method' => 'test_flat_hourly_time_with_an_amount_but_no_currency_is_refused',
                 ],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addFlatHourlySubcontractorEntries'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_flat_hourly_time_with_an_amount_but_no_currency_is_refused_by_the_composer',
+                ],
             ],
             // Also part of the fragment signature. #153 replaced the json
             // encoding this note described with a direct typed comparison,
             // because encoding reintroduced the ambiguity it was meant to
             // remove - `?? 'null'` made a real null and the literal string
             // "null" identical. Compared as arrays, a null stays a null.
-            'subcontractor_cost_metadata' => ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+            // It is the field most likely to be dropped from the signature by
+            // someone tidying - the amount and the currency are obviously money
+            // and this reads like a note. It is not: it is where the cost came
+            // from, and two costs agreeing on the number can disagree on that.
+            'subcontractor_cost_metadata' => [
+                'covered_by' => AllocationServiceTest::class,
+                'method' => 'test_populated_fragments_differing_only_in_absent_cost_metadata_do_not_recombine',
+            ],
             'created_at' => 'PENDING-AUDIT',
             'updated_at' => 'PENDING-AUDIT',
             // No client-safe text was written, and the internal description is
@@ -870,9 +908,14 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 // Third reader, added by #153: provenance survives
                 // recombination, so an `explicit` rate is never replaced by one
-                // re-resolved from the agreement. Not a second citation - that
-                // case diverges two non-null sources, so it pins no null.
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // re-resolved from the agreement. The nearby divergence case
+                // pins no null - it varies two stated sources - so #143 pinned
+                // this one against a stated source, with the stored amount
+                // identical on both fragments.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_rate_source_do_not_recombine',
+                ],
             ],
             // Also in the fragment signature. The dedicated collision test
             // isolates a real null from the literal text `null`, proving the
@@ -882,7 +925,13 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_an_absent_value_is_not_the_word_null',
                 ],
-                ['reader_in' => AllocationService::class, 'reads' => 'canMerge'],
+                // Free text a person can type, so the sentinel question and the
+                // populated-siblings question are genuinely different ones. The
+                // citation above answers the first; this answers the second.
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_populated_fragments_differing_only_in_an_absent_job_type_do_not_recombine',
+                ],
             ],
             // Not a fragment of anything. Lineage is the only thing that makes
             // two rows one entry, so entries that merely look alike - same day,

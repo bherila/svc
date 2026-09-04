@@ -315,6 +315,121 @@ final class AllocationServiceTest extends TestCase
         $this->assertSame(2, $this->entryCount());
     }
 
+    /**
+     * A fragment with no task and one with a task are different work - proved
+     * with every other field of the signature stated.
+     *
+     * The nearby cases split a bare entry, so most of the signature is null on
+     * both halves and any one of those nulls would also hold the pair apart if
+     * the comparison changed shape. These four tests start from fragments where
+     * all twenty fields are populated and identical, vary exactly one to null,
+     * and then null it on both - which has to merge. That second half is what
+     * makes the claim specific: a null here is a *value* the signature carries,
+     * not a sentinel that blocks merging.
+     *
+     * Merging deletes a row, so a false equality is destructive rather than
+     * merely conservative, which is why each of these columns is worth its own
+     * case rather than one shared parameterised sweep.
+     */
+    public function test_populated_fragments_differing_only_in_an_absent_task_do_not_recombine(): void
+    {
+        $this->assertNullBranchHoldsFragmentsApart('client_task_id');
+    }
+
+    /** The same, for work whose type nobody typed. */
+    public function test_populated_fragments_differing_only_in_an_absent_job_type_do_not_recombine(): void
+    {
+        $this->assertNullBranchHoldsFragmentsApart('job_type');
+    }
+
+    /** The same, for a rate with no recorded provenance. */
+    public function test_populated_fragments_differing_only_in_an_absent_rate_source_do_not_recombine(): void
+    {
+        $this->assertNullBranchHoldsFragmentsApart('billing_rate_source');
+    }
+
+    /**
+     * The same, for a subcontractor cost with no recorded origin.
+     *
+     * This one is a cast attribute rather than a scalar, so it is the field
+     * most likely to be dropped from the signature by someone tidying: the
+     * amount and the currency are obviously money and this reads like a note.
+     * It is not - it is where the cost came from, and two costs that agree on
+     * the number can disagree on that.
+     */
+    public function test_populated_fragments_differing_only_in_absent_cost_metadata_do_not_recombine(): void
+    {
+        $this->assertNullBranchHoldsFragmentsApart('subcontractor_cost_metadata');
+    }
+
+    /**
+     * Two fragments identical in all twenty signature fields, then split on one.
+     *
+     * Nulling the field on one fragment must hold them apart; nulling it on
+     * both must let them merge. Deleting that field from the signature fails
+     * the first, and treating a null as unmergeable fails the second. The
+     * second half is also what proves the fixture agrees on everything else:
+     * a pair that disagreed anywhere would not merge once this field matched.
+     */
+    private function assertNullBranchHoldsFragmentsApart(string $field): void
+    {
+        $parts = $this->fullySpecifiedFragments();
+
+        $parts['primary']->forceFill([$field => null])->save();
+        $this->assertNull($parts['primary']->fresh()?->{$field});
+        $this->assertNotNull($parts['overflow']->fresh()?->{$field});
+
+        $this->assertSame(0, $this->recombine(), "A null {$field} on one fragment is a difference");
+        $this->assertSame(2, $this->entryCount());
+
+        $parts['overflow']->forceFill([$field => null])->save();
+
+        $this->assertSame(1, $this->recombine(), "A null {$field} on both is agreement, not a blocker");
+        $this->assertSame(1, $this->entryCount());
+        $this->assertSame(180, ClientTimeEntry::query()->firstOrFail()->minutes);
+    }
+
+    /**
+     * A split pair carrying a stated value in every field `canMerge()` reads.
+     *
+     * @return array{primary: ClientTimeEntry, overflow: ClientTimeEntry}
+     */
+    private function fullySpecifiedFragments(): array
+    {
+        $approver = User::factory()->create();
+        $task = ClientTask::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'title' => 'Synthetic shared task',
+        ]);
+
+        $parts = app(TimeEntrySplitter::class)->splitEntry($this->entry(180), 120);
+
+        foreach ($parts as $part) {
+            $part->forceFill([
+                'status' => 'approved',
+                'is_billable' => true,
+                'is_deferred' => false,
+                'is_visible_to_client' => true,
+                'billing_rate_amount' => 15000,
+                'currency' => 'USD',
+                'description' => 'Synthetic shared work',
+                'client_visible_description' => 'Synthetic shared summary',
+                'job_type' => 'Support',
+                'client_task_id' => $task->id,
+                'billing_rate_source' => 'explicit',
+                'approved_by_user_id' => $approver->id,
+                'approved_at' => '2026-03-14 09:30:00',
+                'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+                'subcontractor_cost_amount' => 5000,
+                'subcontractor_cost_currency' => 'USD',
+                'subcontractor_cost_metadata' => ['source' => 'synthetic-baseline'],
+            ])->save();
+        }
+
+        return $parts;
+    }
+
     /** @return array<string, array{string, mixed}> */
     public static function fragmentFieldsThatMustAgree(): array
     {
