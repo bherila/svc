@@ -89,9 +89,11 @@ Invoices are sent through Brevo. Our own delivery `status` records only that
 the message left here; whether it was delivered, bounced or blocked arrives
 later over a webhook. Point Brevo's transactional event webhook at
 `POST /api/webhooks/brevo` and have it send `BREVO_WEBHOOK_TOKEN` as an
-`X-Webhook-Token` header (or a `?token=` query parameter). Brevo signs nothing,
-so that shared secret is the only guard: with none configured the endpoint
-refuses every request.
+`X-Webhook-Token` header or `Authorization: Bearer` credential. Query-string
+credentials are rejected. Brevo signs nothing, so that shared secret is the
+only guard: with none configured the endpoint refuses every request. Check a
+deployment without exposing either secret with `php artisan svc:brevo:status
+--format=json`.
 
 ## Private-file mirror
 

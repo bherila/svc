@@ -48,6 +48,9 @@ return [
         // refuses every request; see BrevoWebhookController for why that is the
         // right direction to fail in.
         'webhook_token' => env('BREVO_WEBHOOK_TOKEN'),
+        'webhook_max_payload_bytes' => 1_048_576,
+        'webhook_max_events' => 500,
+        'webhook_rate_limit_per_minute' => 600,
     ],
 
 ];

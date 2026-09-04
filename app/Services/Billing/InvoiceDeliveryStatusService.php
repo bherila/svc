@@ -3,6 +3,7 @@
 namespace App\Services\Billing;
 
 use App\Models\ClientInvoiceEmailDelivery;
+use App\Support\Billing\InvoiceDeliveryStatusOutcome;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 
@@ -47,14 +48,13 @@ final class InvoiceDeliveryStatusService
     /**
      * Attach one provider event to the delivery it names.
      *
-     * Returns false for an event we cannot place - an unknown message id, an
-     * event type we do not track, a body missing either. That is not an error:
-     * this endpoint receives everything the provider sends about every message
-     * the account has ever mailed, and most of it is about something else.
+     * Returns a bounded outcome rather than provider data so the transport can
+     * report aggregate operational telemetry without logging message ids,
+     * recipients, or webhook payloads.
      *
      * @param  array<mixed>  $event
      */
-    public function record(array $event): bool
+    public function record(array $event): InvoiceDeliveryStatusOutcome
     {
         $reference = $this->stringFrom($event, ['message-id', 'message_id', 'messageId']);
         // Through the same reader as the message id rather than cast: this body
@@ -64,27 +64,39 @@ final class InvoiceDeliveryStatusService
         $type = $this->stringFrom($event, ['event']);
 
         if ($reference === null || $type === null) {
-            return false;
+            return InvoiceDeliveryStatusOutcome::Ignored;
         }
 
         $type = strtolower($type);
 
         if (! array_key_exists($type, self::SEVERITY)) {
-            return false;
+            return InvoiceDeliveryStatusOutcome::Ignored;
         }
 
-        $delivery = ClientInvoiceEmailDelivery::query()
+        // The provider gives us no workspace selector, so there is no honest
+        // tenant scope to apply before this lookup. Refuse ambiguity instead:
+        // a reference shared by two workspaces must never let one event choose
+        // whichever tenant row the database happens to return first.
+        $deliveries = ClientInvoiceEmailDelivery::query()
             ->where('provider_message_reference', $reference)
-            ->first();
+            ->limit(2)
+            ->get();
 
-        if (! $delivery instanceof ClientInvoiceEmailDelivery) {
-            return false;
+        if ($deliveries->isEmpty()) {
+            return InvoiceDeliveryStatusOutcome::Unmatched;
         }
+
+        if ($deliveries->count() !== 1) {
+            return InvoiceDeliveryStatusOutcome::Ambiguous;
+        }
+
+        /** @var ClientInvoiceEmailDelivery $delivery */
+        $delivery = $deliveries->first();
 
         $known = $delivery->provider_status;
 
         if ($known !== null && (self::SEVERITY[$known] ?? 0) > self::SEVERITY[$type]) {
-            return false;
+            return InvoiceDeliveryStatusOutcome::Superseded;
         }
 
         $delivery->forceFill([
@@ -92,7 +104,7 @@ final class InvoiceDeliveryStatusService
             'provider_status_at' => $this->eventTime($event) ?? $this->clock->now($delivery->workspace),
         ])->save();
 
-        return true;
+        return InvoiceDeliveryStatusOutcome::Recorded;
     }
 
     /**
