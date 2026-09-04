@@ -14,6 +14,10 @@ general-availability work tracked by
   promise.
 - `bherila/mcp-laravel-bridge` is locked to `v0.1.0`
   (`bc36bb0a5a8b9461143bf48aa9b6fc360963cf82`).
+- `bherila/auth-laravel` is locked to signed `v0.11.0`
+  (`93eb535d4394947ed6980497a2154603d18c4807`). Its opt-in Passport
+  repositories own authorization-code, access-token, and refresh-token resource
+  binding; SVC does not maintain parallel repository implementations.
 - `POST /api/v1/mcp` is Streamable HTTP. `DELETE /api/v1/mcp` is available for
   session termination and `OPTIONS /api/v1/mcp` supports configured browser
   origins. There is no stdio transport, SSE endpoint, resource subscription,
@@ -55,6 +59,18 @@ documented client flow. `McpPrincipalResolverInterface` is currently bound to
 the local Passport-backed `McpPrincipalResolver`, retaining a narrow adapter
 seam for a future shared resource server without introducing a separate MCP
 credential system.
+
+SVC enables the shared authorization server explicitly with
+`AGENT_API_OAUTH_SERVER_ENABLED=true`. `EnsureOAuthServerEnabled` precedes PKCE
+and resource validation on Passport authorization and token routes. Turning it
+off returns non-cacheable 404 responses from metadata, registration,
+authorization, and token/refresh routes while the shared access-token repository
+continues enforcing already-issued credentials. Every protected `/api/v1` route
+sets the configured expected resource before Passport authentication; a bound
+token therefore fails closed on an unmarked or differently marked Passport
+route. Dynamic registrations persist their exact scope ceiling. A legacy
+dynamic client whose ceiling is null must re-register and re-authorize; null is
+never interpreted as unrestricted access.
 
 The current route also has Laravel's `throttle:60,1` limiter. Browser requests
 with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native
