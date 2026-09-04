@@ -5,7 +5,6 @@ namespace Tests\Feature\Models;
 use App\Exceptions\UnscopableWorkspaceWrite;
 use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
-use App\Models\ClientTimeEntry;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\WorkspaceInvoiceCounter;
 use Closure;
@@ -77,27 +76,29 @@ final class WorkspaceScopedWriteTest extends TestCase
     }
 
     /**
-     * #229 made expense ownership immutable; the same holds for every table
-     * with the column, and for the same reason. Neither resolution is
-     * acceptable - predicating on the stored value moves the row into another
-     * tenant, predicating on the new one matches nothing while `save()` reports
-     * success - so the save is refused before a predicate is chosen at all.
+     * #229's rule, against a real row: an expense stays in the workspace it was
+     * recorded in. It is declared on the model rather than assumed for every
+     * table, because ownership is genuinely not fixed everywhere - the Stripe
+     * event ledger is stamped with its tenant after the fact, and
+     * `WritesLegacyCrossTenantRows` moves rows on purpose - so this asserts the
+     * refusal where it is claimed and leaves the rest alone.
      */
-    public function test_a_row_cannot_be_saved_into_a_different_workspace(): void
+    public function test_an_expense_cannot_be_saved_into_a_different_workspace(): void
     {
-        foreach ([ClientExpense::class, ClientTimeEntry::class, WorkspaceInvoiceCounter::class] as $class) {
-            $model = new $class;
-            $model->setRawAttributes([$model->getKeyName() => 7, 'workspace_id' => 4242], sync: true);
-            $model->exists = true;
-            $model->setAttribute('workspace_id', 9999);
+        $home = $this->syntheticWorkspace('ownership home');
+        $foreign = $this->syntheticWorkspace('ownership foreign');
+        $expense = $this->recordSyntheticExpense($home, $this->syntheticCompany($home, 'ownership home'));
 
-            try {
-                $this->buildSaveQuery($model, $model->newModelQuery());
-                $this->fail(class_basename($class).' let a save move the row to another workspace.');
-            } catch (WorkspaceOwnershipImmutable $refusal) {
-                $this->assertStringContainsString($class, $refusal->getMessage());
-            }
+        $expense->setAttribute('workspace_id', $foreign->id);
+
+        try {
+            $expense->save();
+            $this->fail('An expense must not be movable between workspaces by a save.');
+        } catch (WorkspaceOwnershipImmutable $refusal) {
+            $this->assertStringContainsString(ClientExpense::class, $refusal->getMessage());
         }
+
+        $this->assertSame($home->id, $expense->fresh()?->workspace_id);
     }
 
     /**

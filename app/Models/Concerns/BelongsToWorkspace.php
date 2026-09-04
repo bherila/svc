@@ -48,12 +48,21 @@ trait BelongsToWorkspace
      * nothing, where the id-only predicate would have rewritten a stranger's
      * row.
      *
-     * A model whose `workspace_id` was changed in memory is refused outright
-     * before the predicate is added, which is #229's rule generalised from
-     * expenses to every table that has the column. Neither resolution is
-     * acceptable: the stored value would match the row and move it into another
-     * tenant, and the new value would match nothing while `save()` still
-     * reported success. Ownership is fixed when the row is created.
+     * A model that declares {@see workspaceOwnershipIsImmutable()} refuses a
+     * changed `workspace_id` outright, before the predicate is chosen - #229's
+     * rule for expenses, kept where it was written rather than generalised.
+     * Neither resolution is acceptable there: the stored value would match the
+     * row and move it into another tenant, and the new value would match
+     * nothing while `save()` still reported success.
+     *
+     * It is opt-in because ownership is *not* fixed everywhere, and this
+     * application relies on that: `client_stripe_events` is inserted by the
+     * webhook receiver before anything knows which tenant the event belongs to,
+     * and the handler stamps the workspace once it has resolved one. Six tests
+     * also move a row across workspaces on purpose, through
+     * `WritesLegacyCrossTenantRows`, to prove the application refuses a row a
+     * migrated database can still hold. A default of "immutable everywhere"
+     * would have been a claim this codebase contradicts in both directions.
      *
      * The parent is called for its effect and `$query` is returned rather than
      * its result. Both are the same object - it configures the builder it was
@@ -69,7 +78,7 @@ trait BelongsToWorkspace
     {
         $stored = $this->storedWorkspaceKey();
 
-        if ((int) $stored !== (int) $this->getAttribute('workspace_id')) {
+        if ($this->workspaceOwnershipIsImmutable() && (int) $stored !== (int) $this->getAttribute('workspace_id')) {
             throw new WorkspaceOwnershipImmutable(sprintf(
                 'A %s cannot be moved to another workspace: ownership is fixed when the row is created.',
                 static::class,
@@ -90,6 +99,18 @@ trait BelongsToWorkspace
         }
 
         return $query->where('workspace_id', $stored);
+    }
+
+    /**
+     * May a save move this row to another workspace?
+     *
+     * Off by default, so the trait states only what it can prove: the write is
+     * scoped to the workspace the row is in. A model whose ownership really is
+     * fixed at creation says so by overriding this, and gets the refusal.
+     */
+    protected function workspaceOwnershipIsImmutable(): bool
+    {
+        return false;
     }
 
     /**

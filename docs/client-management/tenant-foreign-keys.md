@@ -89,12 +89,20 @@ without the column at all - a partial `select()` - is refused outright rather
 than being written with `workspace_id is null`, which would match nothing while
 `save()` still returned true.
 
-A save that *changes* `workspace_id` is refused before the predicate is chosen,
-which is #229's rule for expenses applied to every table with the column.
-Neither resolution is acceptable: the stored value would match the row and move
-it into another tenant, carrying its children with it, and the new value would
-match nothing while `save()` reported success. Ownership is fixed when the row
-is created.
+A model may also declare its ownership fixed, by overriding
+`workspaceOwnershipIsImmutable()` to return true. A save that then changes
+`workspace_id` is refused before the predicate is chosen, because neither
+resolution is acceptable: the stored value would match the row and move it into
+another tenant, carrying its children with it, and the new value would match
+nothing while `save()` reported success. `ClientExpense` declares it (#229).
+
+It is opt-in rather than the default, because ownership is not fixed everywhere.
+`client_stripe_events` is inserted by the webhook receiver before anything knows
+which tenant the event belongs to, and the handler stamps the workspace once it
+resolves one; and the tests that prove the application refuses a legacy
+cross-tenant row have to produce one first, which
+`WritesLegacyCrossTenantRows` does by moving a row on purpose. Declaring
+immutability everywhere would have been a claim this codebase contradicts.
 
 ## Why the delete rule has to match
 

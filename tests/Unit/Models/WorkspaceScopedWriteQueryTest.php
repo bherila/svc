@@ -55,15 +55,31 @@ final class WorkspaceScopedWriteQueryTest extends TestCase
         $this->assertSame([4242], $query->getBindings());
     }
 
-    public function test_a_row_cannot_be_saved_into_another_workspace(): void
+    /** A model that declares its ownership fixed refuses the move (#229). */
+    public function test_a_row_whose_ownership_is_fixed_cannot_be_saved_elsewhere(): void
+    {
+        $model = $this->hydrate(ClientExpense::class, ['id' => 7, 'workspace_id' => 4242]);
+        $model->setAttribute('workspace_id', 9999);
+
+        $this->expectException(WorkspaceOwnershipImmutable::class);
+        $this->expectExceptionMessage(ClientExpense::class);
+
+        $this->buildSaveQuery($model);
+    }
+
+    /**
+     * A model that has not declared it still moves, and the statement is still
+     * predicated on the workspace the row is in rather than the one it is being
+     * given. Both halves are load-bearing: `client_stripe_events` is inserted
+     * before its tenant is known and stamped afterwards, and the legacy-row
+     * fixtures move a row on purpose to prove the application refuses it.
+     */
+    public function test_a_row_whose_ownership_is_not_fixed_still_moves(): void
     {
         $model = $this->hydrate(ClientTimeEntry::class, ['id' => 7, 'workspace_id' => 4242]);
         $model->setAttribute('workspace_id', 9999);
 
-        $this->expectException(WorkspaceOwnershipImmutable::class);
-        $this->expectExceptionMessage(ClientTimeEntry::class);
-
-        $this->buildSaveQuery($model);
+        $this->assertSame([7, 4242], $this->buildSaveQuery($model)->getBindings());
     }
 
     /**

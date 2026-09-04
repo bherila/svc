@@ -10,9 +10,10 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - Every update and delete of a tenant-owned row names `workspace_id` in its own
   statement, not only in the read that found the row:
   `App\Models\Concerns\BelongsToWorkspace` overrides `setKeysForSaveQuery()`,
-  which Eloquent would otherwise key by primary key alone. The same override
-  refuses a save that changes `workspace_id`: ownership is fixed when the row is
-  created.
+  which Eloquent would otherwise key by primary key alone. A model may
+  additionally declare `workspaceOwnershipIsImmutable()`, and the same override
+  then refuses a save that changes `workspace_id`; expenses do, the Stripe event
+  ledger deliberately does not.
 - Nested writes verify that every supplied parent belongs to the route
   workspace. Workspace administrators can manage records; client-company
   members can only see records explicitly exposed to their company.

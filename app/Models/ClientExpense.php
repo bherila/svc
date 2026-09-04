@@ -125,4 +125,19 @@ class ClientExpense extends Model implements WorkspaceOwned
     {
         return ExpenseStatus::hasBeenInvoicedValue($this->getAttribute('status'));
     }
+
+    /**
+     * An expense stays in the workspace it was recorded in (#229).
+     *
+     * The rule the trait scopes writes by is the same everywhere; this one is
+     * not, so it is declared here rather than assumed for every table. An
+     * expense names a client company through a composite tenant key and may
+     * already be on an invoice, so a save that moved it would either carry
+     * those into a tenant that never asked for them or write nothing at all
+     * while reporting success. Both are worse than refusing.
+     */
+    protected function workspaceOwnershipIsImmutable(): bool
+    {
+        return true;
+    }
 }
