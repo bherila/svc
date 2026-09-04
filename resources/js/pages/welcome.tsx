@@ -6,8 +6,32 @@ export default function Welcome() {
     return (
         <>
             <Head title="Client-service operations" />
-            <main className="min-h-screen bg-slate-950 text-white">
-                <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
+            <main className="relative isolate min-h-screen overflow-hidden bg-slate-950 text-white">
+                <svg
+                    aria-hidden="true"
+                    viewBox="0 0 200 200"
+                    className="pointer-events-none absolute -top-24 -right-24 h-auto w-[22rem] rotate-12 text-cyan-300 opacity-[0.05] sm:w-[34rem]"
+                >
+                    <mask id="svc-gear-hole">
+                        <rect width="200" height="200" fill="white" />
+                        <circle cx="100" cy="100" r="30" fill="black" />
+                    </mask>
+                    <g fill="currentColor" mask="url(#svc-gear-hole)">
+                        <circle cx="100" cy="100" r="72" />
+                        {Array.from({ length: 12 }, (_, index) => (
+                            <rect
+                                key={index}
+                                x="87"
+                                y="12"
+                                width="26"
+                                height="34"
+                                rx="6"
+                                transform={`rotate(${index * 30} 100 100)`}
+                            />
+                        ))}
+                    </g>
+                </svg>
+                <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
                     <nav className="flex items-center justify-between">
                         <span className="text-xl font-semibold tracking-[0.22em]">
                             SVC
