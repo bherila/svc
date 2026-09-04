@@ -211,7 +211,13 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           diff_status=0
+          # Keep this list in step with `source.directories` in
+          # infection.diff.json5. A directory named there but missing here is
+          # not a looser gate, it is no gate at all: this step reports success
+          # in six seconds and the required check goes green having mutated
+          # nothing.
           git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            app/Casts/ \
             app/Services/Billing/ \
             app/Support/Billing/ || diff_status=$?
           if [ "$diff_status" -eq 0 ]; then
