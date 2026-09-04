@@ -12,7 +12,10 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
 use App\Support\AgentApi\AgentApiScopes;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
@@ -170,6 +173,100 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
     }
 
     /** @return array{User, Workspace, ClientCompany, ClientProject} */
+    /**
+     * Every tenant-owned write the invoice lifecycle issues names its workspace.
+     *
+     * From review on #230, which found three of these one at a time. The model
+     * hooks this PR adds cannot see a builder write - a relation `update()`,
+     * `detach()`, or `Model::query()->...->update()` never touches a model
+     * instance - so those have to name the workspace at the call site, and a
+     * test that names call sites would only ever find the ones somebody
+     * thought of.
+     *
+     * This asserts the property instead: drive a draft through the rewrite and
+     * issue paths, which between them cover the line delete, the pivot detach,
+     * the time-entry status update and the revision bump, and refuse any
+     * update or delete against a table that has a `workspace_id` and does not
+     * mention it. The tables come from the schema, so a write added tomorrow
+     * against a tenant-owned table is in this test the day it appears.
+     */
+    public function test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $time = $this->approvedTime($owner, $workspace, $company, $project, 'Original allocation');
+        $replacement = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');
+        // Issuing is a delivery scope, not a write scope.
+        $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
+        $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'scoped-writes-create');
+
+        $writes = [];
+        DB::listen(static function (QueryExecuted $query) use (&$writes): void {
+            // Both quoting styles: MariaDB writes `table`, SQLite writes
+            // "table", and a pattern that knew only one would match nothing on
+            // the other lane and leave this test asserting over an empty list.
+            if (preg_match('/^(?:update|delete\s+from)\s+["`\[]?([a-z_]+)["`\]]?/i', ltrim($query->sql), $matches) === 1) {
+                $writes[] = [strtolower($matches[1]), $query->sql];
+            }
+        });
+
+        $updated = $this->withHeader('Idempotency-Key', 'scoped-writes-update')->patchJson(
+            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
+            [
+                'expected_version' => $draft['version'],
+                'time_entry_ids' => [$replacement->public_id],
+                'manual_lines' => [],
+            ],
+        )->assertOk()->json('data');
+
+        $this->withHeader('Idempotency-Key', 'scoped-writes-issue')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}/issue",
+            ['expected_version' => $updated['version'], 'confirm' => true],
+        )->assertOk();
+
+        $unscoped = [];
+        $touched = [];
+
+        foreach ($writes as [$table, $sql]) {
+            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'workspace_id')) {
+                continue;
+            }
+
+            $touched[$table] = true;
+
+            // The predicate, not the assignment: `set workspace_id = ?` on an
+            // insert-like update would satisfy a naive search of the whole
+            // statement while scoping nothing.
+            $where = strstr(strtolower($sql), ' where ');
+
+            if ($where === false || ! str_contains($where, 'workspace_id')) {
+                $unscoped[] = $sql;
+            }
+        }
+
+        $this->assertSame([], $unscoped, "These tenant-owned writes name no workspace:\n".implode("\n", $unscoped));
+
+        // The flow has to have written to the tables this is about, or the
+        // assertion above passed by inspecting nothing.
+        //
+        // `client_invoice_line_time_entries` is deliberately not among them:
+        // `client_invoice_line_id` cascades on delete, so clearing the lines
+        // takes the pivot rows with them and issues no statement of its own.
+        // A detach that does run is still caught by the loop above, which asks
+        // the schema rather than this list.
+        foreach (['client_invoices', 'client_invoice_lines', 'client_time_entries'] as $table) {
+            $this->assertArrayHasKey($table, $touched, $table.' was never written to, so this test proved nothing about it.');
+        }
+
+        // And the work still happened: a predicate naming the wrong workspace
+        // would leave every one of these statements matching no row while the
+        // requests still returned 200.
+        $this->assertSame(0, $time->invoiceLines()->count());
+        $this->assertSame(1, $replacement->invoiceLines()->count());
+        $this->assertSame('approved', $time->fresh()->status);
+        $this->assertSame('invoiced', $replacement->fresh()->status);
+    }
+
     private function tenant(): array
     {
         $owner = User::factory()->create();

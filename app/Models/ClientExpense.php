@@ -14,7 +14,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use LogicException;
 
 /**
  * A reimbursable client expense: an amount, a date, a company, and optionally a
@@ -128,53 +127,17 @@ class ClientExpense extends Model implements WorkspaceOwned
     }
 
     /**
-     * Carry the workspace into every update and delete this row performs.
+     * An expense stays in the workspace it was recorded in (#229).
      *
-     * Eloquent keys a save by primary key alone, so `save()` on a model read
-     * through a workspace-scoped query still emits `where id = ?`. The write is
-     * not reachable across tenants - the id came from a scoped read holding
-     * `FOR UPDATE` inside the same transaction, so nothing can move it - but
-     * "not reachable" is an argument about the caller, and the rule this
-     * repository states is about the statement: every tenant-owned write is
-     * workspace-scoped. This makes that true of the SQL rather than of the
-     * reasoning around it, which is the difference between a guarantee and a
-     * paragraph.
-     *
-     * `setKeysForSaveQuery()` is the seam Laravel provides for exactly this,
-     * and taking it keeps `save()`: casts, timestamps and model events all
-     * still run, where hand-writing the update statements would have traded a
-     * scoping guarantee for three subtler ways to be wrong. It backs the update
-     * `save()` issues, both delete paths and `restore()`, so there is no fifth
-     * write to remember.
-     *
-     * The predicate is the *stored* workspace, not only the in-memory
-     * attribute. Before adding it, refuse a changed workspace explicitly. A
-     * predicate on the stored value alone would still match the original row
-     * and let the update move it to another workspace; a predicate on the new
-     * value alone would fail silently and leave the model disagreeing with the
-     * database. Workspace ownership is immutable here, so neither outcome is
-     * acceptable.
-     *
-     * The parent is called for its effect and `$query` is returned rather than
-     * its result. Both are the same object - it configures the builder it was
-     * handed and hands it back - but the analyser reads the parent's return as
-     * `Builder<Model>` and loses the `static` this signature promises. Keeping
-     * the parent call is still the point: the key predicate stays the
-     * framework's to define, and this adds one clause to it.
-     *
-     * @param  Builder<static>  $query
-     * @return Builder<static>
+     * The rule the trait scopes writes by is the same everywhere; this one is
+     * not, so it is declared here rather than assumed for every table. An
+     * expense names a client company through a composite tenant key and may
+     * already be on an invoice, so a save that moved it would either carry
+     * those into a tenant that never asked for them or write nothing at all
+     * while reporting success. Both are worse than refusing.
      */
-    protected function setKeysForSaveQuery($query)
+    protected function workspaceOwnershipIsImmutable(): bool
     {
-        $storedWorkspaceId = $this->getRawOriginal('workspace_id', $this->getAttribute('workspace_id'));
-
-        if ((int) $storedWorkspaceId !== (int) $this->getAttribute('workspace_id')) {
-            throw new LogicException('An expense cannot be moved to another workspace.');
-        }
-
-        parent::setKeysForSaveQuery($query);
-
-        return $query->where('workspace_id', $storedWorkspaceId);
+        return true;
     }
 }

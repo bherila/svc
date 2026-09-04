@@ -67,10 +67,71 @@ database of its own.
 3. Add the composite key, with the same `ON DELETE` rule as the single-column key
    on the same column.
 4. Add the reference to `App\Support\Tenancy\TenantReferenceInventory`.
+5. Have its model use `App\Models\Concerns\BelongsToWorkspace`.
 
 `TenantForeignKeyInventoryTest` walks the live schema for tenant-owned columns
 that name a tenant-owned parent, so a table added without step 4 fails there
 rather than becoming a defect later.
+
+Step 5 is what the keys cannot do. A composite key refuses a *reference* across
+tenants; it says nothing about a statement that names no tenant at all, and
+Eloquent keys a save by primary key alone - `update ... where id = ?` on a row
+this workspace may not own. The trait overrides `setKeysForSaveQuery()` so the
+workspace predicate is added to the update `save()` issues, both delete paths,
+`restore()` and `increment()`. `WorkspaceScopedWriteTest` reads the schema the
+same way the inventory test does and fails on a model whose table has a
+`workspace_id` and whose writes are not scoped by it.
+
+The predicate is the workspace as stored, not as the model currently holds it,
+so a model that merely claims a workspace - one keyed at a row in a different
+one - matches nothing rather than rewriting a stranger's row. A model hydrated
+without the column at all - a partial `select()` - is refused outright rather
+than being written with `workspace_id is null`, which would match nothing while
+`save()` still returned true.
+
+A tenant-owned *pivot* needs one thing more. `detach()` on a relation declaring
+`using()` never loads the row: it synthesises a pivot from the two relationship
+keys, and `AsPivot::delete()` builds its own statement from those rather than
+going through the save-query hook. `ScopesPivotDeletesToWorkspace` adds the
+workspace to that statement, taking it from the pivot's own attributes or from
+the parent the relation was reached through, and refusing when neither has one -
+`$user->clientCompanies()` reaches a tenant-owned pivot from a parent that
+belongs to no workspace. The three membership pivots use it.
+
+Neither hook covers a *builder* write - `$invoice->lines()->delete()`, a relation
+`update()`, a `detach()`, or any `Model::query()->...->update()`. Those never
+touch a model instance, so the workspace has to be named in the call, with
+`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`. Every such
+write against a tenant-owned table does:
+
+| Write | Where |
+| --- | --- |
+| Clearing a draft's lines | `InvoiceLifecycleService::updateDraft()` |
+| Marking linked time invoiced | `InvoiceLifecycleService::issue()` |
+| Releasing linked time | `InvoiceFromTimeService`, `InvoiceLineComposer` |
+| Bumping the opaque revision | `IncrementsAgentRevision::advanceAgentRevision()` |
+
+Naming them is not the guarantee, though - the next one added would be missing
+from the list and from any test that checks call sites.
+`AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace`
+drives a draft through rewrite and issue and refuses *any* update or delete
+against a table that has a `workspace_id` and whose predicate does not mention
+it, with the tables read from the schema.
+
+A model may also declare its ownership fixed, by overriding
+`workspaceOwnershipIsImmutable()` to return true. A save that then changes
+`workspace_id` is refused before the predicate is chosen, because neither
+resolution is acceptable: the stored value would match the row and move it into
+another tenant, carrying its children with it, and the new value would match
+nothing while `save()` reported success. `ClientExpense` declares it (#229).
+
+It is opt-in rather than the default, because ownership is not fixed everywhere.
+`client_stripe_events` is inserted by the webhook receiver before anything knows
+which tenant the event belongs to, and the handler stamps the workspace once it
+resolves one; and the tests that prove the application refuses a legacy
+cross-tenant row have to produce one first, which
+`WritesLegacyCrossTenantRows` does by moving a row on purpose. Declaring
+immutability everywhere would have been a claim this codebase contradicts.
 
 ## Why the delete rule has to match
 

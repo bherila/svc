@@ -1,0 +1,399 @@
+<?php
+
+namespace Tests\Feature\Models;
+
+use App\Exceptions\UnscopableWorkspaceWrite;
+use App\Exceptions\WorkspaceOwnershipImmutable;
+use App\Models\ClientExpense;
+use App\Models\ClientProjectMembership;
+use App\Models\ClientTask;
+use App\Models\Concerns\BelongsToWorkspace;
+use App\Models\WorkspaceInvoiceCounter;
+use Closure;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use ReflectionClass;
+use Tests\Concerns\BuildsSyntheticExpenses;
+use Tests\TestCase;
+
+/**
+ * Every write to a tenant-owned row names the workspace in its own statement.
+ *
+ * Eloquent keys a save by primary key alone, so a model read through a
+ * perfectly workspace-scoped query still emits `update ... where id = ?`. Every
+ * such write in this application is safe by the argument that the id came from
+ * a scoped read - but that argument is about the caller, it has to be made
+ * again for each new one, and the rule this repository states is about the
+ * statement. `BelongsToWorkspace` adds the predicate; this test is what stops
+ * the next tenant-owned model from being added without it.
+ *
+ * There is no exemption list on purpose. A table with a `workspace_id` column
+ * is tenant-owned by this repository's definition, and a model that wants out
+ * of the predicate wants a different table.
+ */
+final class WorkspaceScopedWriteTest extends TestCase
+{
+    use BuildsSyntheticExpenses;
+    use RefreshDatabase;
+
+    public function test_every_model_whose_table_has_a_workspace_uses_the_scoping_trait(): void
+    {
+        $unscoped = [];
+
+        foreach ($this->tenantOwnedModels() as $class) {
+            if (! in_array(BelongsToWorkspace::class, class_uses_recursive($class), true)) {
+                $unscoped[] = sprintf('%s [%s]', class_basename($class), (new $class)->getTable());
+            }
+        }
+
+        $this->assertSame([], $unscoped, sprintf(
+            "These models own a workspace column but do not use %s, so their updates and deletes are keyed by id alone:\n\n%s",
+            BelongsToWorkspace::class,
+            implode("\n", $unscoped),
+        ));
+    }
+
+    /**
+     * The trait is the mechanism; this is the property it exists for, asserted
+     * against the SQL each model would actually issue rather than against the
+     * presence of a `use` statement.
+     */
+    public function test_every_such_model_writes_a_statement_naming_the_workspace(): void
+    {
+        $gaps = [];
+
+        foreach ($this->tenantOwnedModels() as $class) {
+            $query = $this->saveQueryFor($class, workspace: 4242);
+
+            if (! str_contains($query->toSql(), 'workspace_id') || ! in_array(4242, $query->getBindings(), true)) {
+                $gaps[] = sprintf('%s: %s', class_basename($class), $query->toSql());
+            }
+        }
+
+        $this->assertSame([], $gaps, "A save on these models would not be scoped to a workspace:\n".implode("\n", $gaps));
+    }
+
+    /**
+     * #229's rule, against a real row: an expense stays in the workspace it was
+     * recorded in. It is declared on the model rather than assumed for every
+     * table, because ownership is genuinely not fixed everywhere - the Stripe
+     * event ledger is stamped with its tenant after the fact, and
+     * `WritesLegacyCrossTenantRows` moves rows on purpose - so this asserts the
+     * refusal where it is claimed and leaves the rest alone.
+     */
+    public function test_an_expense_cannot_be_saved_into_a_different_workspace(): void
+    {
+        $home = $this->syntheticWorkspace('ownership home');
+        $foreign = $this->syntheticWorkspace('ownership foreign');
+        $expense = $this->recordSyntheticExpense($home, $this->syntheticCompany($home, 'ownership home'));
+
+        $expense->setAttribute('workspace_id', $foreign->id);
+
+        try {
+            $expense->save();
+            $this->fail('An expense must not be movable between workspaces by a save.');
+        } catch (WorkspaceOwnershipImmutable $refusal) {
+            $this->assertStringContainsString(ClientExpense::class, $refusal->getMessage());
+        }
+
+        $this->assertSame($home->id, $expense->fresh()?->workspace_id);
+    }
+
+    /**
+     * The stored workspace is what the predicate is built from, so a model that
+     * agrees with the database writes against the tenant it is actually in.
+     */
+    public function test_the_predicate_is_built_from_the_stored_workspace(): void
+    {
+        $model = new ClientExpense;
+        $model->setRawAttributes(['id' => 7, 'workspace_id' => 4242], sync: true);
+        $model->exists = true;
+
+        $query = $model->newModelQuery();
+        $this->buildSaveQuery($model, $query);
+
+        $this->assertContains(4242, $query->getBindings());
+    }
+
+    public function test_a_forged_model_cannot_write_another_workspaces_row(): void
+    {
+        $mine = $this->syntheticWorkspace('scoped writer');
+        $theirs = $this->syntheticWorkspace('bystander');
+        $target = $this->recordSyntheticExpense($theirs, $this->syntheticCompany($theirs, 'bystander'));
+        $control = $this->recordSyntheticExpense($mine, $this->syntheticCompany($mine, 'scoped writer'));
+
+        // What a caller holding an unchecked id produces: a model that says it
+        // belongs here, keyed at a row that does not.
+        $this->assertTrue($this->forge($target->id, $mine->id)->save(), 'Eloquent reports a save whether or not a row matched.');
+        $this->assertSame(
+            'Synthetic travel expense',
+            $target->fresh()?->description,
+            'The other workspace\'s expense was rewritten through an id predicate.',
+        );
+
+        // The same forgery against a row this workspace does own, so the test
+        // cannot be passing because the write never happens at all.
+        $this->forge($control->id, $mine->id)->save();
+        $this->assertSame('Rewritten by a forged model', $control->fresh()?->description);
+    }
+
+    public function test_a_model_hydrated_without_its_workspace_is_refused(): void
+    {
+        $workspace = $this->syntheticWorkspace('partial read');
+        $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'partial read'));
+
+        $partial = ClientExpense::query()->select(['id', 'description'])->findOrFail($expense->id);
+        $partial->setAttribute('description', 'Rewritten from a partial read');
+
+        $this->expectException(UnscopableWorkspaceWrite::class);
+
+        $partial->save();
+    }
+
+    /**
+     * The workspace-keyed table reaches the refusal by the same route. Its
+     * shortcut - the parent's key clause already names the workspace - is taken
+     * only after the stored key has been resolved; taking it first would leave
+     * the parent writing `where workspace_id is null`, matching no row while
+     * `save()` reported success. From review on #230.
+     */
+    public function test_a_workspace_keyed_model_hydrated_without_its_key_is_refused(): void
+    {
+        $workspace = $this->syntheticWorkspace('counter partial read');
+        WorkspaceInvoiceCounter::query()->create(['workspace_id' => $workspace->id, 'next_number' => 1]);
+
+        $partial = WorkspaceInvoiceCounter::query()
+            ->where('workspace_id', $workspace->id)
+            ->select(['next_number'])
+            ->firstOrFail();
+        $partial->setAttribute('next_number', 2);
+
+        $this->expectException(UnscopableWorkspaceWrite::class);
+
+        $partial->save();
+    }
+
+    public function test_the_delete_paths_and_restore_carry_the_workspace_too(): void
+    {
+        $workspace = $this->syntheticWorkspace('deletes');
+        $company = $this->syntheticCompany($workspace, 'deletes');
+        $expense = $this->recordSyntheticExpense($workspace, $company);
+        $forced = $this->recordSyntheticExpense($workspace, $company);
+
+        $statements = $this->capture(function () use ($expense, $forced): void {
+            $expense->delete();
+            $expense->restore();
+            $forced->forceDelete();
+        });
+
+        $this->assertCount(3, $statements, 'A soft delete, a restore and a force delete, or the paths changed.');
+
+        foreach ($statements as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql, $sql);
+        }
+    }
+
+    /**
+     * The relationship deletion path, which the save-query hook never sees.
+     *
+     * `detach()` on a relation declaring `using()` synthesises a pivot from the
+     * two relationship keys, and `AsPivot::delete()` writes its own statement
+     * from those rather than going through `setKeysForSaveQuery()`. Both halves
+     * are asserted: the statement names the workspace, and the row is actually
+     * gone - a predicate carrying the wrong workspace would leave a detach that
+     * deletes nothing and reports success. From review on #230.
+     */
+    public function test_detaching_through_a_custom_pivot_names_the_workspace(): void
+    {
+        $workspace = $this->syntheticWorkspace('detach');
+        $project = $this->syntheticProject($this->syntheticCompany($workspace, 'detach'), 'detach');
+        // A workspace member, not merely a user: `client_project_memberships`
+        // keys (workspace_id, user_id) into `workspace_memberships`, so a
+        // project membership for a non-member is a row the schema refuses.
+        $member = $this->syntheticMember($workspace, 'detached member');
+
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $member->id,
+            'role' => 'contributor',
+        ]);
+
+        $statements = $this->capture(static function () use ($project, $member): void {
+            $project->members()->detach($member->id);
+        });
+
+        $deletes = array_values(array_filter(
+            $statements,
+            static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'delete'),
+        ));
+
+        $this->assertCount(1, $deletes, 'One detach, one delete statement.');
+        $this->assertStringContainsString('workspace_id', $deletes[0], $deletes[0]);
+        $this->assertSame(0, ClientProjectMembership::query()->where('user_id', $member->id)->count());
+    }
+
+    /**
+     * The revision bump is a builder update too, and no model hook sees it.
+     *
+     * From review on #230. `advanceAgentRevision()` writes through
+     * `static::query()`, so the workspace is named in the call; the second
+     * assertion is what proves the predicate matched, since a wrong one would
+     * increment nothing and still return.
+     */
+    public function test_the_agent_revision_bump_names_the_workspace(): void
+    {
+        $workspace = $this->syntheticWorkspace('revision');
+        $task = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $this->syntheticProject($this->syntheticCompany($workspace, 'revision'), 'revision')->id,
+            'title' => 'Synthetic revision task',
+            'status' => 'open',
+        ]);
+        $before = $task->lock_version;
+
+        $statements = $this->capture(static function () use ($task): void {
+            $task->advanceAgentRevision();
+        });
+
+        $updates = array_values(array_filter(
+            $statements,
+            static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'update'),
+        ));
+
+        $this->assertCount(1, $updates, 'One revision bump, one update statement.');
+        $this->assertStringContainsString('workspace_id', $updates[0], $updates[0]);
+        $this->assertSame($before + 1, $task->fresh()?->lock_version);
+    }
+
+    /**
+     * A table keyed by the workspace is already scoped by the key predicate,
+     * and the trait leaves it alone rather than saying the same thing twice.
+     */
+    public function test_a_table_keyed_by_the_workspace_is_not_scoped_twice(): void
+    {
+        $workspace = $this->syntheticWorkspace('counter');
+        $counter = WorkspaceInvoiceCounter::query()->create(['workspace_id' => $workspace->id, 'next_number' => 1]);
+
+        $statements = $this->capture(static function () use ($counter): void {
+            $counter->forceFill(['next_number' => 2])->save();
+        });
+
+        $this->assertCount(1, $statements);
+        $this->assertSame(1, substr_count($statements[0], 'workspace_id'), $statements[0]);
+        $this->assertSame(2, WorkspaceInvoiceCounter::query()->findOrFail($workspace->id)->next_number);
+    }
+
+    /** A model that claims a workspace it is not keyed in. */
+    private function forge(int $id, int $workspaceId): ClientExpense
+    {
+        $model = new ClientExpense;
+        $model->setRawAttributes(['id' => $id, 'workspace_id' => $workspaceId], sync: true);
+        $model->exists = true;
+
+        return $model->forceFill(['description' => 'Rewritten by a forged model']);
+    }
+
+    /**
+     * The statements a piece of work issues against `client_expenses` or
+     * `workspace_invoice_counters`, so a test can read the SQL rather than
+     * infer it from the outcome.
+     *
+     * @return list<string>
+     */
+    private function capture(Closure $work): array
+    {
+        $statements = [];
+
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            if (str_contains($query->sql, 'client_expenses')
+                || str_contains($query->sql, 'workspace_invoice_counters')
+                || str_contains($query->sql, 'client_project_memberships')
+                || str_contains($query->sql, 'client_tasks')) {
+                $statements[] = $query->sql;
+            }
+        });
+
+        $work();
+
+        return $statements;
+    }
+
+    /**
+     * The query a save on this model would be keyed by, without issuing it.
+     *
+     * @param  class-string<Model>  $class
+     * @return Builder<Model>
+     */
+    private function saveQueryFor(string $class, int $workspace): Builder
+    {
+        $model = new $class;
+        $model->setRawAttributes([$model->getKeyName() => 1, 'workspace_id' => $workspace], sync: true);
+        $model->exists = true;
+
+        $query = $model->newModelQuery();
+        $this->buildSaveQuery($model, $query);
+
+        return $query;
+    }
+
+    /**
+     * `setKeysForSaveQuery()` is protected, which is right - it is the
+     * framework's seam, not an API - so the test reaches it the way the model
+     * itself would.
+     *
+     * @param  Builder<Model>  $query
+     */
+    private function buildSaveQuery(Model $model, Builder $query): void
+    {
+        $build = function (Builder $query): void {
+            $this->setKeysForSaveQuery($query);
+        };
+
+        $bound = Closure::bind($build, $model, $model::class);
+        $bound($query);
+    }
+
+    /**
+     * Every model whose table carries a `workspace_id`.
+     *
+     * Read off the schema rather than off a list, so a model added tomorrow is
+     * in this test the day it gets its column.
+     *
+     * @return list<class-string<Model>>
+     */
+    private function tenantOwnedModels(): array
+    {
+        $models = [];
+
+        foreach (glob(base_path('app/Models/*.php')) ?: [] as $file) {
+            $class = 'App\\Models\\'.basename($file, '.php');
+
+            if (! class_exists($class)) {
+                continue;
+            }
+
+            $reflection = new ReflectionClass($class);
+
+            if ($reflection->isAbstract() || ! $reflection->isSubclassOf(Model::class)) {
+                continue;
+            }
+
+            $table = (new $class)->getTable();
+
+            if (Schema::hasTable($table) && Schema::hasColumn($table, 'workspace_id')) {
+                $models[] = $class;
+            }
+        }
+
+        sort($models);
+
+        $this->assertNotSame([], $models, 'No tenant-owned model was found, so this test asserted nothing.');
+
+        return $models;
+    }
+}

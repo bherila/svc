@@ -60,7 +60,7 @@ class InvoiceLineComposer
             // Time is linked through a pivot here, so releasing it is a detach
             // rather than nulling a column. Milestones keep a column, because a
             // deliverable is never split across lines.
-            $line->timeEntries()->detach();
+            $line->timeEntries()->wherePivot('workspace_id', $line->workspace_id)->detach();
             ClientTask::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->where('client_invoice_line_id', $line->id)

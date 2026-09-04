@@ -422,7 +422,10 @@ into a test.
 
 Every tenant-owned model is workspace-scoped through
 `App\Models\Concerns\BelongsToWorkspace` and exposes a UUID `public_id`; the
-documents below predate that convention and refer to bare integer keys.
+documents below predate that convention and refer to bare integer keys. That
+trait also scopes the model's *writes* - Eloquent keys a save by primary key
+alone - so an update or delete names the workspace in its own SQL. See
+[tenant foreign keys](tenant-foreign-keys.md#adding-a-tenant-owned-table).
 
 ## High-level flow
 

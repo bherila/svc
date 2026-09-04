@@ -4,6 +4,7 @@ namespace Tests\Feature\Expenses;
 
 use App\Exceptions\CrossTenantReference;
 use App\Exceptions\ExpenseTransitionRefused;
+use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Support\Concurrency\LockOrderRecorder;
@@ -13,7 +14,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use LogicException;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\TestCase;
 
@@ -456,8 +456,8 @@ final class ExpenseLifecycleTest extends TestCase
         try {
             $expense->save();
             $this->fail('Workspace ownership must be immutable after an expense is created.');
-        } catch (LogicException $refusal) {
-            $this->assertSame('An expense cannot be moved to another workspace.', $refusal->getMessage());
+        } catch (WorkspaceOwnershipImmutable $refusal) {
+            $this->assertStringContainsString('cannot be moved to another workspace', $refusal->getMessage());
         }
 
         $stored = ClientExpense::query()->findOrFail($expense->id);
