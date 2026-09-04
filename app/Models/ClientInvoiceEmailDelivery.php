@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EmailAddressList;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $public_id
  * @property string $status
  * @property list<string> $recipients
- * @property list<string>|null $bcc
+ * @property list<string> $bcc
  * @property string $subject
  * @property string|null $body
  * @property string|null $provider_message_reference
@@ -41,8 +42,8 @@ class ClientInvoiceEmailDelivery extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
-            'recipients' => 'array',
-            'bcc' => 'array',
+            'recipients' => EmailAddressList::class,
+            'bcc' => EmailAddressList::class,
             'queued_at' => 'datetime',
             'sent_at' => 'datetime',
             'failed_at' => 'datetime',
