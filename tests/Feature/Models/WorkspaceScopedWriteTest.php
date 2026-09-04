@@ -210,7 +210,10 @@ final class WorkspaceScopedWriteTest extends TestCase
     {
         $workspace = $this->syntheticWorkspace('detach');
         $project = $this->syntheticProject($this->syntheticCompany($workspace, 'detach'), 'detach');
-        $member = $this->syntheticUser('detached member');
+        // A workspace member, not merely a user: `client_project_memberships`
+        // keys (workspace_id, user_id) into `workspace_memberships`, so a
+        // project membership for a non-member is a row the schema refuses.
+        $member = $this->syntheticMember($workspace, 'detached member');
 
         ClientProjectMembership::query()->create([
             'workspace_id' => $workspace->id,
