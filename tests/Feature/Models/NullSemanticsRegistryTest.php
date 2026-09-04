@@ -23,6 +23,7 @@ use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
+use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
 use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
@@ -175,10 +176,10 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
-        'client_invoice_lines.client_agreement_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
-        'client_invoice_lines.client_agreement_recurring_item_id => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.client_agreement_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
+        'client_invoice_lines.client_agreement_recurring_item_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
-        'client_invoice_lines.hours => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::snapshot',
+        'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
         'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
@@ -505,9 +506,24 @@ final class NullSemanticsRegistryTest extends TestCase
             // to an empty identity that fails the agreement-owned-line check,
             // and a null recurring item is encoded as "no auxiliary owner" in
             // the allocation signature. None is write-only.
-            'hours' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
-            'client_agreement_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
-            'client_agreement_recurring_item_id' => ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'snapshot'],
+            //
+            // Each is now pinned by its own case on a two-line invoice: the null
+            // line and a populated sibling in the same snapshot, told apart by a
+            // quantity the branch does not touch. That construction is what makes
+            // the three citations separable - deleting one ternary reddens one
+            // test, and inverting it reddens the populated half of the same one.
+            'hours' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
+            ],
+            'client_agreement_id' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
+            ],
+            'client_agreement_recurring_item_id' => [
+                'covered_by' => ReplaySnapshotNullIdentityTest::class,
+                'method' => 'test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
+            ],
         ],
         'client_agreements' => [
             // Was cited against the generic derive-rate test, where setting this
