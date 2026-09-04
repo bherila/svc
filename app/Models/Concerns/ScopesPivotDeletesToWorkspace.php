@@ -4,7 +4,6 @@ namespace App\Models\Concerns;
 
 use App\Exceptions\UnscopableWorkspaceWrite;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * The one write path `BelongsToWorkspace` cannot reach, for a tenant-owned pivot.
@@ -53,10 +52,16 @@ trait ScopesPivotDeletesToWorkspace
             return $attributes['workspace_id'];
         }
 
-        $parent = $this->pivotParent;
+        // Read straight off the parent rather than through an `instanceof`.
+        // `AsPivot` types `$pivotParent` as a model and the analyser refuses a
+        // check that can never be false; the only pivot without one is a
+        // hand-built instance, which does not reach here - `delete()` takes
+        // this path only for a pivot synthesised by a relation, and a relation
+        // always sets its parent.
+        $parent = $this->pivotParent->getAttributes();
 
-        if ($parent instanceof Model && array_key_exists('workspace_id', $parent->getAttributes())) {
-            return $parent->getAttributes()['workspace_id'];
+        if (array_key_exists('workspace_id', $parent)) {
+            return $parent['workspace_id'];
         }
 
         throw new UnscopableWorkspaceWrite(sprintf(
