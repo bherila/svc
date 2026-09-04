@@ -691,7 +691,7 @@ Stores service agreement terms between the admin and client companies.
 - **`rollover_months = N`**: Hours can roll over for N-1 additional months (available for N total months)
 - **FIFO Consumption**: When multiple months of rollover are available, oldest hours are consumed first
 - **FIFO Expiry**: Oldest unused hours expire first when they exceed the rollover window
-- **Catch-up placement**: Charged catch-up hours settle debt in the invoice's service month. Any surplus restores that month's available capacity and expires under the same rollover window; an old charge is never reapplied as new capacity in later months.
+- **Catch-up placement**: Charged catch-up hours settle debt in the invoice's service month. Any surplus restores that month's available capacity and expires under the same rollover window; an old charge is never reapplied as new capacity in later months. A negative correction reverses unused capacity in its service month first, then restores debt for any remainder.
 
 #### `client_invoices` table
 Stores invoices generated for clients.

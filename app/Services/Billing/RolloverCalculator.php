@@ -253,18 +253,27 @@ class RolloverCalculator
             // minimum-availability buffer and belongs to this month's capacity
             // lot, so the normal rollover window expires it instead of letting
             // the same old charge create fresh capacity forever.
-            $billedOverage = max(0.0, $month['billed_overage_hours'] ?? 0.0);
-            $settledDebt = min($summary->closing->negativeBalance, $billedOverage);
+            $billedOverage = $month['billed_overage_hours'] ?? 0.0;
+            $settledDebt = min($summary->closing->negativeBalance, max(0.0, $billedOverage));
+            $restoredCapacity = max(0.0, $billedOverage - $settledDebt);
+
+            // A negative correcting invoice unwinds capacity from its service
+            // month. Take back unused hours first; if they were not there to
+            // reverse, the remainder is debt again.
+            $reversedCharge = max(0.0, -$billedOverage);
+            $reversedCapacity = min($summary->closing->unusedHours, $reversedCharge);
             $summary = new MonthSummary(
                 opening: $summary->opening,
                 closing: new ClosingBalance(
                     hoursUsedFromRetainer: $summary->closing->hoursUsedFromRetainer,
                     hoursUsedFromRollover: $summary->closing->hoursUsedFromRollover,
                     unusedHours: $this->ledgerHours(
-                        $summary->closing->unusedHours + ($billedOverage - $settledDebt),
+                        $summary->closing->unusedHours + $restoredCapacity - $reversedCapacity,
                     ),
                     excessHours: $summary->closing->excessHours,
-                    negativeBalance: $this->ledgerHours($summary->closing->negativeBalance - $settledDebt),
+                    negativeBalance: $this->ledgerHours(
+                        $summary->closing->negativeBalance - $settledDebt + ($reversedCharge - $reversedCapacity),
+                    ),
                     remainingRollover: $summary->closing->remainingRollover,
                 ),
                 hoursWorked: $summary->hoursWorked,
