@@ -202,7 +202,10 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
         $writes = [];
         DB::listen(static function (QueryExecuted $query) use (&$writes): void {
-            if (preg_match('/^(?:update|delete\s+from)\s+`?([a-z_]+)`?/i', ltrim($query->sql), $matches) === 1) {
+            // Both quoting styles: MariaDB writes `table`, SQLite writes
+            // "table", and a pattern that knew only one would match nothing on
+            // the other lane and leave this test asserting over an empty list.
+            if (preg_match('/^(?:update|delete\s+from)\s+["`\[]?([a-z_]+)["`\]]?/i', ltrim($query->sql), $matches) === 1) {
                 $writes[] = [strtolower($matches[1]), $query->sql];
             }
         });
