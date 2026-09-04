@@ -119,6 +119,9 @@ final class ProposalAcceptanceAgreementQuery
      */
     public function withActiveUnlinkedAgreement(Builder $proposals, ?CarbonImmutable $today = null): Builder
     {
+        // Acceptance creates an active [today, infinity] term. Any active
+        // candidate that has not ended before today overlaps that term,
+        // including one whose own start date is still in the future.
         return $this->withUnlinkedAgreementMatching(
             $proposals,
             activeOnly: true,
@@ -156,7 +159,6 @@ final class ProposalAcceptanceAgreementQuery
                 return $activeOnly
                     ? $agreements
                         ->where('client_agreements.status', 'active')
-                        ->where('client_agreements.starts_on', '<=', $today?->toDateString())
                         ->where(function (QueryBuilder $term) use ($today): void {
                             $term
                                 ->whereNull('client_agreements.ends_on')

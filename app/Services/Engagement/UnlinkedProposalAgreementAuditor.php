@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * so an agreement whose `source_proposal_id` is null is invisible to that
  * question regardless of how it was actually created. Acceptance now refuses
  * the currently-effective, same-project-scope state rather than creating a
- * second agreement.
+ * second agreement whose generated open-ended term would overlap it.
  *
  * This is the null-semantics class of #141 on a foreign key rather than a date.
  * The others drop a row out of a window; this one makes a duplicate guard fail
@@ -82,9 +82,9 @@ final class UnlinkedProposalAgreementAuditor
         // The status guard is the whole difference between live and latent, so
         // the two populations are counted separately rather than summed.
         //
-        // `sent` is the actionable one: accept() refuses its currently-active,
-        // same-project-scope subset until an operator resolves the agreement
-        // state.
+        // `sent` is the actionable one: accept() refuses its active,
+        // same-project-scope subset when the generated [today, infinity] term
+        // would overlap it, until an operator resolves the agreement state.
         // `accepted` takes the early return today and creates nothing, so it is
         // inert - but it is the same broken link, and it is worth sizing
         // because it is the population that would become dangerous if that
@@ -104,11 +104,11 @@ final class UnlinkedProposalAgreementAuditor
         // population with companies whose proposals are all properly linked.
         $withACandidate = $this->acceptanceAgreements->withUnlinkedAgreement(clone $sent);
 
-        // Narrowed once more to an agreement that is currently in force for the
-        // proposal's same project scope. A cancelled, ended, not-yet-started,
-        // or different-project agreement can still exist legitimately, so this
-        // is the subset where a second agreement would bill alongside a live
-        // one rather than retrospectively muddying the record.
+        // Narrowed once more to an active agreement whose term overlaps the
+        // open-ended agreement acceptance would create today, in the proposal's
+        // same project scope. A cancelled, already-ended, or different-project
+        // agreement can exist legitimately. A future active agreement is still
+        // a conflict because the newly generated term has no end date.
         $withAnActiveCandidate = $this->activeCandidates(clone $sent, $workspace);
 
         return new UnlinkedProposalAgreementCounts(

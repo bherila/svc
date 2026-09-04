@@ -101,11 +101,17 @@ class ProposalWorkflow
                 throw new EngagementException('Only sent proposals can be accepted.');
             }
 
+            // Take the shared current-read lock before any lazy relationship
+            // load can establish a REPEATABLE READ snapshot. Otherwise an
+            // acceptance waiting on activation could acquire this lock and
+            // still evaluate the agreement set as it existed before the
+            // activation committed.
+            $this->acceptanceAgreements->lockCompany($locked->workspace_id, $locked->client_company_id);
+
             if ($locked->valid_until !== null && $locked->valid_until->isBefore($this->clock->today($locked->workspace))) {
                 throw new EngagementException('This proposal has expired.');
             }
 
-            $this->acceptanceAgreements->lockCompany($locked->workspace_id, $locked->client_company_id);
             $agreement = $this->acceptanceAgreements->linkedAgreement($locked);
 
             if ($agreement === null && $this->acceptanceAgreements->hasActiveUnlinkedAgreement($locked)) {

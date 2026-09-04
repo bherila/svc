@@ -9,8 +9,11 @@ use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -408,7 +411,7 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame($proposal->id, ClientAgreement::query()->where('status', 'active')->sole()->source_proposal_id);
     }
 
-    public function test_active_unlinked_agreements_outside_the_current_term_do_not_block_acceptance(): void
+    public function test_an_ended_active_unlinked_agreement_does_not_block_acceptance(): void
     {
         $this->travelTo('2026-09-04 12:00:00');
         $owner = User::factory()->create();
@@ -426,6 +429,23 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
             'ends_on' => '2026-09-03',
         ]);
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $this->assertSame('accepted', $proposal->fresh()->status);
+        $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
+    }
+
+    public function test_a_future_active_unlinked_agreement_blocks_the_open_ended_acceptance_term(): void
+    {
+        $this->travelTo('2026-09-04 12:00:00');
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+
         ClientAgreement::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
@@ -437,13 +457,43 @@ class EngagementWorkflowTest extends TestCase
             'ends_on' => null,
         ]);
 
+        $this->assertSame(
+            1,
+            app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
+        );
+
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertUnprocessable()->assertExactJson([
+            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        ]);
 
-        $this->assertSame('accepted', $proposal->fresh()->status);
-        $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
+        $this->assertSame('sent', $proposal->fresh()->status);
+        $this->assertDatabaseCount('client_agreements', 1);
+        $this->assertDatabaseCount('client_company_activity', 0);
+    }
+
+    public function test_acceptance_locks_the_company_before_loading_the_workspace_calendar(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+        $proposal->forceFill(['valid_until' => '2026-12-31'])->save();
+
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = strtolower($query->sql);
+        });
+
+        app(ProposalWorkflow::class)->accept($proposal, $owner, 'Synthetic Signer', null);
+
+        $companyLock = array_find_key($statements, static fn (string $sql): bool => str_contains($sql, 'client_companies'));
+        $workspaceCalendar = array_find_key($statements, static fn (string $sql): bool => str_contains($sql, 'workspaces'));
+
+        $this->assertIsInt($companyLock);
+        $this->assertIsInt($workspaceCalendar);
+        $this->assertLessThan($workspaceCalendar, $companyLock);
     }
 
     public function test_an_active_unlinked_agreement_for_another_project_does_not_block_acceptance(): void
@@ -707,6 +757,50 @@ class EngagementWorkflowTest extends TestCase
             ->where('source_proposal_id', $proposal->id)
             ->sole();
         $this->assertSame($company->id, $created->client_company_id);
+    }
+
+    public function test_linked_agreement_lookup_independently_scopes_the_workspace_predicate(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $proposal = $this->sentProposal($workspace, $company, $owner);
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Linked Lookup Neighbour',
+            'slug' => 'synthetic-linked-lookup-neighbour-'.uniqid(),
+        ]);
+
+        $this->writingLegacyCrossTenantRows(static function () use ($neighbour, $company, $proposal): void {
+            DB::table('client_agreements')->insert([
+                'public_id' => (string) Str::uuid(),
+                'workspace_id' => $neighbour->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => null,
+                'source_proposal_id' => $proposal->id,
+                'title' => 'Private foreign linked agreement',
+                'status' => 'active',
+                'starts_on' => '2026-01-01',
+                'ends_on' => null,
+                'is_visible_to_client' => false,
+                'currency' => 'USD',
+                'billing_cadence' => 'monthly',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->assertNull(app(ProposalAcceptanceAgreementQuery::class)->linkedAgreement($proposal));
+
+        $response = $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertUnprocessable();
+
+        $response->assertExactJson([
+            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        ]);
+        $this->assertStringNotContainsString('Private foreign linked agreement', $response->getContent());
+        $this->assertSame('sent', $proposal->fresh()->status);
     }
 
     private function sentProposal(
