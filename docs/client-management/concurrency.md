@@ -173,3 +173,11 @@ gets a follow-up rather than an inline fix.
    the wrong place, or the registry is, and the failure names which pair
    disagrees. Deciding it is the registry means moving the case *and* saying why
    here.
+
+The table a lock is filed under is read off the query's own `from`, for a model
+builder as much as a plain one — never off `$query->getModel()->getTable()`.
+They agree for every chain in this application, and they are still not the same
+fact: `for update` locks the rows the statement selects, so a builder repointed
+at another table locks that table, and filing it under the model would record a
+lock on rows nobody held. So a lock on a table with no case is refused even when
+the model in the chain has one.

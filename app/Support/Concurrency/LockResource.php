@@ -115,15 +115,21 @@ enum LockResource: string
      * caller that names its own resource can name the wrong one, and the whole
      * value of the registry is that the recorded sequence is the real one.
      *
+     * Which is also why a model query is read through its underlying `from` and
+     * not through `$query->getModel()->getTable()`. The two agree for every
+     * query in this application, and the model's table is the more readable of
+     * them - but they are not the same fact. `for update` locks the rows the
+     * statement selects, so a builder repointed at another table locks that
+     * table while the model still names its own, and the registry would record
+     * a lock nobody took on rows nobody held. The whole claim here is that the
+     * recorded sequence is the real one; reading anything but the table the SQL
+     * will carry gives that up for a nicer-looking failure message.
+     *
      * @param  EloquentBuilder<covariant Model>|QueryBuilder  $query
      */
     public static function forQuery(EloquentBuilder|QueryBuilder $query): self
     {
-        if ($query instanceof EloquentBuilder) {
-            return self::forTable($query->getModel()->getTable());
-        }
-
-        $from = $query->from;
+        $from = $query instanceof EloquentBuilder ? $query->getQuery()->from : $query->from;
 
         if (! is_string($from)) {
             throw new RuntimeException('A pessimistic lock was taken on a query whose table is an expression, so it cannot be placed in the lock-order registry. Lock a plain table, or a model.');
