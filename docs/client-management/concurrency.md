@@ -1,8 +1,8 @@
 # Lock order and check-then-act
 
-Fifty `lockForUpdate()` call sites across twenty files, and until this document
-nothing anywhere said what order they were meant to be taken in. That is how
-locking gaps kept being found one at a time — a claim released with no lock at
+Fifty-one `lockForUpdate()` call sites across twenty-one files, and until this
+document nothing anywhere said what order they were meant to be taken in. That
+is how locking gaps kept being found one at a time — a claim released with no lock at
 all, an invoice freeze that read outside the lock it depended on, credit spend
 and claim release re-verified at issue time only after a reviewer asked. Each
 fix was right, and none of them told the next reviewer anything.
@@ -61,9 +61,10 @@ the majority order won and the minority is named as an inversion below.
 | 11 | `client_companies` | Last, and this is the surprise — see below |
 | 12 | `client_projects` | Never co-acquired with anything above |
 | 13 | `users` | Never co-acquired with anything above |
-| 14 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 15 | `client_stripe_customers` | |
-| 16 | `client_stripe_payment_methods` | |
+| 14 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 15 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 16 | `client_stripe_customers` | |
+| 17 | `client_stripe_payment_methods` | |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -143,6 +144,7 @@ gets a follow-up rather than an inline fix.
 | `UndatedCollectibleInvoiceRepairer::repair()` — the set repaired is the set counted | Counts under the lock and refuses if the count differs from the operator's stated expectation |
 | `OAuthLoginController::resolveUser()` — one account per provider subject and per email | Locks by provider subject, then by email; `users.email` unique behind it |
 | `ProposalWorkflow::accept()` — a proposal is accepted once | The proposal row lock, then the company; `client_agreements.source_proposal_id` unique behind it |
+| `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
 
 ## Adding a lock
 

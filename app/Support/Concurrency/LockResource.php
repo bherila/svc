@@ -65,6 +65,11 @@ enum LockResource: string
     case ClientProject = 'client_projects';
     case User = 'users';
 
+    // Credentials. Disconnecting an agent revokes its refresh token and then
+    // its access token, and takes no other lock on the way; nothing else in the
+    // application locks either table, so this pair orders only against itself.
+    case OAuthAccessToken = 'oauth_access_tokens';
+
     // Provider state, which no sequence mixes with any of the above.
     case StripePaymentMethodState = 'stripe_payment_method_states';
     case ClientStripeCustomer = 'client_stripe_customers';
