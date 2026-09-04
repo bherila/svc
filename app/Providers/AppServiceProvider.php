@@ -17,6 +17,7 @@ use App\Support\AgentApi\ResourceAuthCodeRepository;
 use App\Support\AgentApi\ResourceRefreshTokenRepository;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Passport\Bridge\AccessTokenRepository;
@@ -71,6 +73,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(ClientCompany::class, ClientCompanyPolicy::class);
         Gate::policy(ClientProject::class, ClientProjectPolicy::class);
+        RateLimiter::for('brevo-webhooks', fn (Request $request): Limit => Limit::perMinute(
+            (int) config('services.brevo.webhook_rate_limit_per_minute', 600),
+        )->by($request->ip() ?? 'unknown'));
 
         $this->configureDefaults();
 

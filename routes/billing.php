@@ -17,7 +17,7 @@ Route::middleware('web')
 // What became of an invoice email. Brevo does not sign its webhooks, so the
 // controller requires a configured shared token and refuses everything when
 // none is set - see it for why that failure direction is the safe one.
-Route::middleware('web')
+Route::middleware(['web', 'throttle:brevo-webhooks'])
     ->post('/api/webhooks/brevo', BrevoWebhookController::class)
     ->withoutMiddleware([ValidateCsrfToken::class, PreventRequestForgery::class])
     ->name('svc.billing.brevo.webhook');
