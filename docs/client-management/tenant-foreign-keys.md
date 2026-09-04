@@ -67,10 +67,26 @@ database of its own.
 3. Add the composite key, with the same `ON DELETE` rule as the single-column key
    on the same column.
 4. Add the reference to `App\Support\Tenancy\TenantReferenceInventory`.
+5. Have its model use `App\Models\Concerns\BelongsToWorkspace`.
 
 `TenantForeignKeyInventoryTest` walks the live schema for tenant-owned columns
 that name a tenant-owned parent, so a table added without step 4 fails there
 rather than becoming a defect later.
+
+Step 5 is what the keys cannot do. A composite key refuses a *reference* across
+tenants; it says nothing about a statement that names no tenant at all, and
+Eloquent keys a save by primary key alone - `update ... where id = ?` on a row
+this workspace may not own. The trait overrides `setKeysForSaveQuery()` so the
+workspace predicate is added to the update `save()` issues, both delete paths,
+`restore()` and `increment()`. `WorkspaceScopedWriteTest` reads the schema the
+same way the inventory test does and fails on a model whose table has a
+`workspace_id` and whose writes are not scoped by it.
+
+The predicate is the workspace as stored, not as the model currently holds it,
+so an attribute rewritten in memory cannot aim the write at another tenant. A
+model hydrated without the column at all - a partial `select()` - is refused
+outright rather than being written with `workspace_id is null`, which would
+match nothing while `save()` still returned true.
 
 ## Why the delete rule has to match
 

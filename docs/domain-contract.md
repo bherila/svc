@@ -7,6 +7,10 @@ workflow. It is intentionally provider-neutral and contains no production data.
 
 - Every business row has an immutable UUID `public_id` and a direct
   `workspace_id`, even when ownership can also be reached through a parent.
+- Every update and delete of a tenant-owned row names `workspace_id` in its own
+  statement, not only in the read that found the row:
+  `App\Models\Concerns\BelongsToWorkspace` overrides `setKeysForSaveQuery()`,
+  which Eloquent would otherwise key by primary key alone.
 - Nested writes verify that every supplied parent belongs to the route
   workspace. Workspace administrators can manage records; client-company
   members can only see records explicitly exposed to their company.
@@ -85,10 +89,8 @@ workflow. It is intentionally provider-neutral and contains no production data.
   `users`, which is not tenant-owned, so no key can refuse a stranger
 - every transition locks the row and re-reads its status under that lock, through
   the registry in [concurrency](client-management/concurrency.md)
-- every update and delete carries `workspace_id` in its own statement, not only
-  in the read that found the row: `ClientExpense` overrides
-  `setKeysForSaveQuery()`, so `save()`, both delete paths and `restore()` are
-  scoped without giving up casts, timestamps or model events
+- every update and delete carries `workspace_id` in its own statement, through
+  the cross-cutting rule above rather than through anything expense-specific
 
 ## Billing tables
 
