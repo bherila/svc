@@ -8,11 +8,14 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceEmailDraft;
+use Closure;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Attachment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
@@ -59,11 +62,20 @@ class InvoiceEmailTest extends TestCase
             ])
             ->assertOk();
 
-        Mail::assertSent(InvoiceMail::class, function (InvoiceMail $mail) use ($owner): bool {
+        Mail::assertSent(InvoiceMail::class, function (InvoiceMail $mail) use ($owner, $invoice): bool {
+            $attachments = $mail->attachments();
+            $attachment = $attachments[0] ?? null;
+
             return $mail->hasTo('ap@synthetic.test')
                 && $mail->hasBcc($owner->email)
                 && $mail->subjectLine === 'Your March invoice'
-                && str_contains((string) $mail->note, 'The usual monthly work.');
+                && str_contains((string) $mail->note, 'The usual monthly work.')
+                && $mail->content()->view === 'invoices.email'
+                && count($attachments) === 1
+                && $attachment instanceof Attachment
+                && $attachment->as === app(InvoiceDocumentService::class)->filename($invoice)
+                && $attachment->mime === 'application/pdf'
+                && str_starts_with($this->attachmentData($attachment), '%PDF-');
         });
 
         $delivery = ClientInvoiceEmailDelivery::query()->sole();
@@ -138,7 +150,7 @@ class InvoiceEmailTest extends TestCase
         // is the entire explanation an operator gets for a message that did
         // not go.
         $this->assertSame(
-            'The mail server refused this message (TransportException). Nothing was sent.',
+            'Invoice delivery failed (TransportException). Nothing was sent.',
             $response->json('message'),
         );
         // Never the transport's own words: those quote the address it was
@@ -516,6 +528,14 @@ class InvoiceEmailTest extends TestCase
     private function sendUrl(Workspace $workspace, ClientInvoice $invoice): string
     {
         return "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send";
+    }
+
+    private function attachmentData(Attachment $attachment): string
+    {
+        return $attachment->attachWith(
+            fn (): never => throw new \LogicException('Expected an in-memory attachment.'),
+            static fn (Closure $data): string => $data(),
+        );
     }
 
     /** @return array{0: User, 1: Workspace, 2: ClientInvoice} */

@@ -140,6 +140,22 @@ class InvoiceLineDetailTest extends TestCase
         $this->assertNotSame('', $pdf);
     }
 
+    public function test_the_client_document_labels_stored_billing_values_for_people(): void
+    {
+        [, $invoice] = $this->invoiceWithWork();
+        $invoice->forceFill(['status' => 'partially_paid'])->save();
+        $invoice->lines()->sole()->forceFill(['type' => 'additional_hours'])->save();
+
+        $html = app(InvoiceDocumentService::class)
+            ->html($invoice->fresh(), InvoiceLineDetail::CLIENT)
+            ->render();
+
+        $this->assertStringContainsString('Partially paid', $html);
+        $this->assertStringContainsString('Additional hours', $html);
+        $this->assertStringNotContainsString('PARTIALLY_PAID', $html);
+        $this->assertStringNotContainsString('additional_hours', $html);
+    }
+
     public function test_a_line_with_no_work_behind_it_is_absent_rather_than_empty(): void
     {
         [, $invoice] = $this->invoiceWithWork();
