@@ -1,21 +1,20 @@
 {
     "$schema": "./vendor/infection/infection/resources/schema.json",
     source: {
-        directories: [
-            // The invariants that keep a `json` column readable live here, and
-            // they are exactly the kind of total function that passes a happy
-            // path while quietly dropping a branch.
-            "app/Casts",
-            "app/Models",
-            "app/Services/Billing",
-            "app/Support/Billing",
-        ],
+        // Git diff line filtering still limits work to added and modified PHP
+        // lines. The broad root prevents controllers, authorization, commands,
+        // queries, and new domains from silently falling outside this gate.
+        directories: ["app"],
     },
-    // Changed lines must not be silently pre-skipped when their covering tests
-    // exceed the tighter full-suite budget.
-    timeout: 120,
+    // The PR lane deliberately measures fast unit discrimination. Feature-only
+    // behavior is reported as zero mutants rather than spending minutes per
+    // mutant in database-backed scenarios.
+    timeout: 30,
     threads: "max",
     tmpDir: "storage/framework/cache/infection-diff",
+    logs: {
+        summaryJson: "storage/framework/cache/infection-diff/summary.json",
+    },
     ignoreMsiWithNoMutations: true,
     timeoutsAsEscaped: true,
     mutators: {
@@ -77,9 +76,7 @@
             ],
         },
     },
-    // Under Infection's generated coverage config, PHPUnit 12's isolated child
-    // loses its CodeCoverage object. This test does not cover configured source.
-    testFrameworkExtraArgs: "--order-by=default --exclude-filter=ProjectAccessLegacyOrphanTest",
+    testFrameworkExtraArgs: "--order-by=default --testsuite=Unit",
     phpUnit: {
         configDir: ".",
     },

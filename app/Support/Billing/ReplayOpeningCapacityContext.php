@@ -41,7 +41,8 @@ final readonly class ReplayOpeningCapacityContext
                 && $line->recurringItemId === ''
                 && $line->projectId === ''
                 && $line->claimedBy === ''
-                && $line->sourceMinutes === 0,
+                && $line->sourceMinutes === 0
+                && $line->agreementRateSourceMinutes === 0,
         );
         if (count($matchingFees) !== 1) {
             return null;

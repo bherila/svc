@@ -201,6 +201,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -210,20 +211,29 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           diff_status=0
-          # Keep this list in step with `source.directories` in
-          # infection.diff.json5. A directory named there but missing here is
-          # not a looser gate, it is no gate at all: this step reports success
-          # in six seconds and the required check goes green having mutated
-          # nothing.
-          git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
-            app/Casts/ \
-            app/Services/Billing/ \
-            app/Support/Billing/ || diff_status=$?
+          git -c diff.renames=false diff --quiet --diff-filter=AM "$merge_base" "$HEAD_SHA" -- \
+            ':(glob)app/**/*.php' || diff_status=$?
           if [ "$diff_status" -eq 0 ]; then
             echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "changed_count=0" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Mutation gate not applicable::No added, modified, or renamed PHP application source under app/ is present in this diff."
+            {
+              echo "### Mutation gate"
+              echo
+              echo "Not run: this diff has no added, modified, or renamed PHP application source under \`app/\`."
+            } >> "$GITHUB_STEP_SUMMARY"
           elif [ "$diff_status" -eq 1 ]; then
+            changed_count=$(git -c diff.renames=false diff --name-only --diff-filter=AM "$merge_base" "$HEAD_SHA" -- ':(glob)app/**/*.php' | wc -l)
             echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "changed_count=$changed_count" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Mutation gate"
+              echo
+              echo "Running changed-line mutation analysis for $changed_count PHP application source file(s)."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             exit "$diff_status"
           fi
@@ -247,8 +257,44 @@ jobs:
         run: composer install --no-interaction
 
       - name: Run mutations on changed lines
+        id: mutation_run
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
+        env:
+          MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
         run: composer test:mutation-diff
+
+      - name: Report mutation result
+        if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
+        env:
+          MUTATION_OUTCOME: ${{ steps.mutation_run.outcome }}
+        run: |
+          summary=storage/framework/cache/infection-diff/summary.json
+          if [ ! -f "$summary" ]; then
+            echo "::warning title=Mutation result unavailable::Infection did not produce its summary; inspect the mutation step output."
+            {
+              echo
+              echo "Infection outcome: **$MUTATION_OUTCOME**. No result summary was produced; inspect the mutation step output."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          total=$(jq -r '.stats.totalMutantsCount' "$summary")
+          killed=$(jq -r '.stats.killedCount' "$summary")
+          escaped=$(jq -r '.stats.escapedCount' "$summary")
+          covered_msi=$(jq -er '.stats.coveredCodeMsi // .coveredCodeMutationScoreIndicator' "$summary")
+
+          if [ "$total" -eq 0 ]; then
+            echo "::notice title=Mutation gate produced zero mutants::The changed PHP source was analyzed, but no covered changed line produced a mutant."
+          fi
+
+          {
+            echo
+            echo "Infection outcome: **$MUTATION_OUTCOME**. Mutants: **$total** total, **$killed** killed, **$escaped** escaped. Covered-code MSI: **$covered_msi%**."
+            if [ "$total" -eq 0 ]; then
+              echo
+              echo "No mutants were produced; this is not evidence that tests discriminated a behavioral change."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     name: Deploy empty alpha to web1
