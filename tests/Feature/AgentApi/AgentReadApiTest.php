@@ -233,6 +233,66 @@ class AgentReadApiTest extends TestCase
     }
 
     /** @return array{Workspace, ClientCompany, ClientProject} */
+    /**
+     * An undated collectible invoice is never overdue, however old it is.
+     *
+     * The overdue figures on the agent summary are built with `whereDate(
+     * 'due_date', '<', today)`, and SQL compares a null to a date as UNKNOWN,
+     * so a `WHERE` drops the row. An imported or hand-entered invoice that was
+     * issued with a balance and no stated term is therefore collectible - it
+     * appears in `collectible_balances` - and simultaneously never overdue, at
+     * any age. It is the one number an operator would use to decide what to
+     * chase, and the invoices least likely to have been chased are exactly the
+     * ones missing from it (#149).
+     *
+     * The two invoices below are identical apart from that column, and the
+     * second half gives the undated one a term in the past: it then joins the
+     * overdue figures, which is what pins the exclusion to the null rather
+     * than to something else about the row.
+     */
+    public function test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue(): void
+    {
+        [$workspace, $company] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+
+        $collectible = fn (string $number, ?string $dueDate): ClientInvoice => ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $company->id,
+            'invoice_number' => $number,
+            'status' => 'issued',
+            'currency' => 'USD',
+            'issue_date' => '2026-01-01',
+            'due_date' => $dueDate,
+            'subtotal_amount' => 5000,
+            'tax_amount' => 0,
+            'total_amount' => 5000,
+            'paid_amount' => 0,
+            'balance_amount' => 5000,
+            'is_visible_to_client' => true,
+        ]);
+
+        $collectible('INV-OVERDUE', '2026-01-15');
+        $undated = $collectible('INV-UNDATED', null);
+
+        $this->actingAsAgent($owner, [AgentApiScopes::IDENTITY_READ, AgentApiScopes::BILLING_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/summary")
+            ->assertOk()
+            ->assertJsonPath('data.invoices.overdue_count', 1)
+            ->assertJsonPath('data.invoices.overdue_balances', [['currency' => 'USD', 'amount' => 5000]])
+            ->assertJsonPath('data.invoices.collectible_balances', [['currency' => 'USD', 'amount' => 10000]]);
+
+        // The same row, given a term that has passed.
+        $undated->forceFill(['due_date' => '2026-01-15'])->save();
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/summary")
+            ->assertOk()
+            ->assertJsonPath('data.invoices.overdue_count', 2)
+            ->assertJsonPath('data.invoices.overdue_balances', [['currency' => 'USD', 'amount' => 10000]])
+            ->assertJsonPath('data.invoices.collectible_balances', [['currency' => 'USD', 'amount' => 10000]]);
+    }
+
     private function project(): array
     {
         $workspace = Workspace::query()->create(['name' => 'Agent Workspace', 'slug' => 'agent-workspace']);

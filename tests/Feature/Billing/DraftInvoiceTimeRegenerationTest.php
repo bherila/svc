@@ -210,6 +210,125 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertFalse($moved->fresh()?->invoiceLines()->exists(), 'The moved work is now billed by nothing.');
     }
 
+    /**
+     * A companion draft with no agreement is never rebuilt for a moved entry.
+     *
+     * The same search as the case above, on a different column: it asks only
+     * for drafts that name an agreement, and then only for one whose scope
+     * covers the entry's project. Both readings drop a null. The comment on the
+     * direct path says why a null agreement must not be regenerated - the
+     * lookup that follows drops its project scoping and would rebuild the
+     * invoice with every project's work on it - and this is the same refusal
+     * reached silently: the destination draft is simply never considered, the
+     * source draft gives the entry up, and the work is billed by nothing.
+     *
+     * The control runs first on the same rows, and `service_period_start` and
+     * `service_period_end` both stay set and covering the destination date, so
+     * the difference is the agreement.
+     */
+    public function test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry(): void
+    {
+        $agreement = $this->agreement();
+        $moved = $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 60]);
+        $this->approvedEntry(['worked_on' => '2026-08-14', 'minutes' => 60, 'description' => 'August work']);
+        $july = $this->generateJuly($agreement);
+        $august = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company,
+            Carbon::parse('2026-08-01'),
+            Carbon::parse('2026-08-31'),
+            $agreement,
+        )->refresh();
+
+        $move = function (ClientTimeEntry $entry, string $date): void {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry->refresh(),
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry->refresh()),
+                    'worked_on' => $date,
+                ],
+            );
+        };
+
+        // Control: a stated agreement absorbs the move.
+        $move($moved, '2026-08-10');
+        $this->assertSame(24000, $august->refresh()->total_amount);
+
+        $move($moved, '2026-07-14');
+        $this->assertSame(12000, $august->refresh()->total_amount);
+        $this->assertSame(12000, $july->refresh()->total_amount);
+
+        // Only the agreement goes. Both period boundaries still cover the date.
+        $august->forceFill(['client_agreement_id' => null])->save();
+        $this->assertNull($august->refresh()->client_agreement_id);
+        $this->assertSame('2026-08-01', $august->service_period_start?->format('Y-m-d'));
+        $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
+
+        $move($moved, '2026-08-10');
+
+        $this->assertSame(0, $july->refresh()->total_amount, 'The owning draft still gives the entry up.');
+        $this->assertSame(12000, $august->refresh()->total_amount, 'The unattributed draft never sees the arrival.');
+        $this->assertFalse($moved->fresh()?->invoiceLines()->exists(), 'The moved work is now billed by nothing.');
+    }
+
+    /**
+     * A draft with no kind is regenerated as a cadence invoice, not an ad-hoc one.
+     *
+     * `regenerate()` routes on `invoiceKindValue()`, which reads a null as
+     * `cadence_period`. That is a decision, not a default: an ad-hoc draft is an
+     * explicit selection of time and is repriced from each entry's own rate
+     * snapshot, while a cadence draft is rebuilt from the period's work against
+     * the agreement's terms - and the rebuild stamps the kind, so the null does
+     * not survive the first edit.
+     *
+     * The two runs below are the same invoice and the same entry, with only
+     * `invoice_kind` changed between them. A migrated row carrying no kind is
+     * exactly the case this decides; the stamping is the evidence that the
+     * cadence path ran, and the ad-hoc run afterwards - which leaves the kind
+     * alone - is the evidence that stamping is not just what regeneration
+     * always does.
+     */
+    public function test_a_draft_with_no_kind_regenerates_down_the_cadence_path(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 60]);
+        $invoice = $this->generateJuly($agreement);
+
+        $edit = function (int $minutes) use ($entry): void {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry->refresh(),
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry->refresh()),
+                    'minutes' => $minutes,
+                ],
+            );
+        };
+
+        // Only the kind goes; everything else about the draft is as generated.
+        $invoice->forceFill(['invoice_kind' => null])->save();
+        $this->assertNull($invoice->refresh()->invoice_kind);
+
+        $edit(120);
+
+        $this->assertSame(
+            'cadence_period',
+            $invoice->refresh()->invoice_kind,
+            'A null kind takes the generated path, which stamps the kind it just used',
+        );
+        $this->assertSame(24000, (int) $invoice->total_amount, '2h rebuilt against the agreement rate');
+
+        // The stated alternative on the same row: marked ad hoc, the
+        // selected-time path runs instead and leaves the kind exactly as it
+        // found it. That is what pins the routing above to the null rather than
+        // to regeneration having only one path.
+        $invoice->forceFill(['invoice_kind' => 'ad_hoc'])->save();
+        $edit(90);
+        $this->assertSame('ad_hoc', $invoice->refresh()->invoice_kind);
+    }
+
     public function test_moving_time_across_an_agreement_renewal_rebuilds_the_destination_draft(): void
     {
         $firstAgreement = $this->agreement();

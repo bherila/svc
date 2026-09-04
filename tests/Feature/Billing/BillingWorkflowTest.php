@@ -187,6 +187,71 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A schedule's own invoice, unlinked, is billed to the client a second time.
+     *
+     * `generateDue()` decides whether a period has already been invoiced with
+     * `where('client_billing_schedule_id', $locked->id)` and two date matches.
+     * SQL compares a null to a value as UNKNOWN, so an invoice for exactly that
+     * period whose link is missing satisfies neither branch of the check: the
+     * schedule concludes the period is unbilled and raises - and issues -
+     * another invoice for it.
+     *
+     * The rewind is the point of the fixture. `next_run_on` moves forward on
+     * every generated period, so a schedule only re-asks about a period it has
+     * already produced after a replay, a repair or a corrected cadence; that is
+     * precisely when a hand-edited or migrated row is likely to be missing its
+     * link. The control below runs the same rewind with the link intact and
+     * produces nothing new.
+     */
+    public function test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again(): void
+    {
+        [, $workspace, $company] = $this->tenant('Unlinked Schedule Workspace');
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+        $service = app(BillingScheduleService::class);
+        // Refreshed first: `generateDue()` advances `next_run_on` on its own
+        // locked copy, so this in-memory model is stale and a forceFill to the
+        // value it already believes it holds would write nothing at all.
+        $rewind = function () use ($schedule): ClientBillingSchedule {
+            $schedule->refresh()->forceFill(['next_run_on' => '2026-08-01'])->save();
+
+            return $schedule->fresh();
+        };
+
+        $service->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+        $this->assertDatabaseCount('client_invoices', 1);
+        $august = ClientInvoice::query()->sole();
+
+        // Control: asked about August again, the schedule finds its own invoice.
+        $service->generateDue($rewind(), CarbonImmutable::parse('2026-08-15'));
+        $this->assertDatabaseCount('client_invoices', 1);
+
+        // Only the link goes. Both dates still name August exactly.
+        $august->forceFill(['client_billing_schedule_id' => null])->save();
+        $this->assertSame('2026-08-01', $august->refresh()->service_period_start?->format('Y-m-d'));
+        $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
+
+        $service->generateDue($rewind(), CarbonImmutable::parse('2026-08-15'));
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame(
+            2,
+            ClientInvoice::query()->whereDate('service_period_start', '2026-08-01')->count(),
+            'August is billed twice, and the second invoice is issued rather than left as a draft',
+        );
+        $this->assertSame(
+            ['issued', 'issued'],
+            ClientInvoice::query()->orderBy('id')->pluck('status')->all(),
+        );
+    }
+
+    /**
      * A null `client_billing_schedule_id` is what makes a draft ad hoc.
      *
      * `createDraft` classifies on the absence of a schedule, not on who called

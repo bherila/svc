@@ -2,10 +2,8 @@
 
 namespace Tests\Feature\Models;
 
-use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
-use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
@@ -78,8 +76,15 @@ use Tests\Unit\Billing\RetainerCalculatorTest;
  * with a known reader and no test carries `reader_in` naming that reader, which
  * is checked by reflection exactly as a citation is. It is a weaker claim than a
  * citation and deliberately so - it asserts exposure, not coverage - and it
- * turns 17 invisible holes into a worklist. Pinning them with isolating tests
- * is tracked separately; this file's job is to stop the holes being invisible.
+ * turned 17 invisible holes into a worklist.
+ *
+ * That worklist is now empty: #143 pinned the last of it, and no entry below is
+ * a `reader_in`. The state is kept, and so is every check that resolves it,
+ * because emptying it is not the same as retiring it. The next nullable column
+ * with a live reader and no isolating test has somewhere honest to go, and the
+ * alternative - deleting the state so such a column must be either cited or
+ * declared unexamined - is precisely the two-state registry whose false
+ * citations this file was rebuilt after.
  *
  * ## What is still PENDING-AUDIT
  *
@@ -178,18 +183,18 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
         'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
-        'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
-        'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\BillingScheduleService::generateDue',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
         'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
         'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
+        'client_invoices.due_date => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
-        'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
-        'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
@@ -314,7 +319,16 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_generated_draft_without_an_agreement_fails_closed',
                 ],
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
+                // The second reading is the companion search, and it is silent
+                // where the first is loud: regeneration asks only for drafts
+                // that name an agreement, so a draft missing one is never
+                // considered for an entry moved into its period, the draft that
+                // owned the entry still gives it up, and the work ends up
+                // billed by nothing.
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
+                ],
             ],
             // What the citation proves is narrower than it reads: it is the
             // default `InvoiceLifecycleService::createDraft` picks when no kind
@@ -336,7 +350,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
                 ],
-                ['reader_in' => BillingScheduleService::class, 'reads' => 'generateDue'],
+                // Pinned by rewinding `next_run_on` and asking the schedule
+                // about a period it has already produced - a replay, a repair
+                // or a corrected cadence - which is when a row missing its link
+                // is most likely to exist. The schedule cannot see its own
+                // invoice and issues a second one for the same month.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
+                ],
             ],
             // Not issued yet - on the draft path, where issuing stamps the
             // workspace's calendar date. Not a global reading: `issue()`
@@ -357,7 +379,10 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
                 ],
-                ['reader_in' => AgentReadController::class, 'reads' => 'summary'],
+                [
+                    'covered_by' => AgentReadApiTest::class,
+                    'method' => 'test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
+                ],
             ],
             // Was cited against the cadence regeneration refusal, but that
             // fixture nulls the cycle columns too and the refusal fires on
@@ -433,7 +458,17 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
                 ],
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
+                // Not a default but a decision: an ad-hoc draft is repriced
+                // from each entry's own rate snapshot, a cadence draft is
+                // rebuilt from the period's work against the agreement's terms.
+                // The rebuild stamps the kind, so the null does not survive the
+                // first edit - and the ad-hoc run beside it, which leaves the
+                // kind alone, is what shows the stamping is the cadence path
+                // and not something regeneration always does.
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
+                ],
             ],
             // Cited against an interim refusal whose fixture nulls both columns,
             // so neither guard was isolated - dropping one leaves the test
