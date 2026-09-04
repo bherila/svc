@@ -350,7 +350,11 @@ jobs:
              stripe_exit=0; \
              stripe_status=\$(/opt/cpanel/ea-php85/root/usr/bin/php artisan svc:stripe:status --format=json) || stripe_exit=\$?; \
              test \"\$stripe_exit\" -eq 0 -o \"\$stripe_exit\" -eq 1; \
-             printf '%s\\n' \"\$stripe_status\""
+             printf '%s\\n' \"\$stripe_status\"; \
+             brevo_exit=0; \
+             brevo_status=\$(/opt/cpanel/ea-php85/root/usr/bin/php artisan svc:brevo:status --format=json) || brevo_exit=\$?; \
+             test \"\$brevo_exit\" -eq 0 -o \"\$brevo_exit\" -eq 1; \
+             printf '%s\\n' \"\$brevo_status\""
 
       - name: Verify public health and OAuth redirect
         run: |

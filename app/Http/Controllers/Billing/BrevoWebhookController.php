@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Services\Billing\InvoiceDeliveryStatusService;
+use App\Support\Billing\InvoiceDeliveryStatusOutcome;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 /**
  * What Brevo says became of an invoice email.
@@ -35,7 +37,7 @@ class BrevoWebhookController extends Controller
     public function __invoke(Request $request, InvoiceDeliveryStatusService $statuses): JsonResponse
     {
         $expected = config('services.brevo.webhook_token');
-        $presented = $request->header('X-Webhook-Token') ?? $request->query('token');
+        $presented = $this->presentedToken($request);
 
         if (! is_string($expected) || $expected === ''
             || ! is_string($presented)
@@ -43,29 +45,72 @@ class BrevoWebhookController extends Controller
             return response()->json(['message' => 'Unrecognised webhook caller.'], 401);
         }
 
+        $body = (string) $request->getContent();
+        $maximumBytes = (int) config('services.brevo.webhook_max_payload_bytes', 1_048_576);
+
+        if (strlen($body) > $maximumBytes) {
+            return response()->json(['message' => 'Webhook body is too large.'], 413);
+        }
+
         // Decoded here rather than read through the request's typed helpers,
         // because both shapes have to survive: Brevo posts a single event as an
         // object and a batch as a list, and which one arrives depends on
         // settings in someone else's console.
-        $payload = json_decode((string) $request->getContent(), true);
+        $payload = json_decode($body, true);
 
         if (! is_array($payload)) {
             return response()->json(['message' => 'Unreadable webhook body.'], 400);
         }
 
         $events = array_is_list($payload) ? $payload : [$payload];
+        $maximumEvents = (int) config('services.brevo.webhook_max_events', 500);
+
+        if (count($events) > $maximumEvents) {
+            return response()->json(['message' => 'Webhook batch contains too many events.'], 413);
+        }
 
         $recorded = 0;
+        /** @var array<string, int> $outcomes */
+        $outcomes = [];
 
         foreach ($events as $event) {
-            if (is_array($event) && $statuses->record($event)) {
+            $outcome = is_array($event)
+                ? $statuses->record($event)
+                : InvoiceDeliveryStatusOutcome::Ignored;
+            $outcomes[$outcome->value] = ($outcomes[$outcome->value] ?? 0) + 1;
+
+            if ($outcome === InvoiceDeliveryStatusOutcome::Recorded) {
                 $recorded++;
             }
+        }
+
+        if (($outcomes[InvoiceDeliveryStatusOutcome::Ambiguous->value] ?? 0) > 0) {
+            // Counts only. Never attach the request, payload, message id,
+            // recipient, or either accepted credential to this event.
+            Log::notice('Brevo webhook reference was ambiguous.', [
+                'received' => count($events),
+                'recorded' => $recorded,
+                'outcomes' => $outcomes,
+            ]);
         }
 
         // 200 even for an event that matched nothing. A message id we do not
         // recognise is not an error the provider can act on, and answering with
         // a failure only makes them retry it until they give up.
         return response()->json(['received' => count($events), 'recorded' => $recorded]);
+    }
+
+    private function presentedToken(Request $request): ?string
+    {
+        $header = $request->header('X-Webhook-Token');
+        $header = is_string($header) && $header !== '' ? $header : null;
+        $bearer = $request->bearerToken();
+        $bearer = is_string($bearer) && $bearer !== '' ? $bearer : null;
+
+        if ($header !== null && $bearer !== null && ! hash_equals($header, $bearer)) {
+            return null;
+        }
+
+        return $header ?? $bearer;
     }
 }
