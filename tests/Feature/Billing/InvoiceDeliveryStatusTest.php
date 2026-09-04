@@ -10,6 +10,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -345,7 +346,7 @@ class InvoiceDeliveryStatusTest extends TestCase
         $this->assertNull($first->fresh()->provider_status);
         $this->assertNull($second->fresh()->provider_status);
         Log::shouldHaveReceived('notice')->once()->withArgs(
-            fn (string $message, array $context): bool => $message === 'Brevo webhook events were not recorded.'
+            fn (string $message, array $context): bool => $message === 'Brevo webhook reference was ambiguous.'
                 && $context === [
                     'received' => 1,
                     'recorded' => 0,
@@ -354,7 +355,7 @@ class InvoiceDeliveryStatusTest extends TestCase
         );
     }
 
-    public function test_nonrecorded_telemetry_contains_counts_but_no_payload_or_credentials(): void
+    public function test_routine_unmatched_events_do_not_write_persistent_log_noise(): void
     {
         $messageId = implode('-', ['synthetic', 'private', 'message']);
         $credential = 'synthetic-webhook-token';
@@ -366,21 +367,25 @@ class InvoiceDeliveryStatusTest extends TestCase
             'email' => 'private-recipient@synthetic.test',
         ], ['X-Webhook-Token' => $credential])->assertOk();
 
-        Log::shouldHaveReceived('notice')->once()->withArgs(
-            function (string $message, array $context) use ($messageId, $credential): bool {
-                $encoded = json_encode($context, JSON_THROW_ON_ERROR);
+        Log::shouldNotHaveReceived('notice');
+        Log::shouldNotHaveReceived('warning');
+        Log::shouldNotHaveReceived('error');
+    }
 
-                return $message === 'Brevo webhook events were not recorded.'
-                    && $context === [
-                        'received' => 1,
-                        'recorded' => 0,
-                        'outcomes' => ['unmatched' => 1],
-                    ]
-                    && ! str_contains($encoded, $messageId)
-                    && ! str_contains($encoded, $credential)
-                    && ! str_contains($encoded, 'private-recipient');
-            },
-        );
+    public function test_provider_reference_lookup_has_a_non_unique_index(): void
+    {
+        $this->assertTrue(Schema::hasIndex(
+            'client_invoice_email_deliveries',
+            'invoice_delivery_provider_reference_idx',
+        ));
+
+        // The index accelerates ambiguity detection; it deliberately does not
+        // impose uniqueness before deployed data has been audited.
+        $this->delivery('synthetic-index-allows-a-duplicate');
+        $this->delivery('synthetic-index-allows-a-duplicate');
+        $this->assertSame(2, ClientInvoiceEmailDelivery::query()
+            ->where('provider_message_reference', 'synthetic-index-allows-a-duplicate')
+            ->count());
     }
 
     public function test_the_webhook_route_uses_its_dedicated_throttle_bucket(): void

@@ -3,6 +3,9 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
+use Symfony\Component\Mailer\Transport\Dsn;
+use Throwable;
 
 class BrevoStatusCommand extends Command
 {
@@ -22,7 +25,7 @@ class BrevoStatusCommand extends Command
 
         $mailer = config('mail.default');
         $mailerUsesBrevo = is_string($mailer) && in_array($mailer, ['brevo', 'hybrid'], true);
-        $transportConfigured = $this->configuredValueIsPresent('dsn');
+        $transportConfigured = $this->transportIsConfigured();
         $webhookTokenPresent = $this->configuredValueIsPresent('webhook_token');
         $configured = $mailerUsesBrevo && $transportConfigured && $webhookTokenPresent;
 
@@ -50,5 +53,22 @@ class BrevoStatusCommand extends Command
         $value = config("services.brevo.{$key}");
 
         return is_string($value) && trim($value) !== '';
+    }
+
+    private function transportIsConfigured(): bool
+    {
+        $dsn = config('services.brevo.dsn');
+
+        if (! is_string($dsn) || trim($dsn) === '') {
+            return false;
+        }
+
+        try {
+            (new BrevoTransportFactory)->create(Dsn::fromString($dsn));
+        } catch (Throwable) {
+            return false;
+        }
+
+        return true;
     }
 }

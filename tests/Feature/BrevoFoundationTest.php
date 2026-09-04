@@ -36,6 +36,32 @@ class BrevoFoundationTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_status_command_rejects_a_non_brevo_dsn(): void
+    {
+        config([
+            'mail.default' => 'hybrid',
+            'services.brevo.dsn' => 'smtp://synthetic.test',
+            'services.brevo.webhook_token' => 'synthetic-webhook-token',
+        ]);
+
+        $this->artisan('svc:brevo:status', ['--format' => 'json'])
+            ->expectsOutput('{"provider":"brevo","configured":false,"mailer_uses_brevo":true,"transport_configured":false,"webhook_token_present":true}')
+            ->assertExitCode(1);
+    }
+
+    public function test_status_command_rejects_a_malformed_dsn(): void
+    {
+        config([
+            'mail.default' => 'hybrid',
+            'services.brevo.dsn' => 'not a dsn',
+            'services.brevo.webhook_token' => 'synthetic-webhook-token',
+        ]);
+
+        $this->artisan('svc:brevo:status', ['--format' => 'json'])
+            ->expectsOutput('{"provider":"brevo","configured":false,"mailer_uses_brevo":true,"transport_configured":false,"webhook_token_present":true}')
+            ->assertExitCode(1);
+    }
+
     public function test_status_command_refuses_an_unknown_format(): void
     {
         $this->artisan('svc:brevo:status', ['--format' => 'yaml'])

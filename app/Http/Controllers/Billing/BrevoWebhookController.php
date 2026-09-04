@@ -84,10 +84,10 @@ class BrevoWebhookController extends Controller
             }
         }
 
-        if ($recorded !== count($events)) {
+        if (($outcomes[InvoiceDeliveryStatusOutcome::Ambiguous->value] ?? 0) > 0) {
             // Counts only. Never attach the request, payload, message id,
             // recipient, or either accepted credential to this event.
-            Log::notice('Brevo webhook events were not recorded.', [
+            Log::notice('Brevo webhook reference was ambiguous.', [
                 'received' => count($events),
                 'recorded' => $recorded,
                 'outcomes' => $outcomes,
