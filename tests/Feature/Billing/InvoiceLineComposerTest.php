@@ -299,6 +299,72 @@ final class InvoiceLineComposerTest extends TestCase
         $this->assertFalse($direct->refresh()->invoiceLines()->exists());
     }
 
+    /**
+     * An invoice with no period end dates its termination work as nothing, and
+     * its subcontractor work as today.
+     *
+     * `addDeferredTerminationLine()` reads `service_period_end` twice and reads
+     * it two different ways. The ordinary line takes it as a value, so a null
+     * lands as a null `line_date` and the charge falls out of every dated
+     * window - the service-period widening, the replay line key, the audit
+     * queries. The flat-hourly line takes it through `Carbon::parse()`, and
+     * `parse(null)` is *now*: the subcontractor charge is dated to whenever the
+     * termination happened to be run, which can be months after the work and
+     * outside the agreement's own term.
+     *
+     * Two readings, one column, opposite failure modes, and neither of them is
+     * the period the client is being billed for. The control below is the same
+     * two entries on an invoice that states its end, where both lines take that
+     * date.
+     */
+    public function test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today(): void
+    {
+        Carbon::setTestNow('2026-09-04 11:30:00');
+
+        $composed = function (?string $periodEnd): ClientInvoice {
+            $ordinary = $this->entry(60);
+            $flat = $this->entry(120);
+            $flat->update([
+                'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly,
+                'subcontractor_cost_amount' => 12500,
+                'subcontractor_cost_currency' => 'USD',
+            ]);
+            $invoice = $this->invoice();
+            $invoice->forceFill(['service_period_end' => $periodEnd])->save();
+            $sort = 0;
+
+            app(InvoiceLineComposer::class)->addDeferredTerminationLine(
+                $invoice->refresh(),
+                $this->agreement,
+                collect([$ordinary, $flat]),
+                $sort,
+            );
+
+            return $invoice->refresh();
+        };
+
+        $dated = $composed('2026-03-31');
+        $this->assertSame(
+            '2026-03-31',
+            $dated->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail()->line_date?->format('Y-m-d'),
+        );
+        $this->assertSame(
+            '2026-03-31',
+            $dated->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail()->line_date?->format('Y-m-d'),
+        );
+
+        $undated = $composed(null);
+        $this->assertNull(
+            $undated->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail()->line_date,
+            'The termination charge carries no date at all',
+        );
+        $this->assertSame(
+            '2026-09-04',
+            $undated->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail()->line_date?->format('Y-m-d'),
+            'The subcontractor charge is dated to the run, not to the period',
+        );
+    }
+
     public function test_an_entry_spanning_two_lines_is_split_into_rows_that_can_recombine(): void
     {
         $entry = $this->entry(120);

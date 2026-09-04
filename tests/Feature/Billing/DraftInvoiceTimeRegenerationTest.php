@@ -147,6 +147,69 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertSame(2, ClientInvoice::query()->count());
     }
 
+    /**
+     * A companion draft with no period start is never rebuilt for the new date.
+     *
+     * `DraftInvoiceTimeRegenerator::regenerate()` finds the *other* drafts a
+     * moved entry now belongs to with `whereDate('service_period_start', '<=',
+     * ...)`. SQL compares a null to a date as UNKNOWN and `WHERE` drops the
+     * row, so a draft missing only that boundary is invisible to the search - it
+     * keeps whatever it was last built from while the invoice that used to own
+     * the entry correctly gives it up. The entry ends up on no invoice at all,
+     * and nothing says so.
+     *
+     * The control runs first and on the same rows: with the boundary present
+     * the destination draft absorbs the move, so the difference below is the
+     * null and not the fixture. Its sibling boundary `service_period_end` stays
+     * set and matching throughout, which is what makes this the start branch.
+     */
+    public function test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry(): void
+    {
+        $agreement = $this->agreement();
+        $moved = $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 60]);
+        $this->approvedEntry(['worked_on' => '2026-08-14', 'minutes' => 60, 'description' => 'August work']);
+        $july = $this->generateJuly($agreement);
+        $august = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company,
+            Carbon::parse('2026-08-01'),
+            Carbon::parse('2026-08-31'),
+            $agreement,
+        )->refresh();
+
+        $move = function (ClientTimeEntry $entry, string $date): void {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry->refresh(),
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry->refresh()),
+                    'worked_on' => $date,
+                ],
+            );
+        };
+
+        // Control: a stated start absorbs the move.
+        $move($moved, '2026-08-10');
+        $this->assertSame(24000, $august->refresh()->total_amount);
+        $this->assertSame(0, $july->refresh()->total_amount);
+
+        // Put it back, so the null case starts from the same arrangement.
+        $move($moved, '2026-07-14');
+        $this->assertSame(12000, $august->refresh()->total_amount);
+        $this->assertSame(12000, $july->refresh()->total_amount);
+
+        // Only the start goes. The end still covers the destination date.
+        $august->forceFill(['service_period_start' => null])->save();
+        $this->assertNull($august->refresh()->service_period_start);
+        $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
+
+        $move($moved, '2026-08-10');
+
+        $this->assertSame(0, $july->refresh()->total_amount, 'The owning draft still gives the entry up.');
+        $this->assertSame(12000, $august->refresh()->total_amount, 'The undated draft never sees the arrival.');
+        $this->assertFalse($moved->fresh()?->invoiceLines()->exists(), 'The moved work is now billed by nothing.');
+    }
+
     public function test_moving_time_across_an_agreement_renewal_rebuilds_the_destination_draft(): void
     {
         $firstAgreement = $this->agreement();

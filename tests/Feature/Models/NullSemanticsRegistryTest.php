@@ -2,13 +2,11 @@
 
 namespace Tests\Feature\Models;
 
-use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
-use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLineComposer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,8 +20,10 @@ use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
 use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
+use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
+use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
 use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
@@ -185,8 +185,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.client_agreement_id => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
         'client_invoices.client_billing_schedule_id => reader_in:App\Services\Billing\BillingScheduleService::generateDue',
-        'client_invoices.cycle_end => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
-        'client_invoices.cycle_start => reader_in:App\Services\Billing\InterimOverageGenerator::interimOverageHoursForCycle',
+        'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
+        'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.due_date => reader_in:App\Http\Controllers\Api\V1\AgentReadController::summary',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
@@ -195,12 +195,12 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.invoice_kind => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
-        'client_invoices.service_period_end => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
-        'client_invoices.service_period_end => reader_in:App\Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice',
-        'client_invoices.service_period_end => reader_in:App\Services\Billing\InvoiceLineComposer::addDeferredTerminationLine',
-        'client_invoices.service_period_start => reader_in:App\Console\Commands\Billing\ReplayInvoicesCommand::sourceScopeForInvoice',
-        'client_invoices.service_period_start => reader_in:App\Services\Billing\DraftInvoiceTimeRegenerator::regenerate',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
         'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
@@ -364,25 +364,41 @@ final class NullSemanticsRegistryTest extends TestCase
             ],
             // Was cited against the cadence regeneration refusal, but that
             // fixture nulls the cycle columns too and the refusal fires on
-            // either pair, so the citation never isolated this column. The null
-            // is also read during generation, where it initialises to the
-            // earliest dated work line, and by replay, which builds no source
-            // scope at all when either boundary is missing - so the invoice
-            // proves against zero source minutes rather than against its own.
+            // either pair, so the citation never isolated this column. Two
+            // readers now carry their own case instead.
+            //
+            // Regeneration finds the *other* drafts a moved entry belongs to
+            // with `whereDate('service_period_start', '<=', ...)`, and SQL drops
+            // a null: the destination draft is never rebuilt, the source draft
+            // still gives the entry up, and the work ends up billed by nothing.
+            // Replay builds no source scope at all when either boundary is
+            // missing, so the invoice proves against zero source minutes rather
+            // than against its own.
             'service_period_start' => [
-                ['reader_in' => DraftInvoiceTimeRegenerator::class, 'reads' => 'regenerate'],
-                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
+                [
+                    'covered_by' => DraftInvoiceTimeRegenerationTest::class,
+                    'method' => 'test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
+                ],
+                [
+                    'covered_by' => ReplaySourceScopeNullBranchesTest::class,
+                    'method' => 'test_an_invoice_with_no_period_start_proves_no_source_minutes',
+                ],
             ],
-            // Four branches, two of them pinned. The regeneration refusal is
-            // covered; the billed-overage window is covered since #135, where a
-            // `<=` that answers false for a null dropped charged invoices out
-            // of the sum and their overage was billed twice. The interim
-            // generator carries a parallel already-billed sum with its own
-            // `orWhereNull`, added in the #139 fix-forward, and nothing pins it.
-            // The fourth is a coercion rather than a predicate: the composer
-            // hands this column to `Carbon::parse()` unguarded when dating a
-            // deferred-termination line, and `parse(null)` is *now*, so a
-            // malformed invoice dates its line today. That one is #135 item 2.
+            // Five branches, and the widest spread of readings any one column
+            // here carries. The regeneration refusal was already covered; the
+            // billed-overage window has been covered since #135, where a `<=`
+            // that answers false for a null dropped charged invoices out of the
+            // sum and their overage was billed twice.
+            //
+            // The three added since are each a different failure. Interim
+            // generation matches an existing draft on both boundaries exactly,
+            // so an undated draft is invisible and a second invoice is raised
+            // for the same period and the same hours. The composer reads the
+            // column twice and two ways when a termination line is dated - as a
+            // value, which lands as a null `line_date`, and through
+            // `Carbon::parse()`, which for a null is *now*, so the
+            // subcontractor charge is dated to the run rather than the period
+            // (#135 item 2). Replay builds no source scope without it.
             'service_period_end' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
@@ -392,9 +408,18 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
                 ],
-                ['reader_in' => InterimOverageGenerator::class, 'reads' => 'generateInterimOverageInvoice'],
-                ['reader_in' => InvoiceLineComposer::class, 'reads' => 'addDeferredTerminationLine'],
-                ['reader_in' => ReplayInvoicesCommand::class, 'reads' => 'sourceScopeForInvoice'],
+                [
+                    'covered_by' => CapacityAndScopeGuardsTest::class,
+                    'method' => 'test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
+                ],
+                [
+                    'covered_by' => InvoiceLineComposerTest::class,
+                    'method' => 'test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+                ],
+                [
+                    'covered_by' => ReplaySourceScopeNullBranchesTest::class,
+                    'method' => 'test_an_invoice_with_no_period_end_proves_no_source_minutes',
+                ],
             ],
             'notes' => 'PENDING-AUDIT',
             'issued_at' => 'PENDING-AUDIT',
@@ -416,15 +441,19 @@ final class NullSemanticsRegistryTest extends TestCase
             // Cited against an interim refusal whose fixture nulls both columns,
             // so neither guard was isolated - dropping one leaves the test
             // failing through the other. The consequential reader is the cycle
-            // lookup, which matches on both and cannot see a row missing either
-            // (#141).
+            // lookup, which widens each boundary on its own (#141): a row that
+            // states one of them is placed by the one it states and admitted on
+            // the one it does not, so a half-dated charged interim still counts
+            // towards what this cycle has already billed. Each column now has a
+            // case that nulls it alone and holds the other matching, plus the
+            // stated-but-wrong date that proves the boundary is still consulted.
             'cycle_start' => [
-                'reader_in' => InterimOverageGenerator::class,
-                'reads' => 'interimOverageHoursForCycle',
+                'covered_by' => CapacityAndScopeGuardsTest::class,
+                'method' => 'test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
             ],
             'cycle_end' => [
-                'reader_in' => InterimOverageGenerator::class,
-                'reads' => 'interimOverageHoursForCycle',
+                'covered_by' => CapacityAndScopeGuardsTest::class,
+                'method' => 'test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
             ],
             // The invoice hour-balance columns were restore-repair fields: the
             // ledger backfill filled each only where the destination value was
