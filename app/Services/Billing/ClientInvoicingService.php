@@ -879,25 +879,26 @@ final class ClientInvoicingService
 
                 $invoice->update(['hours_billed_at_rate' => $totalCatchupHours]);
 
-                // The balances above were computed before this charge existed,
-                // so they have to be taken again now that the debt is paid.
-                $snapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $allBalances);
-                [$startingUnused, $startingNegative] = $this->applyBilledOverages(
-                    $snapshot['unused'],
-                    $snapshot['negative'],
-                    $totalCatchupHours,
+                // The balances above were computed before this charge existed.
+                // Replay it in the work month rather than adding it to the end
+                // result, so any surplus crosses (or does not cross) the month
+                // boundary under the agreement's normal rollover rule.
+                $balancesAfterCharge = $this->monthlyBalances(
+                    $company,
+                    $agreement,
+                    $periodEnd,
+                    $retainerMonthStart,
+                    $terminationMonthKey,
+                    [$workMonthKey => $totalCatchupHours],
                 );
-                [$netUnused, $netNegative] = $this->applyBilledOverages(
-                    $rawWorkPeriodUnused,
-                    $rawWorkPeriodNegative,
-                    $totalCatchupHours,
-                );
+                $chargedWorkMonth = $this->balanceForMonth($balancesAfterCharge, $workMonthKey);
+                $snapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $balancesAfterCharge);
 
                 $invoice->update([
-                    'negative_hours_balance' => $netNegative,
-                    'unused_hours_balance' => $netUnused,
-                    'starting_unused_hours' => $startingUnused,
-                    'starting_negative_hours' => $startingNegative,
+                    'negative_hours_balance' => $chargedWorkMonth?->closing->negativeBalance ?? 0.0,
+                    'unused_hours_balance' => $chargedWorkMonth?->closing->unusedHours ?? 0.0,
+                    'starting_unused_hours' => $snapshot['unused'],
+                    'starting_negative_hours' => $snapshot['negative'],
                 ]);
             }
 
@@ -1399,6 +1400,7 @@ final class ClientInvoicingService
      * billable entry, because work recorded before the agreement was signed
      * still consumed nothing and must not appear as a debt.
      *
+     * @param  array<string, float>  $additionalBilledOveragesByMonth
      * @return array<int, MonthSummary>
      */
     private function monthlyBalances(
@@ -1407,6 +1409,7 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         Carbon $retainerMonthStart,
         ?string $terminationMonthKey,
+        array $additionalBilledOveragesByMonth = [],
     ): array {
         $ledgerAgreement = $this->replayHistoryBasis->agreementForLedger($agreement);
         $agreementStart = $this->agreementStart($ledgerAgreement)->startOfMonth();
@@ -1441,6 +1444,10 @@ final class ClientInvoicingService
 
         $months = [];
         $billedOveragesByMonth = $this->billedOverageLedger->hoursByMonthThrough($agreement, $periodEnd);
+        // @infection-ignore-all This merge joins persisted invoice history to one in-flight draft and is covered by database-backed generation tests; the mutation lane deliberately runs unit tests only.
+        foreach ($additionalBilledOveragesByMonth as $month => $hours) {
+            $billedOveragesByMonth[$month] = round(($billedOveragesByMonth[$month] ?? 0.0) + $hours, 4);
+        }
         $firstPostTerminationSeen = false;
         $cursor = $calculationStart->copy();
 
@@ -1551,21 +1558,6 @@ final class ClientInvoicingService
             'unused' => round($summary->opening->totalAvailable, 4),
             'negative' => round($summary->opening->remainingNegativeBalance, 4),
         ];
-    }
-
-    /**
-     * Pay billed overage against debt first, then into available capacity.
-     *
-     * @return array{0: float, 1: float} Net unused hours, net negative hours.
-     */
-    private function applyBilledOverages(float $rawUnused, float $rawNegative, float $billedOverages): array
-    {
-        $netNegative = max(0.0, $rawNegative - $billedOverages);
-        $netUnused = $billedOverages > $rawNegative
-            ? $rawUnused + ($billedOverages - $rawNegative)
-            : $rawUnused;
-
-        return [$netUnused, $netNegative];
     }
 
     /**

@@ -630,6 +630,24 @@ final class ClientInvoicingServiceTest extends TestCase
         $this->assertSame('0.0000', $invoice->starting_negative_hours);
     }
 
+    /** An in-flight charge follows the same expiry rule as stored history. */
+    public function test_current_catchup_surplus_does_not_bypass_zero_month_rollover(): void
+    {
+        $agreement = $this->monthlyAgreement('2026-02-01');
+        $agreement->forceFill([
+            'retainer_minutes' => 120,
+            'catch_up_threshold_minutes' => 60,
+            'rollover_months' => 0,
+        ])->save();
+        $this->entry('2026-01-20', 120);
+
+        $invoice = $this->generate('2026-01-01', '2026-01-31', $agreement);
+
+        $this->assertSame('1.0000', $invoice->hours_billed_at_rate, 'The minimum-availability charge still appears');
+        $this->assertSame('2.0000', $invoice->starting_unused_hours, 'Its January surplus expires before February');
+        $this->assertSame('0.0000', $invoice->starting_negative_hours);
+    }
+
     /**
      * @return array<string, array{string, string}>
      */
