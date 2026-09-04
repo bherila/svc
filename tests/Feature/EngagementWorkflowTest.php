@@ -13,6 +13,7 @@ use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -496,6 +497,20 @@ class EngagementWorkflowTest extends TestCase
         $this->assertLessThan($workspaceCalendar, $companyLock);
     }
 
+    public function test_company_lock_refuses_a_company_from_another_workspace(): void
+    {
+        $owner = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner);
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Lock Neighbour',
+            'slug' => 'synthetic-lock-neighbour-'.uniqid(),
+        ]);
+
+        $this->expectException(ModelNotFoundException::class);
+
+        app(ProposalAcceptanceAgreementQuery::class)->lockCompany($neighbour->id, $company->id);
+    }
+
     public function test_an_active_unlinked_agreement_for_another_project_does_not_block_acceptance(): void
     {
         $owner = User::factory()->create();
@@ -759,6 +774,54 @@ class EngagementWorkflowTest extends TestCase
         $this->assertSame($company->id, $created->client_company_id);
     }
 
+    public function test_active_candidate_lookup_independently_scopes_the_workspace_predicate(): void
+    {
+        $owner = User::factory()->create();
+        $clientUser = User::factory()->create();
+        [$workspace, $company] = $this->clientFor($owner, $clientUser);
+        $project = $this->project($workspace, $company, 'Local acceptance project');
+        $proposal = $this->sentProposal($workspace, $company, $owner, project: $project);
+        $neighbour = Workspace::query()->create([
+            'name' => 'Synthetic Candidate Neighbour',
+            'slug' => 'synthetic-candidate-neighbour-'.uniqid(),
+        ]);
+
+        $this->writingLegacyCrossTenantRows(static function () use ($neighbour, $company, $project): void {
+            DB::table('client_agreements')->insert([
+                'public_id' => (string) Str::uuid(),
+                'workspace_id' => $neighbour->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project->id,
+                'source_proposal_id' => null,
+                'title' => 'Private foreign active candidate',
+                'status' => 'active',
+                'starts_on' => '2026-01-01',
+                'ends_on' => null,
+                'is_visible_to_client' => false,
+                'currency' => 'USD',
+                'billing_cadence' => 'monthly',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->assertSame(
+            0,
+            app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
+        );
+
+        $this->actingAs($clientUser)->postJson(
+            "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
+            ['signer_name' => 'Synthetic Signer'],
+        )->assertOk();
+
+        $this->assertSame($proposal->id, ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('source_proposal_id', $proposal->id)
+            ->sole()
+            ->source_proposal_id);
+    }
+
     public function test_linked_agreement_lookup_independently_scopes_the_workspace_predicate(): void
     {
         $owner = User::factory()->create();
@@ -790,6 +853,10 @@ class EngagementWorkflowTest extends TestCase
         });
 
         $this->assertNull(app(ProposalAcceptanceAgreementQuery::class)->linkedAgreement($proposal));
+        $this->assertSame(
+            1,
+            app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->sentWithoutALinkedAgreement,
+        );
 
         $response = $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
