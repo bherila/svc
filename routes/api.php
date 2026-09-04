@@ -13,6 +13,7 @@ use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Support\AgentApi\AgentApiScopes;
+use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
@@ -45,7 +46,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])
 
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware(['auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
     ->group(function (): void {
         Route::get('/context', [AgentReadController::class, 'context'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))
@@ -111,5 +112,5 @@ Route::options('/v1/mcp', static fn () => response()->noContent())
     ->middleware([EnforceAgentMcpOrigin::class, 'throttle:60,1'])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware([EnforceAgentMcpOrigin::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([EnforceAgentMcpOrigin::class, ExpectOAuthResource::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');

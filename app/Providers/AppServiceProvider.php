@@ -12,9 +12,6 @@ use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
-use App\Support\AgentApi\ResourceAccessTokenRepository;
-use App\Support\AgentApi\ResourceAuthCodeRepository;
-use App\Support\AgentApi\ResourceRefreshTokenRepository;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -29,9 +26,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
-use Laravel\Passport\Bridge\AccessTokenRepository;
-use Laravel\Passport\Bridge\AuthCodeRepository;
-use Laravel\Passport\Bridge\RefreshTokenRepository;
 use Laravel\Passport\Passport;
 use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
 use Symfony\Component\Mailer\Transport\Dsn;
@@ -54,9 +48,6 @@ class AppServiceProvider extends ServiceProvider
             allowedHeaders: ['Idempotency-Key'],
             temporaryFilePrefix: 'svc-agent-',
         ));
-        $this->app->bind(AccessTokenRepository::class, ResourceAccessTokenRepository::class);
-        $this->app->bind(AuthCodeRepository::class, ResourceAuthCodeRepository::class);
-        $this->app->bind(RefreshTokenRepository::class, ResourceRefreshTokenRepository::class);
     }
 
     /**

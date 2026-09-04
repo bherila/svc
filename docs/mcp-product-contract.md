@@ -88,10 +88,12 @@ Project detail embeds tasks only when the connection also has `tasks:read`.
 OAuth public clients use authorization code plus rotating refresh tokens, `code`
 response type, S256 PKCE, exact resource binding, and no token-endpoint client
 authentication. Dynamic registration accepts only that profile and safe HTTPS or
-loopback redirect URIs. Registrations are marked, their last token use is tracked,
+loopback redirect URIs. Registrations are marked, their exact scope ceiling and
+last token use are persisted,
 and a daily retention command removes only stale registrations with no active access
 or refresh credential. SVC configures the shared auth package's consent screen after
-the Bherila.net login.
+the Bherila.net login. Access-token JWT issuer, audience, and resource claims agree
+with the authorization-code, access-token, and refresh-token database bindings.
 
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;

@@ -6,6 +6,7 @@ use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,20 @@ class DeploySmokeCredentialsTest extends TestCase
         $this->assertSame(0, DB::table('workspace_memberships')->where('user_id', $principal->id)->count());
         $this->assertSame(0, DB::table('client_company_memberships')->where('user_id', $principal->id)->count());
         $this->assertSame(0, DB::table('client_project_memberships')->where('user_id', $principal->id)->count());
+        $tokens = Passport::token()->newQuery()
+            ->where('user_id', $principal->id)
+            ->where('revoked', false)
+            ->get();
+        $this->assertCount(2, $tokens);
+        foreach ($tokens as $token) {
+            $this->assertSame(OAuthResourceIndicator::resource(), $token->resource_uri);
+        }
+        foreach (['authorized_token', 'wrong_scope_token'] as $key) {
+            $claims = OAuthResourceIndicator::tokenClaims($issued[$key]);
+            $this->assertSame(config('bherila-auth.oauth_server.issuer'), $claims['iss'] ?? null);
+            $this->assertSame(OAuthResourceIndicator::resource(), $claims['resource'] ?? null);
+            $this->assertContains(OAuthResourceIndicator::resource(), $claims['aud'] ?? []);
+        }
     }
 
     /**
