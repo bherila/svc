@@ -6,6 +6,7 @@ use App\Exceptions\UnscopableWorkspaceWrite;
 use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientExpense;
 use App\Models\ClientProjectMembership;
+use App\Models\ClientTask;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\WorkspaceInvoiceCounter;
 use Closure;
@@ -237,6 +238,39 @@ final class WorkspaceScopedWriteTest extends TestCase
     }
 
     /**
+     * The revision bump is a builder update too, and no model hook sees it.
+     *
+     * From review on #230. `advanceAgentRevision()` writes through
+     * `static::query()`, so the workspace is named in the call; the second
+     * assertion is what proves the predicate matched, since a wrong one would
+     * increment nothing and still return.
+     */
+    public function test_the_agent_revision_bump_names_the_workspace(): void
+    {
+        $workspace = $this->syntheticWorkspace('revision');
+        $task = ClientTask::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_project_id' => $this->syntheticProject($this->syntheticCompany($workspace, 'revision'), 'revision')->id,
+            'title' => 'Synthetic revision task',
+            'status' => 'open',
+        ]);
+        $before = $task->lock_version;
+
+        $statements = $this->capture(static function () use ($task): void {
+            $task->advanceAgentRevision();
+        });
+
+        $updates = array_values(array_filter(
+            $statements,
+            static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'update'),
+        ));
+
+        $this->assertCount(1, $updates, 'One revision bump, one update statement.');
+        $this->assertStringContainsString('workspace_id', $updates[0], $updates[0]);
+        $this->assertSame($before + 1, $task->fresh()?->lock_version);
+    }
+
+    /**
      * A table keyed by the workspace is already scoped by the key predicate,
      * and the trait leaves it alone rather than saying the same thing twice.
      */
@@ -278,7 +312,8 @@ final class WorkspaceScopedWriteTest extends TestCase
         DB::listen(static function (QueryExecuted $query) use (&$statements): void {
             if (str_contains($query->sql, 'client_expenses')
                 || str_contains($query->sql, 'workspace_invoice_counters')
-                || str_contains($query->sql, 'client_project_memberships')) {
+                || str_contains($query->sql, 'client_project_memberships')
+                || str_contains($query->sql, 'client_tasks')) {
                 $statements[] = $query->sql;
             }
         });

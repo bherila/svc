@@ -168,7 +168,7 @@ final class InvoiceFromTimeService
                 ->where('client_invoice_id', $locked->id)
                 ->whereIn('id', $linkedLineIds)
                 ->get() as $line) {
-                $line->timeEntries()->detach();
+                $line->timeEntries()->wherePivot('workspace_id', $line->workspace_id)->detach();
                 $line->delete();
             }
 

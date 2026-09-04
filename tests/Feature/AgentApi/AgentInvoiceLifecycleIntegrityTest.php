@@ -15,6 +15,7 @@ use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
@@ -173,47 +174,87 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     /** @return array{User, Workspace, ClientCompany, ClientProject} */
     /**
-     * Rewriting a draft's lines deletes the old ones through the relation, and
-     * a relation delete is a builder write: it never reaches
-     * `setKeysForSaveQuery()`, so the workspace has to be named on the
-     * statement itself. From review on #230.
+     * Every tenant-owned write the invoice lifecycle issues names its workspace.
+     *
+     * From review on #230, which found three of these one at a time. The model
+     * hooks this PR adds cannot see a builder write - a relation `update()`,
+     * `detach()`, or `Model::query()->...->update()` never touches a model
+     * instance - so those have to name the workspace at the call site, and a
+     * test that names call sites would only ever find the ones somebody
+     * thought of.
+     *
+     * This asserts the property instead: drive a draft through the rewrite and
+     * issue paths, which between them cover the line delete, the pivot detach,
+     * the time-entry status update and the revision bump, and refuse any
+     * update or delete against a table that has a `workspace_id` and does not
+     * mention it. The tables come from the schema, so a write added tomorrow
+     * against a tenant-owned table is in this test the day it appears.
      */
-    public function test_rewriting_a_draft_deletes_its_lines_with_the_workspace_named(): void
+    public function test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace(): void
     {
         config(['agent_api.writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $time = $this->approvedTime($owner, $workspace, $company, $project, 'Original allocation');
         $replacement = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE]);
-        $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'draft-scoped-delete');
+        $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'scoped-writes-create');
 
-        $statements = [];
-        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
-            if (str_starts_with(ltrim(strtolower($query->sql)), 'delete')
-                && str_contains($query->sql, 'client_invoice_lines')) {
-                $statements[] = $query->sql;
+        $writes = [];
+        DB::listen(static function (QueryExecuted $query) use (&$writes): void {
+            if (preg_match('/^(?:update|delete\s+from)\s+`?([a-z_]+)`?/i', ltrim($query->sql), $matches) === 1) {
+                $writes[] = [strtolower($matches[1]), $query->sql];
             }
         });
 
-        $this->withHeader('Idempotency-Key', 'draft-scoped-delete-update')->patchJson(
+        $updated = $this->withHeader('Idempotency-Key', 'scoped-writes-update')->patchJson(
             "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
             [
                 'expected_version' => $draft['version'],
                 'time_entry_ids' => [$replacement->public_id],
                 'manual_lines' => [],
             ],
+        )->assertOk()->json('data');
+
+        $this->withHeader('Idempotency-Key', 'scoped-writes-issue')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}/issue",
+            ['expected_version' => $updated['version'], 'confirm' => true],
         )->assertOk();
 
-        $this->assertNotEmpty($statements, 'No line delete was captured, so this asserted nothing.');
+        $unscoped = [];
+        $touched = [];
 
-        foreach ($statements as $sql) {
-            $this->assertStringContainsString('workspace_id', $sql, $sql);
+        foreach ($writes as [$table, $sql]) {
+            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'workspace_id')) {
+                continue;
+            }
+
+            $touched[$table] = true;
+
+            // The predicate, not the assignment: `set workspace_id = ?` on an
+            // insert-like update would satisfy a naive search of the whole
+            // statement while scoping nothing.
+            $where = strstr(strtolower($sql), ' where ');
+
+            if ($where === false || ! str_contains($where, 'workspace_id')) {
+                $unscoped[] = $sql;
+            }
         }
 
-        // And the rewrite still happened: a predicate naming the wrong
-        // workspace would delete nothing and leave both sets of lines behind.
+        $this->assertSame([], $unscoped, "These tenant-owned writes name no workspace:\n".implode("\n", $unscoped));
+
+        // The flow has to have written to the tables this is about, or the
+        // assertion above passed by inspecting nothing.
+        foreach (['client_invoices', 'client_invoice_lines', 'client_invoice_line_time_entries', 'client_time_entries'] as $table) {
+            $this->assertArrayHasKey($table, $touched, $table.' was never written to, so this test proved nothing about it.');
+        }
+
+        // And the work still happened: a predicate naming the wrong workspace
+        // would leave every one of these statements matching no row while the
+        // requests still returned 200.
         $this->assertSame(0, $time->invoiceLines()->count());
         $this->assertSame(1, $replacement->invoiceLines()->count());
+        $this->assertSame('approved', $time->fresh()->status);
+        $this->assertSame('invoiced', $replacement->fresh()->status);
     }
 
     private function tenant(): array

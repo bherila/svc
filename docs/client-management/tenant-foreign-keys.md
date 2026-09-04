@@ -98,10 +98,25 @@ the parent the relation was reached through, and refusing when neither has one -
 `$user->clientCompanies()` reaches a tenant-owned pivot from a parent that
 belongs to no workspace. The three membership pivots use it.
 
-Neither hook covers a *builder* write - `$invoice->lines()->delete()`, or any
-`Model::query()->...->update()`. Those never touch a model instance, so the
-workspace has to be named in the call. There is one relation write of that shape
-in the application, in `InvoiceLifecycleService::updateDraft()`, and it names it.
+Neither hook covers a *builder* write - `$invoice->lines()->delete()`, a relation
+`update()`, a `detach()`, or any `Model::query()->...->update()`. Those never
+touch a model instance, so the workspace has to be named in the call, with
+`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`. Every such
+write against a tenant-owned table does:
+
+| Write | Where |
+| --- | --- |
+| Clearing a draft's lines | `InvoiceLifecycleService::updateDraft()` |
+| Marking linked time invoiced | `InvoiceLifecycleService::issue()` |
+| Releasing linked time | `InvoiceFromTimeService`, `InvoiceLineComposer` |
+| Bumping the opaque revision | `IncrementsAgentRevision::advanceAgentRevision()` |
+
+Naming them is not the guarantee, though - the next one added would be missing
+from the list and from any test that checks call sites.
+`AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace`
+drives a draft through rewrite and issue and refuses *any* update or delete
+against a table that has a `workspace_id` and whose predicate does not mention
+it, with the tables read from the schema.
 
 A model may also declare its ownership fixed, by overriding
 `workspaceOwnershipIsImmutable()` to return true. A save that then changes

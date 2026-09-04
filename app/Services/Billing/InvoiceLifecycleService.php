@@ -208,10 +208,16 @@ final class InvoiceLifecycleService
             ])->save();
 
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
-                $line->timeEntries()->where('status', 'approved')->update([
-                    'status' => 'invoiced',
-                    'lock_version' => DB::raw('lock_version + 1'),
-                ]);
+                // The workspace on the statement, not only on the invoice
+                // the lines hang off: a relation update is a builder write and
+                // reaches no model hook.
+                $line->timeEntries()
+                    ->where('client_time_entries.workspace_id', $locked->workspace_id)
+                    ->where('status', 'approved')
+                    ->update([
+                        'status' => 'invoiced',
+                        'lock_version' => DB::raw('lock_version + 1'),
+                    ]);
             }
             $this->activities->record(
                 $locked->workspace,
