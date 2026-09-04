@@ -79,6 +79,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_billing_schedules', 'client_company_id', 'client_companies', 'cbs_ws_company_fk'),
             TenantReference::enforcedBy('client_invoices', 'client_company_id', 'client_companies', 'ci_ws_company_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_company_id', 'client_companies', 'cte_ws_company_fk'),
+            TenantReference::enforcedBy('client_expenses', 'client_company_id', 'client_companies', 'cex_ws_company_fk'),
             TenantReference::enforcedBy('client_stripe_customers', 'client_company_id', 'client_companies', 'csc_ws_company_fk'),
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_company_id', 'client_companies', 'cspm_ws_company_fk'),
 
@@ -112,6 +113,7 @@ final class TenantReferenceInventory
             TenantReference::exempt('client_agreements', 'client_project_id', 'client_projects', self::REASON_SET_NULL),
             TenantReference::exempt('client_agreements', 'source_proposal_id', 'client_proposals', self::REASON_SET_NULL),
             TenantReference::exempt('client_invoice_lines', 'client_project_id', 'client_projects', self::REASON_SET_NULL),
+            TenantReference::exempt('client_expenses', 'client_project_id', 'client_projects', self::REASON_SET_NULL),
             TenantReference::exempt('client_tasks', 'client_invoice_line_id', 'client_invoice_lines', self::REASON_SET_NULL),
             TenantReference::exempt('client_time_entries', 'client_task_id', 'client_tasks', self::REASON_SET_NULL),
             TenantReference::exempt('client_time_entries', 'split_from_time_entry_id', 'client_time_entries', self::REASON_SET_NULL),

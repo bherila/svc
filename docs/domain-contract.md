@@ -58,6 +58,22 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - recurring items retain their own cadence, anchor month/day, effective dates,
   amount, taxability, and active state
 
+`client_expenses`
+
+- reimbursable expense belonging to a workspace and client company, optionally
+  attributed to one of that company's projects
+- `spent_on`, integer minor-unit `amount`, ISO 4217 `currency`, `description`
+- status: `draft`, `approved`, or `invoiced`, with optional approval user/time
+- a reimbursable expense reaches an invoice at cost: there is no markup column,
+  and no generator applies one
+- an expense is invoiceable only once approved; approval is a manager act and
+  recurrence, when it arrives, generates occurrences that must each be approved
+  rather than pre-approving them
+- reads and writes go through a workspace-scoped boundary, and the company
+  reference carries a composite `(workspace_id, client_company_id)` key; the
+  optional project reference is exempt from that key and checked in the
+  application, per [tenant foreign keys](client-management/tenant-foreign-keys.md)
+
 ## Billing tables
 
 `client_invoices` and `client_invoice_lines`
