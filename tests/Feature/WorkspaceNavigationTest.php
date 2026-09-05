@@ -98,9 +98,9 @@ class WorkspaceNavigationTest extends TestCase
                 ->where('workspaceNavigation.clients.0.destinations.invoices', $base.'/invoices')
                 ->where('workspaceNavigation.clients.0.destinations.time', $base.'/time')
                 ->where('workspaceNavigation.clients.0.destinations.tasks', $base.'/tasks')
-                // No expense record exists yet (#75). Null hides the tab rather
-                // than offering a link to nothing.
-                ->where('workspaceNavigation.clients.0.destinations.expenses', null)
+                // The operator surface for expenses arrived in #75's first
+                // slice, so the tab is a link rather than a null.
+                ->where('workspaceNavigation.clients.0.destinations.expenses', $base.'/expenses')
                 ->where('workspaceNavigation.permissions.search', true));
     }
 

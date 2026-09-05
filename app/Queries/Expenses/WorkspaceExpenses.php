@@ -147,17 +147,53 @@ final class WorkspaceExpenses
      * changed columns, so an edit is checked by the same constructor a new
      * expense is - a partial update cannot smuggle past a rule that only runs
      * on the fields it happens to carry.
+     *
+     * Attribution is separate from the facts and opt-in. `NewExpense` carries
+     * no tenant reference by design, so the project is checked here the way
+     * {@see record()} checks it; and `$reattribute` is what distinguishes
+     * "leave it alone" from "clear it", which a null project cannot say on its
+     * own. Without that distinction an edit to the money alone would silently
+     * detach the expense from its project - a form reporting a saved
+     * attribution the write discarded.
      */
-    public function update(ClientExpense $expense, NewExpense $facts): ClientExpense
-    {
-        return $this->mutate($expense, static function (ClientExpense $locked) use ($facts): ClientExpense {
+    public function update(
+        ClientExpense $expense,
+        NewExpense $facts,
+        ?ClientProject $project = null,
+        bool $reattribute = false,
+    ): ClientExpense {
+        // The project is checked here rather than folded into the facts, for
+        // the same reason {@see record()} checks it: it is a tenant reference
+        // and `NewExpense` deliberately carries none. A cross-tenant project
+        // is refused before anything is locked.
+        if ($reattribute && $project !== null) {
+            if ($project->workspace_id !== $this->workspace->id) {
+                throw new CrossTenantReference('That project belongs to another workspace.');
+            }
+
+            if ($project->client_company_id !== $expense->client_company_id) {
+                throw new CrossTenantReference('That project belongs to another client company.');
+            }
+        }
+
+        return $this->mutate($expense, static function (ClientExpense $locked) use ($facts, $project, $reattribute): ClientExpense {
             $status = $locked->getAttribute('status');
 
             if (! ExpenseStatus::isEditableValue($status)) {
                 throw ExpenseTransitionRefused::edit($status);
             }
 
-            $locked->forceFill($facts->attributes())->save();
+            // `$reattribute` distinguishes "leave the attribution alone" from
+            // "clear it", which a null project alone cannot: a caller editing
+            // only the money must not silently detach the expense from its
+            // project, and a caller clearing the project must be able to.
+            $attributes = $facts->attributes();
+
+            if ($reattribute) {
+                $attributes['client_project_id'] = $project?->id;
+            }
+
+            $locked->forceFill($attributes)->save();
 
             return $locked;
         });

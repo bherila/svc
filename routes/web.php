@@ -131,5 +131,7 @@ Route::middleware('auth')->group(function (): void {
 });
 
 require __DIR__.'/engagement.php';
+require __DIR__.'/expenses.php';
+require __DIR__.'/expenses.php';
 require __DIR__.'/billing.php';
 require __DIR__.'/files.php';

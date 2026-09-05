@@ -20,9 +20,9 @@ export type ClientModule = 'home' | 'invoices' | 'time' | 'expenses' | 'tasks';
  * Finished URLs, generated per viewer after authorization.
  *
  * Only `home` is guaranteed. A route family need not serve every module - the
- * portal is a different family from the operator screens, and expenses have no
- * record in the schema yet - and a null hides that tab rather than linking
- * somewhere that does not exist.
+ * portal is a different family from the operator screens, and expenses are on
+ * the operator screens only for now (#75) - and a null hides that tab rather
+ * than linking somewhere that does not exist.
  */
 export type ClientModuleDestinations = {
     home: string;
