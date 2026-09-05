@@ -133,6 +133,18 @@ final class RepositoryReferenceTest extends TestCase
         // that means nothing to any other machine.
         yield 'a local file remote' => ['file:///srv/git/repo.git'];
         yield 'a bare absolute path' => ['/srv/git/repo'];
+        // A drive letter is not a hostname. Without the guard the SCP rewrite
+        // reads the drive colon as the host separator and mints `c/srv/git/repo`.
+        yield 'a windows drive path' => ['C:/srv/git/repo.git'];
+        yield 'a windows drive path with backslashes' => ['C:\\srv\\git\\repo'];
+        // `host:owner/name` is relative to the login home and `host:/owner/name`
+        // to the root - two repositories the canonical form cannot tell apart,
+        // so it refuses rather than folding them onto one key.
+        yield 'an absolute scp path' => ['git@git.example.test:/owner/name.git'];
+        // Digits followed by anything but a separator are not a port. Stripping
+        // them anyway would glue the remainder to the host and accept the
+        // altogether different `hostevil`.
+        yield 'a malformed port' => ['ssh://git.example.test:22evil/owner/name.git'];
     }
 
     /**

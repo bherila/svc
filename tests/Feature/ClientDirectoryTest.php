@@ -1214,6 +1214,46 @@ class ClientDirectoryTest extends TestCase
         $this->assertSame('Keep Project', $fresh?->name);
     }
 
+    /**
+     * A pasted token does not outlive the request that refused it.
+     *
+     * A remote is the one ordinary field here that can carry a secret - a
+     * machine with stored credentials prints
+     * `https://user:token@host/owner/name.git` - and the normalizer strips it
+     * before saving. But a refused save never reaches the normalizer: Laravel
+     * flashes the raw input on the redirect back, and sessions are stored in
+     * the database, so without `dontFlash` the token is written to a table.
+     *
+     * The version check is what refuses it here, deliberately: it is the
+     * failure an operator hits by accident, with a payload that is otherwise
+     * entirely well-formed.
+     */
+    public function test_a_credential_in_a_refused_remote_is_not_flashed(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Secret', 'synthetic-secret', $manager);
+        $company = $this->company($workspace, 'Secret Client', 'secret-client');
+        $project = $this->project($workspace, $company, 'Secret Project');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Secret Project',
+                'description' => null,
+                'repository' => 'https://someone:a-secret@example.com/owner/name.git',
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => (int) $project->fresh()?->lock_version + 99,
+            ])
+            ->assertSessionHasErrors('lock_version');
+
+        $this->assertNull(session()->getOldInput('repository'));
+        $this->assertSame(
+            'Secret Project',
+            session()->getOldInput('name'),
+            'the rest of the form is still flashed, or this proves nothing',
+        );
+    }
+
     /** The Manage screen renders the stored mapping so the form can round-trip it. */
     public function test_the_manage_screen_sends_the_repository(): void
     {

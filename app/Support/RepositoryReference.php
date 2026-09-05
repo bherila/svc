@@ -91,13 +91,38 @@ final class RepositoryReference
         $value = self::replace('/^[^\/@]*@/', '', $value);
 
         if (! $hadScheme) {
+            // A Windows drive letter is not a host. `C:/srv/git/repo` is a path
+            // on one machine, and the SCP rewrite below would read the drive
+            // colon as the host separator and mint `c/srv/git/repo` - a mapping
+            // key that means nothing anywhere else, and could collide with a
+            // real single-label host.
+            if (preg_match('#^[a-z]:[\\/]#i', $value) === 1) {
+                return null;
+            }
+
             // SCP-style. Git reads the first colon as the path separator, so
             // `host:1234/owner/name` is the path `1234/owner/name` and not a
             // port - which is why this branch must not look like the one below.
+            //
+            // An absolute path after the colon is a *different* repository:
+            // `host:owner/name` is relative to the login home, `host:/owner/name`
+            // is relative to the root. The canonical form has nowhere to record
+            // that difference, so rather than fold two remotes onto one key it
+            // is refused and the operator is asked, which is the same path taken
+            // when nothing matches at all.
+            if (preg_match('#^[^/:]+:/#', $value) === 1) {
+                return null;
+            }
+
             $value = self::replace('/^([^\/:]+):/', '$1/', $value);
         } else {
-            // A real URL, so a colon after the host is a port and is dropped.
-            $value = self::replace('/^([^\/:]+):\d+/', '$1', $value);
+            // A real URL, so a colon after the host is a port and is dropped -
+            // but only when it really is one. Git's grammar puts the port
+            // between the host and the path separator, so digits followed by
+            // anything else is a malformed authority: without the lookahead,
+            // `host:22evil/owner/name` loses `:22` and silently becomes the
+            // altogether different host `hostevil`.
+            $value = self::replace('#^([^/:]+):\d+(?=/|$)#', '$1', $value);
         }
 
         // Everything from a `?` or `#` onward is not part of the identity.

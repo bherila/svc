@@ -320,6 +320,53 @@ class AgentReadApiTest extends TestCase
     }
 
     /** @param list<string> $scopes */
+    /**
+     * A portal client is not shown the repository a project is worked in.
+     *
+     * Client-visible projects reach a portal user through `projectQuery`, so
+     * the field would otherwise disclose an internal host, organization and
+     * repository name to the client being billed - on a payload they can read
+     * with nothing but `projects:read`. The web UI only ever shows this on the
+     * manager-only settings screen, and a client cannot log time, so there is
+     * nothing it buys them.
+     *
+     * Absent rather than null, so a client cannot tell a withheld mapping from
+     * an unmapped project.
+     */
+    public function test_a_portal_client_is_not_shown_the_repository(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $project->forceFill(['is_visible_to_client' => true])->save();
+
+        $client = User::factory()->create();
+        $company->portalUsers()->attach($client, ['role' => 'client']);
+
+        $this->actingAsAgent($client, [AgentApiScopes::PROJECTS_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $project->public_id)
+            ->assertJsonMissingPath('data.0.repository');
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}")
+            ->assertOk()
+            ->assertJsonMissingPath('data.repository');
+    }
+
+    /** A manager still gets it, or the whole feature is inert. */
+    public function test_a_manager_is_shown_the_repository(): void
+    {
+        [$workspace, , $project] = $this->project();
+        $manager = User::factory()->create();
+        $this->workspaceMember($workspace, $manager, 'owner');
+
+        $this->actingAsAgent($manager, [AgentApiScopes::PROJECTS_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}")
+            ->assertOk()
+            ->assertJsonPath('data.repository', 'github.com/synthetic/assigned');
+    }
+
     private function actingAsAgent(User $user, array $scopes): void
     {
         Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);

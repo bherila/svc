@@ -31,6 +31,20 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // A repository remote is the one ordinary field an operator pastes that
+        // can carry a secret: `https://user:token@host/owner/name.git` is what a
+        // machine with stored credentials prints. The normalizer strips the
+        // credential before anything is saved, but a refused save never reaches
+        // the normalizer - Laravel flashes the raw input on the redirect back,
+        // and this deployment stores sessions in the database, so the token
+        // would outlive the request in the `sessions` table. Merged with the
+        // framework's own password entries rather than replacing them.
+        //
+        // The form does not need it flashed: Inertia's `useForm` holds the
+        // operator's edits in the browser, so the field survives the round trip
+        // without the server echoing it back.
+        $exceptions->dontFlash(['repository']);
+
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
             if (! $request->is('api/v1/*')) {
                 return null;

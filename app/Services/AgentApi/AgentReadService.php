@@ -141,12 +141,16 @@ final class AgentReadService
         }
 
         $page = $this->page($query, $workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor);
+        // Withheld from a portal client, and fail-closed for anyone who is
+        // somehow both: a repository mapping names internal infrastructure, and
+        // the client half of a dual identity is the half that must not see it.
+        $includeRepository = ! $this->access->isWorkspaceClient($user, $workspace);
         $data = [];
         foreach ($page['records'] as $project) {
             if (! $project instanceof ClientProject) {
                 continue;
             }
-            $data[] = $this->projectPresenter->present($workspace, $project);
+            $data[] = $this->projectPresenter->present($workspace, $project, $includeRepository);
         }
 
         return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
@@ -161,7 +165,7 @@ final class AgentReadService
             $query->with('tasks');
         }
         $record = $query->firstOrFail();
-        $data = $this->projectPresenter->present($workspace, $record);
+        $data = $this->projectPresenter->present($workspace, $record, ! $this->access->isWorkspaceClient($user, $workspace));
         if ($record->relationLoaded('tasks')) {
             $data['tasks'] = $record->tasks->filter(fn (ClientTask $task): bool => $this->access->canViewTask($user, $task))
                 ->map(fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task))->values()->all();
