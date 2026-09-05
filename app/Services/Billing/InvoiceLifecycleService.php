@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
@@ -18,6 +19,7 @@ use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final class InvoiceLifecycleService
 {
@@ -547,9 +549,45 @@ final class InvoiceLifecycleService
         // requires to say which tenant it is addressing, because the id being
         // unique is a property of today's data and not of the SQL.
         $workspaceId = $invoice->workspace_id;
+
+        // Refusing is the point of the predicates, not a side effect of them.
+        //
+        // This repository accommodates pre-composite-key tenant chains, so a
+        // legacy invoice can carry a line, a pivot row or a milestone claim
+        // stamped with another workspace. Scoping the releases below without
+        // this would quietly *skip* such a row: the invoice would still be
+        // voided, and the time entry it held would stay `invoiced` and the
+        // milestone stay claimed - unbillable from then on, with nothing said.
+        // A silent under-release is no better than the unscoped write it
+        // replaced, and worse than stopping.
+        //
+        // Same three checks, in the same order, as
+        // `InvoiceLineComposer::resetSystemGeneratedLines()`, which reached
+        // this conclusion first for the regeneration path.
+        $invoice->assertLineOwnership();
         $lineIds = $invoice->lines()->where('workspace_id', $workspaceId)->pluck('id');
         if ($lineIds->isEmpty()) {
             return;
+        }
+
+        $hasForeignPivots = DB::table('client_invoice_line_time_entries')
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->where(fn ($query) => $query
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $workspaceId))
+            ->exists();
+        if ($hasForeignPivots) {
+            throw new RuntimeException('The invoice contains a time allocation owned by another workspace.');
+        }
+
+        $hasForeignTasks = ClientTask::query()
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->where(fn ($query) => $query
+                ->whereNull('workspace_id')
+                ->orWhere('workspace_id', '!=', $workspaceId))
+            ->exists();
+        if ($hasForeignTasks) {
+            throw new RuntimeException('The invoice contains a milestone allocation owned by another workspace.');
         }
         $entryIds = DB::table('client_invoice_line_time_entries')
             ->where('workspace_id', $workspaceId)

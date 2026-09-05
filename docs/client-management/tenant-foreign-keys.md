@@ -118,12 +118,26 @@ a later reader would have believed. What is true is narrower and testable:
   the next write added would be missing from the list and from any test that
   checks call sites.
 
-`AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace`
-drives a draft through rewrite and issue and refuses *any* update or delete
-against a table that has a `workspace_id` and whose predicate does not mention
-it, with the tables read from the schema. It covers the invoice lifecycle;
-extending that shape to the other flows, and adding a static rule so the
-eighteenth write cannot be introduced silently, is the remaining work.
+`Tests\Concerns\CapturesTenantOwnedWrites` is that test. It runs a flow, reads
+every statement the flow issued, and refuses *any* update or delete against a
+table that has a `workspace_id` and whose predicate does not mention it, with
+the tables read from the schema rather than from a list — so a write added
+tomorrow is covered the day it appears. **Extend the flow coverage there when
+you add a flow**, not by writing a new capture:
+
+| Flow | Test |
+| --- | --- |
+| Draft rewrite and issue | `AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace` |
+| Task mutation, time-entry edit and delete, invoice void, milestone claim, portal access, replay, Stripe state transition | `TenantScopedWriteStatementsTest` |
+
+Each of those carries a vacuity guard naming the tables the flow must actually
+have written to, because an assertion over an empty statement list passes. Two
+ways that happened while this was in review: a quoting style the pattern did
+not know (MariaDB writes `` `table` ``, SQLite writes `"table"`), and a flow
+that turned out not to write to the table the test was about.
+
+What remains is a static rule, so the next unscoped write is refused at
+analysis time rather than caught by whichever flow happens to have a test.
 
 One write is deliberately different. `StripePaymentMethodService::updateState()`
 predicates on the workspace the state row *currently* carries, which is null

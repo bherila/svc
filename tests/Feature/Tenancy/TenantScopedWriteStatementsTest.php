@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientStripeCustomer;
 use App\Models\ClientTask;
@@ -25,7 +26,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use ReflectionMethod;
+use RuntimeException;
 use Tests\Concerns\CapturesTenantOwnedWrites;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -52,6 +55,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
 {
     use CapturesTenantOwnedWrites;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -141,33 +145,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
      */
     public function test_voiding_an_invoice_releases_its_allocations_by_workspace(): void
     {
-        $agreement = $this->agreement();
-        $entry = $this->entry(['status' => 'approved']);
-        $task = $this->milestone();
-        $invoice = ClientInvoice::query()->create([
-            'workspace_id' => $this->workspace->id,
-            'client_company_id' => $this->company->id,
-            'client_agreement_id' => $agreement->id,
-            'invoice_number' => 'SVC-VOID-1',
-            'currency' => 'USD',
-            'status' => 'draft',
-            'service_period_start' => '2026-03-01',
-            'service_period_end' => '2026-03-31',
-        ]);
-        $line = $invoice->lines()->create([
-            'workspace_id' => $this->workspace->id,
-            'type' => 'additional_hours',
-            'description' => 'Work',
-            'quantity' => '1',
-            'unit_amount' => 30000,
-            'tax_amount' => 0,
-            'total_amount' => 30000,
-            'sort_order' => 0,
-        ]);
-        $line->timeEntries()->attach($entry->id, ['workspace_id' => $this->workspace->id]);
-        $entry->forceFill(['status' => 'invoiced'])->save();
-        $task->forceFill(['client_invoice_line_id' => $line->id])->save();
-        app(InvoiceLifecycleService::class)->issue($invoice->refresh(), $this->workspace);
+        [$invoice, $entry, , $task] = $this->issuedInvoiceWithAllocations();
 
         $writes = $this->writesIssuedBy(function () use ($invoice): void {
             app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Synthetic void');
@@ -179,6 +157,63 @@ final class TenantScopedWriteStatementsTest extends TestCase
         // returning without error proves nothing on its own.
         $this->assertSame('approved', $entry->fresh()?->status);
         $this->assertNull($task->fresh()?->client_invoice_line_id);
+    }
+
+    /**
+     * Scoping a release has to refuse a foreign row, not skip it.
+     *
+     * This repository accommodates pre-composite-key tenant chains, so a legacy
+     * invoice can carry a pivot row or a milestone claim stamped with another
+     * workspace. Adding a workspace predicate to the releases without a guard
+     * would quietly omit such a row: the invoice would still be voided, and the
+     * work it held would stay invoiced or claimed for good, with nothing said.
+     * A silent under-release is no better than the unscoped write it replaced.
+     *
+     * Two cases because the two halves fail differently and are guarded
+     * separately - the pivot by its own check, the milestone by its own.
+     */
+    public function test_voiding_refuses_an_allocation_owned_by_another_workspace(): void
+    {
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-'.Str::random(6)]);
+        [$invoice, $entry, $line] = $this->issuedInvoiceWithAllocations();
+
+        $this->writingLegacyCrossTenantRows(function () use ($line, $elsewhere): void {
+            DB::table('client_invoice_line_time_entries')
+                ->where('client_invoice_line_id', $line->id)
+                ->update(['workspace_id' => $elsewhere->id]);
+        });
+
+        try {
+            app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Synthetic void');
+            $this->fail('Voiding must refuse an invoice holding another workspace\'s time allocation.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('time allocation owned by another workspace', $exception->getMessage());
+        }
+
+        // Nothing was half-released on the way to the refusal, and the invoice
+        // is not left void with work stranded on it.
+        $this->assertSame('invoiced', $entry->fresh()?->status);
+        $this->assertNotSame('void', $invoice->fresh()?->status);
+    }
+
+    public function test_voiding_refuses_a_milestone_claimed_by_another_workspace(): void
+    {
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-'.Str::random(6)]);
+        [$invoice, , , $task] = $this->issuedInvoiceWithAllocations();
+
+        $this->writingLegacyCrossTenantRows(function () use ($task, $elsewhere): void {
+            DB::table('client_tasks')->where('id', $task->id)->update(['workspace_id' => $elsewhere->id]);
+        });
+
+        try {
+            app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Synthetic void');
+            $this->fail('Voiding must refuse an invoice holding another workspace\'s milestone claim.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('milestone allocation owned by another workspace', $exception->getMessage());
+        }
+
+        $this->assertNotNull($task->fresh()?->client_invoice_line_id);
+        $this->assertNotSame('void', $invoice->fresh()?->status);
     }
 
     public function test_claiming_a_milestone_names_the_workspace(): void
@@ -322,6 +357,44 @@ final class TenantScopedWriteStatementsTest extends TestCase
         $this->assertSame('detached', (string) DB::table('stripe_payment_method_states')
             ->where('provider_id_hash', hash('sha256', $providerId))
             ->value('state'));
+    }
+
+    /**
+     * An issued invoice holding one time allocation and one milestone claim.
+     *
+     * @return array{ClientInvoice, ClientTimeEntry, ClientInvoiceLine, ClientTask}
+     */
+    private function issuedInvoiceWithAllocations(): array
+    {
+        $agreement = $this->agreement();
+        $entry = $this->entry(['status' => 'approved']);
+        $task = $this->milestone();
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SVC-VOID-'.Str::random(6),
+            'currency' => 'USD',
+            'status' => 'draft',
+            'service_period_start' => '2026-03-01',
+            'service_period_end' => '2026-03-31',
+        ]);
+        $line = $invoice->lines()->create([
+            'workspace_id' => $this->workspace->id,
+            'type' => 'additional_hours',
+            'description' => 'Work',
+            'quantity' => '1',
+            'unit_amount' => 30000,
+            'tax_amount' => 0,
+            'total_amount' => 30000,
+            'sort_order' => 0,
+        ]);
+        $line->timeEntries()->attach($entry->id, ['workspace_id' => $this->workspace->id]);
+        $entry->forceFill(['status' => 'invoiced'])->save();
+        $task->forceFill(['client_invoice_line_id' => $line->id])->save();
+        app(InvoiceLifecycleService::class)->issue($invoice->refresh(), $this->workspace);
+
+        return [$invoice, $entry, $line, $task];
     }
 
     private function stateWorkspaceId(string $providerId): ?int
