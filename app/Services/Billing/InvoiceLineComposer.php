@@ -173,6 +173,7 @@ class InvoiceLineComposer
             // where it does not.
             $claimed = ClientTask::query()
                 ->whereKey($task->getKey())
+                ->where('workspace_id', $company->workspace_id)
                 ->whereNull('client_invoice_line_id')
                 ->update(['client_invoice_line_id' => $line->id]);
 

@@ -12,16 +12,15 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
 use App\Support\AgentApi\AgentApiScopes;
-use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
+use Tests\Concerns\CapturesTenantOwnedWrites;
 use Tests\TestCase;
 
 final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 {
+    use CapturesTenantOwnedWrites;
     use RefreshDatabase;
 
     public function test_updating_a_draft_releases_removed_time_for_another_invoice(): void
@@ -200,63 +199,36 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
         $draft = $this->createDraft($workspace, $company, ['time_entry_ids' => [$time->public_id]], 'scoped-writes-create');
 
-        $writes = [];
-        DB::listen(static function (QueryExecuted $query) use (&$writes): void {
-            // Both quoting styles: MariaDB writes `table`, SQLite writes
-            // "table", and a pattern that knew only one would match nothing on
-            // the other lane and leave this test asserting over an empty list.
-            if (preg_match('/^(?:update|delete\s+from)\s+["`\[]?([a-z_]+)["`\]]?/i', ltrim($query->sql), $matches) === 1) {
-                $writes[] = [strtolower($matches[1]), $query->sql];
-            }
+        $updated = null;
+        $writes = $this->writesIssuedBy(function () use ($workspace, $draft, $replacement, &$updated): void {
+            $updated = $this->withHeader('Idempotency-Key', 'scoped-writes-update')->patchJson(
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
+                [
+                    'expected_version' => $draft['version'],
+                    'time_entry_ids' => [$replacement->public_id],
+                    'manual_lines' => [],
+                ],
+            )->assertOk()->json('data');
+
+            $this->withHeader('Idempotency-Key', 'scoped-writes-issue')->postJson(
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}/issue",
+                ['expected_version' => $updated['version'], 'confirm' => true],
+            )->assertOk();
         });
 
-        $updated = $this->withHeader('Idempotency-Key', 'scoped-writes-update')->patchJson(
-            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}",
-            [
-                'expected_version' => $draft['version'],
-                'time_entry_ids' => [$replacement->public_id],
-                'manual_lines' => [],
-            ],
-        )->assertOk()->json('data');
-
-        $this->withHeader('Idempotency-Key', 'scoped-writes-issue')->postJson(
-            "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft['id']}/issue",
-            ['expected_version' => $updated['version'], 'confirm' => true],
-        )->assertOk();
-
-        $unscoped = [];
-        $touched = [];
-
-        foreach ($writes as [$table, $sql]) {
-            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'workspace_id')) {
-                continue;
-            }
-
-            $touched[$table] = true;
-
-            // The predicate, not the assignment: `set workspace_id = ?` on an
-            // insert-like update would satisfy a naive search of the whole
-            // statement while scoping nothing.
-            $where = strstr(strtolower($sql), ' where ');
-
-            if ($where === false || ! str_contains($where, 'workspace_id')) {
-                $unscoped[] = $sql;
-            }
-        }
-
-        $this->assertSame([], $unscoped, "These tenant-owned writes name no workspace:\n".implode("\n", $unscoped));
-
         // The flow has to have written to the tables this is about, or the
-        // assertion above passed by inspecting nothing.
+        // assertion passes by inspecting nothing.
         //
         // `client_invoice_line_time_entries` is deliberately not among them:
         // `client_invoice_line_id` cascades on delete, so clearing the lines
         // takes the pivot rows with them and issues no statement of its own.
-        // A detach that does run is still caught by the loop above, which asks
-        // the schema rather than this list.
-        foreach (['client_invoices', 'client_invoice_lines', 'client_time_entries'] as $table) {
-            $this->assertArrayHasKey($table, $touched, $table.' was never written to, so this test proved nothing about it.');
-        }
+        // A detach that does run is still caught by the schema-driven sweep,
+        // which asks the schema rather than this list.
+        $this->assertEveryTenantOwnedWriteNamesItsWorkspace($writes, [
+            'client_invoices',
+            'client_invoice_lines',
+            'client_time_entries',
+        ]);
 
         // And the work still happened: a predicate naming the wrong workspace
         // would leave every one of these statements matching no row while the

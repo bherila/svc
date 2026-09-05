@@ -37,7 +37,7 @@ final class StripePaymentMethodService
 
         $tenant = $this->tenant($providerCustomerId);
         if ($tenant === null) {
-            $this->updateState($state->id, 'attached', $providerCreatedAt, $occurrence);
+            $this->updateState($state, 'attached', $providerCreatedAt, $occurrence);
 
             return null;
         }
@@ -75,7 +75,7 @@ final class StripePaymentMethodService
         }
 
         $this->updateState(
-            $state->id,
+            $state,
             'attached',
             $providerCreatedAt,
             $occurrence,
@@ -108,7 +108,7 @@ final class StripePaymentMethodService
         $companyId = $state->companyId;
         $customerId = $state->customerId;
         if ($workspaceId === null || $companyId === null || $customerId === null) {
-            $this->updateState($state->id, 'detached', $providerCreatedAt, $occurrence);
+            $this->updateState($state, 'detached', $providerCreatedAt, $occurrence);
 
             return null;
         }
@@ -146,7 +146,7 @@ final class StripePaymentMethodService
         }
 
         $this->updateState(
-            $state->id,
+            $state,
             'detached',
             $providerCreatedAt,
             $occurrence,
@@ -283,8 +283,24 @@ final class StripePaymentMethodService
             && $incomingState === 'attached';
     }
 
+    /**
+     * Move a state row, naming the workspace it is moving *from*.
+     *
+     * This is the one tenant-owned write in the codebase whose workspace can
+     * legitimately be null: the webhook receiver inserts a state row before
+     * anything knows which tenant the payment method belongs to, and this is
+     * the statement that stamps one once it resolves. So the predicate cannot
+     * name the destination - it would match nothing on the very transition
+     * that matters - and it must not name nothing either. It names the
+     * workspace the row currently carries, which is null exactly while the
+     * tenant is unresolved.
+     *
+     * `$current` comes from `lockState()`, which holds the row `FOR UPDATE`
+     * for the rest of the transaction, so the stored value it read is still
+     * the stored value here.
+     */
     private function updateState(
-        int $id,
+        StripePaymentMethodState $current,
         string $state,
         int $providerCreatedAt,
         string $eventId,
@@ -292,7 +308,15 @@ final class StripePaymentMethodService
         ?int $companyId = null,
         ?int $customerId = null,
     ): void {
-        DB::table('stripe_payment_method_states')->where('id', $id)->update([
+        $row = DB::table('stripe_payment_method_states')->where('id', $current->id);
+
+        if ($current->workspaceId === null) {
+            $row->whereNull('workspace_id');
+        } else {
+            $row->where('workspace_id', $current->workspaceId);
+        }
+
+        $row->update([
             'workspace_id' => $workspaceId,
             'client_company_id' => $companyId,
             'client_stripe_customer_id' => $customerId,

@@ -989,21 +989,46 @@ final class ReplayInvoicesCommand extends Command
             return;
         }
 
-        $lineIds = DB::table('client_invoice_lines')->whereIn('client_invoice_id', $invoiceIds)->pluck('id');
+        // Every statement below names the workspace this run was pointed at.
+        // The command takes one, and the selection above already reads by it;
+        // what followed then travelled on ids alone. That is not an exemption
+        // an operator tool has earned - a harness that blanks invoices and
+        // releases their time is the write it is most worth being unable to
+        // aim at the wrong tenant, however unreachable that is today.
+        $workspaceId = $workspace->id;
+
+        $lineIds = DB::table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_id', $invoiceIds)
+            ->pluck('id');
 
         $entryIds = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_time_entry_id');
 
         if ($entryIds->isNotEmpty()) {
             // Invoiced time becomes approved again, or the regenerated run would
             // treat it as already billed and produce empty invoices.
-            ClientTimeEntry::query()->whereIn('id', $entryIds)->where('status', 'invoiced')->update(['status' => 'approved']);
+            ClientTimeEntry::query()
+                ->whereIn('id', $entryIds)
+                ->where('workspace_id', $workspaceId)
+                ->where('status', 'invoiced')
+                ->update(['status' => 'approved']);
         }
 
-        DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
-        DB::table('client_tasks')->whereIn('client_invoice_line_id', $lineIds)->update(['client_invoice_line_id' => null]);
-        DB::table('client_invoice_lines')->whereIn('id', $lineIds)->delete();
+        DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->delete();
+        DB::table('client_tasks')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->update(['client_invoice_line_id' => null]);
+        DB::table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('id', $lineIds)
+            ->delete();
 
         // Superseded attempts go entirely, not just blank. Leaving them meant a
         // period held several identical empty drafts, the generator refreshed
@@ -1012,6 +1037,7 @@ final class ReplayInvoicesCommand extends Command
         // unsent drafts by construction, so nothing is lost with them.
         if ($this->supersededIds !== []) {
             $withPayments = DB::table('client_invoice_payments')
+                ->where('workspace_id', $workspaceId)
                 ->whereIn('client_invoice_id', $this->supersededIds)
                 ->count();
 
@@ -1021,7 +1047,10 @@ final class ReplayInvoicesCommand extends Command
                 throw new RuntimeException('A superseded invoice carries payments; refusing to set it aside.');
             }
 
-            DB::table('client_invoices')->whereIn('id', $this->supersededIds)->delete();
+            DB::table('client_invoices')
+                ->where('workspace_id', $workspaceId)
+                ->whereIn('id', $this->supersededIds)
+                ->delete();
         }
 
         // The payments go with the totals.
@@ -1045,19 +1074,25 @@ final class ReplayInvoicesCommand extends Command
         // A historical credit line that was genuinely earned will now show as a
         // divergence rather than being masked by a manufactured one. That is
         // the right direction to fail in.
-        DB::table('client_invoice_payments')->whereIn('client_invoice_id', $invoiceIds)->delete();
+        DB::table('client_invoice_payments')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_id', $invoiceIds)
+            ->delete();
 
         // Back to draft so the generator is allowed to rewrite them; a settled
         // invoice refuses regeneration, which is the correct rule everywhere
         // except inside this rolled-back sandbox.
-        DB::table('client_invoices')->whereIn('id', $invoiceIds)->update([
-            'status' => 'draft',
-            'subtotal_amount' => 0,
-            'tax_amount' => 0,
-            'total_amount' => 0,
-            'paid_amount' => 0,
-            'balance_amount' => 0,
-        ]);
+        DB::table('client_invoices')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('id', $invoiceIds)
+            ->update([
+                'status' => 'draft',
+                'subtotal_amount' => 0,
+                'tax_amount' => 0,
+                'total_amount' => 0,
+                'paid_amount' => 0,
+                'balance_amount' => 0,
+            ]);
     }
 
     /**

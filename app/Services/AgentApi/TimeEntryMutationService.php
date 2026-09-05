@@ -77,7 +77,11 @@ final class TimeEntryMutationService
                 $attributes['client_task_id'] = $this->taskFor($workspace, $entry, $data['task_id']);
             }
             abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
-            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
+            $updated = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->where('lock_version', $entry->lock_version)
+                ->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {
@@ -110,7 +114,11 @@ final class TimeEntryMutationService
         $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $expectedVersion): null {
             $this->assertDraftEditable($workspace, $entry, $actor, $invoice);
             abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
-            $updated = ClientTimeEntry::query()->whereKey($entry->id)->where('lock_version', $entry->lock_version)->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => $this->clock->now($workspace)]);
+            $updated = ClientTimeEntry::query()
+                ->whereKey($entry->id)
+                ->where('workspace_id', $workspace->id)
+                ->where('lock_version', $entry->lock_version)
+                ->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => $this->clock->now($workspace)]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {

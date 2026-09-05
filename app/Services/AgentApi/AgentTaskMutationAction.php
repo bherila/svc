@@ -56,7 +56,11 @@ final class AgentTaskMutationAction
                 }
                 unset($attributes['expected_version']);
                 abort_unless(AgentApiVersion::matches($task, $data['expected_version']), 409, 'The task has changed; read it and retry.');
-                $updated = ClientTask::query()->whereKey($task->id)->where('lock_version', $task->lock_version)->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
+                $updated = ClientTask::query()
+                    ->whereKey($task->id)
+                    ->where('workspace_id', $workspace->id)
+                    ->where('lock_version', $task->lock_version)
+                    ->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
                 abort_unless($updated === 1, 409, 'The task has changed; read it and retry.');
 
                 return [$task->public_id];

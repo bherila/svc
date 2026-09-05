@@ -101,22 +101,50 @@ belongs to no workspace. The three membership pivots use it.
 Neither hook covers a *builder* write - `$invoice->lines()->delete()`, a relation
 `update()`, a `detach()`, or any `Model::query()->...->update()`. Those never
 touch a model instance, so the workspace has to be named in the call, with
-`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`. Every such
-write against a tenant-owned table does:
+`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`.
 
-| Write | Where |
+This list is not the guarantee, and the version of it that read "every such
+write does" was worse than no list: #230 fixed the four writes its own tests
+reached and left seventeen it did not, so the document claimed the property
+repository-wide while #231 enumerated the counterexamples. The claim is what
+a later reader would have believed. What is true is narrower and testable:
+
+- The **model and custom-pivot paths are enforced** by the two hooks above, so
+  a write that goes through a model instance cannot omit the workspace.
+- Every **builder** write against a tenant-owned table names it as of #231, and
+  the enumeration was produced by searching `app/` for `::query()` and
+  `DB::table(...)` chains ending in a write, across lines rather than on one.
+- A **statement-level test** is what keeps that true, because a list cannot:
+  the next write added would be missing from the list and from any test that
+  checks call sites.
+
+`Tests\Concerns\CapturesTenantOwnedWrites` is that test. It runs a flow, reads
+every statement the flow issued, and refuses *any* update or delete against a
+table that has a `workspace_id` and whose predicate does not mention it, with
+the tables read from the schema rather than from a list — so a write added
+tomorrow is covered the day it appears. **Extend the flow coverage there when
+you add a flow**, not by writing a new capture:
+
+| Flow | Test |
 | --- | --- |
-| Clearing a draft's lines | `InvoiceLifecycleService::updateDraft()` |
-| Marking linked time invoiced | `InvoiceLifecycleService::issue()` |
-| Releasing linked time | `InvoiceFromTimeService`, `InvoiceLineComposer` |
-| Bumping the opaque revision | `IncrementsAgentRevision::advanceAgentRevision()` |
+| Draft rewrite and issue | `AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace` |
+| Task mutation, time-entry edit and delete, invoice void, milestone claim, portal access, replay, Stripe state transition | `TenantScopedWriteStatementsTest` |
 
-Naming them is not the guarantee, though - the next one added would be missing
-from the list and from any test that checks call sites.
-`AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace`
-drives a draft through rewrite and issue and refuses *any* update or delete
-against a table that has a `workspace_id` and whose predicate does not mention
-it, with the tables read from the schema.
+Each of those carries a vacuity guard naming the tables the flow must actually
+have written to, because an assertion over an empty statement list passes. Two
+ways that happened while this was in review: a quoting style the pattern did
+not know (MariaDB writes `` `table` ``, SQLite writes `"table"`), and a flow
+that turned out not to write to the table the test was about.
+
+What remains is a static rule, so the next unscoped write is refused at
+analysis time rather than caught by whichever flow happens to have a test.
+
+One write is deliberately different. `StripePaymentMethodService::updateState()`
+predicates on the workspace the state row *currently* carries, which is null
+while the webhook receiver has inserted the row and nothing has yet resolved
+the tenant. Naming the destination workspace there would match nothing on the
+very transition that stamps it, so the statement names the origin instead -
+`whereNull('workspace_id')` while unresolved - rather than naming no tenant.
 
 A model may also declare its ownership fixed, by overriding
 `workspaceOwnershipIsImmutable()` to return true. A save that then changes
