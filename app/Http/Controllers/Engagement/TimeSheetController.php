@@ -18,6 +18,7 @@ use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
@@ -397,7 +398,7 @@ class TimeSheetController extends Controller
      * drop the rollover that month inherited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float, paid_hours: float, pending_minutes: int}>>
+     * @return array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, spent_earlier_in_cycle_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float|null, billed_hours: float|null, pending_minutes: int}>>
      */
     private function capacityByMonth(
         InvoiceLedgerBuilder $ledgers,
@@ -494,7 +495,31 @@ class TimeSheetController extends Controller
                 $end->toMutable(),
             );
 
+            // Whether the ledger attributes charged overage to months at all.
+            // `InvoiceLedgerBuilder` reads `BilledOverageLedger` only for a
+            // monthly cadence, so on any other the figure it publishes is a
+            // zero meaning "not computed" - and a screen cannot tell that from
+            // "nothing was charged". Quarterly and yearly agreements are
+            // exactly the ones that carry interim overage invoices, so the
+            // wrong one of those two readings is the one a reader would take.
+            // Null here, and the card says nothing rather than something false.
+            $tracksCharges = $agreement->effectiveBillingCadence() === BillingCadence::Monthly;
+
+            // A period retainer books the whole cycle's grant on the cycle's
+            // first calendar month and zero on the rest, so a later month read
+            // "0.00 h included" above an availability of seven - the same
+            // unexplainable figure this breakdown exists to remove. The grant
+            // belongs to the cycle, so it is carried across the cycle's rows
+            // and what earlier months of it spent is stated as its own term.
+            $cycleGrant = null;
+            $cycleKey = null;
+
             foreach ($ledger as $index => $month) {
+                if ($month->cycleStart !== $cycleKey) {
+                    $cycleKey = $month->cycleStart;
+                    $cycleGrant = $month->opening->retainerHours;
+                }
+
                 if ($month->yearMonth < $from) {
                     continue;
                 }
@@ -574,7 +599,24 @@ class TimeSheetController extends Controller
                     // one living on hours carried in, and cannot see the hours
                     // that aged out on the way. The ledger has computed all
                     // three since the port and the screen showed none of them.
-                    'retainer_hours' => round($month->opening->retainerHours, 2),
+                    // The cycle's grant, not the calendar month's share of it.
+                    // They are the same number on a monthly cadence and only
+                    // differ where a cycle spans months.
+                    'retainer_hours' => round(
+                        $month->cycleStart === '' || $month->cycleStart === null
+                            ? $month->opening->retainerHours
+                            : ($cycleGrant ?? $month->opening->retainerHours),
+                        2,
+                    ),
+                    // What earlier months of this cycle already drew on it, so
+                    // the grant and the availability reconcile on every row
+                    // rather than only on the cycle's first.
+                    'spent_earlier_in_cycle_hours' => round(
+                        $month->cycleStart === '' || $month->cycleStart === null
+                            ? 0.0
+                            : max(0.0, ($cycleGrant ?? 0.0) - $month->opening->totalAvailable),
+                        2,
+                    ),
                     'rollover_in_hours' => round($month->opening->rolloverHours, 2),
                     'expired_hours' => round($month->opening->expiredHours, 2),
                     // The rule the carry-forward follows, so the numbers above
@@ -612,13 +654,21 @@ class TimeSheetController extends Controller
                             - $month->closing->negativeBalance,
                         2,
                     ),
-                    // What the client bought, as against what the retainer
-                    // included. Overage carried forward as a deficit has been
-                    // worked and not yet paid for; overage that has been
-                    // invoiced has. The two read identically on a screen that
-                    // reports only hours included and hours over.
-                    'billed_overage_hours' => round($month->billedOverageHours, 2),
-                    'paid_hours' => round($month->opening->retainerHours + $month->billedOverageHours, 2),
+                    // What the client has been charged for, as against what
+                    // the retainer included. Overage carried forward as a
+                    // deficit has been worked and not billed; overage that has
+                    // been invoiced has. The two read identically on a screen
+                    // reporting only hours included and hours over.
+                    //
+                    // Billed, not paid: `InvoiceStatus::charged()` counts an
+                    // issued and a partially paid invoice alongside a settled
+                    // one, so these hours are on an invoice and not
+                    // necessarily on a payment. Saying "paid" of an unpaid
+                    // invoice is the kind of wrong a client reads back to you.
+                    'billed_overage_hours' => $tracksCharges ? round($month->billedOverageHours, 2) : null,
+                    'billed_hours' => $tracksCharges
+                        ? round($month->opening->retainerHours + $month->billedOverageHours, 2)
+                        : null,
                     'pending_minutes' => (int) $pending,
                 ];
             }
@@ -630,7 +680,7 @@ class TimeSheetController extends Controller
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
      * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
-     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float, paid_hours: float, pending_minutes: int}>>  $capacityByMonth
+     * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, spent_earlier_in_cycle_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float|null, billed_hours: float|null, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */

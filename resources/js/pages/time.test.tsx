@@ -108,7 +108,8 @@ function quietMonth(key: string, label: string, unusedHours = 0): Month {
                           remaining_rollover: 0,
                           balance_hours: unusedHours,
                           billed_overage_hours: 0,
-                          paid_hours: unusedHours,
+                          spent_earlier_in_cycle_hours: 0,
+                          billed_hours: unusedHours,
                           pending_minutes: 0,
                       },
                   ],
@@ -139,7 +140,8 @@ function workedMonth(overrides: Partial<Capacity> = {}): Month {
         remaining_rollover: 0,
         balance_hours: 6,
         billed_overage_hours: 0,
-        paid_hours: 10,
+        spent_earlier_in_cycle_hours: 0,
+        billed_hours: 10,
         pending_minutes: 0,
         ...overrides,
     };
@@ -537,7 +539,7 @@ describe('the capacity breakdown', () => {
      * unpaid; the same hours once invoiced are paid. A card reporting only
      * "included" and "over" draws them identically.
      */
-    it('separates the hours paid for from the hours included', () => {
+    it('separates the hours billed from the hours included', () => {
         render(
             <TimeSheet
                 {...props({
@@ -550,19 +552,103 @@ describe('the capacity breakdown', () => {
                             carried_deficit_hours: 0,
                             balance_hours: 0,
                             billed_overage_hours: 3,
-                            paid_hours: 13,
+                            billed_hours: 13,
                         }),
                     ],
                 })}
             />,
         );
 
-        expect(screen.getByText('Paid for').nextSibling).toHaveTextContent(
+        expect(screen.getByText('Billed').nextSibling).toHaveTextContent(
             '13.00 h',
         );
         expect(
-            screen.getByText('Billed at the hourly rate').nextSibling,
+            screen.getByText('Overage at the hourly rate').nextSibling,
         ).toHaveTextContent('3.00 h');
+    });
+
+    /**
+     * A period retainer books the whole cycle's grant on the cycle's first
+     * calendar month, so a later month of the same cycle read "0.00 h included
+     * this cycle" above a real availability - the unexplainable figure this
+     * breakdown exists to remove, reintroduced one cadence over.
+     */
+    it('reconciles a later month of a multi-month cycle', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            cycle_start: '2026-07-01',
+                            retainer_hours: 30,
+                            spent_earlier_in_cycle_hours: 23,
+                            available_hours: 7,
+                            worked_hours: 4,
+                            unused_hours: 3,
+                            balance_hours: 3,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('Included this cycle').nextSibling,
+        ).toHaveTextContent('30.00 h');
+        expect(
+            screen.getByText('Used earlier in this cycle').nextSibling,
+        ).toHaveTextContent('\u221223.00 h');
+        expect(screen.getByText('Available').nextSibling).toHaveTextContent(
+            '7.00 h',
+        );
+    });
+
+    /**
+     * "Carryover balance" printed directly above "Unused hours do not carry
+     * forward" is the card contradicting itself in two adjacent lines.
+     */
+    it('calls the balance a closing one when nothing carries forward', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [workedMonth({ rollover_months: null })],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('Closing balance').nextSibling,
+        ).toHaveTextContent('6.00 h');
+        expect(screen.queryByText('Carryover balance')).not.toBeInTheDocument();
+        expect(
+            screen.getByText('Unused hours do not carry forward.'),
+        ).toBeInTheDocument();
+    });
+
+    /**
+     * The ledger reads charged overage only on a monthly cadence, so on any
+     * other the figure is a zero meaning "not computed". A quarterly retainer
+     * is exactly the shape that carries interim overage invoices, so the wrong
+     * reading of that zero is the one a reader would take.
+     */
+    it('says nothing about billing where the ledger computed none', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    months: [
+                        workedMonth({
+                            billed_hours: null,
+                            billed_overage_hours: null,
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.queryByText('Billed')).not.toBeInTheDocument();
+        // The rest of the card still reports, so this is an omission of the
+        // one unknown figure rather than of the strip.
+        expect(screen.getByText('Available')).toBeInTheDocument();
     });
 
     it('names a negative charge as the correction it is', () => {
@@ -572,7 +658,7 @@ describe('the capacity breakdown', () => {
                     months: [
                         workedMonth({
                             billed_overage_hours: -2,
-                            paid_hours: 8,
+                            billed_hours: 8,
                         }),
                     ],
                 })}

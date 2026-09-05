@@ -150,6 +150,11 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                         0,
                         row.carried_deficit_hours - row.over_hours,
                     );
+                    // An agreement whose unused hours expire has no carryover
+                    // to state a balance of. Calling the closing figure one
+                    // put the word directly above the sentence denying it.
+                    const carriesForward =
+                        row.rollover_months !== null && row.rollover_months > 0;
 
                     return (
                         <div
@@ -161,7 +166,15 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                             // pixels apart.
                             className="max-w-md min-w-64 flex-1 rounded-lg border border-border bg-muted/40 p-3"
                         >
-                            <p className="truncate text-xs font-medium text-muted-foreground">
+                            {/*
+                             * Wrapped, not truncated. The title is what tells
+                             * two cards apart, and capping the card's width
+                             * made `truncate` clip it on a page with room to
+                             * spare - with the full value nowhere. Truncation
+                             * is for an identity string in fixed chrome that
+                             * is one click from its full form; this is neither.
+                             */}
+                            <p className="text-xs font-medium wrap-anywhere text-muted-foreground">
                                 {row.agreement}
                                 {shareTheName && row.cycle_start !== '' && (
                                     <span className="ml-1 font-normal">
@@ -208,6 +221,14 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                     label="Included this cycle"
                                     value={`${formatDecimalHours(row.retainer_hours)} h`}
                                 />
+                                {row.spent_earlier_in_cycle_hours > 0 && (
+                                    <CapacityLine
+                                        label="Used earlier in this cycle"
+                                        value={signedHours(
+                                            -row.spent_earlier_in_cycle_hours,
+                                        )}
+                                    />
+                                )}
                                 {row.deficit_offset_hours > 0 && (
                                     <CapacityLine
                                         label="Repaid earlier overrun"
@@ -247,7 +268,11 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                                  */}
                                 <div className="mt-0.5 border-t border-border pt-1">
                                     <CapacityLine
-                                        label="Carryover balance"
+                                        label={
+                                            carriesForward
+                                                ? 'Carryover balance'
+                                                : 'Closing balance'
+                                        }
                                         value={signedHours(row.balance_hours)}
                                         emphasis={
                                             row.balance_hours < 0
@@ -290,24 +315,27 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                              * retainer included and how far the work went past
                              * it draws the two the same way.
                              */}
-                            <div className="mt-2 grid grid-cols-1 gap-1 border-t border-border pt-2">
-                                <CapacityLine
-                                    label="Paid for"
-                                    value={`${formatDecimalHours(row.paid_hours)} h`}
-                                />
-                                {row.billed_overage_hours !== 0 && (
+                            {row.billed_hours !== null && (
+                                <div className="mt-2 grid grid-cols-1 gap-1 border-t border-border pt-2">
                                     <CapacityLine
-                                        label={
-                                            row.billed_overage_hours > 0
-                                                ? 'Billed at the hourly rate'
-                                                : 'Reversed by a correction'
-                                        }
-                                        value={signedHours(
-                                            row.billed_overage_hours,
-                                        )}
+                                        label="Billed"
+                                        value={`${formatDecimalHours(row.billed_hours)} h`}
                                     />
-                                )}
-                            </div>
+                                    {row.billed_overage_hours !== null &&
+                                        row.billed_overage_hours !== 0 && (
+                                            <CapacityLine
+                                                label={
+                                                    row.billed_overage_hours > 0
+                                                        ? 'Overage at the hourly rate'
+                                                        : 'Reversed by a correction'
+                                                }
+                                                value={signedHours(
+                                                    row.billed_overage_hours,
+                                                )}
+                                            />
+                                        )}
+                                </div>
+                            )}
                             {row.pending_minutes > 0 && (
                                 <p className="mt-2 text-xs text-muted-foreground">
                                     <span className="font-medium text-foreground tabular-nums">

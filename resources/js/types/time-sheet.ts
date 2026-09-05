@@ -73,6 +73,15 @@ export type Capacity = {
      * this cycle above an availability of four and gave no account of the six.
      */
     deficit_offset_hours: number;
+    /**
+     * What earlier months of this billing cycle already drew on its grant.
+     *
+     * A period retainer books the whole cycle's hours on the cycle's first
+     * calendar month, so a later month showed nothing included above a real
+     * availability. `retainer_hours` is the cycle's grant on every row of the
+     * cycle and this is what is left of it, so the two reconcile.
+     */
+    spent_earlier_in_cycle_hours: number;
     worked_hours: number;
     unused_hours: number;
     over_hours: number;
@@ -89,14 +98,23 @@ export type Capacity = {
      */
     balance_hours: number;
     /**
-     * Hours the client bought, as against the hours the retainer included.
+     * Hours the client has been charged for, against the hours included.
      *
-     * Overage carried forward as a deficit has been worked and not paid for;
+     * Overage carried forward as a deficit has been worked and not billed;
      * overage that has been invoiced has. A screen reporting only "included"
      * and "over" shows the two identically.
+     *
+     * Billed rather than paid: an issued and a partially paid invoice both
+     * count as charged, so these hours are on an invoice and not necessarily
+     * on a payment.
+     *
+     * Null where the ledger does not attribute charges to months at all - any
+     * cadence but monthly - because a zero there would read as "nothing was
+     * charged" when it means "not computed", and the agreements it applies to
+     * are the ones that carry interim overage invoices.
      */
-    billed_overage_hours: number;
-    paid_hours: number;
+    billed_overage_hours: number | null;
+    billed_hours: number | null;
     /** Draft work that will draw on *this* retainer once approved. */
     pending_minutes: number;
 };
