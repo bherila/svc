@@ -60,9 +60,10 @@ use RuntimeException;
  * The arithmetic is the predecessor's, unchanged. What differs here is the
  * schema: money is integer minor units rather than decimal dollars, a time
  * entry's invoice line is a pivot row rather than a column, and every query is
- * workspace-scoped. Reimbursable expenses are absent because this schema has no
- * expense table and the source had no rows; if that table returns, the hook is
- * one call beside the milestone one.
+ * workspace-scoped. Reimbursable expenses are not billed here yet: the source had
+ * no rows, so `client_expenses` and its approval lifecycle were built rather than
+ * ported, and the `approved` -> `invoiced` caller is still the next slice - one
+ * call beside the milestone one (#75).
  *
  * @phpstan-type GenerationResults array{
  *     generated: list<array<string, mixed>>,
