@@ -67,25 +67,23 @@ final class RepositoryReference
      */
     public static function normalize(?string $raw): ?string
     {
-        if ($raw === null) {
-            return null;
-        }
+        // No early return for null or blank. Both converge on the segment count
+        // below - `explode('/', '')` is one empty segment, which is fewer than
+        // three - so a guard here would only be a second way to say the same
+        // thing, and one the tests could not tell apart from its own absence.
+        // Backslashes become slashes before anything looks at the shape.
+        // Windows spells paths with them, and folding the two separators here
+        // means every check below reads one form instead of two.
+        $value = str_replace('\\', '/', trim($raw ?? ''));
 
-        $value = trim($raw);
-
-        if ($value === '') {
-            return null;
-        }
-
-        // A scheme, if there is one. Remembered rather than only stripped,
-        // because it decides whether a later colon is a port or - in the
-        // SCP-style `git@host:owner/name` - the separator before the path.
-        $hadScheme = false;
-
-        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $value) === 1) {
-            $hadScheme = true;
-            $value = self::replace('#^[a-z][a-z0-9+.-]*://#i', '', $value);
-        }
+        // Strip the scheme by attempting it, rather than testing first and then
+        // stripping: one pattern, applied once, and whether it matched *is* the
+        // answer to "was there a scheme". That question matters because it
+        // decides whether a later colon is a port or - in the SCP-style
+        // `git@host:owner/name` - the separator before the path.
+        $withoutScheme = self::replace('#^[a-z][a-z0-9+.-]*://#i', '', $value);
+        $hadScheme = $withoutScheme !== $value;
+        $value = $withoutScheme;
 
         // Any user information ahead of the host: `git@`, `git:password@`.
         $value = self::replace('/^[^\/@]*@/', '', $value);
@@ -96,7 +94,14 @@ final class RepositoryReference
             // colon as the host separator and mint `c/srv/git/repo` - a mapping
             // key that means nothing anywhere else, and could collide with a
             // real single-label host.
-            if (preg_match('#^[a-z]:[\\/]#i', $value) === 1) {
+            //
+            // One anchored pattern, and no backslash in it - the separators were
+            // folded above. Both matter: spelled out in string operations this
+            // was five mutable operators that one fixture could not discriminate,
+            // and a character class containing a backslash makes Infection abort
+            // the whole run with "Incorrectly nested style tag found" when it
+            // tries to render the diff.
+            if (preg_match('#^[a-z]:/#i', $value) === 1) {
                 return null;
             }
 
@@ -143,7 +148,7 @@ final class RepositoryReference
         // and mint a mapping key for a path that names no server at all.
         $value = self::replace('#/{2,}#', '/', $value);
 
-        $segments = $value === '' ? [] : explode('/', $value);
+        $segments = explode('/', $value);
 
         if (count($segments) < 3) {
             return null;

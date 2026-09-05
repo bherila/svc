@@ -35,9 +35,17 @@ final class RepositoryReferenceTest extends TestCase
         yield 'ssh url with port' => ['ssh://git@github.com:22/bherila/svc.git'];
         yield 'git protocol' => ['git://github.com/bherila/svc.git'];
         yield 'mixed case host' => ['https://GitHub.com/bherila/svc'];
+        // The scheme match is case-insensitive. Without that, an uppercase
+        // scheme is not recognised as one, the SCP branch reads `HTTPS:` as a
+        // host separator, and the whole reference comes out as
+        // `https/github.com/bherila/svc`.
+        yield 'uppercase scheme' => ['HTTPS://GitHub.com/Bherila/SVC'];
         yield 'mixed case path' => ['https://github.com/Bherila/SVC'];
         yield 'surrounding whitespace' => ['  https://github.com/bherila/svc.git  '];
         yield 'query string' => ['https://github.com/bherila/svc.git?ref=main'];
+        // The drive-letter refusal is anchored. Unanchored it would fire on the
+        // `c:/` inside this query string and refuse a perfectly good remote.
+        yield 'a drive letter inside a query string' => ['https://github.com/bherila/svc.git?path=c:/tmp'];
         yield 'fragment' => ['https://github.com/bherila/svc#readme'];
         yield 'doubled separators' => ['https://github.com//bherila//svc'];
         // The second `rtrim` exists for this one: stripping `.git` uncovers the
