@@ -101,22 +101,36 @@ belongs to no workspace. The three membership pivots use it.
 Neither hook covers a *builder* write - `$invoice->lines()->delete()`, a relation
 `update()`, a `detach()`, or any `Model::query()->...->update()`. Those never
 touch a model instance, so the workspace has to be named in the call, with
-`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`. Every such
-write against a tenant-owned table does:
+`where('workspace_id', ...)` or `wherePivot('workspace_id', ...)`.
 
-| Write | Where |
-| --- | --- |
-| Clearing a draft's lines | `InvoiceLifecycleService::updateDraft()` |
-| Marking linked time invoiced | `InvoiceLifecycleService::issue()` |
-| Releasing linked time | `InvoiceFromTimeService`, `InvoiceLineComposer` |
-| Bumping the opaque revision | `IncrementsAgentRevision::advanceAgentRevision()` |
+This list is not the guarantee, and the version of it that read "every such
+write does" was worse than no list: #230 fixed the four writes its own tests
+reached and left seventeen it did not, so the document claimed the property
+repository-wide while #231 enumerated the counterexamples. The claim is what
+a later reader would have believed. What is true is narrower and testable:
 
-Naming them is not the guarantee, though - the next one added would be missing
-from the list and from any test that checks call sites.
+- The **model and custom-pivot paths are enforced** by the two hooks above, so
+  a write that goes through a model instance cannot omit the workspace.
+- Every **builder** write against a tenant-owned table names it as of #231, and
+  the enumeration was produced by searching `app/` for `::query()` and
+  `DB::table(...)` chains ending in a write, across lines rather than on one.
+- A **statement-level test** is what keeps that true, because a list cannot:
+  the next write added would be missing from the list and from any test that
+  checks call sites.
+
 `AgentInvoiceLifecycleIntegrityTest::test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace`
 drives a draft through rewrite and issue and refuses *any* update or delete
 against a table that has a `workspace_id` and whose predicate does not mention
-it, with the tables read from the schema.
+it, with the tables read from the schema. It covers the invoice lifecycle;
+extending that shape to the other flows, and adding a static rule so the
+eighteenth write cannot be introduced silently, is the remaining work.
+
+One write is deliberately different. `StripePaymentMethodService::updateState()`
+predicates on the workspace the state row *currently* carries, which is null
+while the webhook receiver has inserted the row and nothing has yet resolved
+the tenant. Naming the destination workspace there would match nothing on the
+very transition that stamps it, so the statement names the origin instead -
+`whereNull('workspace_id')` while unresolved - rather than naming no tenant.
 
 A model may also declare its ownership fixed, by overriding
 `workspaceOwnershipIsImmutable()` to return true. A save that then changes

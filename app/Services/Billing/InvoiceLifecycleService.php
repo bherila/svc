@@ -540,27 +540,49 @@ final class InvoiceLifecycleService
 
     private function releaseAllocations(ClientInvoice $invoice): void
     {
-        $lineIds = $invoice->lines()->pluck('id');
+        // The invoice's own workspace, named on every statement below rather
+        // than trusted to the ids. A line id, a pivot row and a task id are all
+        // globally unique, so each of these predicates selects the right rows
+        // without it - and each of them is also a statement this repository
+        // requires to say which tenant it is addressing, because the id being
+        // unique is a property of today's data and not of the SQL.
+        $workspaceId = $invoice->workspace_id;
+        $lineIds = $invoice->lines()->where('workspace_id', $workspaceId)->pluck('id');
         if ($lineIds->isEmpty()) {
             return;
         }
         $entryIds = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_time_entry_id');
         if ($entryIds->isNotEmpty()) {
-            ClientTimeEntry::query()->whereIn('id', $entryIds)->tap(Locks::forUpdate())->get();
-            ClientTimeEntry::query()->whereIn('id', $entryIds)->where('status', 'invoiced')->update([
-                'status' => 'approved',
-                'lock_version' => DB::raw('lock_version + 1'),
-            ]);
+            ClientTimeEntry::query()
+                ->whereIn('id', $entryIds)
+                ->where('workspace_id', $workspaceId)
+                ->tap(Locks::forUpdate())
+                ->get();
+            ClientTimeEntry::query()
+                ->whereIn('id', $entryIds)
+                ->where('workspace_id', $workspaceId)
+                ->where('status', 'invoiced')
+                ->update([
+                    'status' => 'approved',
+                    'lock_version' => DB::raw('lock_version + 1'),
+                ]);
         }
-        DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', $lineIds)->delete();
+        DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->delete();
 
         // A milestone's claim is a column on the task, not a pivot row, so it
         // survives everything above. Left set, the task stays attached to a void
         // invoice and the generator - which only picks up unclaimed tasks - omits
         // the milestone from the replacement invoice permanently.
-        DB::table('client_tasks')->whereIn('client_invoice_line_id', $lineIds)->update(['client_invoice_line_id' => null]);
+        DB::table('client_tasks')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->update(['client_invoice_line_id' => null]);
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice

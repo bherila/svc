@@ -65,8 +65,14 @@ final class PortalProjectAccessCommand extends Command
         }
 
         if ($this->option('company-wide')) {
-            DB::transaction(function () use ($membership): void {
+            DB::transaction(function () use ($company, $membership): void {
+                // The workspace is already on the insert this command's other
+                // branch writes, and a membership id is unique - but the rule
+                // is about the statement, and an operator tool that can be
+                // pointed at any company is the last place to leave a delete
+                // that names no tenant.
                 DB::table('client_portal_project_access')
+                    ->where('workspace_id', $company->workspace_id)
                     ->where('client_company_membership_id', $membership->id)
                     ->delete();
                 $membership->forceFill(['access_scope' => ClientCompanyMembership::SCOPE_COMPANY])->save();
@@ -102,6 +108,7 @@ final class PortalProjectAccessCommand extends Command
 
             // Replace rather than add: the granted set is what was asked for.
             DB::table('client_portal_project_access')
+                ->where('workspace_id', $company->workspace_id)
                 ->where('client_company_membership_id', $membership->id)
                 ->delete();
 
