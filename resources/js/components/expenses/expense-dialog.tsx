@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { todayIn } from '@/lib/time';
 import type { ClientExpenseRow, ExpenseProject } from '@/types/expenses';
 
 /** Sentinel for "no project"; project ids are uuids, so it collides with none. */
@@ -42,27 +43,56 @@ type Draft = {
  * where a person's "12.50" becomes 1250. Doing it in the controller would mean
  * accepting both shapes over HTTP and guessing which arrived.
  *
+ * ## A comma is refused, never stripped
+ *
+ * Stripping every comma read "12,50" - a decimal comma across most of Europe -
+ * as 1250, and posted 125000 minor units: a hundredfold overstatement of a
+ * real expense, valid on arrival and billable later. It also accepted "1,2,3".
+ *
+ * Guessing the intent from the shape is not better, because "1,250" is genuinely
+ * ambiguous between one thousand two hundred fifty and one and a quarter. So a
+ * comma is only removed where it is unambiguously a thousands separator -
+ * groups of exactly three - and anything else is refused for the person to
+ * retype. A refusal costs one correction; the alternative costs a client an
+ * invoice a hundred times too large.
+ *
  * Returns null rather than a guess when the text says nothing usable, so the
  * caller can leave the field alone instead of posting a zero.
  */
 export function parseAmount(input: string): number | null {
-    const text = input.trim().replace(/,/g, '');
+    const text = input.trim();
 
-    if (!/^\d+(\.\d{1,2})?$/.test(text)) {
+    // Plain, or grouped in threes. Anything else carrying a comma is ambiguous.
+    const grouped = /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(text);
+
+    if (text.includes(',') && !grouped) {
         return null;
     }
 
-    const minor = Math.round(Number(text) * 100);
+    const bare = grouped ? text.replace(/,/g, '') : text;
+
+    if (!/^\d+(\.\d{1,2})?$/.test(bare)) {
+        return null;
+    }
+
+    const minor = Math.round(Number(bare) * 100);
 
     return minor > 0 ? minor : null;
 }
 
-function draftFrom(expense: ClientExpenseRow | null): Draft {
+function draftFrom(
+    expense: ClientExpenseRow | null,
+    workspace: { timezone: string; default_currency: string },
+): Draft {
     if (expense === null) {
         return {
-            spent_on: new Date().toISOString().slice(0, 10),
+            // The workspace's calendar, not the browser's and not UTC's.
+            // `toISOString()` formats in UTC, so an operator west of it gets
+            // tomorrow's date all evening - silently, on the field that decides
+            // which period the expense lands in.
+            spent_on: todayIn(workspace.timezone),
             amount: '',
-            currency: 'USD',
+            currency: workspace.default_currency,
             description: '',
             project_id: NO_PROJECT,
         };
@@ -92,12 +122,14 @@ export function ExpenseDialog({
     open,
     onOpenChange,
     storeUrl,
+    workspace,
     projects,
     expense,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     storeUrl: string;
+    workspace: { timezone: string; default_currency: string };
     projects: ExpenseProject[];
     expense: ClientExpenseRow | null;
 }) {
@@ -106,7 +138,9 @@ export function ExpenseDialog({
     // thing edited - the caller remounts this on the expense's id to get that,
     // rather than resetting from an effect, which costs a second render of a
     // form the operator is already typing into.
-    const [draft, setDraft] = useState<Draft>(() => draftFrom(expense));
+    const [draft, setDraft] = useState<Draft>(() =>
+        draftFrom(expense, workspace),
+    );
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -255,7 +289,15 @@ export function ExpenseDialog({
                                     })
                                 }
                             >
-                                <SelectTrigger id="expense-project">
+                                <SelectTrigger
+                                    id="expense-project"
+                                    // The shared trigger is `w-fit`, so a long
+                                    // unbroken project name sizes it to the
+                                    // name and pushes the dialog past a narrow
+                                    // viewport. Bounded, and the value
+                                    // truncates inside it.
+                                    className="w-full [&>span]:truncate"
+                                >
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

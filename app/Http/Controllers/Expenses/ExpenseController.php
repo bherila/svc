@@ -67,9 +67,25 @@ class ExpenseController extends Controller
             404,
         );
 
+        // And reaching the client is not reading all of its money. A member on
+        // one of a client's projects reaches the company, so the check above
+        // passes and every one of that client's expenses would follow -
+        // including the other projects' and the company-level ones.
+        //
+        // `BillingRecordAccess` settled this shape already: a record naming no
+        // project "covers work this viewer cannot see, so it is refused on the
+        // same reasoning as an invoice with no lineage". An unattributed
+        // expense is exactly that, so it is a manager's to read. Null means
+        // the viewer is unscoped and everything is theirs.
+        $viewable = $access->viewableProjectIds($user, $workspace);
+
         $expenses = $this->expenses($workspace)
             ->query()
             ->where('client_company_id', $clientCompany->id)
+            ->when(
+                $viewable !== null,
+                fn ($query) => $query->whereIn('client_project_id', $viewable ?? []),
+            )
             ->with([
                 'project' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 'approvedBy',
@@ -100,9 +116,24 @@ class ExpenseController extends Controller
             'urls' => [
                 'store' => route('svc.expenses.store', [$workspace, $clientCompany], absolute: false),
             ],
+            // The workspace's own calendar and currency. A new expense
+            // defaulting to UTC's date records an evening in Los Angeles as
+            // tomorrow, and one defaulting to USD misprices every workspace
+            // that bills in something else - both accepted without warning
+            // because both are valid answers, just not the right ones.
+            'workspace' => [
+                'timezone' => (string) $workspace->timezone,
+                'default_currency' => (string) $workspace->default_currency,
+            ],
+            // Scoped the same way, so the list of names a reader can attribute
+            // to is the list they may see at all.
             'projects' => ClientProject::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $clientCompany->id)
+                ->when(
+                    $viewable !== null,
+                    fn ($query) => $query->whereIn('id', $viewable ?? []),
+                )
                 ->orderBy('name')
                 ->get()
                 ->map(fn (ClientProject $project): array => [
@@ -122,7 +153,13 @@ class ExpenseController extends Controller
                     'name' => $expense->project->name,
                 ],
                 'approved_by' => $expense->approvedBy?->name,
-                'approved_at' => $expense->approved_at?->toDateString(),
+                // `spent_on` is a date and stands on its own; `approved_at` is
+                // an instant, and reducing it to a day in UTC reports the
+                // adjacent date for an approval made near midnight anywhere
+                // else. The workspace's calendar is the one the reader means.
+                'approved_at' => $expense->approved_at
+                    ?->setTimezone((string) $workspace->timezone)
+                    ->toDateString(),
                 // The row states what may be done to it, rather than the
                 // browser re-deriving the lifecycle from a status string. The
                 // rules are the enum's and they are asked here once.
@@ -173,9 +210,19 @@ class ExpenseController extends Controller
         Gate::authorize('manage', $workspace);
 
         return $this->refusable(function () use ($request, $workspace, $expense): void {
+            $record = $this->find($workspace, $expense);
+            // Attribution travels separately from the facts and only when the
+            // form actually submitted it. Passing it unconditionally would
+            // clear the project of any caller that edited only the money.
+            $reattribute = $request->has('project_id');
+
             $this->expenses($workspace)->update(
-                $this->find($workspace, $expense),
+                $record,
                 $request->facts(),
+                $reattribute
+                    ? $this->project($request, $workspace, $record->clientCompany)
+                    : null,
+                $reattribute,
             );
         });
     }

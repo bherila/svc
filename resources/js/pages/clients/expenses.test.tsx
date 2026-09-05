@@ -63,6 +63,7 @@ function props(overrides: Partial<ExpensesPageProps> = {}): ExpensesPageProps {
         company: { id: 'company-1', name: 'Synthetic Client' },
         permissions: { record: true, approve: true },
         urls: { store: '/workspaces/w/clients/company-1/expenses' },
+        workspace: { timezone: 'America/Los_Angeles', default_currency: 'USD' },
         projects: [{ id: 'project-1', name: 'Main project' }],
         expenses: [expense()],
         ...overrides,
@@ -151,6 +152,35 @@ describe('the expense list', () => {
         // and counting those would make this assertion about the chrome.
         expect(actionsIn(screen.getByRole('row', { name: /Courier/ }))).toEqual(
             [],
+        );
+    });
+
+    /**
+     * A lifecycle refusal is the ordinary case, not a bug: two managers on one
+     * list, both pressing approve, and the second loses. The server answers
+     * with the status the row holds now, and a screen that swallows it leaves
+     * that operator watching a button do nothing.
+     */
+    it('shows the refusal when a move loses its race', async () => {
+        const user = userEvent.setup();
+        inertia.post.mockImplementation(
+            (
+                _url: string,
+                _payload: unknown,
+                options: { onError?: (e: Record<string, string>) => void },
+            ) => {
+                options.onError?.({
+                    expense:
+                        'An expense with status "approved" cannot become "approved".',
+                });
+            },
+        );
+
+        render(<ClientExpenses {...props()} />);
+        await user.click(screen.getByRole('button', { name: 'Approve' }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'An expense with status "approved" cannot become "approved".',
         );
     });
 
@@ -251,5 +281,28 @@ describe('reading a typed amount', () => {
         expect(parseAmount('-5')).toBeNull();
         expect(parseAmount('12.505')).toBeNull();
         expect(parseAmount('twelve')).toBeNull();
+    });
+
+    /**
+     * Stripping every comma read "12,50" - a decimal comma across most of
+     * Europe - as 1250, and posted 125000 minor units: a real expense
+     * overstated a hundredfold, valid on arrival and billable later.
+     *
+     * Guessing from the shape is no better, because "1,250" is genuinely
+     * ambiguous. So a comma survives only where it is unambiguously a
+     * thousands separator, and anything else is refused for the person to
+     * retype.
+     */
+    it('refuses an ambiguous comma rather than multiplying it', () => {
+        expect(parseAmount('12,50')).toBeNull();
+        expect(parseAmount('1,2,3')).toBeNull();
+        expect(parseAmount('1,25')).toBeNull();
+        expect(parseAmount('12,5')).toBeNull();
+    });
+
+    it('still reads a comma that can only be a thousands separator', () => {
+        expect(parseAmount('1,250')).toBe(125000);
+        expect(parseAmount('1,250.05')).toBe(125005);
+        expect(parseAmount('1,234,567')).toBe(123456700);
     });
 });

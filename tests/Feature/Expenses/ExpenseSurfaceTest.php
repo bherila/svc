@@ -293,6 +293,147 @@ final class ExpenseSurfaceTest extends TestCase
             ->assertNotFound();
     }
 
+    /**
+     * Reaching a client is not reading all of its money.
+     *
+     * A member on one of a client's projects reaches the company, so the
+     * reachability check above passes and every one of that client's expenses
+     * would follow - the other projects' and the company-level ones included.
+     *
+     * `BillingRecordAccess::canViewAgreement()` settled the shape: a record
+     * naming no project covers work the viewer cannot see, so it is refused on
+     * the same reasoning as an invoice with no lineage. An unattributed expense
+     * is exactly that, and is a manager's to read.
+     */
+    public function test_a_project_scoped_member_reads_only_their_projects_expenses(): void
+    {
+        $theirs = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Their project',
+            'status' => 'active',
+        ]);
+
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $theirs->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+
+        $expenses = new WorkspaceExpenses($this->workspace);
+        $expenses->record($this->company, $theirs, new NewExpense(
+            CarbonImmutable::parse('2026-03-14'), 1000, 'USD', 'Theirs: parking',
+        ), $this->manager);
+        // On a project they do not reach.
+        $expenses->record($this->company, $this->project, new NewExpense(
+            CarbonImmutable::parse('2026-03-14'), 2000, 'USD', 'Not theirs: a private dinner',
+        ), $this->manager);
+        // And attributed to no project at all.
+        $expenses->record($this->company, null, new NewExpense(
+            CarbonImmutable::parse('2026-03-14'), 3000, 'USD', 'Company-wide: an annual subscription',
+        ), $this->manager);
+
+        $response = $this->actingAs($member)->get($this->url());
+
+        $response->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('expenses', 1)
+            ->where('expenses.0.description', 'Theirs: parking')
+            // And the projects they may attribute to are the ones they see.
+            ->has('projects', 1)
+            ->where('projects.0.name', 'Their project'));
+
+        $this->assertInertiaPayloadOmits(
+            $response,
+            ['Not theirs: a private dinner', 'Company-wide: an annual subscription', 'Expense Project'],
+            'Theirs: parking',
+        );
+    }
+
+    /**
+     * An edit that moves the project moves it, and one that does not, does not.
+     *
+     * `NewExpense` carries no tenant reference, so an update that passed only
+     * the facts left `client_project_id` untouched while the form reported the
+     * attribution saved. Passing the project unconditionally is the opposite
+     * error: an edit to the money alone would silently detach the expense.
+     */
+    public function test_an_edit_moves_the_project_only_when_it_says_so(): void
+    {
+        $elsewhere = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Second project',
+            'status' => 'active',
+        ]);
+        $expense = $this->expense();
+
+        $facts = [
+            'spent_on' => '2026-03-14',
+            'amount' => 5000,
+            'currency' => 'USD',
+            'description' => 'Courier',
+        ];
+
+        // Named: it moves.
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+                ...$facts,
+                'project_id' => $elsewhere->public_id,
+            ])
+            ->assertRedirect();
+        $this->assertSame($elsewhere->id, $expense->fresh()?->client_project_id);
+
+        // Cleared explicitly: it clears.
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+                ...$facts,
+                'project_id' => null,
+            ])
+            ->assertRedirect();
+        $this->assertNull($expense->fresh()?->client_project_id);
+
+        // Absent: an edit to the money alone leaves the attribution alone.
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+                ...$facts,
+                'project_id' => $elsewhere->public_id,
+            ])
+            ->assertRedirect();
+        $this->actingAs($this->manager)
+            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+                ...$facts,
+                'amount' => 6000,
+            ])
+            ->assertRedirect();
+        $this->assertSame($elsewhere->id, $expense->fresh()?->client_project_id);
+        $this->assertSame(6000, (int) $expense->fresh()?->amount);
+    }
+
+    /**
+     * The workspace's calendar and currency, not UTC's and not USD.
+     *
+     * A new expense defaulting to UTC's date records an evening west of it as
+     * tomorrow, and one defaulting to USD misprices every workspace that bills
+     * in something else.
+     */
+    public function test_the_page_sends_the_workspaces_calendar_and_currency(): void
+    {
+        $this->workspace->forceFill([
+            'timezone' => 'America/Los_Angeles',
+            'default_currency' => 'GBP',
+        ])->save();
+
+        $this->actingAs($this->manager)
+            ->get($this->url())
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('workspace.timezone', 'America/Los_Angeles')
+                ->where('workspace.default_currency', 'GBP'));
+    }
+
     /** Nothing from another client reaches this client's page. */
     public function test_the_page_omits_another_clients_expenses(): void
     {

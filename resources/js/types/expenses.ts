@@ -45,6 +45,14 @@ export type ExpensesPageProps = {
     company: { id: string; name: string };
     permissions: { record: boolean; approve: boolean };
     urls: { store: string };
+    /**
+     * The workspace's own calendar and currency.
+     *
+     * A new expense defaulting to UTC's date records an evening west of it as
+     * tomorrow, and one defaulting to USD misprices every workspace billing in
+     * something else — both valid answers, neither the right one.
+     */
+    workspace: { timezone: string; default_currency: string };
     projects: ExpenseProject[];
     expenses: ClientExpenseRow[];
 };

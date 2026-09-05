@@ -69,6 +69,7 @@ export default function ClientExpenses({
     company,
     permissions,
     urls,
+    workspace,
     projects,
     expenses,
 }: ExpensesPageProps) {
@@ -76,21 +77,44 @@ export default function ClientExpenses({
         null,
     );
     const [dialogOpen, setDialogOpen] = useState(false);
+    // Counted per opening, not per row. Keying on the row's id alone left the
+    // "record" dialog on the same key every time, so its initializer never ran
+    // again and a cancelled draft - or one just saved - came back on the next
+    // open, ready to be submitted as a duplicate.
+    const [opening, setOpening] = useState(0);
     const [pendingDiscard, setPendingDiscard] =
         useState<ClientExpenseRow | null>(null);
     const [busy, setBusy] = useState(false);
+    // A lifecycle refusal is the ordinary case, not a bug: two managers on one
+    // list, both pressing approve, and the second loses. The server answers
+    // with the status the row holds now, which is what tells that operator to
+    // re-read - so it has to be shown. Without this the request finished and
+    // the screen said nothing at all.
+    const [notice, setNotice] = useState<string | null>(null);
 
     const open = (expense: ClientExpenseRow | null) => {
         setDialogExpense(expense);
+        setOpening((count) => count + 1);
         setDialogOpen(true);
+    };
+
+    const reportFailure = (errors: Record<string, string>) => {
+        setNotice(
+            Object.values(errors)[0] ?? 'That action could not be completed.',
+        );
     };
 
     const move = (url: string) => {
         setBusy(true);
+        setNotice(null);
         router.post(
             url,
             {},
-            { preserveScroll: true, onFinish: () => setBusy(false) },
+            {
+                preserveScroll: true,
+                onError: reportFailure,
+                onFinish: () => setBusy(false),
+            },
         );
     };
 
@@ -113,6 +137,14 @@ export default function ClientExpenses({
                         </div>
                     </CardHeader>
                     <CardContent>
+                        {notice !== null && (
+                            <p
+                                role="alert"
+                                className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm wrap-anywhere text-destructive"
+                            >
+                                {notice}
+                            </p>
+                        )}
                         {expenses.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 No expenses recorded for this client.
@@ -288,12 +320,13 @@ export default function ClientExpenses({
             </main>
 
             <ExpenseDialog
-                // Remounted per row, so its draft comes from the expense being
-                // edited rather than from whatever was open last.
-                key={dialogExpense?.id ?? 'new'}
+                // Remounted per opening, so its draft comes from the expense
+                // being edited now rather than from whatever was open last.
+                key={`${dialogExpense?.id ?? 'new'}-${opening}`}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
                 storeUrl={urls.store}
+                workspace={workspace}
                 projects={projects}
                 expense={dialogExpense}
             />
@@ -324,8 +357,10 @@ export default function ClientExpenses({
                                     return;
                                 }
 
+                                setNotice(null);
                                 router.delete(pendingDiscard.urls.discard, {
                                     preserveScroll: true,
+                                    onError: reportFailure,
                                     onFinish: () => setPendingDiscard(null),
                                 });
                             }}
