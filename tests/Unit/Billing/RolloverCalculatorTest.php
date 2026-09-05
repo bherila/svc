@@ -327,6 +327,49 @@ class RolloverCalculatorTest extends TestCase
         $this->assertSame(2.0, $results[8]->opening->rolloverHours);
     }
 
+    /**
+     * The charge is reported, not only applied.
+     *
+     * A month's retainer hours are bought by the retainer fee and its charged
+     * hours are bought on top of it. Consumed into the pool and then discarded,
+     * the two are indistinguishable to any reader of the ledger - which is how
+     * the time sheet came to show hours worked over the retainer and hours paid
+     * for over the retainer as the same thing.
+     */
+    public function test_a_month_reports_the_overage_hours_charged_against_it(): void
+    {
+        $results = $this->calculator->calculateMultipleMonths([
+            [
+                'year_month' => '2026-01',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 5.0,
+                'billed_overage_hours' => 3.0,
+            ],
+            ['year_month' => '2026-02', 'retainer_hours' => 2.0, 'hours_worked' => 0.0],
+            [
+                'year_month' => '2026-03',
+                'retainer_hours' => 2.0,
+                'hours_worked' => 0.0,
+                'billed_overage_hours' => -1.25,
+            ],
+        ], rolloverMonths: 1);
+
+        $this->assertSame(3.0, $results[0]->billedOverageHours);
+        $this->assertSame(0.0, $results[1]->billedOverageHours, 'A month with no charge reports none rather than the previous one');
+        $this->assertSame(-1.25, $results[2]->billedOverageHours, 'A correction keeps its sign');
+
+        // The single-month API takes no charge at all, and none is a claim
+        // about the month rather than a placeholder: a reader adding this to
+        // the retainer hours to get what the client paid for is entitled to a
+        // zero when nothing was charged.
+        $this->assertSame(0.0, $this->calculator->calculateMonthSummary(
+            retainerHours: 2.0,
+            hoursWorked: 5.0,
+            previousMonthsUnused: [],
+            rolloverMonths: 1,
+        )->billedOverageHours);
+    }
+
     public function test_billed_overage_separates_fractional_debt_settlement_from_surplus(): void
     {
         $surplus = $this->calculator->calculateMultipleMonths([[

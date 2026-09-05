@@ -61,6 +61,60 @@ function stateOf(entry: TimeEntry): {
     return { label: 'Draft', variant: 'outline' };
 }
 
+/** Hours with the sign shown, so a deduction reads as one. */
+function signedHours(hours: number): string {
+    const sign = hours < 0 ? '\u2212' : '';
+
+    return `${sign}${formatDecimalHours(Math.abs(hours))} h`;
+}
+
+/**
+ * One line of the capacity breakdown: what it is, and how many hours.
+ *
+ * The figures used to run together in prose - "10.00 h this cycle + 4.00 h
+ * carried in", "8.00 h left · 4.00 h rollover" - which reads as a sentence and
+ * not as arithmetic. Labelled and right-aligned, the column adds up on the
+ * page, which is the only way a reader can check it.
+ */
+function CapacityLine({
+    label,
+    value,
+    emphasis = 'normal',
+}: {
+    label: string;
+    value: string;
+    emphasis?: 'normal' | 'total' | 'over';
+}) {
+    return (
+        <div className="flex items-baseline justify-between gap-3 text-xs">
+            <span
+                className={cn(
+                    'wrap-anywhere',
+                    emphasis === 'over'
+                        ? 'text-destructive'
+                        : emphasis === 'total'
+                          ? 'font-medium text-foreground'
+                          : 'text-muted-foreground',
+                )}
+            >
+                {label}
+            </span>
+            <span
+                className={cn(
+                    'shrink-0 tabular-nums',
+                    emphasis === 'over'
+                        ? 'text-destructive'
+                        : emphasis === 'total'
+                          ? 'font-medium text-foreground'
+                          : 'text-muted-foreground',
+                )}
+            >
+                {value}
+            </span>
+        </div>
+    );
+}
+
 function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
     if (capacity.length === 0) {
         return null;
@@ -87,13 +141,40 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                             : used > 0
                               ? 1
                               : 0;
+                    // The balance is the whole bank, and part of it may be
+                    // older hours on their way out - or, on the other side of
+                    // zero, debt this cycle did not create. Either way the
+                    // reader wants to know which part of the number is not
+                    // this cycle's doing.
+                    const carriedDebt = Math.max(
+                        0,
+                        row.carried_deficit_hours - row.over_hours,
+                    );
+                    // An agreement whose unused hours expire has no carryover
+                    // to state a balance of. Calling the closing figure one
+                    // put the word directly above the sentence denying it.
+                    const carriesForward =
+                        row.rollover_months !== null && row.rollover_months > 0;
 
                     return (
                         <div
                             key={`${row.agreement}-${row.cycle_start}-${index}`}
-                            className="min-w-56 flex-1 rounded-lg border border-border bg-muted/40 p-3"
+                            // Bounded as well as flexible: a labelled figure
+                            // and its value on one row are only readable near
+                            // each other, and a single agreement on a wide
+                            // screen otherwise stretched the pair a thousand
+                            // pixels apart.
+                            className="max-w-md min-w-64 flex-1 rounded-lg border border-border bg-muted/40 p-3"
                         >
-                            <p className="truncate text-xs font-medium text-muted-foreground">
+                            {/*
+                             * Wrapped, not truncated. The title is what tells
+                             * two cards apart, and capping the card's width
+                             * made `truncate` clip it on a page with room to
+                             * spare - with the full value nowhere. Truncation
+                             * is for an identity string in fixed chrome that
+                             * is one click from its full form; this is neither.
+                             */}
+                            <p className="text-xs font-medium wrap-anywhere text-muted-foreground">
                                 {row.agreement}
                                 {shareTheName && row.cycle_start !== '' && (
                                     <span className="ml-1 font-normal">
@@ -128,54 +209,133 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                             </div>
                             {/*
                              * Where the availability came from. The ledger has
-                             * computed these three since the port and the
-                             * screen showed none of them, so a month living on
-                             * hours carried in read exactly like one with a
-                             * large retainer - and the hours that aged out on
-                             * the way were invisible.
+                             * computed these since the port and the screen
+                             * showed none of them, so a month living on hours
+                             * carried in read exactly like one with a large
+                             * retainer - and the hours spent repaying an
+                             * earlier overrun were invisible, which left the
+                             * headline figure with no derivation at all.
                              */}
-                            <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
-                                {formatDecimalHours(row.retainer_hours)} h this
-                                cycle
-                                {row.rollover_in_hours > 0 &&
-                                    ` + ${formatDecimalHours(row.rollover_in_hours)} h carried in`}
-                                {row.expired_hours > 0 && (
-                                    <span className="text-destructive">
-                                        {` − ${formatDecimalHours(row.expired_hours)} h expired`}
-                                    </span>
+                            <div className="mt-3 grid grid-cols-1 gap-1">
+                                <CapacityLine
+                                    label="Included this cycle"
+                                    value={`${formatDecimalHours(row.retainer_hours)} h`}
+                                />
+                                {row.spent_earlier_in_cycle_hours > 0 && (
+                                    <CapacityLine
+                                        label="Used earlier in this cycle"
+                                        value={signedHours(
+                                            -row.spent_earlier_in_cycle_hours,
+                                        )}
+                                    />
                                 )}
-                            </p>
-                            <p className="mt-1.5 text-xs tabular-nums">
-                                {over ? (
-                                    <span className="text-destructive">
-                                        {formatDecimalHours(row.over_hours)} h
-                                        over
-                                    </span>
-                                ) : (
-                                    <span className="text-muted-foreground">
-                                        {formatDecimalHours(row.unused_hours)} h
-                                        left
-                                    </span>
+                                {row.deficit_offset_hours > 0 && (
+                                    <CapacityLine
+                                        label="Repaid earlier overrun"
+                                        value={signedHours(
+                                            -row.deficit_offset_hours,
+                                        )}
+                                        emphasis="over"
+                                    />
                                 )}
-                                {row.carried_deficit_hours > row.over_hours && (
-                                    <span className="text-destructive">
-                                        {' · '}
-                                        {formatDecimalHours(
-                                            row.carried_deficit_hours,
-                                        )}{' '}
-                                        h carried deficit
-                                    </span>
+                                {row.rollover_in_hours > 0 && (
+                                    <CapacityLine
+                                        label="Carried in"
+                                        value={signedHours(
+                                            row.rollover_in_hours,
+                                        )}
+                                    />
                                 )}
-                                {row.remaining_rollover > 0 && (
-                                    <span className="text-muted-foreground">
-                                        {' · '}
+                                <div className="mt-0.5 border-t border-border pt-1">
+                                    <CapacityLine
+                                        label="Available"
+                                        value={`${formatDecimalHours(available)} h`}
+                                        emphasis="total"
+                                    />
+                                </div>
+                                <CapacityLine
+                                    label="Used"
+                                    value={signedHours(-used)}
+                                    emphasis={over ? 'over' : 'normal'}
+                                />
+                                {/*
+                                 * The one figure that says where the agreement
+                                 * stands. Unused hours, unspent carry-in and a
+                                 * deficit were three separate numbers on this
+                                 * card, and no arrangement of them told a
+                                 * reader whether the client was ahead of the
+                                 * retainer or behind it.
+                                 */}
+                                <div className="mt-0.5 border-t border-border pt-1">
+                                    <CapacityLine
+                                        label={
+                                            carriesForward
+                                                ? 'Carryover balance'
+                                                : 'Closing balance'
+                                        }
+                                        value={signedHours(row.balance_hours)}
+                                        emphasis={
+                                            row.balance_hours < 0
+                                                ? 'over'
+                                                : 'total'
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            {row.balance_hours >= 0 &&
+                                row.remaining_rollover > 0 && (
+                                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                        Including{' '}
                                         {formatDecimalHours(
                                             row.remaining_rollover,
                                         )}{' '}
-                                        h rollover
-                                    </span>
+                                        h carried in from earlier cycles.
+                                    </p>
                                 )}
-                            </p>
+                            {row.balance_hours < 0 && carriedDebt > 0 && (
+                                <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                    Including {formatDecimalHours(carriedDebt)}{' '}
+                                    h owed from earlier cycles.
+                                </p>
+                            )}
+                            {row.expired_hours > 0 && (
+                                <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                    <span className="text-destructive">
+                                        {formatDecimalHours(row.expired_hours)}{' '}
+                                        h
+                                    </span>{' '}
+                                    expired before this cycle opened.
+                                </p>
+                            )}
+                            {/*
+                             * What the client actually bought. Hours worked
+                             * over the retainer and carried forward as a
+                             * deficit are unpaid; hours worked over it and
+                             * invoiced are paid. A card reporting only what the
+                             * retainer included and how far the work went past
+                             * it draws the two the same way.
+                             */}
+                            {row.billed_hours !== null && (
+                                <div className="mt-2 grid grid-cols-1 gap-1 border-t border-border pt-2">
+                                    <CapacityLine
+                                        label="Billed"
+                                        value={`${formatDecimalHours(row.billed_hours)} h`}
+                                    />
+                                    {row.billed_overage_hours !== null &&
+                                        row.billed_overage_hours !== 0 && (
+                                            <CapacityLine
+                                                label={
+                                                    row.billed_overage_hours > 0
+                                                        ? 'Overage at the hourly rate'
+                                                        : 'Reversed by a correction'
+                                                }
+                                                value={signedHours(
+                                                    row.billed_overage_hours,
+                                                )}
+                                            />
+                                        )}
+                                </div>
+                            )}
                             {row.pending_minutes > 0 && (
                                 <p className="mt-2 text-xs text-muted-foreground">
                                     <span className="font-medium text-foreground tabular-nums">

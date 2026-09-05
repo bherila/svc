@@ -523,6 +523,178 @@ class TimeSheetTest extends TestCase
     }
 
     /**
+     * A cycle that opens repaying an earlier overrun says so.
+     *
+     * The screen reported the gross grant and the availability and nothing
+     * between them, so a month that sold ten hours and could offer five read
+     * as an arithmetic error. The offset is the missing term, and the balance
+     * is the figure an operator was left to derive from three others.
+     */
+    public function test_the_capacity_strip_accounts_for_hours_spent_repaying_an_overrun(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Rolling Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'rollover_months' => 1,
+            'starts_on' => '2026-06-01',
+        ]);
+        // Fifteen hours against a ten-hour June: the five over are carried, not
+        // billed, so July opens owing them.
+        $this->entry(['worked_on' => '2026-06-04', 'minutes' => 900, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-07')
+                ->where('months.0.capacity.0.retainer_hours', 10)
+                ->where('months.0.capacity.0.deficit_offset_hours', 5)
+                ->where('months.0.capacity.0.available_hours', 5)
+                ->where('months.0.capacity.0.balance_hours', 5)
+                // And the month that ran up the debt closes on its negative.
+                ->where('months.1.key', '2026-06')
+                ->where('months.1.capacity.0.over_hours', 5)
+                ->where('months.1.capacity.0.balance_hours', -5));
+    }
+
+    /**
+     * Hours worked past the retainer and carried forward are unbilled; the
+     * same hours once invoiced are billed. A strip reporting only what the
+     * retainer included and how far the work went past it draws the two
+     * identically.
+     *
+     * Billed rather than paid: `InvoiceStatus::charged()` counts an issued and
+     * a partially paid invoice alongside a settled one, so the figure is what
+     * is on an invoice, not what is on a payment. The invoice below is
+     * `issued` for exactly that reason.
+     */
+    public function test_the_capacity_strip_separates_hours_billed_from_hours_included(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Charged Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'retainer_minutes' => 600,
+            'rollover_months' => 1,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 780, 'status' => 'approved']);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SYN-OVERAGE-1',
+            'status' => 'issued',
+            'service_period_end' => '2026-07-31',
+            'hours_billed_at_rate' => '3.0000',
+            'currency' => 'USD',
+        ]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.capacity.0.retainer_hours', 10)
+                ->where('months.0.capacity.0.over_hours', 3)
+                ->where('months.0.capacity.0.billed_overage_hours', 3)
+                ->where('months.0.capacity.0.billed_hours', 13)
+                // The charge settles the debt it was raised for, so the cycle
+                // closes square rather than three hours down.
+                ->where('months.0.capacity.0.balance_hours', 0));
+    }
+
+    /**
+     * A cadence the ledger does not compute charges for says so with a null.
+     *
+     * `InvoiceLedgerBuilder` reads `BilledOverageLedger` only for a monthly
+     * cadence, so on a quarterly retainer the billed figure would be a zero
+     * meaning "not computed" - and a screen cannot tell that from "nothing was
+     * charged". Quarterly and yearly agreements are the ones that carry
+     * interim overage invoices, so the wrong reading is the likely one.
+     */
+    public function test_a_non_monthly_cadence_reports_no_billed_figure_rather_than_zero(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Quarterly Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'quarterly',
+            'status' => 'active',
+            'period_retainer_minutes' => 1800,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 240, 'status' => 'approved']);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.capacity.0.billed_hours', null)
+                ->where('months.0.capacity.0.billed_overage_hours', null)
+                // And the rest of the strip still reports, so this is one
+                // omitted figure rather than an omitted card.
+                ->where('months.0.capacity.0.worked_hours', 4));
+    }
+
+    /**
+     * A cycle's grant belongs to the cycle, not to its first calendar month.
+     *
+     * `buildPeriodRetainerLedgerThrough()` books the whole pool on the month a
+     * cycle opens and zero on the rest, so a later month of the same quarter
+     * reported nothing included above a real availability - the unexplainable
+     * figure this breakdown exists to remove, one cadence over. The grant
+     * carries across the cycle's rows and what earlier months spent of it is
+     * stated, so the two reconcile on every row.
+     */
+    public function test_a_later_month_of_a_cycle_reports_the_cycles_grant(): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Quarterly Agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'quarterly',
+            'status' => 'active',
+            'period_retainer_minutes' => 1800,
+            'starts_on' => '2026-07-01',
+        ]);
+        $this->entry(['worked_on' => '2026-07-04', 'minutes' => 1380, 'status' => 'approved']);
+        $this->entry(['worked_on' => '2026-08-04', 'minutes' => 240, 'status' => 'approved']);
+
+        $this->travelTo('2026-08-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.key', '2026-08')
+                ->where('months.0.capacity.0.retainer_hours', 30)
+                ->where('months.0.capacity.0.spent_earlier_in_cycle_hours', 23)
+                ->where('months.0.capacity.0.available_hours', 7)
+                ->where('months.0.capacity.0.worked_hours', 4)
+                // July opens the cycle, so it has the grant and nothing spent
+                // before it - the term exists only where a cycle spans months.
+                ->where('months.1.key', '2026-07')
+                ->where('months.1.capacity.0.retainer_hours', 30)
+                ->where('months.1.capacity.0.spent_earlier_in_cycle_hours', 0));
+    }
+
+    /**
      * Membership of a workspace is not access to every project in it.
      *
      * The `view` gate on the workspace passes for an ordinary member, so
