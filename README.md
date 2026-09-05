@@ -174,3 +174,25 @@ configured OAuth resource. Native clients that omit `Origin` continue to work.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
 `svc:oauth:prune-dynamic-clients` command (the retention is configurable).
+
+## Agent skills
+
+Time gets logged from the repository the work happened in, not from this one, so
+the skills that drive the MCP server are versioned here but installed for the
+user account:
+
+```bash
+pnpm run skills:install
+```
+
+That symlinks everything under `.claude/skills/` into `~/.claude/skills/`, so a
+later `git pull` updates an installed skill without a second step. Set
+`CLAUDE_SKILLS_DIR` to install somewhere else.
+
+`log-time` resolves the current repository to an SVC project, reads what the
+signed-in author actually shipped since the last logged entry, and logs the
+result after confirmation. It deliberately holds **no** client or project data:
+the repository-to-project mapping is workspace data read back from
+`projects.list`, with a personal `~/.claude/svc-time-projects.json` as a bridge
+for projects that have no `repository` recorded yet. Keep it that way — this
+repository is public, and a mapping table here would be a client record in it.
