@@ -302,7 +302,6 @@ function ProjectForm({
                         form.setData('repository', event.target.value)
                     }
                     placeholder="github.com/owner/name"
-                    className="wrap-anywhere"
                 />
                 {form.errors.repository ? (
                     <p role="alert" className="text-sm text-destructive">
@@ -438,7 +437,12 @@ export default function ClientManage({
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
-                <h1 className="text-2xl font-semibold tracking-tight">
+                {/*
+                    Same treatment as the heading on client Home, and for the
+                    same reason: this one interpolates a client name, and a
+                    registered company name is routinely one unbroken run.
+                */}
+                <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                     {company.name} settings
                 </h1>
                 <Card>

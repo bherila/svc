@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ClientHome from '@/pages/clients/home';
 import ClientInvoices from '@/pages/clients/invoices';
+import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
@@ -41,6 +42,20 @@ vi.mock('@inertiajs/react', () => ({
         </a>
     ),
     router: { visit: vi.fn(), post: vi.fn() },
+    // Settings is the one page here that is a form. The stub holds the real
+    // initial data so the hostile fixtures below actually reach the inputs - a
+    // form whose `data` was empty would render short strings and prove nothing.
+    useForm: (initial: Record<string, unknown>) => ({
+        data: initial,
+        setData: vi.fn(),
+        errors: {},
+        processing: false,
+        patch: vi.fn(),
+        post: vi.fn(),
+        put: vi.fn(),
+        reset: vi.fn(),
+        transform: vi.fn(),
+    }),
     usePage: () => ({
         props: sharedPageProps({
             workspaceNavigation: workspaceNavigation({
@@ -62,6 +77,13 @@ const LONG_INVOICE_NUMBER = 'VETV-202608-0000000000000000000001-RECONCILIATION';
 
 const LONG_TASK_TITLE =
     'Investigate https://tracker.example.test/very/long/path/that/never/breaks/anywhere/2541';
+
+/**
+ * A monorepo path with nowhere to break, which is the ordinary shape for this
+ * field: a repository reference is one unbroken run by construction.
+ */
+const LONG_REPOSITORY =
+    'git.internal.example.test/platform-engineering-group/veterinary-diagnostics-reconciliation-service';
 
 const company = { id: 'company-1', name: LONG_NAME };
 
@@ -170,6 +192,48 @@ describe('client screens under data that does not fit', () => {
             />,
         );
 
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
+    /**
+     * The projects form, carrying a repository reference with nowhere to break.
+     *
+     * It rides in an `<input>`, which is `w-full min-w-0` and scrolls its own
+     * value rather than growing to fit it - so the value cannot size the grid
+     * track the way a bare text node would. This asserts the fixture actually
+     * reached the field, because a form stub that dropped it would leave an
+     * empty input and the overflow check below would pass on nothing.
+     */
+    it('keeps the client settings form inside the window', () => {
+        const { container } = render(
+            <ClientSettings
+                workspace={{ id: 'workspace-1' }}
+                company={{
+                    id: 'company-1',
+                    name: LONG_NAME,
+                    billing_email: 'billing@example.test',
+                    is_active: true,
+                }}
+                projects={[
+                    {
+                        id: 'project-1',
+                        name: LONG_NAME,
+                        description: LONG_DESCRIPTION,
+                        repository: LONG_REPOSITORY,
+                        status: 'active',
+                        is_visible_to_client: true,
+                        lock_version: 3,
+                        members: [{ user: 'user-1', role: 'contributor' }],
+                    },
+                ]}
+                assignable={[{ id: 'user-1', name: LONG_NAME }]}
+            />,
+        );
+
+        expect(
+            container.querySelector<HTMLInputElement>('#repository-project-1')
+                ?.value,
+        ).toBe(LONG_REPOSITORY);
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
