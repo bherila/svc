@@ -17,6 +17,7 @@ final class AgentTimeEntryPresenter
     ): array {
         $payload = [
             'id' => $entry->public_id,
+            'author_id' => $entry->user->public_id,
             'project_id' => $entry->project->public_id,
             'task_id' => $entry->task?->public_id,
             'worked_on' => $entry->worked_on->toDateString(),

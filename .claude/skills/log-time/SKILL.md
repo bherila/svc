@@ -30,44 +30,55 @@ UI, a database, or a local checkout — this skill has no other write path.
 Call `context.get` first to get the authorized identity and workspaces. Never
 guess a workspace when the identity has more than one.
 
-Then resolve the repository to a project, in this order, stopping at the first
-that succeeds:
+Then resolve the repository to a project:
 
-1. **The project's own `repository` field.** Read the current remote
-   (`git remote get-url origin`), normalize it to `host/owner/name` — dropping
-   any `git@`/`https://` prefix, `.git` suffix and trailing slash — and look for
-   a project from `projects.list` whose `repository` matches. This is the
-   authoritative answer when present, because the mapping is workspace data
-   maintained in SVC rather than a copy living on one machine.
+1. Read `git remote get-url origin` and normalize it to lowercase
+   `host/owner/name`. For HTTPS and `ssh://` URLs, remove the scheme, user, and
+   port. For SCP-style SSH (`git@host:owner/name.git`), replace the colon after
+   the host with a slash. Remove a trailing slash and `.git` suffix.
+2. Call `projects.list` with `limit: 100` for every authorized workspace and
+   follow every `meta.next_cursor`. Do not declare a repository absent or show
+   a fallback picker until all pages have been read.
+3. Match the normalized remote against each project's `repository` field. One
+   match is the preferred target. Multiple matches are ambiguous: show their
+   workspace, `company_name`, project name, and IDs, and ask the user to choose.
+   Never silently select the first match.
 
-2. **A local override file**, `~/.claude/svc-time-projects.json`, keyed by the
-   same normalized remote:
+If no SVC mapping matches, check `~/.claude/svc-time-projects.json`. Each remote
+maps to a list so one repository can represent more than one work context:
 
-   ```json
-   {
-     "github.com/owner/repo": { "workspace": "<workspace-id>", "project_id": "<project-id>" }
-   }
-   ```
+```json
+{
+  "github.com/example/repo": [
+    { "workspace_id": "<workspace-id>", "project_id": "<project-id>" }
+  ]
+}
+```
 
-   This file is personal, lives outside any repository, and must never be
-   committed to one. It is a bridge for projects that have no `repository` set
-   yet — prefer setting the field in SVC over growing this file.
+Validate every override ID against the projects returned by SVC. A stale or
+unknown ID is not a match. If the list contains multiple valid targets, ask the
+user to choose. If there is still no match, show the fully paginated candidates
+with workspace, `company_name`, project name, and IDs, and ask the user to
+choose. Offer to add the choice to the override file. The file is personal and
+must never be committed; prefer setting the project's `repository` in SVC.
 
-3. **Ask.** List the plausible projects from `projects.list` with their client
-   names and let the user choose. Offer to record the choice in the override
-   file for next time.
-
-Never infer a project from a directory name alone without confirming it. Two
-repositories for the same client, or one repository billed to two projects, are
-both ordinary situations, and a silently wrong project bills the wrong client.
+Never infer a project from a directory name. Before preparing a write, find the
+selected project in `context.get.project_capabilities` and require `time:write`.
+For a listing-only request, require `time:read` instead. Stop with the reported
+capability gap before gathering a write proposal.
 
 ## 2. Establish what was done, and when
 
-Call `time_entries.list` for the resolved project first, newest first. The most
-recent entry's date is the boundary: work before it is probably already logged,
-and re-logging it double-bills.
+Call `time_entries.list` for the resolved project with `limit: 100` and follow
+every `meta.next_cursor`. Keep only rows whose `author_id` equals the identity
+ID from `context.get`. The greatest `worked_on` value is a useful discovery
+boundary, but it is not proof that earlier work is fully logged. Compare every
+candidate with all of the signed-in author's returned entries and call out any
+possible overlap before proposing a write.
 
-Gather the evidence from git, scoped to the user and to that boundary:
+Gather git evidence from that boundary. First read `git config user.email`. If
+it is empty, stop and ask which author identity to use; `--author=''` matches
+everyone.
 
 ```bash
 git log --author="$(git config user.email)" --since=<last-entry-date> \
@@ -75,22 +86,35 @@ git log --author="$(git config user.email)" --since=<last-entry-date> \
 ```
 
 Merged pull requests are usually the better unit of description than individual
-commits. `gh pr list --author @me --state merged --json number,title,mergedAt`
-gives them when the remote is GitHub.
+commits. For GitHub, query only the discovery period and fetch enough results to
+cover it:
 
-**Never derive minutes from commit timestamps.** Commit times measure when work
-was saved, not how long it took, and the gap between the two is where an
-indefensible invoice comes from. Propose a duration only if the user has stated
-one, and otherwise ask. It is correct to say "I can see three merged PRs on
-Tuesday but I cannot tell you how long they took."
+```bash
+gh pr list --author @me --state merged --search "merged:>=<boundary-date>" \
+  --limit 1000 --json number,title,mergedAt
+```
+
+Discard any result whose `mergedAt` precedes the boundary. If 1,000 results are
+returned, say the evidence may be incomplete and narrow the period or paginate
+through the API before proceeding.
+
+Git provides evidence about what changed, not when the work actually happened or
+how long it took. Require the user to state or confirm the actual `worked_on`
+date and duration. Never infer either from commit or merge timestamps. It is
+correct to say "I can see three merged PRs on Tuesday, but I need the work date
+and duration."
 
 ## 3. Propose, confirm, log
 
-Show the user a table of the entries you intend to create — date, minutes,
-description, billable, client-visible — and get explicit confirmation before
-calling anything. Then call `time_entries.log`, which takes up to 20 entries and
-is idempotent: pass a stable idempotency key per entry so a retry after a
-timeout cannot duplicate the work.
+Show the destination workspace, client (`company_name`), project name, and their
+IDs above the proposal. Then show every entry's date, minutes, internal
+description, billable flag, and client-visible flag. When client-visible is
+true, also show a separate non-empty client-visible description. Get explicit
+confirmation of the destination and exact rows before calling anything.
+
+Call `time_entries.log` once for up to 20 confirmed entries. Pass one stable
+top-level `idempotency_key` for the exact confirmed batch. Reuse it only to retry
+an identical request; if any entry changes, generate a new key.
 
 Write descriptions for the person who will read them on an invoice. "Fixed the
 retry loop in the webhook consumer so duplicate deliveries stop creating second

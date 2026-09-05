@@ -189,9 +189,10 @@ That symlinks everything under `.claude/skills/` into `~/.claude/skills/`, so a
 later `git pull` updates an installed skill without a second step. Set
 `CLAUDE_SKILLS_DIR` to install somewhere else.
 
-`log-time` resolves the current repository to an SVC project, reads what the
-signed-in author actually shipped since the last logged entry, and logs the
-result after confirmation. It deliberately holds **no** client or project data:
+`log-time` resolves the current repository to an SVC project, compares the
+signed-in author's shipped work with their existing time entries, and logs the
+result after confirming the destination and exact entries. It deliberately
+holds **no** client or project data:
 the repository-to-project mapping is workspace data read back from
 `projects.list`, with a personal `~/.claude/svc-time-projects.json` as a bridge
 for projects that have no `repository` recorded yet. Keep it that way — this

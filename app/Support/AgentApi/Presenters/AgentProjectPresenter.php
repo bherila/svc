@@ -14,6 +14,7 @@ final class AgentProjectPresenter
         return [
             'id' => $project->public_id,
             'company_id' => $project->clientCompany->public_id,
+            'company_name' => $project->clientCompany->name,
             'name' => $project->name,
             'description' => $project->description,
             'status' => $project->status,

@@ -40,11 +40,13 @@ class AgentReadApiTest extends TestCase
         $this->actingAsAgent($contributor, [AgentApiScopes::PROJECTS_READ, AgentApiScopes::TIME_READ]);
 
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")
-            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $project->public_id);
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $project->public_id)
+            ->assertJsonPath('data.0.company_name', 'Agent Client');
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$otherProject->public_id}")
             ->assertNotFound();
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own->public_id)
+            ->assertJsonPath('data.0.author_id', $contributor->public_id)
             ->assertJsonMissingPath('data.0.billing_rate_amount')
             ->assertJsonMissingPath('data.0.subcontractor_billing_mode')
             ->assertJsonMissingPath('data.0.subcontractor_cost_amount')
