@@ -13,11 +13,12 @@ namespace App\Support\Navigation;
  * client" is not a function of the ids, it is a function of the ids and the
  * viewer.
  *
- * Only `home` is guaranteed. A route family need not offer every module -
- * expenses have no record in the schema yet (#75), and a module arrives on the
- * portal in a different commit from the one that adds it for operators. A null
- * hides that tab rather than linking to a page that does not exist, so the tab
- * strip is always exactly the set of screens the viewer can actually open.
+ * Only `home` is guaranteed. A route family need not offer every module - a
+ * module arrives on the portal in a different commit from the one that adds it
+ * for operators, which is where expenses stand now (#75): operators have the
+ * screen, the portal does not. A null hides that tab rather than linking to a
+ * page that does not exist, so the tab strip is always exactly the set of
+ * screens the viewer can actually open.
  */
 final class ClientModuleDestinations
 {

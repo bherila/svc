@@ -160,10 +160,7 @@ final class WorkspaceNavigationFactory
             home: route('clients.show', $parameters, absolute: false),
             invoices: route('clients.invoices', $parameters, absolute: false),
             time: route('clients.time', $parameters, absolute: false),
-            // #75: there is no expense record in the schema yet, so there is no
-            // page to link to. Null hides the tab; the tab appears the day this
-            // becomes a string, in the commit that gives it something to show.
-            expenses: null,
+            expenses: route('clients.expenses', $parameters, absolute: false),
             tasks: route('clients.tasks', $parameters, absolute: false),
         );
     }
@@ -182,6 +179,10 @@ final class WorkspaceNavigationFactory
             home: route('portal.show', $company, absolute: false),
             invoices: route('portal.invoices', $company, absolute: false),
             time: route('portal.time', $company, absolute: false),
+            // Still null for the portal. #75's manager surface arrived first,
+            // and an expense carries a receipt and an internal approval trail;
+            // whether a client sees any of it is a disclosure decision that
+            // belongs to the commit that makes it, not to this one.
             expenses: null,
             tasks: route('portal.tasks', $company, absolute: false),
         );
