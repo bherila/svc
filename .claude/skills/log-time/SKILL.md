@@ -32,14 +32,20 @@ guess a workspace when the identity has more than one.
 
 Then resolve the repository to a project:
 
-1. Read `git remote get-url origin` and normalize it to `host/owner/name`, with
-   a lowercase host. For HTTPS and `ssh://` URLs, remove the scheme, user, and
-   port. For SCP-style SSH (`git@host:owner/name.git`), replace the colon after
-   the host with a slash. Remove a trailing slash and `.git` suffix.
+1. Read `git remote get-url origin` and normalize it to `host/owner/name`. For
+   HTTPS and `ssh://` URLs, remove the scheme, user, and port. For SCP-style SSH
+   (`git@host:owner/name.git`), replace the colon after the host with a slash —
+   its first colon starts the path, so `host:1234/owner/name` is a path and not
+   a port. Drop anything from a `?` or `#`, remove a trailing slash and a `.git`
+   suffix, collapse repeated slashes, and **lowercase the whole reference**.
+   SVC stores the field the same way, so the two sides only meet if both fold
+   case; matching on a lowercase host alone would miss a project someone had
+   typed as `github.com/Owner/Name`.
 2. Call `projects.list` with `limit: 100` for every authorized workspace and
    follow every `meta.next_cursor`. Do not declare a repository absent or show
    a fallback picker until all pages have been read.
-3. Match the normalized remote against each project's `repository` field. One
+3. Match the normalized remote against each project's `repository` field, which
+   SVC returns already canonical — compare it as-is, do not re-normalize it. One
    match is the preferred target. Multiple matches are ambiguous: show their
    workspace, `company_name`, project name, and IDs, and ask the user to choose.
    Never silently select the first match.
