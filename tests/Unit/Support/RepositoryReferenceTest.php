@@ -40,6 +40,10 @@ final class RepositoryReferenceTest extends TestCase
         yield 'query string' => ['https://github.com/bherila/svc.git?ref=main'];
         yield 'fragment' => ['https://github.com/bherila/svc#readme'];
         yield 'doubled separators' => ['https://github.com//bherila//svc'];
+        // The second `rtrim` exists for this one: stripping `.git` uncovers the
+        // slash that was in front of it, and without the second pass the value
+        // keeps a trailing separator and gains an empty final segment.
+        yield 'suffix behind its own slash' => ['https://github.com/bherila/svc/.git'];
     }
 
     /**
@@ -123,6 +127,12 @@ final class RepositoryReferenceTest extends TestCase
         yield 'an underscore host' => ['git_hub.com/owner/name'];
         yield 'an empty host' => ['///owner/name'];
         yield 'a path with a space' => ['github.com/bherila/my svc'];
+        // A local remote names no server. The leading slash it reduces to is
+        // left in place precisely so the empty first segment fails the host
+        // check - trimming it would promote `srv` to a hostname and mint a key
+        // that means nothing to any other machine.
+        yield 'a local file remote' => ['file:///srv/git/repo.git'];
+        yield 'a bare absolute path' => ['/srv/git/repo'];
     }
 
     /**

@@ -84,36 +84,39 @@ final class RepositoryReference
 
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $value) === 1) {
             $hadScheme = true;
-            $value = (string) preg_replace('#^[a-z][a-z0-9+.-]*://#i', '', $value);
+            $value = self::replace('#^[a-z][a-z0-9+.-]*://#i', '', $value);
         }
 
         // Any user information ahead of the host: `git@`, `git:password@`.
-        $value = (string) preg_replace('/^[^\/@]*@/', '', $value);
+        $value = self::replace('/^[^\/@]*@/', '', $value);
 
         if (! $hadScheme) {
             // SCP-style. Git reads the first colon as the path separator, so
             // `host:1234/owner/name` is the path `1234/owner/name` and not a
             // port - which is why this branch must not look like the one below.
-            $value = (string) preg_replace('/^([^\/:]+):/', '$1/', $value);
+            $value = self::replace('/^([^\/:]+):/', '$1/', $value);
         } else {
             // A real URL, so a colon after the host is a port and is dropped.
-            $value = (string) preg_replace('/^([^\/:]+):\d+/', '$1', $value);
+            $value = self::replace('/^([^\/:]+):\d+/', '$1', $value);
         }
 
         // Everything from a `?` or `#` onward is not part of the identity.
-        $value = (string) preg_replace('/[?#].*$/', '', $value);
+        $value = self::replace('/[?#].*$/', '', $value);
 
         $value = strtolower($value);
 
         // `.git`, then any trailing slashes it was hiding behind, in that order
         // so `.../name.git/` reduces the same as `.../name.git` and `.../name/`.
-        $value = (string) preg_replace('/\.git$/', '', rtrim($value, '/'));
+        $value = self::replace('/\.git$/', '', rtrim($value, '/'));
         $value = rtrim($value, '/');
 
         // Collapse repeated separators so `host//owner/name` is not three
-        // segments plus an empty one.
-        $value = (string) preg_replace('#/{2,}#', '/', $value);
-        $value = ltrim($value, '/');
+        // segments plus an empty one. A *leading* slash is deliberately left
+        // alone: it means there was no host - `file:///srv/git/repo` reduces to
+        // `/srv/git/repo` - and the empty first segment is what makes the host
+        // check below reject it. Trimming it would promote `srv` to a hostname
+        // and mint a mapping key for a path that names no server at all.
+        $value = self::replace('#/{2,}#', '/', $value);
 
         $segments = $value === '' ? [] : explode('/', $value);
 
@@ -134,6 +137,23 @@ final class RepositoryReference
         }
 
         return $host.'/'.implode('/', $segments);
+    }
+
+    /**
+     * `preg_replace` with a failure that leaves the subject alone.
+     *
+     * It returns `string|null`, null only on a PREG engine error - a backtrack
+     * limit, or invalid UTF-8 under `/u`. None of these patterns can reach that
+     * on any input, so the coalesce is unreachable rather than untested, and
+     * leaving the subject unchanged is the conservative branch regardless: a
+     * value that fails to normalize falls out at the shape checks below and
+     * becomes `null`, which is "nobody has said" and matches nothing.
+     *
+     * @infection-ignore-all The null branch is unreachable for these patterns; it exists so the return type is `string` without a cast at four call sites.
+     */
+    private static function replace(string $pattern, string $replacement, string $subject): string
+    {
+        return preg_replace($pattern, $replacement, $subject) ?? $subject;
     }
 
     /**
