@@ -1,0 +1,150 @@
+<?php
+
+namespace App\Support;
+
+/**
+ * One repository, spelled one way.
+ *
+ * A checkout can name its origin in at least five shapes that all mean the same
+ * remote - `https://github.com/owner/name.git`, `git@github.com:owner/name`,
+ * `ssh://git@github.com:22/owner/name/`, and the same again without the suffix
+ * or with a trailing slash. A stored mapping is only useful if every one of
+ * them resolves to the single value that was stored, so both sides of the
+ * comparison run through here: the Manage form on the way in, and the
+ * `log-time` skill's own normalization on the way out.
+ *
+ * The canonical form is `host/owner/name`, lowercase, no scheme, no user, no
+ * port, no `.git`, no trailing slash.
+ *
+ * ## Why the whole reference is lowercased, not only the host
+ *
+ * Hostnames are case-insensitive by specification; repository paths are not,
+ * and on a case-sensitive host `owner/Name` and `owner/name` could in principle
+ * be two repositories. Every host this is actually used against - GitHub,
+ * GitLab, Bitbucket - resolves paths case-insensitively and will hand out only
+ * one of the pair, so the realistic failure is the opposite one: an operator
+ * types `github.com/Bherila/svc` into the form, the checkout reports
+ * `github.com/bherila/svc`, and the mapping silently never matches. That is
+ * exactly the "several spellings, one value" problem this class exists for, so
+ * case is folded across the whole reference.
+ *
+ * The cost is bounded and visible: on a hypothetically case-sensitive host, two
+ * projects would both match one remote, which is already an ordinary situation
+ * here - a repository may legitimately bill to two projects - and is resolved by
+ * asking rather than by guessing. Collapsing to an ambiguous prompt is a much
+ * cheaper wrong answer than never matching at all.
+ *
+ * ## Why more than three segments are allowed
+ *
+ * `host/owner/name` is the common shape, but GitLab subgroups are genuinely
+ * deeper (`gitlab.com/group/subgroup/name`). Three segments is a floor rather
+ * than an exact count.
+ */
+final class RepositoryReference
+{
+    /**
+     * A hostname: dot-separated labels, or a bare name like `localhost`.
+     *
+     * Deliberately not anchored to a public suffix. Self-hosted Git lives on
+     * intranet names and this is a mapping key, not a security boundary.
+     */
+    private const HOST = '/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/';
+
+    /**
+     * One path segment: anything but a slash, whitespace or the empty string.
+     */
+    private const SEGMENT = '/^[^\s\/]+$/';
+
+    /**
+     * Reduce any spelling of a remote to the canonical one.
+     *
+     * Returns `null` for input that is absent, blank, or not recognisable as a
+     * repository reference. A caller that needs to tell "the operator cleared
+     * this field" from "the operator typed something unusable" must validate
+     * first - see {@see self::isNormalizable()} - because both arrive here as
+     * `null` by design: this method never throws, so it is safe to run over
+     * stored values during a read.
+     */
+    public static function normalize(?string $raw): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        $value = trim($raw);
+
+        if ($value === '') {
+            return null;
+        }
+
+        // A scheme, if there is one. Remembered rather than only stripped,
+        // because it decides whether a later colon is a port or - in the
+        // SCP-style `git@host:owner/name` - the separator before the path.
+        $hadScheme = false;
+
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $value) === 1) {
+            $hadScheme = true;
+            $value = (string) preg_replace('#^[a-z][a-z0-9+.-]*://#i', '', $value);
+        }
+
+        // Any user information ahead of the host: `git@`, `git:password@`.
+        $value = (string) preg_replace('/^[^\/@]*@/', '', $value);
+
+        if (! $hadScheme) {
+            // SCP-style. Git reads the first colon as the path separator, so
+            // `host:1234/owner/name` is the path `1234/owner/name` and not a
+            // port - which is why this branch must not look like the one below.
+            $value = (string) preg_replace('/^([^\/:]+):/', '$1/', $value);
+        } else {
+            // A real URL, so a colon after the host is a port and is dropped.
+            $value = (string) preg_replace('/^([^\/:]+):\d+/', '$1', $value);
+        }
+
+        // Everything from a `?` or `#` onward is not part of the identity.
+        $value = (string) preg_replace('/[?#].*$/', '', $value);
+
+        $value = strtolower($value);
+
+        // `.git`, then any trailing slashes it was hiding behind, in that order
+        // so `.../name.git/` reduces the same as `.../name.git` and `.../name/`.
+        $value = (string) preg_replace('/\.git$/', '', rtrim($value, '/'));
+        $value = rtrim($value, '/');
+
+        // Collapse repeated separators so `host//owner/name` is not three
+        // segments plus an empty one.
+        $value = (string) preg_replace('#/{2,}#', '/', $value);
+        $value = ltrim($value, '/');
+
+        $segments = $value === '' ? [] : explode('/', $value);
+
+        if (count($segments) < 3) {
+            return null;
+        }
+
+        $host = array_shift($segments);
+
+        if (preg_match(self::HOST, $host) !== 1) {
+            return null;
+        }
+
+        foreach ($segments as $segment) {
+            if (preg_match(self::SEGMENT, $segment) !== 1) {
+                return null;
+            }
+        }
+
+        return $host.'/'.implode('/', $segments);
+    }
+
+    /**
+     * Whether this input has a canonical form.
+     *
+     * Blank input is *not* normalizable - clearing the field is a separate act
+     * from typing something unusable, and only the caller knows which one it is
+     * looking at. Validation rules pair this with `nullable`.
+     */
+    public static function isNormalizable(?string $raw): bool
+    {
+        return self::normalize($raw) !== null;
+    }
+}
