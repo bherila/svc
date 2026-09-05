@@ -16,6 +16,7 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "hooks:install": "git config core.hooksPath .githooks",
+        "skills:install": "bash scripts/install-skills.sh",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
         "scan-sensitive": "node scripts/scan-sensitive.mjs",
