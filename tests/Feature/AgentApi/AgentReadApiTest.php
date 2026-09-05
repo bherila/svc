@@ -41,7 +41,11 @@ class AgentReadApiTest extends TestCase
 
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $project->public_id)
-            ->assertJsonPath('data.0.company_name', 'Agent Client');
+            ->assertJsonPath('data.0.company_name', 'Agent Client')
+            // The mapping an agent resolves its own checkout against. Read over
+            // MCP and never written there: establishing what a repository bills
+            // to is a setup act, so it is set on the Manage screen. See #243.
+            ->assertJsonPath('data.0.repository', 'github.com/synthetic/assigned');
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$otherProject->public_id}")
             ->assertNotFound();
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
@@ -299,7 +303,7 @@ class AgentReadApiTest extends TestCase
     {
         $workspace = Workspace::query()->create(['name' => 'Agent Workspace', 'slug' => 'agent-workspace']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Agent Client', 'slug' => 'agent-client']);
-        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Assigned']);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Assigned', 'repository' => 'github.com/synthetic/assigned']);
 
         return [$workspace, $company, $project];
     }

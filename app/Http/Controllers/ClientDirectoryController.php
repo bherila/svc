@@ -669,6 +669,9 @@ class ClientDirectoryController extends Controller
                 'id' => $project->public_id,
                 'name' => $project->name,
                 'description' => $project->description,
+                // Sent as stored - already canonical - so the field round-trips
+                // unchanged when the operator saves something else on the form.
+                'repository' => $project->repository,
                 'status' => $project->status,
                 'is_visible_to_client' => (bool) $project->is_visible_to_client,
                 // The version this form is rendered from, sent back on save so

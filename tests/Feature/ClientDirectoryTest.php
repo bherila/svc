@@ -1064,6 +1064,7 @@ class ClientDirectoryTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
                 'name' => 'After Rename Project',
                 'description' => 'Synthetic description',
+                'repository' => null,
                 'status' => 'archived',
                 'is_visible_to_client' => false,
                 'lock_version' => (int) $project->fresh()?->lock_version,
@@ -1095,6 +1096,7 @@ class ClientDirectoryTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/clients/{$other->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed Through The Wrong Client',
                 'description' => null,
+                'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
                 // A payload that validates, so the refusal below is the
@@ -1104,6 +1106,129 @@ class ClientDirectoryTest extends TestCase
             ->assertNotFound();
 
         $this->assertSame('Owned Edit Project', $project->fresh()?->name);
+    }
+
+    /**
+     * A repository is stored canonically, whatever spelling was pasted in.
+     *
+     * The operator pastes what their checkout printed, and a checkout prints
+     * one of several spellings of the same remote. Storing it as typed would
+     * make the mapping match only for whoever happened to paste the same shape,
+     * which fails silently - the project saves, and an agent in that repository
+     * still cannot find it. See #243.
+     */
+    public function test_a_pasted_remote_is_stored_canonically(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Repo', 'synthetic-repo', $manager);
+        $company = $this->company($workspace, 'Repo Client', 'repo-client');
+        $project = $this->project($workspace, $company, 'Repo Project');
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Repo Project',
+                'description' => null,
+                'repository' => 'git@github.com:Synthetic/Example.git',
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('github.com/synthetic/example', $project->fresh()?->repository);
+    }
+
+    /**
+     * Clearing the field is a real act and is not confused with a bad value.
+     *
+     * Both arrive at the normalizer as null, so only the pairing of `nullable`
+     * with the format rule can tell them apart. If they collapsed, an operator
+     * who typed a sentence would be told the project saved and the mapping
+     * would quietly be "nobody has said" - the exact failure the field exists
+     * to remove.
+     */
+    public function test_a_blank_unmaps_but_an_unusable_value_is_refused(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Unmap', 'synthetic-unmap', $manager);
+        $company = $this->company($workspace, 'Unmap Client', 'unmap-client');
+        $project = $this->project($workspace, $company, 'Unmap Project');
+        $project->forceFill(['repository' => 'github.com/synthetic/mapped'])->save();
+
+        $payload = [
+            'name' => 'Unmap Project',
+            'description' => null,
+            'status' => 'active',
+            'is_visible_to_client' => true,
+        ];
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                ...$payload,
+                'repository' => 'the synthetic repo on github',
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertSessionHasErrors('repository');
+
+        $this->assertSame('github.com/synthetic/mapped', $project->fresh()?->repository);
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                ...$payload,
+                'repository' => '',
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($project->fresh()?->repository);
+    }
+
+    /**
+     * A save about something else does not unmap the project.
+     *
+     * `present` rather than bare `nullable`, for the same reason as the
+     * description beside it: without it a PATCH that only meant to rename would
+     * drop the mapping, and nobody would notice until the next time an agent
+     * asked which project this checkout was.
+     */
+    public function test_a_payload_omitting_the_repository_is_refused(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Keep', 'synthetic-keep', $manager);
+        $company = $this->company($workspace, 'Keep Client', 'keep-client');
+        $project = $this->project($workspace, $company, 'Keep Project');
+        $project->forceFill(['repository' => 'github.com/synthetic/keep'])->save();
+
+        $this->actingAs($manager)
+            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+                'name' => 'Renamed Keep Project',
+                'description' => null,
+                'status' => 'active',
+                'is_visible_to_client' => true,
+                'lock_version' => (int) $project->fresh()?->lock_version,
+            ])
+            ->assertSessionHasErrors('repository');
+
+        $fresh = $project->fresh();
+        $this->assertSame('github.com/synthetic/keep', $fresh?->repository);
+        $this->assertSame('Keep Project', $fresh?->name);
+    }
+
+    /** The Manage screen renders the stored mapping so the form can round-trip it. */
+    public function test_the_manage_screen_sends_the_repository(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Send', 'synthetic-send', $manager);
+        $company = $this->company($workspace, 'Send Client', 'send-client');
+        $project = $this->project($workspace, $company, 'Send Project');
+        $project->forceFill(['repository' => 'github.com/synthetic/send'])->save();
+
+        $this->actingAs($manager)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('projects.0.repository', 'github.com/synthetic/send')
+                ->etc());
     }
 
     /**
@@ -1479,6 +1604,7 @@ class ClientDirectoryTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
                 'name' => 'Synthetic Omit Project',
                 'description' => null,
+                'repository' => null,
                 'status' => 'active',
             ])
             ->assertSessionHasErrors('is_visible_to_client');
@@ -1588,6 +1714,7 @@ class ClientDirectoryTest extends TestCase
         $this->actingAs($manager)
             ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed Project',
+                'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
                 'lock_version' => (int) $project->fresh()?->lock_version,
@@ -1623,6 +1750,7 @@ class ClientDirectoryTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
                 'name' => 'Synthetic Stale Project',
                 'description' => null,
+                'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => false,
                 'lock_version' => $staleVersion,
@@ -1637,6 +1765,7 @@ class ClientDirectoryTest extends TestCase
             ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed From A Stale Form',
                 'description' => null,
+                'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
                 'lock_version' => $staleVersion,
