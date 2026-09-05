@@ -339,6 +339,10 @@ class InvoiceLedgerBuilder
                     retainerHours: $monthRetainer,
                     billExcessImmediately: $billExcessImmediately,
                     cycleStart: $cycleStartKey,
+                    // The same charge that widened `$effectivePool` above, kept
+                    // where a reader of the ledger can see it: the pool says
+                    // what may be worked, this says what was bought.
+                    billedOverageHours: $billedOveragesByMonth[$monthKey] ?? 0.0,
                 );
 
                 $cursor->addMonth()->startOfMonth();

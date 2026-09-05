@@ -286,6 +286,11 @@ class RolloverCalculator
                 retainerHours: $summary->retainerHours,
                 billExcessImmediately: $summary->billExcessImmediately,
                 cycleStart: $summary->cycleStart,
+                // Carried on the summary rather than left in this loop's local
+                // scope: the hours the retainer fee bought and the hours bought
+                // on top of it are two different facts about the same month,
+                // and only the caller can say which of them it needs.
+                billedOverageHours: $this->ledgerHours($billedOverage),
             );
 
             // Deduct used rollover hours from the history stack (FIFO)
