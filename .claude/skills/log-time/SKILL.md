@@ -32,8 +32,8 @@ guess a workspace when the identity has more than one.
 
 Then resolve the repository to a project:
 
-1. Read `git remote get-url origin` and normalize it to lowercase
-   `host/owner/name`. For HTTPS and `ssh://` URLs, remove the scheme, user, and
+1. Read `git remote get-url origin` and normalize it to `host/owner/name`, with
+   a lowercase host. For HTTPS and `ssh://` URLs, remove the scheme, user, and
    port. For SCP-style SSH (`git@host:owner/name.git`), replace the colon after
    the host with a slash. Remove a trailing slash and `.git` suffix.
 2. Call `projects.list` with `limit: 100` for every authorized workspace and
@@ -63,9 +63,10 @@ choose. Offer to add the choice to the override file. The file is personal and
 must never be committed; prefer setting the project's `repository` in SVC.
 
 Never infer a project from a directory name. Before preparing a write, find the
-selected project in `context.get.project_capabilities` and require `time:write`.
-For a listing-only request, require `time:read` instead. Stop with the reported
-capability gap before gathering a write proposal.
+selected project in the selected workspace's `project_capabilities` from
+`context.get` and require `time:write`. For a listing-only request, require
+`time:read` instead. Stop with the reported capability gap before gathering a
+write proposal.
 
 ## 2. Establish what was done, and when
 
