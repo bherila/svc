@@ -411,12 +411,13 @@ issued, voided or re-dated in between. A schedule with nothing due is reported
 as *not due* rather than as clean, because no period of it was examined.
 
 And it looks only **forward**, from each schedule's current `next_run_on`. A
-period the cursor has already passed is invisible to it however it got passed —
-including one skipped by the draft-as-billed rule that shipped in #250 and is
-removed here. Sizing *that* damage is a retrospective scan over rows behind the
-cursor, which is a different query and a different tool; #254 tracks it. Deploying
-this fix moves no cursor backward, so a clean preflight is not by itself a census
-of the defect it repairs.
+period the cursor has already passed is invisible to it however it got passed.
+That is a structural limitation: historical exposure must be settled from
+execution evidence, not reconstructed from the current cursor alone. For the
+#250 incident, production verification found that no schedule id was ever
+allocated and no schedule-generation request occurred during the exposure
+window, so #254 closed with no affected population. The prospective preflight
+still cannot discover a period already passed for some other reason.
 
 `UnplaceableInvoiceAuditor` does not answer this question and must not be read
 as though it does. "Worth investigating" and "would stop a schedule generating"
