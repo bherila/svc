@@ -643,6 +643,33 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A sibling client's agreement resolves, and still is not this one's.
+     *
+     * The narrower half of the same rule as the test above, and the one an
+     * existence check alone would pass: this agreement is a real row in the
+     * right workspace, so only resolving it against the invoice's *client* as
+     * well separates "another agreement of ours" from "not ours at all". Two
+     * companies in one workspace on purpose - the foreign-schedule case above
+     * already covers the tenant boundary, so this isolates `client_company_id`
+     * rather than re-proving `workspace_id`.
+     */
+    public function test_an_invoice_naming_another_companys_agreement_is_refused(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Cross Company Agreement Workspace');
+        $sibling = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Sibling Client',
+            'slug' => 'sibling-client-'.$workspace->id,
+        ]);
+        $siblingAgreement = $this->agreementFor($workspace, $sibling, 'Sibling');
+
+        $orphan = $this->augustInvoice($workspace, $company, ['client_agreement_id' => $agreement->id]);
+        $orphan->forceFill(['client_agreement_id' => $siblingAgreement->id])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
      * Lineage that contradicts itself names no owner at all.
      *
      * Both ids resolve, and they disagree: the invoice says it came from this
