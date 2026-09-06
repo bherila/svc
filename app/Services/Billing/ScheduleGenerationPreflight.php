@@ -73,10 +73,11 @@ use Illuminate\Support\Collection;
  *
  * And it looks only forward. Every question here starts at a schedule's
  * *current* `next_run_on`, so a period the cursor has already passed is
- * invisible to it however it got passed - including one skipped by the
- * draft-as-billed rule this branch removes. Sizing that damage is a
- * retrospective scan over rows behind the cursor, which is a different query
- * and a different tool; see #254.
+ * invisible to it however it got passed. Historical exposure must therefore
+ * be settled from execution evidence rather than this preflight. For the #250
+ * incident, production verification found that no schedule id was ever
+ * allocated and no schedule-generation request occurred during the exposure
+ * window, so #254 closed with no affected population.
  */
 final class ScheduleGenerationPreflight
 {
