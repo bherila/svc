@@ -175,6 +175,58 @@ final class UnplaceableInvoiceAuditorTest extends TestCase
         $this->assertSame(2.0, $counts->cycleOverageHoursAtStake);
     }
 
+    /**
+     * The start boundary, which the audit could not see at all until #219/#224.
+     *
+     * `withoutAServicePeriod` counts `service_period_end`, and only that. The
+     * question #224 actually asked - may a live invoice state no period? - was
+     * answered with that number, which is evidence about one of the two
+     * columns and silence about the other. A row stating an end and no start is
+     * legal in the schema today and is invisible to every guard that places an
+     * invoice by comparing its period, because SQL compares a null to a date as
+     * UNKNOWN. What it costs there is a duplicate invoice, not a wrong total.
+     *
+     * Two numbers, because the total is the migration question and the live
+     * count of a guard-read kind is the exposure. Kind is applied the way the
+     * period guards apply it - by exclusion, so a legacy invoice carrying no
+     * kind is admitted rather than dropped, which is the direction that keeps a
+     * real exposure visible.
+     */
+    public function test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status(): void
+    {
+        $workspace = $this->workspace('period-start');
+        $company = $this->company($workspace, 'period-start');
+        $agreement = $this->agreement($workspace, $company);
+        $placed = ['service_period_start' => '2026-07-01', 'service_period_end' => '2026-07-31'];
+        $startless = ['service_period_end' => '2026-07-31'];
+
+        // Fully placed: out of both counts, and the only row here that is.
+        $this->invoice($workspace, $company, $agreement, ['status' => 'issued'] + $placed);
+
+        // Counted twice over: no start, live, and of a kind a period guard reads.
+        $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'cadence_period'] + $startless);
+        $this->invoice($workspace, $company, $agreement, ['status' => 'draft', 'invoice_kind' => 'cadence_period'] + $startless);
+        // A migrated row carries no kind and those guards still read it.
+        $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => null] + $startless);
+
+        // Counted, but not exposed: voided is not live, and an ad-hoc invoice
+        // is excluded from the cadence guards by kind before its dates matter.
+        $this->invoice($workspace, $company, $agreement, ['status' => 'voided', 'invoice_kind' => 'cadence_period'] + $startless);
+        $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'ad_hoc'] + $startless);
+
+        $counts = app(UnplaceableInvoiceAuditor::class)->count($workspace);
+
+        $this->assertSame(5, $counts->withoutAServicePeriodStart);
+        $this->assertSame(3, $counts->liveWithoutAServicePeriodStart);
+
+        // The end-boundary count is untouched by all of this: every row above
+        // states an end. Asserted here because folding the start into
+        // `withoutAServicePeriod` is the obvious simplification, and it would
+        // drag five rows into a funnel that reports money at stake.
+        $this->assertSame(0, $counts->withoutAServicePeriod);
+        $this->assertSame(0, $counts->affected);
+    }
+
     private function workspace(string $slug): Workspace
     {
         return Workspace::query()->create([

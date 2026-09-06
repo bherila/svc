@@ -21,6 +21,7 @@ use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
 use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
+use Tests\Feature\Billing\UnplaceableInvoiceAuditorTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
 use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
@@ -183,6 +184,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
         'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
@@ -194,6 +196,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
+        'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
@@ -202,6 +205,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
@@ -330,6 +334,17 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
                 ],
+                // The third is the schedule duplicate guard, and it reads the
+                // null the opposite way to the two above: an unlinked invoice
+                // naming *another* agreement is not this schedule's period and
+                // must not block it, while one naming *no* agreement blocks,
+                // because there is nowhere else to attribute it. Both
+                // directions are wrong in the expensive direction if flipped -
+                // one loses a period's revenue, the other bills it twice.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
+                ],
             ],
             // What the citation proves is narrower than it reads: it is the
             // default `InvoiceLifecycleService::createDraft` picks when no kind
@@ -355,6 +370,13 @@ final class NullSemanticsRegistryTest extends TestCase
             // and a different schedule's id take different paths - which is why
             // both cases are cited below rather than the column being retired
             // from this registry.
+            //
+            // *Unclaimed* is not the same as *null*, and the difference is two
+            // more branches, registered under the columns they read rather than
+            // this one: `invoice_kind` and `client_agreement_id`. A null link is
+            // shared by an operator's ad-hoc invoice and by another agreement's
+            // cadence invoice, and blocking on either stops a schedule billing a
+            // period nothing has covered.
             'client_billing_schedule_id' => [
                 [
                     'covered_by' => BillingWorkflowTest::class,
@@ -419,6 +441,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => ReplaySourceScopeNullBranchesTest::class,
                     'method' => 'test_an_invoice_with_no_period_start_proves_no_source_minutes',
                 ],
+                // The audit reads it too, and did not until #219/#224:
+                // `UnplaceableInvoiceAuditor` counted only the *end* boundary,
+                // so a row stating an end and no start was invisible both to
+                // the guards that place an invoice by its period and to the
+                // instrument used to argue no such row exists.
+                [
+                    'covered_by' => UnplaceableInvoiceAuditorTest::class,
+                    'method' => 'test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status',
+                ],
             ],
             // Five branches, and the widest spread of readings any one column
             // here carries. The regeneration refusal was already covered; the
@@ -482,6 +513,16 @@ final class NullSemanticsRegistryTest extends TestCase
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
+                ],
+                // The third reading is a schedule's duplicate guard, which
+                // admits a null kind on purpose: it excludes the kinds
+                // `cycleGuardExclusions()` names rather than listing the ones
+                // it accepts, so a migrated invoice carrying no kind still
+                // blocks the period it covers. Written as an exclusion in both
+                // guards so a new kind fails closed instead of falling through.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule',
                 ],
             ],
             // Cited against an interim refusal whose fixture nulls both columns,

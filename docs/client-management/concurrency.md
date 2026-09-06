@@ -147,7 +147,7 @@ gets a follow-up rather than an inline fix.
 | `InvoiceLifecycleService::applyPayment()` — one payment per idempotency key | `payment_idempotency_unique` on `(workspace_id, idempotency_key)`. The constraint, not the lock, is what makes this absolute |
 | `InvoiceLifecycleService::void()` / `releaseAllocations()` — released time is re-approved, not left invoiced | The invoice row lock, then the time-entry rows before they are rewritten |
 | `InvoiceNumberAllocator::next()` — the next number is not handed out twice | The workspace row lock, then the counter row; and `(workspace_id, invoice_number)` unique behind both |
-| `BillingScheduleService::generateDue()` — a period is not billed twice | The schedule row lock, plus the application guard. `billing_schedule_service_period_unique` **does not** carry this: a unique index does not constrain a null, so it never covered the unlinked case. Since #219/#224 the guard matches the tenant and the period first and reads a null `client_billing_schedule_id` as *unclaimed* rather than as no match, so an unlinked invoice for the period blocks; one naming a different schedule does not. Covered by `BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again` and `::test_an_invoice_owned_by_another_schedule_does_not_block_this_one` |
+| `BillingScheduleService::generateDue()` — a period is not billed twice **by this schedule** | The schedule row lock, plus the application guard. `billing_schedule_service_period_unique` **does not** carry this: a unique index does not constrain a null, so it never covered the unlinked case. Since #219/#224 the guard matches the tenant and the period first and reads a null `client_billing_schedule_id` as *unclaimed* rather than as no match — narrowed to this agreement and to the kinds `InvoiceKind::cycleGuardExclusions()` allows to block, so an ad-hoc or another agreement's invoice does not stop it billing. Serialised against itself by the lock; **not** against the other generator — see the gap below. Covered by `BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again`, `::test_an_invoice_owned_by_another_schedule_does_not_block_this_one`, `::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule` and `::test_another_agreements_unlinked_invoice_does_not_block_this_schedule` |
 | `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` — one cadence invoice per period | The agreement row lock, taken first because the invoice rows it guards against may not exist yet |
 | `InterimOverageGenerator::generateInterimOverageInvoice()` — no interim after the cycle is charged, no duplicate interim draft | The agreement row lock, then the candidate invoice rows under it |
 | `InterimOverageGenerator::releaseUnchargedInterimClaims()` — only an unsettled draft is stripped | Locks the drafts, then **re-reads each one and re-checks its status** before rewriting. The cadence path holds the agreement and `issue()` holds the invoice and the company, so nothing else stops an operator issuing a draft between the read and the delete |
@@ -161,6 +161,31 @@ gets a follow-up rather than an inline fix.
 | `WorkspaceExpenses::update()` — only a draft's facts may be rewritten | The same expense row lock and the same re-read. An approved expense is refused, so the amount a manager passed is the amount that is billed |
 | `WorkspaceExpenses::discard()` — an invoiced expense is not withdrawn | The same lock, and `ExpenseStatus::hasBeenInvoicedValue()`, which answers yes to a status it does not recognise |
 | `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
+
+### Known gap: the two cadence generators do not exclude each other
+
+Two paths can create a cadence invoice for one agreement and period, and they
+lock **different rows**:
+
+- `BillingScheduleService::generateDue()` locks the `client_billing_schedules`
+  row.
+- `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` locks the
+  `client_agreements` row.
+
+Neither lock is visible to the other, so both transactions can read "no invoice
+covers this period" and both can insert. `billing_schedule_service_period_unique`
+does not reject the pair either: the schedule path writes its own id and the
+other writes null, so the two rows differ on the first column of the index — and
+a unique index does not constrain a null in any case.
+
+Each guard is sound against a concurrent copy of *itself*, which is what the
+application guard and the row lock are for, and that is the race #219 was filed
+about. This is the other one, and it is recorded here rather than fixed inline
+because closing it means choosing a single lock object for both generators —
+the agreement is the obvious candidate, and taking it in `generateDue()` puts a
+new acquisition into `LockOrderConformanceTest`'s ordering. That belongs in its
+own change with its own reproduction, per the rule above this table.
+
 
 ## Adding a lock
 

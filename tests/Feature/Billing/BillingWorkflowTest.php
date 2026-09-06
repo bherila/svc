@@ -13,6 +13,7 @@ use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Support\Billing\InvoiceKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -301,6 +302,157 @@ class BillingWorkflowTest extends TestCase
                 ->pluck('client_billing_schedule_id')->map(fn ($id): int => (int) $id)->all(),
             'each schedule bills its own August',
         );
+    }
+
+    /**
+     * An operator's ad-hoc invoice for the same dates is not this period's bill.
+     *
+     * `InvoiceKind::cycleGuardExclusions()` is a decision this codebase already
+     * made and enforces in `ClientInvoicingService::assertNoOverlappingInvoice()`:
+     * an interim or ad-hoc invoice must not block a cadence one, because
+     * neither is tied to an agreement cycle. Both also leave
+     * `client_billing_schedule_id` null, so reading *every* null as "unclaimed,
+     * therefore blocking" quietly reversed that decision for the schedule path
+     * - `generateDue()` would return the ad-hoc invoice as though it were the
+     * cadence one and advance `next_run_on` past a period nothing had billed.
+     *
+     * The guard that exists to stop a double-charge would have caused lost
+     * revenue instead, which is why the exclusion is asserted here against the
+     * same list the sibling guard reads rather than restated as a literal.
+     */
+    public function test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule(): void
+    {
+        [, $workspace, $company] = $this->tenant('Ad Hoc Overlap Workspace');
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        // Dated to August exactly, so only the kind keeps it out of the guard.
+        $adHoc = app(InvoiceLifecycleService::class)->createDraft(
+            $workspace,
+            $company,
+            $this->invoiceData() + ['service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31'],
+            [$this->line()],
+        );
+
+        $this->assertNull($adHoc->client_billing_schedule_id);
+        $this->assertContains($adHoc->invoice_kind, InvoiceKind::cycleGuardExclusions());
+
+        app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertSame(
+            1,
+            ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->count(),
+            'the schedule still bills August: an ad-hoc invoice bills a thing, not this period',
+        );
+        $this->assertDatabaseCount('client_invoices', 2);
+    }
+
+    /**
+     * Another agreement's unlinked cadence invoice is not this schedule's period.
+     *
+     * The same over-correction as the two-schedules case, reached through the
+     * other column. `ClientInvoicingService` creates cadence invoices with an
+     * agreement and no schedule, so a company holding two agreements can carry
+     * an unlinked cadence invoice for August that belongs to the *other* one.
+     * Treating it as unclaimed stops this schedule billing August at all.
+     *
+     * A row naming no agreement is the opposite case and still blocks - there
+     * is nowhere else to attribute it, and that is the fail-closed reading
+     * #219 is about.
+     */
+    public function test_another_agreements_unlinked_invoice_does_not_block_this_schedule(): void
+    {
+        [, $workspace, $company] = $this->tenant('Two Agreement Workspace');
+        $agreements = collect(['Billed', 'Scheduled'])->map(fn (string $name): ClientAgreement => ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]));
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreements[1]->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        // The other agreement's August, as `ClientInvoicingService` writes one:
+        // a cadence kind, an agreement, and no schedule.
+        app(InvoiceLifecycleService::class)->createDraft(
+            $workspace,
+            $company,
+            $this->invoiceData() + [
+                'client_agreement_id' => $agreements[0]->id,
+                'invoice_kind' => InvoiceKind::CadencePeriod->value,
+                'service_period_start' => '2026-08-01',
+                'service_period_end' => '2026-08-31',
+            ],
+            [$this->line()],
+        );
+
+        app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertSame(
+            1,
+            ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->count(),
+            'the schedule bills its own agreement August, which the other agreement has not billed',
+        );
+        $this->assertDatabaseCount('client_invoices', 2);
+    }
+
+    /**
+     * A foreign workspace's identical invoice neither blocks nor is returned.
+     *
+     * The guard now blocks on an invoice that names no schedule, so a row from
+     * another tenant reaching this query would stop a paying client being
+     * billed - and `generateDue()` returns the row it found, so it would hand
+     * another tenant's invoice back with it. The fixture is the worst case on
+     * purpose: same dates, same null link, same cadence kind.
+     *
+     * **What this does and does not prove.** It pins the behaviour, which is
+     * what makes it worth keeping. It does *not* isolate the `workspace_id`
+     * predicate: deleting that line leaves this test green, because
+     * `client_company_id` is a global key and already separates the tenants.
+     * The workspace clause is defence in depth against a future caller that
+     * scopes differently, not the thing holding this case up, and saying so
+     * here is cheaper than a later reader trusting a citation that proves
+     * something narrower than it reads.
+     */
+    public function test_a_foreign_workspaces_invoice_does_not_block_generation(): void
+    {
+        [, $workspace, $company] = $this->tenant('Own Schedule Workspace');
+        [, $otherWorkspace, $otherCompany] = $this->tenant('Foreign Invoice Workspace');
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        $foreign = app(InvoiceLifecycleService::class)->createDraft(
+            $otherWorkspace,
+            $otherCompany,
+            $this->invoiceData() + [
+                'invoice_kind' => InvoiceKind::CadencePeriod->value,
+                'service_period_start' => '2026-08-01',
+                'service_period_end' => '2026-08-31',
+            ],
+            [$this->line()],
+        );
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertNotSame($foreign->id, $created[0]->id, 'another tenant\'s invoice is never handed back');
+        $this->assertSame($workspace->id, $created[0]->workspace_id);
+        $this->assertSame($schedule->id, $created[0]->client_billing_schedule_id);
     }
 
     /**

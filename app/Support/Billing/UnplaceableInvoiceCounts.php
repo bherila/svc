@@ -24,6 +24,8 @@ final readonly class UnplaceableInvoiceCounts
     public function __construct(
         public int $invoices,
         public int $withoutAServicePeriod,
+        public int $withoutAServicePeriodStart,
+        public int $liveWithoutAServicePeriodStart,
         public int $chargedOfThose,
         public int $onAnAgreementOfThose,
         public int $affected,
@@ -41,6 +43,8 @@ final readonly class UnplaceableInvoiceCounts
      * @return array{
      *     invoices: int,
      *     without_a_service_period: int,
+     *     without_a_service_period_start: int,
+     *     live_without_a_service_period_start: int,
      *     charged_of_those: int,
      *     on_an_agreement_of_those: int,
      *     affected: int,
@@ -57,6 +61,8 @@ final readonly class UnplaceableInvoiceCounts
         return [
             'invoices' => $this->invoices,
             'without_a_service_period' => $this->withoutAServicePeriod,
+            'without_a_service_period_start' => $this->withoutAServicePeriodStart,
+            'live_without_a_service_period_start' => $this->liveWithoutAServicePeriodStart,
             'charged_of_those' => $this->chargedOfThose,
             'on_an_agreement_of_those' => $this->onAnAgreementOfThose,
             'affected' => $this->affected,

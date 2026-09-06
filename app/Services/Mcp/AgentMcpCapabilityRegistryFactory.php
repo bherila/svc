@@ -453,6 +453,8 @@ final class AgentMcpCapabilityRegistryFactory
             properties: [
                 'invoices' => ['type' => 'integer', 'minimum' => 0],
                 'without_a_service_period' => ['type' => 'integer', 'minimum' => 0],
+                'without_a_service_period_start' => ['type' => 'integer', 'minimum' => 0],
+                'live_without_a_service_period_start' => ['type' => 'integer', 'minimum' => 0],
                 'charged_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'affected' => ['type' => 'integer', 'minimum' => 0],

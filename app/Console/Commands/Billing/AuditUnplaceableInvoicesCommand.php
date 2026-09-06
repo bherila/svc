@@ -65,6 +65,14 @@ final class AuditUnplaceableInvoicesCommand extends Command
         $this->newLine();
         $this->components->twoColumnDetail('Overage hours at stake', (string) $counts->overageHoursAtStake);
 
+        // Its own block, under its own heading, because it is a different
+        // exposure: the end boundary above is read by the overage ledger and
+        // is funnelled down to money, while a missing start defeats the
+        // duplicate guards and costs a whole invoice.
+        $this->newLine();
+        $this->components->twoColumnDetail('Without a service period start', (string) $counts->withoutAServicePeriodStart);
+        $this->components->twoColumnDetail('... of those, live and read by a period guard', (string) $counts->liveWithoutAServicePeriodStart);
+
         $this->newLine();
         $this->components->twoColumnDetail('Without a cycle start or end', (string) $counts->withoutACycle);
         $this->components->twoColumnDetail('... of those, of a kind matched by cycle', (string) $counts->ofAKindReadByCycle);

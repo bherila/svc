@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -41,11 +42,30 @@ final class BillingScheduleService
                 // invoice for it. The unique index does not save this either,
                 // because a unique index does not constrain a null.
                 //
-                // So an invoice that does not say which schedule made it now
-                // blocks, which is the fail-closed reading. An invoice that
-                // names a *different* schedule does not: that is another
-                // schedule's period and blocking on it would lose revenue
-                // rather than protect it.
+                // An invoice naming a *different* schedule does not block. That
+                // is another schedule's period, and a company can hold one
+                // schedule per agreement, so blocking there would trade a
+                // double-charge for a schedule that silently stops billing.
+                //
+                // The unclaimed arm is narrower than "any null", because a null
+                // link is not by itself a claim on this period. Two conditions,
+                // for the two ways such a row belongs to someone else:
+                //
+                // - **Kind.** `InvoiceKind::cycleGuardExclusions()` already
+                //   says an interim or ad-hoc invoice must not block a cadence
+                //   one, and `ClientInvoicingService::assertNoOverlappingInvoice()`
+                //   honours it. Neither kind carries a schedule, so an
+                //   unqualified `orWhereNull` reads an operator's ad-hoc
+                //   invoice that happens to share these dates as this period's
+                //   cadence invoice, returns it, and advances `next_run_on`
+                //   past a period nothing has billed - lost revenue, arrived at
+                //   through the guard meant to protect it. Same predicate as
+                //   the sibling guard, so the two cannot drift apart.
+                // - **Agreement.** A company can hold several, each billing its
+                //   own periods, and one agreement's cadence invoice says
+                //   nothing about another's. A row naming *no* agreement still
+                //   blocks: it cannot be attributed elsewhere, and that is the
+                //   fail-closed half this fix exists for.
                 $invoice = ClientInvoice::query()
                     ->where('workspace_id', $locked->workspace_id)
                     ->where('client_company_id', $locked->client_company_id)
@@ -54,7 +74,20 @@ final class BillingScheduleService
                     ->where(function (Builder $mineOrUnclaimed) use ($locked): void {
                         $mineOrUnclaimed
                             ->where('client_billing_schedule_id', $locked->id)
-                            ->orWhereNull('client_billing_schedule_id');
+                            ->orWhere(function (Builder $unclaimed) use ($locked): void {
+                                $unclaimed
+                                    ->whereNull('client_billing_schedule_id')
+                                    ->where(function (Builder $couldBlockACadencePeriod): void {
+                                        $couldBlockACadencePeriod
+                                            ->whereNull('invoice_kind')
+                                            ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
+                                    })
+                                    ->where(function (Builder $onThisAgreement) use ($locked): void {
+                                        $onThisAgreement
+                                            ->where('client_agreement_id', $locked->client_agreement_id)
+                                            ->orWhereNull('client_agreement_id');
+                                    });
+                            });
                     })
                     ->first();
 

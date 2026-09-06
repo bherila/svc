@@ -30,6 +30,26 @@ use Illuminate\Support\Facades\DB;
  * The same class applies to `cycle_start`/`cycle_end` (#141), reported in two
  * counts because they endanger two different things - see the funnel below.
  *
+ * ## Why `service_period_start` is counted apart from `service_period_end`
+ *
+ * The end boundary is the money one and owns the funnel below it: the overage
+ * ledger reads it, so a row missing it is measured all the way down to the
+ * hours at stake. The start boundary endangers something else - the duplicate
+ * guards. `BillingScheduleService::generateDue()` and
+ * `ClientInvoicingService::assertNoOverlappingInvoice()` both place an invoice
+ * by comparing its period, and a row stating an end but no start is invisible
+ * to them for exactly the reason everything else here exists: SQL compares a
+ * null to a date as UNKNOWN. What it costs is a whole duplicate invoice rather
+ * than a wrong number.
+ *
+ * Counted separately rather than folded into `withoutAServicePeriod`, because
+ * widening that would drag start-only rows into the overage funnel and
+ * overstate the money exposure - the same overcount this class already refuses
+ * to make for ad-hoc null-cycle rows. #219/#224 asked whether such rows exist
+ * in production and the audit could not answer: it only ever looked at the end
+ * boundary, so a zero there was read as evidence about a column it never
+ * examined.
+ *
  * ## Why this is a service and not just a console command
  *
  * The counting is the durable part. These are standing data-quality questions
@@ -68,6 +88,21 @@ final class UnplaceableInvoiceAuditor
         // from cancelling against the positive rows.
         $unplaceable = $this->invoices($workspace)->whereNull('service_period_end');
         $charged = (clone $unplaceable)->whereIn('status', InvoiceStatus::charged());
+
+        // The start boundary, on its own terms. `InvoiceKind::cycleGuardExclusions()`
+        // rather than `matchedByCycle()`: this is the population the *period*
+        // guards read, and they exclude the kinds that must not block a cadence
+        // invoice instead of naming the kinds they accept. A null kind is not
+        // representable in either list and is admitted here, as everywhere - a
+        // migrated invoice carries none and those guards still read it.
+        $noPeriodStart = $this->invoices($workspace)->whereNull('service_period_start');
+        $liveNoPeriodStart = (clone $noPeriodStart)
+            ->whereIn('status', InvoiceStatus::live())
+            ->where(function (Builder $readByAPeriodGuard): void {
+                $readByAPeriodGuard
+                    ->whereNull('invoice_kind')
+                    ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
+            });
         $onAgreement = $this->onAnAgreementInItsOwnWorkspace(clone $charged);
         $affected = (clone $onAgreement)->where('hours_billed_at_rate', '!=', 0);
 
@@ -107,6 +142,8 @@ final class UnplaceableInvoiceAuditor
         return new UnplaceableInvoiceCounts(
             invoices: $this->invoices($workspace)->count(),
             withoutAServicePeriod: $unplaceable->count(),
+            withoutAServicePeriodStart: $noPeriodStart->count(),
+            liveWithoutAServicePeriodStart: $liveNoPeriodStart->count(),
             chargedOfThose: $charged->count(),
             onAnAgreementOfThose: $onAgreement->count(),
             affected: $affected->count(),

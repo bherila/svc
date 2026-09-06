@@ -28,11 +28,29 @@ exists to find it.
 **`service_period_start` / `service_period_end` — no, not on a live invoice of a
 period-based kind.** A cadence-period or interim-overage invoice *is* a claim
 about a span; one that states no span cannot be told apart from any other, and
-the guards that place it are entitled to assume it. Production carries none:
-`billing_audit_unplaceable_invoices` reports `without_a_service_period: 0` of 29
-invoices, and `undated: 0` collectible. Nothing needs repairing, which is why
-this ships as a stated invariant and its guards rather than as a migration —
-there is no population to migrate.
+the guards that place it are entitled to assume it.
+
+**What the evidence covers, and what it did not.** For the **end** boundary,
+production carries none: `billing_audit_unplaceable_invoices` reports
+`without_a_service_period: 0` of 29 invoices, and `undated: 0` collectible.
+
+That number says nothing about the **start** boundary, and an earlier draft of
+this section cited it as though it did. `UnplaceableInvoiceAuditor` counted
+`whereNull('service_period_end')` and only that, so a live invoice stating an
+end and no start was legal in the schema, invisible to `generateDue()`'s
+start-date equality, and invisible to the audit that was supposed to rule it
+out — the same null-in-a-predicate class this whole section is about, reproduced
+in the instrument used to measure it. The audit now reports
+`without_a_service_period_start` and `live_without_a_service_period_start`
+beside it, the second narrowed to the statuses and kinds a period guard
+actually reads.
+
+So the claim here is deliberately split: **the end boundary is evidenced clean;
+the start boundary is now measurable and has not yet been measured against
+production**, because the count ships with this change and reaches the audit
+only on deploy. Run `svc:billing:audit-unplaceable-invoices` — or the MCP tool —
+afterwards. A non-zero `live_without_a_service_period_start` is a repair, not a
+guard change, and gets its own issue.
 
 An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
 a span, and no period guard asks about it.
@@ -59,6 +77,27 @@ decide **whose** invoice it is:
 The third case is why the fix is not simply "drop the schedule clause": that
 would trade a double-charge for lost revenue, and nothing else in the suite
 would have noticed.
+
+**"Unclaimed" is narrower than "null".** A null link is not by itself a claim on
+this period, and two further conditions keep the fail-closed arm from becoming
+an over-block:
+
+- **Kind.** `InvoiceKind::cycleGuardExclusions()` already says an interim or
+  ad-hoc invoice must not block a cadence one, and
+  `ClientInvoicingService::assertNoOverlappingInvoice()` honours it. Neither
+  kind carries a schedule either, so reading every null as unclaimed quietly
+  reversed that decision on the schedule path: an operator's ad-hoc invoice
+  sharing the dates was returned as though it were the cadence invoice, and
+  `next_run_on` advanced past a period nothing had billed. Both guards read the
+  same list, so they cannot drift apart.
+- **Agreement.** A company can hold several, each billing its own periods, and
+  `ClientInvoicingService` creates cadence invoices with an agreement and no
+  schedule — so an unlinked invoice for these dates may belong to a different
+  agreement entirely. One naming *no* agreement still blocks: there is nowhere
+  else to attribute it.
+
+Both over-blocks lose revenue silently, which is the failure mode this guard is
+least able to notice, so each has its own test.
 
 ## Regenerating Cadence Invoices
 
