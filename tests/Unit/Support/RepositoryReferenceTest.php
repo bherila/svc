@@ -43,8 +43,8 @@ final class RepositoryReferenceTest extends TestCase
         yield 'mixed case path' => ['https://github.com/Bherila/SVC'];
         yield 'surrounding whitespace' => ['  https://github.com/bherila/svc.git  '];
         yield 'query string' => ['https://github.com/bherila/svc.git?ref=main'];
-        // The drive-letter refusal is anchored. Unanchored it would fire on the
-        // `c:/` inside this query string and refuse a perfectly good remote.
+        // A drive letter inside a URL query is part of the query, not a path
+        // on this machine - the refusal below applies to the SCP form only.
         yield 'a drive letter inside a query string' => ['https://github.com/bherila/svc.git?path=c:/tmp'];
         yield 'fragment' => ['https://github.com/bherila/svc#readme'];
         yield 'doubled separators' => ['https://github.com//bherila//svc'];
@@ -97,6 +97,48 @@ final class RepositoryReferenceTest extends TestCase
         );
     }
 
+    /**
+     * `?` and `#` are literal in an SCP path, and only there.
+     *
+     * `GIT_TRACE=1 git ls-remote git@example.test:owner/repo#archive.git` shows
+     * Git invoking `git-upload-pack 'owner/repo#archive.git'` verbatim, so
+     * stripping from the `#` would key a different repository on that host -
+     * and could bill time to the wrong project. A URL fragment is genuinely not
+     * part of the identity, which is why the strip lives in that branch only.
+     */
+    public function test_query_and_fragment_characters_are_literal_in_an_scp_path(): void
+    {
+        $this->assertSame(
+            'example.test/owner/repo#archive',
+            RepositoryReference::normalize('git@example.test:owner/repo#archive.git'),
+        );
+        $this->assertSame(
+            'example.test/owner/repo?live',
+            RepositoryReference::normalize('git@example.test:owner/repo?live.git'),
+        );
+    }
+
+    /**
+     * An `@` in an SCP *path* is not user information.
+     *
+     * `git ls-remote example.test:owner@tenant/group/repo.git` invokes ssh on
+     * `example.test` with the path `owner@tenant/group/repo.git`. Stripping an
+     * optional `user@` before finding the host/path boundary consumed
+     * `example.test:owner@` and produced the unrelated key
+     * `tenant/group/repo` - a mapping pointing at someone else's project.
+     */
+    public function test_an_at_sign_in_an_scp_path_is_not_user_information(): void
+    {
+        $this->assertSame(
+            'example.test/owner@tenant/group/repo',
+            RepositoryReference::normalize('example.test:owner@tenant/group/repo.git'),
+        );
+        $this->assertSame(
+            'example.test/owner@tenant/group/repo',
+            RepositoryReference::normalize('git@example.test:owner@tenant/group/repo.git'),
+        );
+    }
+
     /** GitLab subgroups are deeper than three segments and are still one repository. */
     public function test_subgroups_are_preserved(): void
     {
@@ -135,16 +177,23 @@ final class RepositoryReferenceTest extends TestCase
         yield 'an underscore host' => ['git_hub.com/owner/name'];
         yield 'an empty host' => ['///owner/name'];
         yield 'a path with a space' => ['github.com/bherila/my svc'];
-        // A local remote names no server. The leading slash it reduces to is
-        // left in place precisely so the empty first segment fails the host
-        // check - trimming it would promote `srv` to a hostname and mint a key
-        // that means nothing to any other machine.
+        // A local remote names no server, whatever authority it carries.
+        // `git ls-remote file://localhost/tmp/x` runs `git-upload-pack '/tmp/x'`
+        // with no ssh at all - Git discards the authority, so storing
+        // `localhost/tmp/x` would key a path on one machine, and could collide
+        // with a real host of that name.
         yield 'a local file remote' => ['file:///srv/git/repo.git'];
+        yield 'a file remote with an authority' => ['file://localhost/tmp/repo.git'];
+        yield 'a file remote with a host-shaped authority' => ['FILE://example.test/tmp/repo.git'];
         yield 'a bare absolute path' => ['/srv/git/repo'];
         // A drive letter is not a hostname. Without the guard the SCP rewrite
         // reads the drive colon as the host separator and mints `c/srv/git/repo`.
         yield 'a windows drive path' => ['C:/srv/git/repo.git'];
         yield 'a windows drive path with backslashes' => ['C:\\srv\\git\\repo'];
+        // Drive-relative, with no slash after the colon. Git itself cannot tell
+        // this from an SCP remote on a one-letter host; neither can this, so it
+        // refuses rather than minting `c/srv/git`.
+        yield 'a drive-relative windows path' => ['C:srv/git'];
         // `host:owner/name` is relative to the login home and `host:/owner/name`
         // to the root - two repositories the canonical form cannot tell apart,
         // so it refuses rather than folding them onto one key.
