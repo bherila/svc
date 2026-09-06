@@ -448,6 +448,43 @@ final class ScheduleGenerationPreflightTest extends TestCase
     }
 
     /**
+     * Two rows that have each already billed the period conflict too, and that
+     * halt is wider than the defect that prompted this rule.
+     *
+     * Pinned separately because it is the one shape where "more than one exact
+     * claim refuses" changes an answer that was not itself dangerous: an
+     * earlier revision returned `AlreadyBilled` and advanced. Nobody is told to
+     * issue anything here, so the bad advice is not in play - but the client
+     * was billed twice, and advancing past it is how that stays invisible. A
+     * schedule carrying a historical duplicate therefore halts until someone
+     * voids one of the rows, which is a real cost and the reason the preflight
+     * exists to size it before deployment rather than after.
+     */
+    public function test_two_invoices_that_have_already_billed_the_period_halt_rather_than_advance(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduled('double-billed');
+
+        foreach ([$schedule->id, null] as $link) {
+            $this->invoice($workspace, $company, array_filter([
+                'client_billing_schedule_id' => $link,
+                'client_agreement_id' => $agreement->id,
+                'invoice_kind' => InvoiceKind::CadencePeriod->value,
+                'status' => InvoiceStatus::Issued->value,
+                'service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31',
+            ], static fn (mixed $value): bool => $value !== null));
+        }
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->refusalsByReason[PeriodRefusalReason::ConflictingExactClaims->value]);
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+
+        // And the cursor stays put, so nothing is billed on top of the two rows
+        // that already were.
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
      * A schedule whose backlog outruns the cap is inconclusive, never clean.
      *
      * This is the false green the cap creates if truncation is reported as a
