@@ -847,6 +847,214 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A periodless invoice whose known date proves it cannot reach this period.
+     *
+     * The unplaceable check used to be a sweep that never saw the period being
+     * billed: any live invoice of this schedule's missing a boundary halted it,
+     * whatever its other date said. So an invoice ending January 2024 with no
+     * start - which cannot reach August 2026 however early it began - refused
+     * August 2026 and every period after it. For a *paid* row that outage is
+     * permanent: it can be neither voided (`paid_amount > 0`) nor re-dated
+     * (`updateDraft()` rewrites no period column at any status).
+     *
+     * A missing boundary means unbounded in that direction, not unknowable. The
+     * interval still cannot overlap if a known boundary rules it out.
+     */
+    public function test_a_periodless_invoice_that_cannot_reach_this_period_does_not_halt_it(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Distant Periodless Workspace');
+
+        $ancient = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $ancient->forceFill([
+            'status' => InvoiceStatus::Paid->value,
+            'service_period_start' => null,
+            'service_period_end' => '2024-01-31',
+        ])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame('2026-08-01', $created[0]->service_period_start?->format('Y-m-d'));
+    }
+
+    /**
+     * The mirror: a known start after the period, during catch-up generation.
+     */
+    public function test_a_periodless_invoice_starting_after_this_period_does_not_halt_it(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Future Periodless Workspace');
+        $schedule->forceFill(['next_run_on' => '2024-01-01'])->save();
+
+        $future = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $future->forceFill(['service_period_start' => '2026-08-01', 'service_period_end' => null])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue(
+            $schedule->fresh(),
+            CarbonImmutable::parse('2024-01-15'),
+        );
+
+        $this->assertCount(1, $created);
+        $this->assertSame('2024-01-01', $created[0]->service_period_start?->format('Y-m-d'));
+    }
+
+    /**
+     * But one whose known date *does* reach this period still halts it.
+     *
+     * The counterpart, so the narrowing above is a narrowing and not a hole.
+     */
+    public function test_a_periodless_invoice_that_could_reach_this_period_still_halts_it(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Reaching Periodless Workspace');
+
+        $reaching = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $reaching->forceFill(['service_period_start' => null, 'service_period_end' => '2026-08-15'])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $reaching);
+    }
+
+    /**
+     * A null boundary must not smuggle a row past the lineage resolver.
+     *
+     * The sharpest form of the two-query seam. This row names the schedule's
+     * own agreement and a schedule id that does not resolve, so the complete
+     * candidate query could not see it (it has no period end) and the old
+     * unplaceable sweep could not either (its schedule id was not this
+     * schedule's, and not null). Both missed it, the resolver answered clear,
+     * and August was issued a second time. With a real period end the very same
+     * row refuses - so adding a null turned "unsafe, refuse" into "invisible,
+     * issue".
+     */
+    public function test_a_dangling_schedule_link_is_refused_even_with_no_period_end(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Seam Workspace');
+
+        $smuggled = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+        $smuggled->forceFill([
+            'status' => InvoiceStatus::Issued->value,
+            'client_billing_schedule_id' => $schedule->id + 1_000,
+            'service_period_end' => null,
+        ])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $smuggled);
+    }
+
+    /**
+     * Another schedule's periodless invoice is still not this one's problem.
+     *
+     * The narrowing that keeps the unified query from halting everyone:
+     * ownership is resolved for incomplete rows exactly as for complete ones,
+     * so a row belonging to a resolvable other schedule is cleared rather than
+     * swept up by a simpler "mine or unlinked" test.
+     */
+    public function test_another_schedules_periodless_invoice_does_not_halt_this_one(): void
+    {
+        [$workspace, $company, , $schedule] = $this->scheduledClient('Sibling Periodless Workspace');
+        $otherAgreement = $this->agreementFor($workspace, $company, 'Second');
+        $otherSchedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'client_agreement_id' => $otherAgreement->id, 'cadence' => 'monthly',
+            'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD', 'line_template' => [$this->line()],
+        ]);
+
+        $theirs = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $otherAgreement->id,
+            'client_billing_schedule_id' => $otherSchedule->id,
+        ]);
+        $theirs->forceFill(['service_period_end' => null])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($schedule->id, $created[0]->client_billing_schedule_id);
+    }
+
+    /**
+     * A status this application does not recognise refuses, never clears.
+     *
+     * `status` is a varchar, and the vocabulary already fails closed on values
+     * it cannot read - `InvoiceStatus::isSettledValue()` and `hasChargedValue()`
+     * both answer *yes* to an unknown one, because a status this code cannot
+     * read is one it cannot show is safe to act on. Asking instead whether a
+     * status is absent from `live()` put every unknown value on the same path
+     * as `void`: the overlap cleared, and a second invoice was issued beside a
+     * row that may well have charged the client.
+     */
+    public function test_an_unrecognised_status_refuses_rather_than_clearing(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Unknown Status Workspace');
+
+        $strange = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+            'service_period_start' => '2026-07-01',
+        ]);
+        $strange->forceFill(['status' => 'awaiting_dispute_resolution'])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $strange);
+    }
+
+    /**
+     * And the same when the unknown status is on a row with no period end.
+     */
+    public function test_an_unrecognised_status_refuses_with_no_period_end_too(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Unknown Periodless Workspace');
+
+        $strange = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $strange->forceFill(['status' => 'awaiting_dispute_resolution', 'service_period_end' => null])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $strange);
+    }
+
+    /**
+     * Voiding works as the way out even when the row's lineage is broken.
+     *
+     * The void clearance has to be reached *before* the lineage refusals or it
+     * is not an escape hatch: a voided, non-exact row with a dangling schedule
+     * id refused at lineage resolution and never arrived at the branch that
+     * clears it, so voiding - the remedy
+     * `ClientInvoicingService::assertNoOverlappingInvoice()` tells operators to
+     * use - did nothing. A known void that does not cover exactly this period
+     * charged nobody and cannot collide with the tuple about to be written, so
+     * whose it is never needs establishing.
+     */
+    public function test_a_voided_overlap_clears_even_with_dangling_lineage(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Voided Dangling Workspace');
+
+        $wide = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+            'service_period_start' => '2026-07-01',
+        ]);
+        $wide->forceFill([
+            'status' => InvoiceStatus::Void->value,
+            'client_billing_schedule_id' => $schedule->id + 1_000,
+        ])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame('2026-08-01', $created[0]->service_period_start?->format('Y-m-d'));
+    }
+
+    /**
      * An invoice of this schedule's with no period end halts it, loudly.
      *
      * This is the null-in-a-predicate class turned on the guard itself. Such a
@@ -873,6 +1081,125 @@ class BillingWorkflowTest extends TestCase
         $unplaceable->forceFill(['service_period_end' => null])->save();
 
         $this->assertRefusedAndUnchanged($schedule, $unplaceable);
+    }
+
+    /**
+     * Consecutive periods touch and never overlap, for every cadence and every
+     * awkward start date.
+     *
+     * This is the property the overlap guard rests on. The guard used to
+     * compare both boundaries for equality, so a period that overlapped its own
+     * predecessor by a day was simply billed again; now an overlap *refuses*,
+     * which turns any adjacency bug in `period()` from a silent double-charge
+     * into a schedule that halts on its second run and never recovers. The
+     * arithmetic is `addMonthsNoOverflow()` and the end is `$next->subDay()`,
+     * so adjacency holds by construction - but "by construction" is exactly
+     * what a month-arithmetic change quietly breaks, and nothing else here
+     * would notice.
+     *
+     * Driven through `generateDue()` rather than the private `period()`,
+     * because the claim being pinned is about the invoices that actually get
+     * written: the run generating without refusing *is* half the assertion.
+     * Start dates are the ones where naive month arithmetic goes wrong - the
+     * 31st into a short month, February 29th, a non-leap February 28th, and a
+     * year boundary.
+     */
+    public function test_consecutive_periods_are_adjacent_for_every_cadence_and_awkward_start(): void
+    {
+        $starts = ['2024-01-31', '2024-02-29', '2023-02-28', '2024-08-31', '2024-12-31', '2024-01-01'];
+        $cadences = ['monthly' => 1, 'quarterly' => 3, 'semi_annual' => 6, 'annual' => 12];
+
+        foreach ($cadences as $cadence => $months) {
+            foreach ($starts as $start) {
+                [, $workspace, $company] = $this->tenant("Adjacency {$cadence} {$start}");
+                $agreement = $this->agreementFor($workspace, $company, 'Adjacency');
+                $schedule = ClientBillingSchedule::query()->create([
+                    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                    'client_agreement_id' => $agreement->id, 'cadence' => $cadence, 'next_run_on' => $start,
+                    'due_days' => 14, 'currency' => 'USD', 'line_template' => [$this->line()],
+                ]);
+
+                // Far enough past the start to force several consecutive
+                // periods out of one run, whatever the cadence.
+                $through = CarbonImmutable::parse($start)->addMonthsNoOverflow($months * 4);
+                $invoices = app(BillingScheduleService::class)->generateDue($schedule, $through);
+
+                $this->assertGreaterThanOrEqual(4, count($invoices), "{$cadence} from {$start} generated too few periods");
+
+                $previousEnd = null;
+                foreach ($invoices as $invoice) {
+                    $periodStart = CarbonImmutable::parse((string) $invoice->service_period_start);
+                    $periodEnd = CarbonImmutable::parse((string) $invoice->service_period_end);
+
+                    $this->assertTrue(
+                        $periodStart->lte($periodEnd),
+                        "{$cadence} from {$start}: period {$periodStart->toDateString()}..{$periodEnd->toDateString()} ends before it begins",
+                    );
+
+                    if ($previousEnd instanceof CarbonImmutable) {
+                        // No gap: a day belonging to no period is a day nobody
+                        // is billed for.
+                        $this->assertTrue(
+                            $previousEnd->addDay()->isSameDay($periodStart),
+                            "{$cadence} from {$start}: {$previousEnd->toDateString()} is not the day before {$periodStart->toDateString()}",
+                        );
+
+                        // And no overlap, which the guard would now refuse.
+                        $this->assertTrue(
+                            $previousEnd->lt($periodStart),
+                            "{$cadence} from {$start}: {$previousEnd->toDateString()} overlaps {$periodStart->toDateString()}",
+                        );
+                    }
+
+                    $previousEnd = $periodEnd;
+                }
+            }
+        }
+    }
+
+    /**
+     * A draft covering exactly this period counts as billed, and the cursor
+     * moves past it.
+     *
+     * Pinned because it is a *choice*, not a consequence, and the alternative
+     * is defensible enough that nobody should have to re-derive which one is in
+     * force. The draft is returned to the caller as though the run had just
+     * created it, and `next_run_on` advances - so discarding that draft
+     * afterwards leaves the period unbilled with the cursor already past it,
+     * and only a rewind will bill it.
+     *
+     * It is still the right answer. A draft for exactly this period is a period
+     * this schedule has already been asked to bill; regenerating would write
+     * the same `(schedule, start, end)` tuple and collide with
+     * `billing_schedule_service_period_unique` anyway, and refusing instead
+     * would halt every schedule whose last run left a draft behind - which is
+     * the ordinary state of a schedule between generation and issue, not an
+     * anomaly. The exposure is bounded by discarding a draft being an operator
+     * action, and #251 tracks the issue-time invariant that would narrow it
+     * further.
+     */
+    public function test_this_schedules_own_draft_for_the_period_counts_as_billed_and_advances_the_cursor(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Pending Draft Workspace');
+
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $this->assertSame('draft', $draft->status);
+
+        $created = app(BillingScheduleService::class)
+            ->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        // Returned as though the run had produced it, and still a draft - the
+        // schedule does not issue somebody else's work in passing.
+        $this->assertCount(1, $created);
+        $this->assertSame($draft->id, $created[0]->id);
+        $this->assertSame('draft', $created[0]->fresh()?->status);
+
+        // Nothing new, and the cursor is past August.
+        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     /**

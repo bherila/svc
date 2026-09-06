@@ -47,6 +47,10 @@ use Illuminate\Support\Facades\DB;
  * unlinked rows, because that is what the guard itself does - see the comment
  * on it below.
  *
+ * It is a *repair ceiling*: rows worth giving a period to, not rows that would
+ * halt a run. {@see ScheduleRefusalAuditor} is the resolver-aligned count and
+ * the one a deployment gates on.
+ *
  * Counted separately rather than folded into `withoutAServicePeriod`, because
  * widening that would drag start-only rows into the overage funnel and
  * overstate the money exposure - the same overcount this class already refuses
@@ -128,9 +132,16 @@ final class UnplaceableInvoiceAuditor
         //
         // `assertNoOverlappingInvoice()` *is* scoped to `live()`, so this
         // over-reports for that one guard. That is the safe direction for an
-        // audit: it is a ceiling on the affected population, and a count that
-        // hides a real exposure is worse than one that names a row already
-        // harmless.
+        // audit: it is a *repair ceiling* on the affected population, and a
+        // count that hides a real exposure is worse than one that names a row
+        // already harmless.
+        //
+        // Which is also why this is not the number to gate a deployment on.
+        // "Worth investigating" and "would stop a schedule generating" are
+        // different questions with different answers - a voided row is counted
+        // here and cleared by the resolver - and one number cannot be both
+        // without being wrong as whichever one it is not.
+        // `ScheduleRefusalAuditor` answers the second.
         $noPeriodStart = $this->invoices($workspace)->whereNull('service_period_start');
         $unplaceablePeriod = $this->invoices($workspace)->where(function (Builder $missing): void {
             $missing->whereNull('service_period_start')->orWhereNull('service_period_end');

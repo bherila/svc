@@ -64,7 +64,22 @@ use Illuminate\Support\Collection;
  * double-charges the shared days, skipping loses the days the other invoice
  * does not cover - so it is refused.
  *
- * ## Status is read in one place, and only to keep a refusal escapable
+ * ## One query, so there is no seam to fall through
+ *
+ * Complete and incomplete periods are fetched together, and a missing boundary
+ * is read as unbounded in that direction. Two queries with two ownership tests
+ * is what this replaced, and the join between them was a hole in exactly the
+ * shape everything here exists to close - see `possiblyOverlapping()`.
+ *
+ * ## Status is read where it changes the answer, and never guessed
+ *
+ * An unrecognised status refuses. The column is a varchar, and
+ * `InvoiceStatus::isSettledValue()` and `hasChargedValue()` both answer *yes*
+ * to a value they do not know, for the reason that applies here too: a status
+ * this code cannot read is one it cannot show has charged nobody. Asking
+ * instead whether the status is absent from `live()` puts every unknown value
+ * on the same path as `void`, which is the one reading that is unsafe in both
+ * directions at once.
  *
  * A voided invoice covering *exactly* this period still blocks it, whatever its
  * status: voiding a cadence invoice is the documented way to waive its own
@@ -72,8 +87,9 @@ use Illuminate\Support\Collection;
  * `(client_billing_schedule_id, service_period_start, service_period_end)` and
  * collide with the unique index anyway.
  *
- * The two *refusals* are scoped to `InvoiceStatus::live()`, because a refusal
- * has to have a way out and for a voided row there was none.
+ * A *known* void that does not cover exactly this period is cleared before
+ * ownership is resolved at all, because a refusal has to have a way out and for
+ * a voided row there was none.
  * `InvoiceLifecycleService::updateDraft()` accepts nothing but a `draft`, so a
  * voided invoice cannot be re-keyed or given a period in the application at
  * all - a refusal on one would halt the schedule on every run with a database
@@ -84,11 +100,14 @@ use Illuminate\Support\Collection;
  * these cases either: it is about not reselling *the same* cycle, and neither a
  * differently-dated span nor a row with no period is that.
  *
- * `UnplaceableInvoiceAuditor` still counts every status, deliberately. It
- * reports what a guard *reads*, and the exact-match block reads them all: a
- * voided invoice with a complete period blocks, while the same row missing a
- * boundary does not, so the period its void was meant to waive gets billed
- * again. That is a repair worth surfacing whether or not it halts a run.
+ * `UnplaceableInvoiceAuditor` still counts every status, deliberately, and is a
+ * *repair ceiling* rather than a mirror of what refuses here. It reports rows
+ * worth investigating - including voided ones this resolver clears, and
+ * schedule-linked ones whose link may not resolve - because the exact-match
+ * block does read every status: a voided invoice with a complete period blocks
+ * its period, while the same row missing a boundary does not, so the period its
+ * void was meant to waive gets billed again. How many rows would actually stop
+ * a run is a different question, and a different count.
  */
 final class BillingPeriodCollisionResolver
 {
@@ -103,20 +122,7 @@ final class BillingPeriodCollisionResolver
      */
     public function resolve(ClientBillingSchedule $schedule, CarbonImmutable $start, CarbonImmutable $end): PeriodClaim
     {
-        $unplaceable = $this->anUnplaceableInvoiceOfMine($schedule);
-        if ($unplaceable instanceof ClientInvoice) {
-            return PeriodClaim::refused(sprintf(
-                'Invoice %s belongs to this billing schedule or its agreement but states no complete service period, '
-                .'so no date comparison can tell whether it covers %s to %s. A period guard cannot see it and the '
-                .'unique index does not constrain the missing date, so billing this period could duplicate it. '
-                .'Give that invoice a service period start and end before billing.',
-                $unplaceable->invoice_number,
-                $start->toDateString(),
-                $end->toDateString(),
-            ));
-        }
-
-        $candidates = $this->overlapping($schedule, $start, $end);
+        $candidates = $this->possiblyOverlapping($schedule, $start, $end);
         if ($candidates->isEmpty()) {
             return PeriodClaim::clear();
         }
@@ -157,8 +163,23 @@ final class BillingPeriodCollisionResolver
     ): PeriodClaim {
         $scheduleId = $candidate->client_billing_schedule_id;
         $agreementId = $candidate->client_agreement_id;
+        $status = InvoiceStatus::tryFrom((string) $candidate->status);
+        $coversExactly = $candidate->service_period_start?->isSameDay($start) === true
+            && $candidate->service_period_end?->isSameDay($end) === true;
 
-        // Kind first, and only for unlinked rows. `cycleGuardExclusions()` says
+        // A known void that does not cover exactly this period is irrelevant
+        // before anything else is asked of it. It charged nobody, it cannot
+        // stand in for this period, and its tuple cannot collide with the one
+        // about to be written - so none of the refusals below need to establish
+        // whose it is. Reached before them deliberately: a voided row with
+        // dangling lineage used to refuse at the lineage check and never arrive
+        // at the branch that clears it, which made voiding useless as the way
+        // out that `assertNoOverlappingInvoice()` tells operators to take.
+        if ($status === InvoiceStatus::Void && ! $coversExactly) {
+            return PeriodClaim::clear();
+        }
+
+        // Kind first among the ownership questions, and only for unlinked rows. `cycleGuardExclusions()` says
         // an interim or ad-hoc invoice must never block a cadence one, and that
         // exemption has to be reached before the lineage refusals below or it
         // is not an exemption: an ad-hoc invoice whose `client_agreement_id`
@@ -173,6 +194,18 @@ final class BillingPeriodCollisionResolver
         if ($scheduleId === null
             && $candidate->invoice_kind !== null
             && in_array($candidate->invoice_kind, InvoiceKind::cycleGuardExclusions(), true)) {
+            return PeriodClaim::clear();
+        }
+
+        // No date and no lineage is no evidence at all: nothing ties the row to
+        // this period and nothing ties it to this schedule. Refusing on one
+        // would halt every schedule the client has over a row that may belong
+        // to none of them. `UnplaceableInvoiceAuditor` reports it for repair
+        // instead.
+        if ($candidate->service_period_start === null
+            && $candidate->service_period_end === null
+            && $scheduleId === null
+            && $agreementId === null) {
             return PeriodClaim::clear();
         }
 
@@ -210,7 +243,7 @@ final class BillingPeriodCollisionResolver
             // this schedule actually produced is still this schedule's, and a
             // second cadence invoice for the period it names would collide with
             // the unique index.
-            return $this->mine($candidate, $start, $end);
+            return $this->mine($candidate, $status, $coversExactly, $start, $end);
         }
 
         if ($scheduleId !== null) {
@@ -232,7 +265,7 @@ final class BillingPeriodCollisionResolver
             // agreement and no schedule, so this is the ordinary shape of a
             // cadence invoice that did not come from a schedule.
             return $agreementId === $schedule->client_agreement_id
-                ? $this->mine($candidate, $start, $end)
+                ? $this->mine($candidate, $status, $coversExactly, $start, $end)
                 : PeriodClaim::clear();
         }
 
@@ -256,56 +289,113 @@ final class BillingPeriodCollisionResolver
             ));
         }
 
-        return $this->mine($candidate, $start, $end);
+        return $this->mine($candidate, $status, $coversExactly, $start, $end);
     }
 
     /**
      * An invoice established as this schedule's: billed if it covers exactly
      * this period, refused if it covers only part of it.
      */
-    private function mine(ClientInvoice $candidate, CarbonImmutable $start, CarbonImmutable $end): PeriodClaim
-    {
-        $coversExactly = $candidate->service_period_start?->isSameDay($start) === true
-            && $candidate->service_period_end?->isSameDay($end) === true;
+    /**
+     * An invoice established as this schedule's.
+     *
+     * Exactly this period, and it is billed. Anything else here is a row that
+     * could cover part of this period and cannot be shown to cover all of it,
+     * which is neither answer: billing charges the shared days twice, skipping
+     * leaves the rest unbilled.
+     */
+    private function mine(
+        ClientInvoice $candidate,
+        ?InvoiceStatus $status,
+        bool $coversExactly,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+    ): PeriodClaim {
+        // Fail closed on a status this code does not recognise, exactly as
+        // `InvoiceStatus::isSettledValue()` and `hasChargedValue()` do. The
+        // column is a varchar; an unknown value cannot be shown to have charged
+        // nobody, and reading it as "not live, therefore ignorable" is the one
+        // reading that is unsafe in both directions - it would skip a period
+        // that was never billed, or bill one that already was.
+        if ($status === null) {
+            return PeriodClaim::refused(sprintf(
+                'Invoice %s overlaps %s to %s and carries the status "%s", which this application does not '
+                .'recognise, so whether it has already charged this client cannot be established. Classify or '
+                .'correct that status before billing this period.',
+                $candidate->invoice_number,
+                $start->toDateString(),
+                $end->toDateString(),
+                (string) $candidate->status,
+            ));
+        }
 
         if ($coversExactly) {
-            // Any status, including void. Voiding a cadence invoice is the
-            // documented way to waive its period, and regenerating one would
-            // write the same
+            // Any known status, void included. Voiding a cadence invoice is the
+            // documented way to waive its own period, and regenerating one
+            // would write the same
             // `(client_billing_schedule_id, service_period_start, service_period_end)`
             // and collide with the unique index anyway.
             return PeriodClaim::alreadyBilled($candidate);
         }
 
-        // A partial overlap is the one place status has to be read, and the
-        // reason is that the refusal below would otherwise have no way out. A
-        // voided invoice charged nobody, so it cannot stand in for this period;
-        // and `updateDraft()` refuses any status but `draft`, so a *voided*
-        // invoice cannot be re-keyed in the application at all. Refusing on one
-        // would halt the schedule on every run with the only remedy a database
-        // edit - while telling the operator to do something the application
-        // forbids, and contradicting
-        // `ClientInvoicingService::assertNoOverlappingInvoice()`, whose own
-        // error tells them to void the existing invoice first.
-        //
-        // So voiding is a real remedy here, as that message promises. The
-        // waiver argument does not reach this case either: it is about not
-        // reselling *the same* cycle, and this row names a different span.
-        if (! in_array((string) $candidate->status, InvoiceStatus::live(), true)) {
-            return PeriodClaim::clear();
+        // A row that cannot be placed at all. Its known boundary was close
+        // enough to this period for the query to return it, and the missing one
+        // is what stops any comparison settling whether it covers this period.
+        if ($candidate->service_period_start === null || $candidate->service_period_end === null) {
+            return PeriodClaim::refused(sprintf(
+                'Invoice %s belongs to this billing schedule or its agreement, states only %s, and could cover the '
+                .'period %s to %s being billed now. No date comparison can settle whether it does, and the unique '
+                .'index does not constrain the missing date, so billing this period could duplicate it. %s',
+                $candidate->invoice_number,
+                $candidate->service_period_start === null
+                    ? 'a period end of '.($candidate->service_period_end?->toDateString() ?? '?')
+                    : 'a period start of '.$candidate->service_period_start->toDateString(),
+                $start->toDateString(),
+                $end->toDateString(),
+                $this->remedy($status),
+            ));
         }
 
+        // A known void never reaches here - it is cleared before ownership is
+        // even resolved, so that voiding remains the way out
+        // `ClientInvoicingService::assertNoOverlappingInvoice()` tells operators
+        // to take.
         return PeriodClaim::refused(sprintf(
             'Invoice %s covers %s to %s, which overlaps the period %s to %s being billed now without matching it. '
             .'Billing anyway would charge the shared days twice and skipping would leave the rest of the period '
-            .'unbilled, so neither is done. Re-key that invoice while it is still a draft, void it, or line the '
-            .'schedule cadence up with it.',
+            .'unbilled, so neither is done. %s',
             $candidate->invoice_number,
-            $candidate->service_period_start?->toDateString() ?? '?',
-            $candidate->service_period_end?->toDateString() ?? '?',
+            $candidate->service_period_start->toDateString(),
+            $candidate->service_period_end->toDateString(),
             $start->toDateString(),
             $end->toDateString(),
+            $this->remedy($status),
         ));
+    }
+
+    /**
+     * What an operator can actually do about the offending invoice.
+     *
+     * Status-specific because the application's repair surface is, and an
+     * earlier revision of these messages advised a repair it forbids:
+     * `InvoiceLifecycleService::updateDraft()` rewrites currency, due date,
+     * notes and lines only - never a service period and never a lineage
+     * column - so "re-key that invoice" was never possible from the
+     * application, at any status. `void()` refuses once `paid_amount` is
+     * positive, so it is not available to a partially paid or paid row either.
+     */
+    private function remedy(InvoiceStatus $status): string
+    {
+        return match ($status) {
+            InvoiceStatus::Draft => 'Discard that draft, and the schedule will raise a correctly dated replacement.',
+            InvoiceStatus::Issued => 'Void that invoice, and the schedule will raise a correctly dated replacement.',
+            InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid => 'Money has already been taken against that invoice, '
+                .'so it can be neither voided nor re-dated here. It needs a financial correction first.',
+            // Cleared long before this for a non-exact overlap, and returned as
+            // already billed for an exact one. Present so the match stays
+            // exhaustive if the vocabulary grows.
+            InvoiceStatus::Void => 'That invoice is void and should not have reached this refusal; please report it.',
+        };
     }
 
     /**
@@ -357,62 +447,49 @@ final class BillingPeriodCollisionResolver
     }
 
     /**
-     * An invoice this schedule or its agreement owns that states no complete
-     * period, and which no date comparison can therefore place.
+     * Invoices for this client whose period could overlap the one being billed.
      *
-     * Scoped to rows demonstrably this schedule's. A row naming *neither* owner
-     * and stating no period is not evidence of anything - there is no date to
-     * tie it to this period and no lineage to tie it to this schedule - and
-     * refusing on it would halt billing for every schedule the client has on
-     * the strength of a row that may belong to none of them. That row is
-     * reported by {@see UnplaceableInvoiceAuditor} for a person to repair
-     * instead.
-     */
-    private function anUnplaceableInvoiceOfMine(ClientBillingSchedule $schedule): ?ClientInvoice
-    {
-        return ClientInvoice::query()
-            ->where('workspace_id', $schedule->workspace_id)
-            ->where('client_company_id', $schedule->client_company_id)
-            ->whereIn('status', InvoiceStatus::live())
-            ->where(function (Builder $missing): void {
-                $missing->whereNull('service_period_start')->orWhereNull('service_period_end');
-            })
-            ->where(function (Builder $mine) use ($schedule): void {
-                $mine
-                    ->where('client_billing_schedule_id', $schedule->id)
-                    ->orWhere(function (Builder $unlinked) use ($schedule): void {
-                        $unlinked
-                            ->whereNull('client_billing_schedule_id')
-                            ->where(function (Builder $kind): void {
-                                $kind
-                                    ->whereNull('invoice_kind')
-                                    ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
-                            })
-                            ->where('client_agreement_id', $schedule->client_agreement_id);
-                    });
-            })
-            ->orderBy('id')
-            ->first();
-    }
-
-    /**
-     * Invoices for this client whose period overlaps the one being billed.
+     * One query, covering complete and incomplete periods alike, and that is
+     * the point rather than a tidying. There used to be two - an inclusive
+     * overlap over rows with both boundaries, and a separate sweep for rows of
+     * this schedule's missing one - and the seam between them was a hole. The
+     * incomplete sweep carried its own, simpler ownership test, so a row with a
+     * dangling schedule id and a null boundary fell out of both: the overlap
+     * query required two dates, the sweep required the id to be this schedule's
+     * or null. The resolver answered `Clear` and the schedule issued a second
+     * invoice - the original defect, rebuilt at the join between two queries.
+     * Adding a null to one date turned "unsafe, refuse" into "invisible,
+     * issue".
      *
-     * Inclusive on both ends, matching `assertNoOverlappingInvoice()`: a strict
-     * comparison lets a new period start on an existing invoice's last billed
-     * day, so that day would belong to two invoices.
+     * A missing boundary is treated as unbounded in that direction, which is
+     * what it means: an invoice stating an end and no start could have begun at
+     * any time before it. So the interval overlaps unless a *known* boundary
+     * rules it out.
+     *
+     * That last part is why this takes the period at all. The old sweep did
+     * not, so a paid invoice ending in January 2024 with no start halted August
+     * 2026 and every period after it, even though its known end proves it
+     * cannot reach them - and a paid row can be neither voided nor re-dated,
+     * making the outage permanent without a database edit. Only an interval
+     * that could actually reach this period is allowed to stop it.
      *
      * @return Collection<int, ClientInvoice>
      */
-    private function overlapping(ClientBillingSchedule $schedule, CarbonImmutable $start, CarbonImmutable $end): Collection
+    private function possiblyOverlapping(ClientBillingSchedule $schedule, CarbonImmutable $start, CarbonImmutable $end): Collection
     {
         return ClientInvoice::query()
             ->where('workspace_id', $schedule->workspace_id)
             ->where('client_company_id', $schedule->client_company_id)
-            ->whereNotNull('service_period_start')
-            ->whereNotNull('service_period_end')
-            ->where('service_period_start', '<=', $end->toDateString())
-            ->where('service_period_end', '>=', $start->toDateString())
+            ->where(function (Builder $startSide) use ($end): void {
+                $startSide
+                    ->whereNull('service_period_start')
+                    ->orWhere('service_period_start', '<=', $end->toDateString());
+            })
+            ->where(function (Builder $endSide) use ($start): void {
+                $endSide
+                    ->whereNull('service_period_end')
+                    ->orWhere('service_period_end', '>=', $start->toDateString());
+            })
             ->orderBy('id')
             ->get();
     }
