@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\NormalizableRepository;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateClientProjectRequest extends FormRequest
@@ -11,7 +13,7 @@ class UpdateClientProjectRequest extends FormRequest
         return true;
     }
 
-    /** @return array<string, list<string>> */
+    /** @return array<string, list<string|ValidationRule>> */
     public function rules(): array
     {
         return [
@@ -21,6 +23,11 @@ class UpdateClientProjectRequest extends FormRequest
             // that an absent key means one. Without `present` a PATCH that only
             // meant to rename the project erased its description.
             'description' => ['present', 'nullable', 'string', 'max:5000'],
+            // Present for the same reason as the description above: without
+            // it, a PATCH that only meant to rename the project would unmap it
+            // from its repository, and the operator would find out the next
+            // time an agent asked them which project this checkout was.
+            'repository' => ['present', 'nullable', 'string', 'max:255', new NormalizableRepository],
             'status' => ['required', 'string', 'in:active,archived'],
             // Narrowing what a client sees is a disclosure decision, so it is
             // always sent rather than defaulted - an omitted checkbox must not

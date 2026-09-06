@@ -9,6 +9,7 @@ use App\Models\ClientProject;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Concurrency\Locks;
+use App\Support\RepositoryReference;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -29,6 +30,9 @@ class ClientProjectController extends Controller
             'workspace_id' => $workspace->id,
             'name' => $request->string('name')->toString(),
             'description' => $request->validated('description'),
+            // Stored canonical, never as typed: the operator pastes whatever
+            // their checkout printed, and only one spelling of it can match.
+            'repository' => RepositoryReference::normalize($request->validated('repository')),
             'is_visible_to_client' => $request->boolean('is_visible_to_client', true),
         ]);
 
@@ -97,6 +101,7 @@ class ClientProjectController extends Controller
             $locked->update([
                 'name' => $request->string('name')->toString(),
                 'description' => $request->validated('description'),
+                'repository' => RepositoryReference::normalize($request->validated('repository')),
                 'status' => $request->string('status')->toString(),
                 'is_visible_to_client' => $request->boolean('is_visible_to_client'),
             ]);

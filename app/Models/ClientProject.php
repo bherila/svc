@@ -26,11 +26,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $client_company_id
  * @property string $name
  * @property string|null $description
+ * @property string|null $repository
  * @property string $status
  * @property bool $is_visible_to_client
  * @property int $lock_version
  */
-#[Fillable(['workspace_id', 'client_company_id', 'name', 'description', 'status', 'is_visible_to_client'])]
+#[Fillable(['workspace_id', 'client_company_id', 'name', 'description', 'repository', 'status', 'is_visible_to_client'])]
 #[Hidden(['id', 'workspace_id', 'client_company_id'])]
 class ClientProject extends Model implements WorkspaceOwned
 {

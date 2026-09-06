@@ -24,6 +24,8 @@ type ManagedProject = {
     id: string;
     name: string;
     description: string | null;
+    /** Canonical `host/owner/name`, or null when nobody has mapped it. */
+    repository: string | null;
     status: string;
     is_visible_to_client: boolean;
     lock_version: number;
@@ -242,6 +244,7 @@ function ProjectForm({
     const form = useForm({
         name: project.name,
         description: project.description ?? '',
+        repository: project.repository ?? '',
         status: project.status,
         is_visible_to_client: project.is_visible_to_client,
         // Round-tripped unchanged. The server compares it to the row's current
@@ -283,6 +286,29 @@ function ProjectForm({
                 placeholder="No description"
                 rows={2}
             />
+
+            {/*
+                The repository this project's work happens in. Typed once here
+                so an agent in that checkout can resolve it without asking, and
+                stored canonically - paste whatever `git remote get-url origin`
+                printed and the server reduces it to one spelling.
+            */}
+            <div className="grid grid-cols-1 gap-1">
+                <Label htmlFor={`repository-${project.id}`}>Repository</Label>
+                <Input
+                    id={`repository-${project.id}`}
+                    value={form.data.repository}
+                    onChange={(event) =>
+                        form.setData('repository', event.target.value)
+                    }
+                    placeholder="github.com/owner/name"
+                />
+                {form.errors.repository ? (
+                    <p role="alert" className="text-sm text-destructive">
+                        {form.errors.repository}
+                    </p>
+                ) : null}
+            </div>
 
             {/*
                 A refused save has to say so. The conflict case is the reason
@@ -411,7 +437,12 @@ export default function ClientManage({
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
-                <h1 className="text-2xl font-semibold tracking-tight">
+                {/*
+                    Same treatment as the heading on client Home, and for the
+                    same reason: this one interpolates a client name, and a
+                    registered company name is routinely one unbroken run.
+                */}
+                <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                     {company.name} settings
                 </h1>
                 <Card>
