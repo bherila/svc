@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 final class BillingScheduleService
@@ -27,10 +28,34 @@ final class BillingScheduleService
             $template = $this->normalizedTemplate($locked->getAttribute('line_template'));
             while ($nextRun->lte($through)) {
                 [$start, $end, $next] = $this->period($nextRun, (string) $locked->cadence);
+                // Matched on the tenant and the period first, and on the
+                // schedule link only to decide whose invoice it is.
+                //
+                // `client_billing_schedule_id` is legitimately null - a cadence
+                // invoice created through `ClientInvoicingService` never sets
+                // it, and an ad-hoc one has no schedule to name - so asking
+                // `where('client_billing_schedule_id', $locked->id)` alone made
+                // an unlinked invoice for exactly this period invisible: SQL
+                // compares a null to a value as UNKNOWN, the schedule concluded
+                // the period was unbilled, and raised - and issued - a second
+                // invoice for it. The unique index does not save this either,
+                // because a unique index does not constrain a null.
+                //
+                // So an invoice that does not say which schedule made it now
+                // blocks, which is the fail-closed reading. An invoice that
+                // names a *different* schedule does not: that is another
+                // schedule's period and blocking on it would lose revenue
+                // rather than protect it.
                 $invoice = ClientInvoice::query()
-                    ->where('client_billing_schedule_id', $locked->id)
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->where('client_company_id', $locked->client_company_id)
                     ->whereDate('service_period_start', $start)
                     ->whereDate('service_period_end', $end)
+                    ->where(function (Builder $mineOrUnclaimed) use ($locked): void {
+                        $mineOrUnclaimed
+                            ->where('client_billing_schedule_id', $locked->id)
+                            ->orWhereNull('client_billing_schedule_id');
+                    })
                     ->first();
 
                 if ($invoice === null) {

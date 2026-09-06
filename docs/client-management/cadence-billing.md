@@ -18,6 +18,48 @@ The invoice **number** (`PREFIX-YYYYMM-NNN`) follows a single rule regardless of
 
 For interim overage invoices, `period_start` / `period_end` describe the completed monthly slice being billed, while `cycle_start` / `cycle_end` identify the parent non-monthly work cycle that will be reconciled by the next cadence-period invoice.
 
+### May these columns be null on a live invoice?
+
+Asked and answered by #224, because three duplicate-invoice guards read them
+through SQL equality and SQL compares a null to a value as UNKNOWN — so a null
+does not merely mean "unknown", it silently removes the row from the guard that
+exists to find it.
+
+**`service_period_start` / `service_period_end` — no, not on a live invoice of a
+period-based kind.** A cadence-period or interim-overage invoice *is* a claim
+about a span; one that states no span cannot be told apart from any other, and
+the guards that place it are entitled to assume it. Production carries none:
+`billing_audit_unplaceable_invoices` reports `without_a_service_period: 0` of 29
+invoices, and `undated: 0` collectible. Nothing needs repairing, which is why
+this ships as a stated invariant and its guards rather than as a migration —
+there is no population to migrate.
+
+An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
+a span, and no period guard asks about it.
+
+**`client_billing_schedule_id` — yes, and it always will be.** `ClientInvoicingService`
+creates cadence invoices without ever setting it, and an operator's ad-hoc
+invoice has no schedule to name. So this column can never be the thing a
+duplicate guard keys on. `BillingScheduleService::generateDue()` used to do
+exactly that, and an unlinked invoice for the period was therefore invisible to
+it: the schedule concluded the period was unbilled and raised — and *issued* — a
+second invoice. The unique index did not help, because a unique index does not
+constrain a null.
+
+The guard now matches the tenant and the period first and reads the link only to
+decide **whose** invoice it is:
+
+- names *this* schedule → this period is already billed. Block.
+- names *no* schedule → unclaimed, and it still covers the period. Block. This
+  is the fail-closed half, and the whole point.
+- names a *different* schedule → that is another schedule's period. Do not
+  block; a company can hold one schedule per agreement, and blocking here would
+  silently stop one of them billing.
+
+The third case is why the fix is not simply "drop the schedule clause": that
+would trade a double-charge for lost revenue, and nothing else in the suite
+would have noticed.
+
 ## Regenerating Cadence Invoices
 
 Bulk generation (the admin **Generate Invoices** action / `generateAllInvoices`) walks every retainer period for an agreement and is safe to re-run: re-running refreshes drafts without disturbing a cycle that already has an invoice.

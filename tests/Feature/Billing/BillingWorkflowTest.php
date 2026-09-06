@@ -187,14 +187,19 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
-     * A schedule's own invoice, unlinked, is billed to the client a second time.
+     * A schedule's own invoice, unlinked, still stops it billing the period again.
      *
-     * `generateDue()` decides whether a period has already been invoiced with
+     * `generateDue()` used to decide this with
      * `where('client_billing_schedule_id', $locked->id)` and two date matches.
      * SQL compares a null to a value as UNKNOWN, so an invoice for exactly that
-     * period whose link is missing satisfies neither branch of the check: the
-     * schedule concludes the period is unbilled and raises - and issues -
-     * another invoice for it.
+     * period whose link was missing satisfied neither branch: the schedule
+     * concluded the period was unbilled and raised - and issued - another
+     * invoice for it. The unique index did not save it either, because a unique
+     * index does not constrain a null.
+     *
+     * The guard now matches the tenant and the period first and reads the link
+     * only to decide whose invoice it is, so an invoice that does not say which
+     * schedule made it blocks. #219, #224.
      *
      * The rewind is the point of the fixture. `next_run_on` moves forward on
      * every generated period, so a schedule only re-asks about a period it has
@@ -239,15 +244,62 @@ class BillingWorkflowTest extends TestCase
         $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
 
         $service->generateDue($rewind(), CarbonImmutable::parse('2026-08-15'));
-        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertDatabaseCount('client_invoices', 1);
         $this->assertSame(
-            2,
+            1,
             ClientInvoice::query()->whereDate('service_period_start', '2026-08-01')->count(),
-            'August is billed twice, and the second invoice is issued rather than left as a draft',
+            'August is billed once: an invoice that does not name a schedule still covers the period',
         );
         $this->assertSame(
-            ['issued', 'issued'],
+            ['issued'],
             ClientInvoice::query()->orderBy('id')->pluck('status')->all(),
+        );
+    }
+
+    /**
+     * Another schedule's period is not this schedule's to skip.
+     *
+     * The fail-closed reading above has an obvious over-correction: block on
+     * *any* invoice for the tenant and period, and a company billed by two
+     * schedules gets one of them silently stop. So an invoice that names a
+     * different schedule is deliberately not a match - only one that names this
+     * schedule, or names none at all, is.
+     *
+     * This is the direction that loses revenue rather than double-charging, so
+     * it needs its own case: nothing else in the suite would notice if the
+     * `orWhereNull` above were widened to drop the schedule clause entirely.
+     */
+    public function test_an_invoice_owned_by_another_schedule_does_not_block_this_one(): void
+    {
+        [, $workspace, $company] = $this->tenant('Two Schedule Workspace');
+        // Two agreements, because a schedule is unique per agreement per
+        // workspace - which is also why two schedules on one company is a real
+        // shape rather than a contrived one.
+        $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+            ]);
+
+            return ClientBillingSchedule::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+                'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+                'line_template' => [$this->line()],
+            ]);
+        });
+
+        $service = app(BillingScheduleService::class);
+
+        foreach ($schedules as $schedule) {
+            $service->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+        }
+
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame(
+            $schedules->pluck('id')->sort()->values()->all(),
+            ClientInvoice::query()->orderBy('client_billing_schedule_id')
+                ->pluck('client_billing_schedule_id')->map(fn ($id): int => (int) $id)->all(),
+            'each schedule bills its own August',
         );
     }
 

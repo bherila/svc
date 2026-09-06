@@ -186,6 +186,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
         'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
         'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
@@ -341,10 +342,19 @@ final class NullSemanticsRegistryTest extends TestCase
             // revision wrongly registered `ClientInvoicingService` as one: that
             // class never mentions this column, it merely omits it on create.
             // `reader_in` means the code branches on the null, and only
-            // `BillingScheduleService::generateDue()` does - it looks for an
-            // existing invoice with `where('client_billing_schedule_id', ...)`,
-            // which a null row can never match, so a cadence invoice carrying
-            // no schedule is invisible to that duplicate check.
+            // `BillingScheduleService::generateDue()` does.
+            //
+            // It used to branch on it by accident: an existing invoice was
+            // looked up with `where('client_billing_schedule_id', $id)`, which
+            // a null row can never match, so a cadence invoice carrying no
+            // schedule was invisible to the duplicate check and the period was
+            // billed again. Since #219/#224 the guard matches the tenant and
+            // the period first and reads this column only to decide whose
+            // invoice it is: null now means *unclaimed*, and an unclaimed
+            // invoice for the period blocks. The branch is still real - a null
+            // and a different schedule's id take different paths - which is why
+            // both cases are cited below rather than the column being retired
+            // from this registry.
             'client_billing_schedule_id' => [
                 [
                     'covered_by' => BillingWorkflowTest::class,
@@ -355,6 +365,10 @@ final class NullSemanticsRegistryTest extends TestCase
                 // or a corrected cadence - which is when a row missing its link
                 // is most likely to exist. The schedule cannot see its own
                 // invoice and issues a second one for the same month.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
+                ],
                 [
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
