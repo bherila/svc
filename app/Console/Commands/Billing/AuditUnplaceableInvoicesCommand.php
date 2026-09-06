@@ -28,7 +28,7 @@ final class AuditUnplaceableInvoicesCommand extends Command
     protected $signature = 'svc:billing:audit-unplaceable-invoices
         {--format=text : Output text or json}';
 
-    protected $description = 'Count invoices with no service period end, and how much billed overage they carry';
+    protected $description = 'Count invoices whose service period or cycle cannot be placed on a calendar, and how much billed overage they carry';
 
     public function handle(UnplaceableInvoiceAuditor $auditor): int
     {
@@ -66,12 +66,14 @@ final class AuditUnplaceableInvoicesCommand extends Command
         $this->components->twoColumnDetail('Overage hours at stake', (string) $counts->overageHoursAtStake);
 
         // Its own block, under its own heading, because it is a different
-        // exposure: the end boundary above is read by the overage ledger and
-        // is funnelled down to money, while a missing start defeats the
-        // duplicate guards and costs a whole invoice.
+        // exposure: the end boundary above is read by the overage ledger and is
+        // funnelled down to money, while a period a guard cannot place costs a
+        // whole invoice. Not a sub-count of the line above it, either - the
+        // guards read both boundaries, so this counts rows missing *either*
+        // one and can exceed the start-only figure.
         $this->newLine();
         $this->components->twoColumnDetail('Without a service period start', (string) $counts->withoutAServicePeriodStart);
-        $this->components->twoColumnDetail('... of those, of a kind a period guard reads', (string) $counts->ofAKindReadByAPeriodGuard);
+        $this->components->twoColumnDetail('Unplaceable by a period guard', (string) $counts->unplaceableByAPeriodGuard);
 
         $this->newLine();
         $this->components->twoColumnDetail('Without a cycle start or end', (string) $counts->withoutACycle);
@@ -112,16 +114,16 @@ final class AuditUnplaceableInvoicesCommand extends Command
             );
         }
 
-        if ($counts->ofAKindReadByAPeriodGuard === 0) {
+        if ($counts->unplaceableByAPeriodGuard === 0) {
             $this->components->info(
-                'Every invoice a period guard reads states a period start, so the guards that place an invoice by its service period can see them all.'
+                'Every invoice a period guard reads states a complete service period, so the guards that place an invoice by its period can see them all.'
             );
         } else {
             $this->components->warn(
-                $counts->ofAKindReadByAPeriodGuard.' invoice(s) a period guard reads state no period start. '
-                .'BillingScheduleService::generateDue() places an invoice by comparing that date, and a null answers UNKNOWN rather than false, '
+                $counts->unplaceableByAPeriodGuard.' invoice(s) a period guard reads state no complete service period. '
+                .'BillingScheduleService::generateDue() places an invoice by comparing both boundaries, and a null answers UNKNOWN rather than false, '
                 .'so a schedule can bill a period one of these already covers - and billing_schedule_service_period_unique will not reject the second, '
-                .'because a unique index does not constrain a null. Give them a period start.'
+                .'because a unique index does not constrain a null. Give them a service period start and end.'
             );
         }
 

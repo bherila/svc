@@ -210,7 +210,7 @@ class BillingWorkflowTest extends TestCase
      * link. The control below runs the same rewind with the link intact and
      * produces nothing new.
      */
-    public function test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again(): void
+    public function test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again(): void
     {
         [, $workspace, $company] = $this->tenant('Unlinked Schedule Workspace');
         $agreement = ClientAgreement::query()->create([
@@ -579,6 +579,181 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A dangling schedule link is refused, not read as someone else's.
+     *
+     * `client_billing_schedule_id` is an unconstrained integer, so a non-null
+     * value is a *claim* that some schedule owns the row rather than proof that
+     * one does. The guard's three-way reading - mine, unclaimed, another
+     * schedule's - quietly assigned every unresolvable id to the third case,
+     * which is the one branch that does not block. That reproduces the original
+     * defect exactly: the invoice covering this period is invisible, and the
+     * schedule issues a second one for it.
+     */
+    public function test_an_invoice_naming_a_schedule_that_does_not_exist_is_refused(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Dangling Schedule Workspace');
+
+        $orphan = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $orphan->forceFill(['client_billing_schedule_id' => $schedule->id + 1_000])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
+     * Nor is another client's schedule id, which resolves to a real row.
+     *
+     * The row exists, so an existence check alone passes; it is only "someone
+     * else's" if that someone could have billed *this* client. Resolving the id
+     * against the invoice's own workspace and client is what separates the two,
+     * and is the same narrowing `UnplaceableInvoiceAuditor` already applies to
+     * the agreement column for the same reason.
+     */
+    public function test_an_invoice_naming_another_clients_schedule_is_refused(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Foreign Lineage Workspace');
+        [, , , $foreignSchedule] = $this->scheduledClient('Other Client Workspace');
+
+        $orphan = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $orphan->forceFill(['client_billing_schedule_id' => $foreignSchedule->id])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
+     * The agreement column gets the same treatment, for the same reason.
+     *
+     * An unlinked invoice naming an agreement that does not resolve was read as
+     * "another agreement's, therefore not mine" - the over-block guard running
+     * backwards, letting the period be billed twice instead of once.
+     */
+    public function test_an_invoice_naming_an_agreement_that_does_not_exist_is_refused(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Dangling Agreement Workspace');
+
+        $orphan = $this->augustInvoice($workspace, $company, ['client_agreement_id' => $agreement->id]);
+        $orphan->forceFill(['client_agreement_id' => $agreement->id + 1_000])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
+     * Lineage that contradicts itself names no owner at all.
+     *
+     * Both ids resolve, and they disagree: the invoice says it came from this
+     * schedule, and also from an agreement this schedule does not bill. Reading
+     * either half alone gives a confident and opposite answer - "mine, blocked"
+     * from the schedule, "another agreement's, generate" from the agreement -
+     * so the row is refused rather than decided by whichever column happens to
+     * be checked first.
+     */
+    public function test_an_invoice_whose_schedule_and_agreement_disagree_is_refused(): void
+    {
+        [$workspace, $company, , $schedule] = $this->scheduledClient('Contradictory Lineage Workspace');
+        $other = $this->agreementFor($workspace, $company, 'Second');
+
+        $orphan = $this->augustInvoice($workspace, $company, [
+            'client_billing_schedule_id' => $schedule->id,
+            'client_agreement_id' => $other->id,
+        ]);
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
+     * An agreement with no schedule at all still makes an orphan ambiguous.
+     *
+     * The ambiguity test used to ask whether another *active schedule* existed,
+     * which reads a client's billing history as though every agreement had one.
+     * It does not: `ClientInvoicingService` creates cadence invoices with an
+     * agreement and no schedule, and `AgreementSelector` treats a client as a
+     * sequence of agreement segments that can be paused, terminated or expired.
+     * So a client can hold exactly one active schedule and several agreements
+     * that have produced invoices, and an unattributed row from any of them was
+     * adopted by that single schedule - which then advanced past its own
+     * unbilled August. The lost-revenue half of #219, reintroduced by the fix
+     * for its double-charge half.
+     *
+     * Asking instead whether a rival is *currently due* would be worse:
+     * `next_run_on` is a mutable cursor, and a schedule that already produced
+     * the row has by definition advanced past it.
+     */
+    public function test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it(): void
+    {
+        [$workspace, $company, , $schedule] = $this->scheduledClient('Scheduleless Rival Workspace');
+        // No schedule of its own, and never billed by one. Invisible to any
+        // question about active schedules.
+        $this->agreementFor($workspace, $company, 'Second');
+
+        $orphan = $this->augustInvoice($workspace, $company, []);
+        $orphan->forceFill(['invoice_kind' => null])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $orphan);
+    }
+
+    /**
+     * An invoice that contains this period blocks it, rather than being missed.
+     *
+     * The guard compared both boundaries for equality, so an invoice covering
+     * July *and* August did not stop August being billed: the dates were not
+     * equal, the row fell out of the query, and the second invoice's
+     * `(schedule, start, end)` tuple was distinct enough for the unique index
+     * to accept it. `ClientInvoicingService::assertNoOverlappingInvoice()` has
+     * always used inclusive overlap; this now does too.
+     *
+     * Refused rather than treated as billed, because a containing invoice is
+     * not the same claim as this period's: skipping would silently leave
+     * whatever August the wider invoice does not actually cover unbilled, and
+     * billing would charge the shared days twice.
+     */
+    public function test_an_invoice_containing_the_period_is_refused_rather_than_billed_again(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Containing Period Workspace');
+
+        $wide = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+            'service_period_start' => '2026-07-01',
+        ]);
+
+        $this->assertRefusedAndUnchanged($schedule, $wide);
+    }
+
+    /**
+     * An invoice of this schedule's with no period end halts it, loudly.
+     *
+     * This is the null-in-a-predicate class turned on the guard itself. Such a
+     * row cannot be placed by any date comparison, so it is not that the guard
+     * decides wrongly - it never sees the row at all, bills the period again,
+     * and the unique index does not reject the second invoice because one of
+     * its three columns is null. Since neither answer can be derived, the
+     * schedule stops and names the row to repair; `UnplaceableInvoiceAuditor`
+     * counts the same population so it can be found before a run hits it.
+     *
+     * Scoped to rows demonstrably this schedule's or its agreement's. A
+     * periodless row naming neither owner is not evidence about this schedule
+     * and does not halt it - there is no date tying it to this period and no
+     * lineage tying it to this client's schedule.
+     */
+    public function test_an_invoice_of_this_schedule_with_no_period_end_is_refused(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Unplaceable Period Workspace');
+
+        $unplaceable = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $unplaceable->forceFill(['service_period_end' => null])->save();
+
+        $this->assertRefusedAndUnchanged($schedule, $unplaceable);
+    }
+
+    /**
      * A null `client_billing_schedule_id` is what makes a draft ad hoc.
      *
      * `createDraft` classifies on the absence of a schedule, not on who called
@@ -766,6 +941,77 @@ class BillingWorkflowTest extends TestCase
         // its own assembly instead of the one clients receive.
         $html = app(InvoiceDocumentService::class)->html($invoice->fresh())->render();
         $this->assertStringNotContainsString('Internal synthetic note', $html);
+    }
+
+    /**
+     * A client with one agreement and one monthly schedule due for August 2026.
+     *
+     * @return array{0:Workspace,1:ClientCompany,2:ClientAgreement,3:ClientBillingSchedule}
+     */
+    private function scheduledClient(string $name): array
+    {
+        [, $workspace, $company] = $this->tenant($name);
+        $agreement = $this->agreementFor($workspace, $company, 'Synthetic');
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        return [$workspace, $company, $agreement, $schedule];
+    }
+
+    private function agreementFor(Workspace $workspace, ClientCompany $company, string $title): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title.' agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]);
+    }
+
+    /**
+     * A draft covering August 2026, with whatever lineage the caller needs.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function augustInvoice(Workspace $workspace, ClientCompany $company, array $attributes): ClientInvoice
+    {
+        return app(InvoiceLifecycleService::class)->createDraft(
+            $workspace,
+            $company,
+            $attributes + $this->invoiceData() + [
+                'service_period_start' => '2026-08-01',
+                'service_period_end' => '2026-08-31',
+            ],
+            [$this->line()],
+        );
+    }
+
+    /**
+     * The schedule refuses August, names the row, and leaves everything alone.
+     *
+     * A refusal is only safe if it is recoverable, so every one of these
+     * asserts the rollback as well as the throw: nothing new is created and
+     * `next_run_on` does not move, so the run can be repeated once a person has
+     * repaired the row the message names.
+     */
+    private function assertRefusedAndUnchanged(ClientBillingSchedule $schedule, ClientInvoice $offending): void
+    {
+        $before = ClientInvoice::query()->count();
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('An invoice whose claim on this period cannot be established must not be billed past silently.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString($offending->invoice_number, $refusal->getMessage());
+        }
+
+        $this->assertSame($before, ClientInvoice::query()->count(), 'a refusal creates nothing');
+        $this->assertSame(
+            '2026-08-01',
+            $schedule->fresh()?->next_run_on?->format('Y-m-d'),
+            'a schedule that billed nothing must not move on',
+        );
     }
 
     private function tenant(string $name = 'Synthetic Workspace'): array

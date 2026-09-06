@@ -38,27 +38,46 @@ That number says nothing about the **start** boundary, and an earlier draft of
 this section cited it as though it did. `UnplaceableInvoiceAuditor` counted
 `whereNull('service_period_end')` and only that, so a live invoice stating an
 end and no start was legal in the schema, invisible to `generateDue()`'s
-start-date equality, and invisible to the audit that was supposed to rule it
+start-date comparison, and invisible to the audit that was supposed to rule it
 out — the same null-in-a-predicate class this whole section is about, reproduced
 in the instrument used to measure it. The audit now reports
-`without_a_service_period_start` and `live_without_a_service_period_start`
-beside it, the second narrowed to the statuses and kinds a period guard
-actually reads.
+`without_a_service_period_start` and `unplaceable_by_a_period_guard` beside it.
 
 So the claim here is deliberately split: **the end boundary is evidenced clean;
 the start boundary is now measurable and has not yet been measured against
 production**, because the count ships with this change and reaches the audit
 only on deploy. Run `svc:billing:audit-unplaceable-invoices` — or the MCP tool —
-afterwards. A non-zero `of_a_kind_read_by_a_period_guard` is a repair, not a
-guard change, and gets its own issue.
+afterwards. A non-zero `unplaceable_by_a_period_guard` is a repair, not a guard
+change, and gets its own issue.
 
-That second count carries **no status filter**, unlike every other funnel in
-that audit. `generateDue()` has none either — a voided invoice blocks its
-period, because the replacement would collide with
-`billing_schedule_service_period_unique` — so a *voided* invoice missing its
-start defeats the guard exactly as a live one does, and the schedule bills a
-deliberately waived period again with nothing to reject the write. Scoping the
-count to live statuses reported that row as no exposure at all.
+That second count mirrors the guard rather than tidying it, in three ways that
+each looked like a simplification and each hid a real exposure:
+
+- **Both boundaries.** The guards compare a period at both ends, so a row
+  stating a start and no end is exactly as invisible as one stating neither.
+  Counting only the start printed an all-clear that was false for half the
+  population it claimed to cover.
+- **Kind narrows only unlinked rows.** `cycleGuardExclusions()` keeps an interim
+  or ad-hoc invoice from blocking a cadence one, but `generateDue()` applies
+  that only where the invoice names no schedule — a row naming a schedule is
+  that schedule's whatever kind it carries. Excluding those by kind hid the
+  malformed combination the audit exists to surface.
+- **No status filter at all**, unlike every other funnel in that audit.
+  `generateDue()` has none either — a voided invoice blocks its period, because
+  the replacement would collide with
+  `billing_schedule_service_period_unique` — so a *voided* invoice missing a
+  boundary defeats the guard exactly as a live one does, and the schedule bills
+  a deliberately waived period again with nothing to reject the write. Scoping
+  the count to live statuses reported that row as no exposure at all.
+
+The guard does not merely count these rows, either. A schedule that finds an
+invoice of its own — or its agreement's — with no complete period refuses the
+run and names the row, because no date comparison can establish whether it
+covers the period being billed and the unique index will not reject the
+duplicate. A periodless row naming *neither* owner does not halt anything: there
+is no date tying it to this period and no lineage tying it to this schedule, so
+it is reported for repair rather than allowed to stop every schedule the client
+has.
 
 An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
 a span, and no period guard asks about it.
@@ -72,19 +91,42 @@ it: the schedule concluded the period was unbilled and raised — and *issued* �
 second invoice. The unique index did not help, because a unique index does not
 constrain a null.
 
-The guard now matches the tenant and the period first and reads the link only to
-decide **whose** invoice it is:
+The guard now matches the tenant and the **overlapping** period first and reads
+ownership only to decide **whose** invoice it is. That reading lives in
+`BillingPeriodCollisionResolver`, because three successive reviews each found a
+real defect inside the single nested `where` clause it used to be, and each fix
+added a nesting level to SQL nobody could test branch by branch.
 
-- names *this* schedule → this period is already billed. Block.
-- names *no* schedule → unclaimed, and it still covers the period. Block. This
-  is the fail-closed half, and the whole point.
-- names a *different* schedule → that is another schedule's period. Do not
-  block; a company can hold one schedule per agreement, and blocking here would
-  silently stop one of them billing.
+- names *this* schedule → this period is already billed. Block, whatever kind
+  the invoice carries: a row this schedule produced is this schedule's.
+- names *no* schedule → unclaimed, subject to the two narrowings below. Block.
+  This is the fail-closed half, and the whole point.
+- names a *different*, resolvable schedule → that is another schedule's period.
+  Do not block; a company can hold one schedule per agreement, and blocking here
+  would silently stop one of them billing.
 
 The third case is why the fix is not simply "drop the schedule clause": that
 would trade a double-charge for lost revenue, and nothing else in the suite
 would have noticed.
+
+**Overlap, not equality.** Both boundaries used to be compared for equality, so
+an invoice covering July *and* August did not stop August being billed — the
+dates were not equal, the row fell out of the query, and the second invoice's
+`(schedule, start, end)` tuple was distinct enough for the unique index to
+accept it. `assertNoOverlappingInvoice()` has always used inclusive overlap;
+this now does too. An invoice that overlaps the period without matching it is
+refused rather than treated either way: billing would charge the shared days
+twice, skipping would leave the rest of the period unbilled.
+
+**A non-null id is a claim, not proof.** Both lineage columns are unconstrained
+integers, so an invoice can name a schedule or agreement that has been deleted
+or belongs to another tenant. Reading an unresolvable id as "someone else's"
+puts the row back in the one branch that does not block, which reproduces the
+original defect exactly. Every non-null id is therefore resolved against the
+invoice's *own* workspace and client — the same narrowing
+`UnplaceableInvoiceAuditor` already applies to the agreement column — and a row
+whose lineage dangles, points at another client, or names a schedule and an
+agreement that do not belong together is refused rather than skipped.
 
 **"Unclaimed" is narrower than "null".** A null link is not by itself a claim on
 this period, and two further conditions keep the fail-closed arm from becoming
@@ -97,7 +139,8 @@ an over-block:
   reversed that decision on the schedule path: an operator's ad-hoc invoice
   sharing the dates was returned as though it were the cadence invoice, and
   `next_run_on` advanced past a period nothing had billed. Both guards read the
-  same list, so they cannot drift apart.
+  same list, so they cannot drift apart. It applies to *unlinked* rows only —
+  an ad-hoc invoice naming this schedule is still this schedule's.
 - **Agreement.** A company can hold several, each billing its own periods, and
   `ClientInvoicingService` creates cadence invoices with an agreement and no
   schedule — so an unlinked invoice for these dates may belong to a different
@@ -112,14 +155,29 @@ covers, so "unclaimed therefore blocking" makes a single invoice suppress
 several: each schedule returns it, each advances its own `next_run_on`, and at
 least one agreement goes unbilled for a period nothing charged. Neither silent
 answer is available — billing anyway double-charges, skipping loses a period —
-so the rule is kept only where it is unambiguous:
+so the rule is kept only where it is unambiguous.
 
-- the company has **one** active schedule → nowhere else the row could belong,
-  so it blocks. This is #219's case and the ordinary one.
-- the company has **another** active schedule → `generateDue()` throws, naming
-  the invoice and its period. The transaction rolls back, `next_run_on` does
-  not move, and nothing is created, so the run can simply be repeated once
-  someone attributes the row.
+The ambiguity test is about **agreements, not schedules**, and an earlier
+revision of this fix got that wrong. A cadence invoice does not need a schedule
+to exist at all: `ClientInvoicingService` creates them with an agreement and no
+schedule, and [`AgreementSelector`](billing.md) treats a client's billing
+history as a sequence of agreement segments that can be paused, terminated or
+expired. So a client can hold exactly one *active schedule* and several
+agreements that have produced invoices, and asking "is there a rival schedule"
+declared that unambiguous — the single schedule adopted a row that was never its
+own and advanced past its own unbilled period. Asking whether a rival is
+currently *due* would be worse still: `next_run_on` is a mutable cursor, and a
+schedule that already produced the row has by definition advanced past it.
+
+So:
+
+- the client has **no other agreement and no other active schedule** → nowhere
+  else the row could belong, so it blocks. This is #219's case and the ordinary
+  one.
+- **anything else could own it** → `generateDue()` throws, naming the invoice
+  and its period. The transaction rolls back, `next_run_on` does not move, and
+  nothing is created, so the run can simply be repeated once someone attributes
+  the row.
 
 The refusal is deliberately narrow, per #144's lesson that a refusal on a null
 must be checked against the paths that write it. Nothing in this application
@@ -127,8 +185,16 @@ writes this shape: `generateDue()` and `ClientInvoicingService` both set the
 agreement, and `createDraft()` without one stamps `ad_hoc`, which the kind
 condition has already excluded — it coalesces an absent *or explicitly null*
 kind, so even asking for a null kind there does not produce one. Only a
-migrated or hand-repaired row reaches it, and only while a second schedule is
-live.
+migrated or hand-repaired row reaches it.
+
+**A refusal aborts the whole run, not just its period.** The throw is inside the
+`DB::transaction` wrapping every period the schedule is due for, so a refusal on
+the third discards invoices already created for the first two. That is
+deliberate: `createDraft()` and `issue()` each mutate invoices, activities and
+time entries, and a half-applied run leaves `next_run_on` pointing into the
+middle of a batch with some periods billed. All-or-nothing is recoverable by
+re-running; half-applied is not. Classifying every period up front, before
+creating anything, would avoid the wasted work and is worth doing separately.
 
 ## Regenerating Cadence Invoices
 

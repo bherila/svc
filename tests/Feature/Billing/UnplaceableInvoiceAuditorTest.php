@@ -3,10 +3,12 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -176,70 +178,93 @@ final class UnplaceableInvoiceAuditorTest extends TestCase
     }
 
     /**
-     * The start boundary, which the audit could not see at all until #219/#224.
+     * The period-guard count mirrors the guard, not a tidier version of it.
      *
-     * `withoutAServicePeriod` counts `service_period_end`, and only that. The
-     * question #224 actually asked - may a live invoice state no period? - was
-     * answered with that number, which is evidence about one of the two
-     * columns and silence about the other. A row stating an end and no start is
-     * legal in the schema today and is invisible to every guard that places an
-     * invoice by comparing its period, because SQL compares a null to a date as
-     * UNKNOWN. What it costs there is a duplicate invoice, not a wrong total.
+     * Three separate things, each of which a plausible simplification gets
+     * wrong, and each of which was wrong in a shipped draft of this count.
      *
-     * Two numbers, because the total is the migration question and the
-     * guard-read count is the exposure. Kind is applied the way the period
-     * guards apply it - by exclusion, so a legacy invoice carrying no kind is
-     * admitted rather than dropped, which is the direction that keeps a real
-     * exposure visible.
+     * **Both boundaries.** `generateDue()` and `assertNoOverlappingInvoice()`
+     * compare a period at both ends, so a row stating a start and no end is
+     * exactly as invisible to them as one stating neither. Counting only the
+     * start printed an all-clear that was false for half the population it
+     * claimed to cover - a zero read as evidence about a column it never
+     * examined, which is the very mistake this count was added to correct.
      *
-     * **Status is deliberately not applied**, unlike every other funnel in this
-     * auditor, and the voided row below is the whole reason this test exists in
-     * its current form. `generateDue()` has no status filter, so a voided
-     * invoice blocks its period - and a voided invoice missing its start
-     * defeats that guard exactly as a live one does, letting the schedule bill
-     * a waived period again with no constraint to reject the write. A first
-     * draft of this count filtered to `live()` by analogy with the cycle counts
-     * and reported that row as no exposure at all.
+     * **Kind narrows only unlinked rows.** `cycleGuardExclusions()` keeps an
+     * interim or ad-hoc invoice from blocking a cadence one, but `generateDue()`
+     * applies that only where the invoice names no schedule; a row naming a
+     * schedule is that schedule's whatever kind it carries. Applying the
+     * exclusion to everything hid the malformed combination this audit exists
+     * to surface.
+     *
+     * **Status is not applied at all**, unlike every other funnel in this
+     * auditor. `generateDue()` has no status filter, so a voided invoice blocks
+     * its period - and a voided invoice missing a boundary defeats that guard
+     * exactly as a live one does, letting the schedule bill a waived period
+     * again with no constraint to reject the write. A first draft filtered to
+     * `live()` by analogy with the cycle counts and reported that row as no
+     * exposure at all.
      */
-    public function test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status(): void
+    public function test_the_period_guard_count_reads_both_boundaries_and_narrows_by_kind_only_when_unlinked(): void
     {
         $workspace = $this->workspace('period-start');
         $company = $this->company($workspace, 'period-start');
         $agreement = $this->agreement($workspace, $company);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [],
+        ]);
         $placed = ['service_period_start' => '2026-07-01', 'service_period_end' => '2026-07-31'];
         $startless = ['service_period_end' => '2026-07-31'];
+        $endless = ['service_period_start' => '2026-07-01', 'service_period_end' => null];
 
-        // Fully placed: out of both counts, and the only row here that is.
+        // Fully placed: out of every count, and the only row here that is.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued'] + $placed);
 
-        // Counted twice over: no start, live, and of a kind a period guard reads.
+        // No start, of a kind a period guard reads.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'cadence_period'] + $startless);
         $this->invoice($workspace, $company, $agreement, ['status' => 'draft', 'invoice_kind' => 'cadence_period'] + $startless);
         // A migrated row carries no kind and those guards still read it.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => null] + $startless);
 
-        // Voided, and still exposed. `generateDue()` never looks at status, so
+        // Voided, and still exposure. `generateDue()` never looks at status, so
         // this row blocks its period while it is placeable and stops blocking
-        // the moment its start is missing - the schedule then bills a period
+        // the moment a boundary is missing - the schedule then bills a period
         // that was deliberately waived, and the unique index cannot reject the
         // replacement because one of its three columns is the null that caused
         // the problem.
-        $this->invoice($workspace, $company, $agreement, ['status' => 'voided', 'invoice_kind' => 'cadence_period'] + $startless);
+        $this->invoice($workspace, $company, $agreement, ['status' => InvoiceStatus::Void->value, 'invoice_kind' => 'cadence_period'] + $startless);
 
-        // Counted, but not exposed: an ad-hoc invoice is excluded from the
-        // cadence guards by kind before its dates matter.
+        // Excluded by kind, because it names no schedule: an ad-hoc invoice is
+        // out of the cadence guards before its dates matter.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'ad_hoc'] + $startless);
+
+        // The same kind, linked to a schedule, is *not* excluded: that arm of
+        // `generateDue()` reads the row whatever kind it carries.
+        $this->invoice($workspace, $company, $agreement, [
+            'status' => 'issued', 'invoice_kind' => 'ad_hoc', 'client_billing_schedule_id' => $schedule->id,
+        ] + $startless);
+
+        // States a start and no end. Invisible to the same comparisons, and
+        // counted by the guard metric while the start-only figure never sees
+        // it.
+        $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'cadence_period'] + $endless);
 
         $counts = app(UnplaceableInvoiceAuditor::class)->count($workspace);
 
-        $this->assertSame(5, $counts->withoutAServicePeriodStart);
-        $this->assertSame(4, $counts->ofAKindReadByAPeriodGuard, 'the voided row is exposure too: the guard it defeats has no status filter');
+        $this->assertSame(6, $counts->withoutAServicePeriodStart);
+        $this->assertSame(
+            6,
+            $counts->unplaceableByAPeriodGuard,
+            'both boundaries, the voided row, and the schedule-linked ad-hoc row - but not the unlinked ad-hoc one',
+        );
 
-        // The end-boundary count is untouched by all of this: every row above
-        // states an end. Asserted here because folding the start into
-        // `withoutAServicePeriod` is the obvious simplification, and it would
-        // drag five rows into a funnel that reports money at stake.
-        $this->assertSame(0, $counts->withoutAServicePeriod);
+        // The end-boundary funnel is untouched by the start-only rows: only the
+        // last invoice above lacks an end. Asserted here because folding these
+        // together is the obvious simplification, and it would drag five rows
+        // into a funnel that reports money at stake.
+        $this->assertSame(1, $counts->withoutAServicePeriod);
         $this->assertSame(0, $counts->affected);
     }
 

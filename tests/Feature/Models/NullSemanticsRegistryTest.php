@@ -185,12 +185,13 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
-        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again',
         'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
         'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
         'client_invoices.due_date => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
@@ -201,12 +202,13 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_of_this_schedule_with_no_period_end_is_refused',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
-        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_guard_count_reads_both_boundaries_and_narrows_by_kind_only_when_unlinked',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
@@ -358,6 +360,18 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
                 ],
+                // And a fifth, because the fourth asked the wrong question.
+                // "Is there a rival *schedule*" reads a client's history as
+                // though every agreement had one, and `ClientInvoicingService`
+                // creates cadence invoices with an agreement and no schedule at
+                // all. A client with one active schedule and a second,
+                // schedule-less agreement therefore looked unambiguous, and the
+                // one schedule adopted a row that was never its own - the same
+                // silent skip, reached by the fix for the double-charge.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
+                ],
             ],
             // What the citation proves is narrower than it reads: it is the
             // default `InvoiceLifecycleService::createDraft` picks when no kind
@@ -406,7 +420,7 @@ final class NullSemanticsRegistryTest extends TestCase
                 ],
                 [
                     'covered_by' => BillingWorkflowTest::class,
-                    'method' => 'test_an_unlinked_invoice_does_not_stop_a_schedule_billing_its_period_again',
+                    'method' => 'test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again',
                 ],
             ],
             // Not issued yet - on the draft path, where issuing stamps the
@@ -461,7 +475,7 @@ final class NullSemanticsRegistryTest extends TestCase
                 // instrument used to argue no such row exists.
                 [
                     'covered_by' => UnplaceableInvoiceAuditorTest::class,
-                    'method' => 'test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status',
+                    'method' => 'test_the_period_guard_count_reads_both_boundaries_and_narrows_by_kind_only_when_unlinked',
                 ],
             ],
             // Five branches, and the widest spread of readings any one column
@@ -483,6 +497,17 @@ final class NullSemanticsRegistryTest extends TestCase
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_cadence_draft_with_no_period_end_fails_closed',
+                ],
+                // Sixth, and the one that reads the null as neither branch. A
+                // schedule's own invoice missing this boundary cannot be placed
+                // by any date comparison, so the duplicate guard does not
+                // decide wrongly - it never sees the row, bills the period
+                // again, and the unique index accepts the second because one of
+                // its three columns is that null. Refused instead, since there
+                // is no answer to derive.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_invoice_of_this_schedule_with_no_period_end_is_refused',
                 ],
                 [
                     'covered_by' => CapacityAndScopeGuardsTest::class,
