@@ -49,7 +49,9 @@ enum PeriodClaimVerdict
      * invoice covering the period exactly refuses instead - see
      * {@see PeriodRefusalReason::ConflictingExactClaims} - because there the
      * same sentence would be telling an operator to bill a period already
-     * billed, or to undo a waiver.
+     * billed, or to undo a waiver. That includes a draft beside an exact
+     * *void*: the void may be a deliberate waiver, or the discarded half of a
+     * repair the draft is meant to finish, and the rows do not say which.
      */
     case PendingDraft;
 
@@ -62,6 +64,14 @@ enum PeriodClaimVerdict
      * is the documented way to waive its own period, and regenerating it would
      * collide with the unique index anyway - see
      * {@see BillingPeriodCollisionResolver::resolve()}.
+     *
+     * When several invoices cover the period exactly, this is the answer only
+     * when at most one of them has charged for it and none is a draft: one
+     * charged invoice beside any number of exact voids, or exact voids alone.
+     * Those are the states the conflict repairs leave behind - `discardDraft()`
+     * and `void()` both keep the service period - and reading them as billed
+     * is what makes those repairs an exit rather than a loop. See
+     * {@see PeriodRefusalReason::ConflictingExactClaims}.
      */
     case AlreadyBilled;
 

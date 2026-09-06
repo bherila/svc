@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientBillingSchedule;
 use App\Models\Workspace;
 use App\Support\Billing\BillingPeriod;
+use App\Support\Billing\BillingScheduleLineTemplate;
 use App\Support\Billing\PeriodClaimVerdict;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
@@ -210,8 +211,14 @@ final class ScheduleGenerationPreflight
 
         // Before the loop, exactly where `generateDue()` normalises it - so a
         // malformed template halts a schedule whether or not it has a period
-        // due, and this reports it on the same terms.
-        if (! $this->templateIsBillable($schedule->getAttribute('line_template'))) {
+        // due, and this reports it on the same terms. The same normaliser, not
+        // a predicate re-stating its conditions: the predicate this replaced
+        // agreed with the service on the two conditions it knew and, like the
+        // service, accepted an empty template - which then priced to an issued
+        // invoice for nothing. One reader cannot drift from itself.
+        try {
+            BillingScheduleLineTemplate::normalize($schedule->getAttribute('line_template'));
+        } catch (DomainException) {
             return $this->outcome($due, 0, defect: ScheduleDefect::UnreadableLineTemplate);
         }
 
@@ -231,16 +238,26 @@ final class ScheduleGenerationPreflight
             $periods++;
             $claim = $this->collisions->resolve($schedule, $period->start, $period->end);
 
-            if ($claim->verdict === PeriodClaimVerdict::Refused) {
-                return $this->outcome($due, $periods, reason: $claim->reason());
-            }
-            if ($claim->verdict === PeriodClaimVerdict::PendingDraft) {
-                return $this->outcome($due, $periods, pending: true);
+            // Exhaustive, with no `default`, for the same reason
+            // `generateDue()`'s is. An if-chain here tested for the two verdicts
+            // that halt and advanced the cursor for anything else, so a fifth
+            // verdict added to `PeriodClaimVerdict` would have been reported as
+            // clean by the preflight whatever the run was going to do with it -
+            // the shape of defect this class exists to rule out, moved one
+            // layer downstream. `Clear` and `AlreadyBilled` are the only two
+            // that let the run move on; the difference between them is whether
+            // an invoice gets written, which is precisely what a preflight does
+            // not do.
+            $halt = match ($claim->verdict) {
+                PeriodClaimVerdict::Refused => $this->outcome($due, $periods, reason: $claim->reason()),
+                PeriodClaimVerdict::PendingDraft => $this->outcome($due, $periods, pending: true),
+                PeriodClaimVerdict::AlreadyBilled, PeriodClaimVerdict::Clear => null,
+            };
+
+            if ($halt !== null) {
+                return $halt;
             }
 
-            // `Clear` and `AlreadyBilled` both let the run move on. The
-            // difference between them is whether an invoice gets written, which
-            // is precisely what a preflight does not do.
             $cursor = $period->next;
         }
 
@@ -266,30 +283,6 @@ final class ScheduleGenerationPreflight
             'pending' => $pending,
             'truncated' => $truncated,
         ];
-    }
-
-    /**
-     * Whether `BillingScheduleService::normalizedTemplate()` would accept it.
-     *
-     * The same two conditions, asked rather than thrown. Kept as a predicate
-     * here rather than by calling into the service because that method is
-     * private to a class whose public entry point writes invoices, and a
-     * preflight that has to instantiate the mutating service to ask a question
-     * about data is one refactor away from performing the run.
-     */
-    private function templateIsBillable(mixed $value): bool
-    {
-        if (! is_array($value)) {
-            return false;
-        }
-
-        foreach ($value as $line) {
-            if (! is_array($line)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**

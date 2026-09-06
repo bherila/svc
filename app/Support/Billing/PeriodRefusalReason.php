@@ -49,14 +49,20 @@ enum PeriodRefusalReason: string
     case PartialOverlap = 'partial_overlap';
 
     /**
-     * Two or more invoices each cover exactly this period.
+     * Two or more invoices each cover exactly this period, and status does
+     * not settle which of them bills it.
      *
      * The only case here that is a property of the *candidate set* rather than
      * of one row, which is why it is decided after every candidate has been
-     * classified rather than at a refusal site. See
-     * {@see BillingPeriodCollisionResolver::resolve()} for why a lone pending
-     * draft and a pending draft alongside an already-billed row need opposite
-     * advice.
+     * classified rather than at a refusal site. Status-aware, because status
+     * is all the ordinary lifecycle can change: `discardDraft()` and `void()`
+     * both keep the service period, so an earlier rule that refused on the
+     * count alone could not be cleared by either repair it recommended -
+     * issued + draft became issued + void and refused again. Now a charged
+     * invoice beside exact voids, or exact voids alone, is already billed;
+     * this fires for two or more charged invoices, or for a draft beside
+     * anything else. See {@see BillingPeriodCollisionResolver} `settle()` for
+     * the table, and for why each shape's advice is different.
      */
     case ConflictingExactClaims = 'conflicting_exact_claims';
 

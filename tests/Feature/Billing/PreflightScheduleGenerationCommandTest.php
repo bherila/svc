@@ -7,8 +7,11 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
+use App\Services\Billing\BillingScheduleService;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
+use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
@@ -53,6 +56,40 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
 
         $this->assertStringContainsString('would stop rather than bill a period now due', $output);
         $this->assertStringContainsString(PeriodRefusalReason::DanglingSchedule->summary(), $output);
+    }
+
+    /**
+     * End to end for the one template shape that used to pass the gate and
+     * then bill nothing: reported, non-zero, and - when the run is performed
+     * anyway - no invoice and no cursor movement.
+     *
+     * The four assertions are one contract. A gate that reported the defect
+     * but exited zero would not stop a deployment; a run that halted but had
+     * already advanced `next_run_on` would have recorded the period as billed
+     * for nothing, which is the defect the gate exists to catch.
+     */
+    public function test_an_empty_line_template_fails_the_gate_and_the_run_bills_nothing(): void
+    {
+        [, , , $schedule] = $this->scheduledWorkspace('empty-template');
+        $schedule->forceFill(['line_template' => []])->save();
+
+        $this->assertSame(1, Artisan::call('svc:billing:preflight-schedule-generation', [
+            '--through' => '2026-08-15', '--format' => 'json',
+        ]));
+        $decoded = json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $decoded['summary']['would_halt']);
+        $this->assertSame(1, $decoded['summary']['defects_by_kind'][ScheduleDefect::UnreadableLineTemplate->value]);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('the run must halt on the template the gate refused');
+        } catch (DomainException) {
+            // The halt the gate predicted.
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     public function test_the_json_shape_is_the_documented_contract(): void

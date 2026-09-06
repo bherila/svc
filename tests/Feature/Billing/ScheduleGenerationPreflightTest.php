@@ -459,6 +459,10 @@ final class ScheduleGenerationPreflightTest extends TestCase
      * schedule carrying a historical duplicate therefore halts until someone
      * voids one of the rows, which is a real cost and the reason the preflight
      * exists to size it before deployment rather than after.
+     *
+     * That the void actually releases it is pinned by
+     * `BillingWorkflowTest::test_voiding_the_unpaid_duplicate_releases_a_period_billed_twice`,
+     * and by the test after this one, which is the state the void leaves.
      */
     public function test_two_invoices_that_have_already_billed_the_period_halt_rather_than_advance(): void
     {
@@ -482,6 +486,45 @@ final class ScheduleGenerationPreflightTest extends TestCase
         // And the cursor stays put, so nothing is billed on top of the two rows
         // that already were.
         $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * An exact void beside a charged invoice is clean, because that is the
+     * state every repair the conflict messages recommend leaves behind.
+     *
+     * `discardDraft()` and `void()` both keep the service period, so the row an
+     * operator removes from the conflict does not leave the candidate set - it
+     * changes status. An earlier revision counted exact claims without reading
+     * status, so issued + void was still two claims and still refused, and the
+     * preflight run *after* the repair still reported the schedule halting.
+     * This is the assertion that the advertised exit is one: the preflight
+     * clears it, the run agrees, and the charged row is the one it reports.
+     */
+    public function test_a_charged_invoice_beside_an_exact_void_is_the_state_a_repair_leaves_and_is_clean(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduled('repaired');
+
+        $this->invoice($workspace, $company, [
+            'client_billing_schedule_id' => $schedule->id, 'client_agreement_id' => $agreement->id,
+            'status' => InvoiceStatus::Issued->value,
+            'service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31',
+        ]);
+        $this->invoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id, 'invoice_kind' => InvoiceKind::CadencePeriod->value,
+            'status' => InvoiceStatus::Void->value,
+            'service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31',
+        ]);
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(0, $report->wouldHalt, 'the state a repair leaves must not itself halt');
+        $this->assertSame(0, $report->refusalsByReason[PeriodRefusalReason::ConflictingExactClaims->value]);
+        $this->assertSame(1, $report->periodsClassified);
+
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+
+        $this->assertSame(2, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'nothing new was billed');
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     /**
@@ -617,6 +660,34 @@ final class ScheduleGenerationPreflightTest extends TestCase
 
         $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableLineTemplate->value]);
         $this->assertPredictionMatchesTheRun($workspace, $schedule);
+    }
+
+    /**
+     * An empty template halts, and the halt is a real one - the schedule bills
+     * nothing and stays where it was.
+     *
+     * The money-path hole this closes: both readers accepted `[]`, and
+     * `MoneyService::invoiceTotals([])` prices it to zero, so a schedule whose
+     * template had been imported or hand-edited empty got a clean preflight
+     * and then created, issued and advanced past a $0 invoice with no lines,
+     * one per due period. The public contract requires `min:1`; the shared
+     * normaliser is now the only reader and is no looser than it.
+     */
+    public function test_an_empty_line_template_halts_the_schedule_rather_than_billing_nothing(): void
+    {
+        [$workspace, , , $schedule] = $this->scheduled('empty-template');
+        $schedule->forceFill(['line_template' => []])->save();
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->wouldHalt);
+        $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableLineTemplate->value]);
+        $this->assertSame(0, $report->haltedByARefusal, 'no invoice refused anything; the schedule is the problem');
+
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'no invoice for nothing');
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     /**

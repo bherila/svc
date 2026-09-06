@@ -26,12 +26,6 @@ parameters:
 			path: app/Services/Billing/AllocationService.php
 
 		-
-			message: '#^Method App\\Services\\Billing\\BillingScheduleService\:\:normalizedTemplate\(\) should return list\<array\<string, mixed\>\> but returns list\<array\<mixed, mixed\>\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Services/Billing/BillingScheduleService.php
-
-		-
 			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceLifecycleService\:\:createDraft\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
 			identifier: argument.type
 			count: 1

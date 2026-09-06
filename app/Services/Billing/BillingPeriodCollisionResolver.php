@@ -13,6 +13,7 @@ use App\Support\Billing\PeriodRefusalReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use LogicException;
 
 /**
  * Decide whether a billing period is already covered, and by whose invoice.
@@ -165,54 +166,220 @@ final class BillingPeriodCollisionResolver
             }
         }
 
-        // More than one invoice covering exactly this period is a repair
-        // somebody has to make, and until they do, no single-row answer is
-        // honest. It cannot be ruled out by the schema: the unique index
-        // constrains `(client_billing_schedule_id, service_period_start,
-        // service_period_end)` and does not constrain a null, so an unlinked
-        // cadence invoice from `ClientInvoicingService` and a schedule-linked
-        // one can both cover the same period.
-        //
-        // Reporting the pending draft alone - which is what an earlier revision
-        // did, ranking pending above billed - was worse than useless there. The
-        // halt was safe, but the message told the operator to *issue* the
-        // draft, and `InvoiceLifecycleService::issue()` checks only that the row
-        // is a draft: no overlap guard, no period guard. Following the
-        // instruction produced two issued invoices for one period, or undid a
-        // waiver an exact void had recorded. So the set is named as a set, and
-        // the advice is to remove the duplicate rather than to advance it.
-        if (count($exact) > 1) {
-            return PeriodClaim::refused(
-                $this->conflictMessage($exact, $start, $end),
-                PeriodRefusalReason::ConflictingExactClaims,
-            );
+        return $this->settle($exact, $start, $end);
+    }
+
+    /**
+     * One answer for the period from every invoice covering it exactly.
+     *
+     * More than one row covering exactly the same period cannot be ruled out
+     * by the schema: the unique index constrains
+     * `(client_billing_schedule_id, service_period_start, service_period_end)`
+     * and does not constrain a null, so an unlinked cadence invoice from
+     * `ClientInvoicingService` and a schedule-linked one can both cover the
+     * same period. Which of them bills it is a property of the whole set, so
+     * the set is settled here rather than one row at a time.
+     *
+     * ## Status decides, because status is all a repair can change
+     *
+     * An earlier revision refused whenever the set held more than one row,
+     * whatever their statuses, and told the operator to discard the duplicate
+     * draft or void the duplicate invoice. Neither repair could clear it.
+     * `InvoiceLifecycleService::discardDraft()` and `void()` both change the
+     * status to `void` and keep the service period, and an exact void is
+     * itself an exact claim - so issued + draft became issued + void, still
+     * two rows, still refused. Every remedy the message named looped back to
+     * the same refusal, and the only way out was a database edit. For two
+     * issued rows that turned a historical anomaly into a permanent halt.
+     *
+     * So the rows are read by status, and the rule is the one that makes each
+     * advertised repair actually release the period:
+     *
+     * - voids only: a waiver, however many times it was recorded, and reported
+     *   as already billed exactly as a lone exact void always has been;
+     * - one charged invoice and any number of voids: that invoice bills the
+     *   period, and the voids beside it are the residue of a repair rather
+     *   than a second claim on the money;
+     * - one draft and nothing else: pending, with the advice to issue it or
+     *   discard it - see {@see PeriodClaimVerdict::PendingDraft};
+     * - two or more charged invoices: a conflict, whatever else is present.
+     *   The client has been asked for the money twice, and advancing past it
+     *   is how that stays invisible. Voiding the unpaid duplicate leaves one
+     *   charged row plus a void, which the second rule then settles;
+     * - a draft beside anything else: a conflict. Beside a charged invoice,
+     *   issuing it charges the client twice - `issue()` runs no overlap check
+     *   - so the draft is discarded and the charged row survives. Beside an
+     *   exact void, which is intended cannot be read from the rows: the void
+     *   may be a deliberate waiver the draft would undo, or the discarded half
+     *   of a repair the draft is meant to complete. Discarding the draft
+     *   settles it as waived; issuing it settles it as billed. Two drafts are
+     *   discarded down to one, which is then one of those two cases.
+     *
+     * Every conflict therefore has an exit through the ordinary lifecycle
+     * except one: two or more rows that have each taken money. `void()` throws
+     * once `paid_amount > 0`, so the message for that shape says a financial
+     * correction is needed and does not recommend a call the application will
+     * refuse.
+     *
+     * Ranking the draft above the rest - which is what the revision before
+     * that did - was the worse mistake, and is why the draft cases refuse
+     * rather than pend: the halt was safe, but the sentence told the operator
+     * to *issue* the draft, and following it produced two issued invoices for
+     * one period or undid a waiver.
+     *
+     * @param  list<PeriodClaim>  $exact  pending or already-billed claims, each carrying an invoice
+     */
+    private function settle(array $exact, CarbonImmutable $start, CarbonImmutable $end): PeriodClaim
+    {
+        /** @var list<PeriodClaim> $drafts */
+        $drafts = [];
+        /** @var list<PeriodClaim> $charged */
+        $charged = [];
+        /** @var list<PeriodClaim> $voids */
+        $voids = [];
+
+        foreach ($exact as $claim) {
+            // Exhaustive over the status vocabulary, so a sixth status cannot
+            // be silently read as any of these three. `mine()` has already
+            // refused a value no case matches, so `null` cannot reach here;
+            // it is handled rather than assumed because this is the guard.
+            match (InvoiceStatus::tryFrom((string) $claim->invoice()->status)) {
+                InvoiceStatus::Draft => $drafts[] = $claim,
+                InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid => $charged[] = $claim,
+                InvoiceStatus::Void => $voids[] = $claim,
+                null => throw new LogicException('An exact claim with an unrecognised status should have been refused.'),
+            };
         }
 
-        return $exact[0] ?? PeriodClaim::clear();
+        if ($drafts === [] && count($charged) < 2) {
+            // One charged invoice, or voids only. Whichever survives is the
+            // answer; nothing here is a second claim on the client's money.
+            $survivor = $charged[0] ?? $voids[0] ?? null;
+            if ($survivor instanceof PeriodClaim) {
+                return $survivor;
+            }
+
+            return PeriodClaim::clear();
+        }
+
+        if ($charged === [] && $voids === [] && count($drafts) === 1) {
+            return $drafts[0];
+        }
+
+        return PeriodClaim::refused(
+            $this->conflictMessage($drafts, $charged, $voids, $start, $end),
+            PeriodRefusalReason::ConflictingExactClaims,
+        );
     }
 
     /**
      * Name every invoice claiming the period, and say which way out is safe.
      *
-     * @param  list<PeriodClaim>  $exact  two or more claims, each carrying an invoice
+     * The advice depends on the shape - see {@see settle()} - and each
+     * sentence names only a repair the lifecycle will actually perform and
+     * that actually releases the period. A conflict that needs two steps says
+     * so, and the state after the first step produces the message for the
+     * second.
+     *
+     * @param  list<PeriodClaim>  $drafts
+     * @param  list<PeriodClaim>  $charged
+     * @param  list<PeriodClaim>  $voids
      */
-    private function conflictMessage(array $exact, CarbonImmutable $start, CarbonImmutable $end): string
-    {
-        $numbers = array_map(
-            static fn (PeriodClaim $claim): string => (string) $claim->invoice()->invoice_number,
-            $exact,
-        );
-
-        return sprintf(
+    private function conflictMessage(
+        array $drafts,
+        array $charged,
+        array $voids,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+    ): string {
+        $sentences = [sprintf(
             'Invoices %s each cover exactly %s to %s, the period being billed now, so which of them bills it cannot '
-            .'be decided here. The period is not billed again and the schedule is not advanced past it. Exactly one '
-            .'invoice should cover a period: discard the duplicate draft, or void the duplicate invoice. Do not issue '
-            .'a draft that duplicates one already issued, or one whose period an exact void has already waived - '
-            .'issuing performs no overlap check and would charge this client twice.',
-            implode(', ', $numbers),
+            .'be decided here. The period is not billed again and the schedule is not advanced past it.',
+            $this->numbersWithStatus([...$charged, ...$drafts, ...$voids]),
             $start->toDateString(),
             $end->toDateString(),
-        );
+        )];
+
+        if (count($charged) > 1) {
+            // `void()` refuses a paid row and one with any `paid_amount`, so
+            // the rows it would accept are named and, when there are none, the
+            // message says what is actually needed instead.
+            $voidable = array_values(array_filter(
+                $charged,
+                static fn (PeriodClaim $claim): bool => InvoiceStatus::tryFrom((string) $claim->invoice()->status) === InvoiceStatus::Issued
+                    && (int) $claim->invoice()->paid_amount === 0,
+            ));
+
+            $sentences[] = $voidable === []
+                ? sprintf(
+                    'Invoices %s have each billed this client for it, and money has been taken against every one of '
+                    .'them, so none can be voided here. This needs a financial correction outside the schedule before '
+                    .'it can advance; until then it halts on every run.',
+                    $this->numbers($charged),
+                )
+                : sprintf(
+                    'Invoices %s have each billed this client for it. Void the duplicate that has not been paid - %s - '
+                    .'and the invoice that remains is read as having billed the period.',
+                    $this->numbers($charged),
+                    $this->numbers($voidable),
+                );
+        }
+
+        if ($drafts !== [] && $charged !== []) {
+            $sentences[] = sprintf(
+                'Invoice %s has already billed this client for it, so discard %s %s rather than issuing %s: issuing '
+                .'performs no overlap check and would charge this client twice. Once discarded, the period reads as '
+                .'billed by the invoice that charged for it.',
+                $this->numbers(array_slice($charged, 0, 1)),
+                count($drafts) === 1 ? 'draft' : 'drafts',
+                $this->numbers($drafts),
+                count($drafts) === 1 ? 'it' : 'them',
+            );
+        }
+
+        if ($drafts !== [] && $charged === []) {
+            $sentences[] = count($drafts) > 1
+                ? sprintf(
+                    'Nothing has billed this client for it yet, and drafts %s each propose to. Discard all but one of '
+                    .'them, then issue the one that remains to bill the period, or discard it too to waive the period.',
+                    $this->numbers($drafts),
+                )
+                : sprintf(
+                    'Nothing has billed this client for it: void %s waived it, and draft %s proposes to bill it after '
+                    .'all. Whether the waiver or the draft is intended cannot be read from the rows. Discard the draft '
+                    .'to keep the waiver, or issue it to bill the period.',
+                    $this->numbers($voids),
+                    $this->numbers($drafts),
+                );
+        }
+
+        return implode(' ', $sentences);
+    }
+
+    /**
+     * @param  list<PeriodClaim>  $claims
+     */
+    private function numbers(array $claims): string
+    {
+        return implode(', ', array_map(
+            static fn (PeriodClaim $claim): string => (string) $claim->invoice()->invoice_number,
+            $claims,
+        ));
+    }
+
+    /**
+     * @param  list<PeriodClaim>  $claims
+     */
+    private function numbersWithStatus(array $claims): string
+    {
+        return implode(', ', array_map(
+            static fn (PeriodClaim $claim): string => sprintf(
+                '%s (%s)',
+                $claim->invoice()->invoice_number,
+                (string) $claim->invoice()->status,
+            ),
+            $claims,
+        ));
     }
 
     /**

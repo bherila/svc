@@ -34,11 +34,16 @@ enum ScheduleDefect: string
     case UnreadableCadence = 'unreadable_cadence';
 
     /**
-     * The line template is not a list of objects, so there is nothing to bill.
+     * The line template is not a non-empty list of objects, so there is
+     * nothing to bill.
      *
      * `generateDue()` normalises it *before* its loop, so this halts a schedule
      * whether or not it has a period due - which is why the preflight reads it
-     * for every active schedule rather than only for the due ones.
+     * for every active schedule rather than only for the due ones. Both read
+     * it through {@see BillingScheduleLineTemplate}, and an empty template is
+     * one of the shapes it refuses: an earlier revision accepted `[]` in both
+     * places, and a schedule carrying one issued a $0 invoice with no lines
+     * for every due period and recorded each as billed.
      */
     case UnreadableLineTemplate = 'unreadable_line_template';
 
@@ -49,7 +54,7 @@ enum ScheduleDefect: string
     {
         return match ($this) {
             self::UnreadableCadence => 'whose cadence this application cannot read',
-            self::UnreadableLineTemplate => 'whose line template is not a list of billable lines',
+            self::UnreadableLineTemplate => 'whose line template is empty or not a list of billable lines',
         };
     }
 }

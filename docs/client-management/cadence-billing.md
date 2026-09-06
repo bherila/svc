@@ -290,13 +290,36 @@ constrains `(client_billing_schedule_id, service_period_start,
 service_period_end)`, and a null is not constrained, so the unlinked cadence
 draft described above can coexist with a schedule-linked invoice for the same
 period. So the resolver classifies **every** candidate, collects the ones
-covering the period exactly, and refuses as `conflicting_exact_claims` when
-there is more than one — naming both rows and saying to remove the duplicate
-rather than to advance it. An earlier revision ranked a pending draft above an
-already-billed match instead: the halt was safe, and the sentence it printed was
-not. Pinned by
-`BillingWorkflowTest::test_a_period_billed_and_claimed_by_a_draft_refuses_and_says_to_remove_the_duplicate`
-and, for all three shapes, by `ScheduleGenerationPreflightTest`.
+covering the period exactly, and settles the set **by status** — because status
+is all the ordinary lifecycle can change. `discardDraft()` and `void()` both
+turn a row void and keep its service period, and an exact void is itself an
+exact claim, so a rule that refused on the count alone could not be cleared by
+either repair it recommended: issued + draft became issued + void, still two
+rows, still refused. Every advertised exit looped, and for two issued rows a
+historical anomaly became a permanent halt. The rule now is:
+
+- **voids only** — a waiver, however many times it was recorded; already billed;
+- **one charged invoice and any number of voids** — that invoice billed the
+  period; the voids are the residue of a repair, not a second claim;
+- **one draft and nothing else** — pending, as above;
+- **two or more charged invoices** — `conflicting_exact_claims`, whatever else
+  is present. Void the unpaid duplicate and the survivor is read as billed;
+- **a draft beside anything else** — `conflicting_exact_claims`. Beside a
+  charged invoice, discard it (issuing charges twice). Beside an exact void,
+  the rows do not say whether the void is a deliberate waiver or the discarded
+  half of a repair: discard the draft to keep the waiver, or issue it to bill.
+  Two drafts are discarded down to one, which is then one of those two cases.
+
+Each shape's message names only a repair the lifecycle will perform and that
+actually releases the period, and a two-step repair says so. The one shape with
+no exit here is two or more rows that have each taken money — `void()` throws
+once `paid_amount > 0` — and that message says a financial correction is needed
+rather than recommending a call the application refuses. Pinned by
+`BillingWorkflowTest::test_a_period_billed_and_claimed_by_a_draft_refuses_and_says_to_remove_the_duplicate`,
+by the five tests after it that **perform each remedy and re-run** the schedule,
+and by `ScheduleGenerationPreflightTest`, which also asserts that the state a
+repair leaves behind — a charged invoice beside an exact void — is reported
+clean.
 
 **A refusal is always safe, but it is not always cheap.** Nothing is billed
 twice and no period is skipped — that part is unconditional. Whether the run can
@@ -327,7 +350,14 @@ It walks every **active** schedule's due periods — from `next_run_on` through
 the given date, cut by the same `BillingPeriod` arithmetic `generateDue()` uses
 — and runs the same resolver on each, stopping where the run would stop. It also
 reads what `generateDue()` reads before its loop: the cadence, and the line
-template. It reports how many schedules would halt, split by refusal, pending
+template — through the same `BillingScheduleLineTemplate::normalize()` the run
+uses, so what it reports as `unreadable_line_template` is exactly what throws.
+That includes an **empty** template. Both readers used to accept `[]`, and
+`MoneyService::invoiceTotals([])` prices it to zero, so a schedule whose
+template had been imported or hand-edited empty got a clean preflight and then
+created, issued and advanced past a $0 invoice with no lines, one per due
+period. The public contract has always required `min:1`; the reader is now no
+looser than it. It reports how many schedules would halt, split by refusal, pending
 draft and defect of the schedule itself, and which reason fired. It exits
 non-zero when it finds any, so a deployment can gate on it, and prints counts
 only, so a run against real client billing records is safe to paste into a
