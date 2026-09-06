@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
+use App\Support\Billing\PeriodClaimVerdict;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -11,7 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 final class BillingScheduleService
 {
-    public function __construct(private readonly InvoiceLifecycleService $invoices) {}
+    public function __construct(
+        private readonly InvoiceLifecycleService $invoices,
+        private readonly BillingPeriodCollisionResolver $collisions,
+    ) {}
 
     /** @return list<ClientInvoice> */
     public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through): array
@@ -27,13 +31,31 @@ final class BillingScheduleService
             $template = $this->normalizedTemplate($locked->getAttribute('line_template'));
             while ($nextRun->lte($through)) {
                 [$start, $end, $next] = $this->period($nextRun, (string) $locked->cadence);
-                $invoice = ClientInvoice::query()
-                    ->where('client_billing_schedule_id', $locked->id)
-                    ->whereDate('service_period_start', $start)
-                    ->whereDate('service_period_end', $end)
-                    ->first();
 
-                if ($invoice === null) {
+                // Whether this period is already covered, and by whose invoice,
+                // is decided by `BillingPeriodCollisionResolver`. It used to be
+                // one nested `where` closure here, and three reviews each found
+                // a real defect inside it; the reasoning is long enough to need
+                // its own class and its own tests per branch.
+                $claim = $this->collisions->resolve($locked, $start, $end);
+
+                // A refusal rolls the whole transaction back, including periods
+                // already created earlier in this loop. That is deliberate:
+                // `createDraft()` and `issue()` each mutate invoices,
+                // activities and time entries, so a partial run would leave
+                // some of a schedule's periods billed and its `next_run_on`
+                // pointing into the middle of the batch. All-or-nothing is
+                // recoverable by re-running once the named row is repaired;
+                // half-applied is not. Doing the classification for every
+                // period up front, before creating anything, would avoid the
+                // wasted work - #252.
+                if ($claim->verdict === PeriodClaimVerdict::Refused) {
+                    throw new DomainException($claim->refusal());
+                }
+
+                if ($claim->verdict === PeriodClaimVerdict::AlreadyBilled) {
+                    $created[] = $claim->invoice();
+                } else {
                     $draft = $this->invoices->createDraft(
                         $locked->workspace,
                         $locked->clientCompany,
@@ -50,8 +72,6 @@ final class BillingScheduleService
                         $template,
                     );
                     $created[] = $this->invoices->issue($draft, $locked->workspace);
-                } else {
-                    $created[] = $invoice;
                 }
 
                 $nextRun = $next;

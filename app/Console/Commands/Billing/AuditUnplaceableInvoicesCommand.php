@@ -28,7 +28,7 @@ final class AuditUnplaceableInvoicesCommand extends Command
     protected $signature = 'svc:billing:audit-unplaceable-invoices
         {--format=text : Output text or json}';
 
-    protected $description = 'Count invoices with no service period end, and how much billed overage they carry';
+    protected $description = 'Count invoices whose service period or cycle cannot be placed on a calendar, and how much billed overage they carry';
 
     public function handle(UnplaceableInvoiceAuditor $auditor): int
     {
@@ -65,6 +65,16 @@ final class AuditUnplaceableInvoicesCommand extends Command
         $this->newLine();
         $this->components->twoColumnDetail('Overage hours at stake', (string) $counts->overageHoursAtStake);
 
+        // Its own block, under its own heading, because it is a different
+        // exposure: the end boundary above is read by the overage ledger and is
+        // funnelled down to money, while a period a guard cannot place costs a
+        // whole invoice. Not a sub-count of the line above it, either - the
+        // guards read both boundaries, so this counts rows missing *either*
+        // one and can exceed the start-only figure.
+        $this->newLine();
+        $this->components->twoColumnDetail('Without a service period start', (string) $counts->withoutAServicePeriodStart);
+        $this->components->twoColumnDetail('Unplaceable by a period guard', (string) $counts->unplaceableByAPeriodGuard);
+
         $this->newLine();
         $this->components->twoColumnDetail('Without a cycle start or end', (string) $counts->withoutACycle);
         $this->components->twoColumnDetail('... of those, of a kind matched by cycle', (string) $counts->ofAKindReadByCycle);
@@ -84,9 +94,16 @@ final class AuditUnplaceableInvoicesCommand extends Command
             );
         }
 
+        // Narrowed to the cycle guards. It used to claim that *no* duplicate
+        // guard was blind, which was a statement about a wider set than this
+        // count covers: the guards that place an invoice by its service period
+        // are a different set reading a different column, and they get their
+        // own verdict below. A green line that overstates its own scope is
+        // worse than no line, because it is read as an all-clear for the
+        // question the operator actually has.
         if ($counts->liveWithoutACycle === 0) {
             $this->components->info(
-                'Every live invoice on an agreement can be matched to its cycle, so no duplicate guard is blind and no interim sum is short.'
+                'Every live invoice on an agreement can be matched to its cycle, so no cycle duplicate guard is blind and no interim sum is short.'
             );
         } else {
             $this->components->warn(
@@ -94,6 +111,19 @@ final class AuditUnplaceableInvoicesCommand extends Command
                 .($counts->cycleAffected > 0
                     ? '; '.$counts->cycleAffected.' of them carry overage a cadence invoice would then charge again.'
                     : '.')
+            );
+        }
+
+        if ($counts->unplaceableByAPeriodGuard === 0) {
+            $this->components->info(
+                'Every invoice a period guard reads states a complete service period, so the guards that place an invoice by its period can see them all.'
+            );
+        } else {
+            $this->components->warn(
+                $counts->unplaceableByAPeriodGuard.' invoice(s) a period guard reads state no complete service period. '
+                .'BillingScheduleService::generateDue() places an invoice by comparing both boundaries, and a null answers UNKNOWN rather than false, '
+                .'so a schedule can bill a period one of these already covers - and billing_schedule_service_period_unique will not reject the second, '
+                .'because a unique index does not constrain a null. Give them a service period start and end.'
             );
         }
 
