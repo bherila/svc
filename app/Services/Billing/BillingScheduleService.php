@@ -63,9 +63,10 @@ final class BillingScheduleService
                 //   the sibling guard, so the two cannot drift apart.
                 // - **Agreement.** A company can hold several, each billing its
                 //   own periods, and one agreement's cadence invoice says
-                //   nothing about another's. A row naming *no* agreement still
-                //   blocks: it cannot be attributed elsewhere, and that is the
-                //   fail-closed half this fix exists for.
+                //   nothing about another's. A row naming *no* agreement is
+                //   matched here and then attributed below, because "blocks"
+                //   is only the right answer when this schedule is the one it
+                //   could belong to.
                 $invoice = ClientInvoice::query()
                     ->where('workspace_id', $locked->workspace_id)
                     ->where('client_company_id', $locked->client_company_id)
@@ -90,6 +91,43 @@ final class BillingScheduleService
                             });
                     })
                     ->first();
+
+                // A row naming neither a schedule nor an agreement matches
+                // *every* schedule this company has, and at most one of them
+                // can be the one it covers. Blocking on it silently suppresses
+                // the others - two schedules due for these dates would both
+                // return this single invoice, both advance their own
+                // `next_run_on`, and at least one agreement would go unbilled
+                // for a period nothing charged.
+                //
+                // So the fail-closed reading is kept only where it is
+                // unambiguous. With one active schedule on the company there is
+                // nowhere else the row could belong and it blocks, which is
+                // #219's case and the common one. With a rival, this cannot be
+                // decided here at all: billing anyway double-charges and
+                // skipping loses a period, so it refuses and says what to fix.
+                //
+                // Deliberately narrow, per the lesson of #144 - a refusal on a
+                // null must be checked against the paths that write it. Nothing
+                // in this application writes this shape: `generateDue()` and
+                // `ClientInvoicingService` both set the agreement, and
+                // `createDraft()` without one stamps `ad_hoc`, which the kind
+                // filter above has already excluded. Only a migrated or
+                // hand-repaired row reaches here, and only while a second
+                // schedule is live.
+                if ($invoice instanceof ClientInvoice
+                    && $invoice->client_billing_schedule_id === null
+                    && $invoice->client_agreement_id === null
+                    && $this->hasARivalSchedule($locked)) {
+                    throw new DomainException(sprintf(
+                        'Invoice %s covers %s to %s for this client but names neither a billing schedule nor an agreement, '
+                        .'and this client has more than one active billing schedule. It cannot be attributed to one of them '
+                        .'here. Set its agreement, or its schedule, before billing this period.',
+                        $invoice->invoice_number,
+                        $start->toDateString(),
+                        $end->toDateString(),
+                    ));
+                }
 
                 if ($invoice === null) {
                     $draft = $this->invoices->createDraft(
@@ -118,6 +156,26 @@ final class BillingScheduleService
 
             return $created;
         });
+    }
+
+    /**
+     * Whether another active schedule on this company could claim the period.
+     *
+     * Active only. An inactive schedule generates nothing - `generateDue()`
+     * returns early for one - so it cannot be the rival claimant that makes an
+     * unattributed invoice ambiguous, and counting it would refuse on a
+     * question nobody is actually asking. Reactivating it puts the ambiguity
+     * back, which is correct: this is re-evaluated on every run rather than
+     * decided once.
+     */
+    private function hasARivalSchedule(ClientBillingSchedule $schedule): bool
+    {
+        return ClientBillingSchedule::query()
+            ->where('workspace_id', $schedule->workspace_id)
+            ->where('client_company_id', $schedule->client_company_id)
+            ->where('is_active', true)
+            ->whereKeyNot($schedule->id)
+            ->exists();
     }
 
     /** @return array{0:CarbonImmutable,1:CarbonImmutable,2:CarbonImmutable} */

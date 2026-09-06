@@ -186,13 +186,22 @@ final class UnplaceableInvoiceAuditorTest extends TestCase
      * invoice by comparing its period, because SQL compares a null to a date as
      * UNKNOWN. What it costs there is a duplicate invoice, not a wrong total.
      *
-     * Two numbers, because the total is the migration question and the live
-     * count of a guard-read kind is the exposure. Kind is applied the way the
-     * period guards apply it - by exclusion, so a legacy invoice carrying no
-     * kind is admitted rather than dropped, which is the direction that keeps a
-     * real exposure visible.
+     * Two numbers, because the total is the migration question and the
+     * guard-read count is the exposure. Kind is applied the way the period
+     * guards apply it - by exclusion, so a legacy invoice carrying no kind is
+     * admitted rather than dropped, which is the direction that keeps a real
+     * exposure visible.
+     *
+     * **Status is deliberately not applied**, unlike every other funnel in this
+     * auditor, and the voided row below is the whole reason this test exists in
+     * its current form. `generateDue()` has no status filter, so a voided
+     * invoice blocks its period - and a voided invoice missing its start
+     * defeats that guard exactly as a live one does, letting the schedule bill
+     * a waived period again with no constraint to reject the write. A first
+     * draft of this count filtered to `live()` by analogy with the cycle counts
+     * and reported that row as no exposure at all.
      */
-    public function test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status(): void
+    public function test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status(): void
     {
         $workspace = $this->workspace('period-start');
         $company = $this->company($workspace, 'period-start');
@@ -209,15 +218,22 @@ final class UnplaceableInvoiceAuditorTest extends TestCase
         // A migrated row carries no kind and those guards still read it.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => null] + $startless);
 
-        // Counted, but not exposed: voided is not live, and an ad-hoc invoice
-        // is excluded from the cadence guards by kind before its dates matter.
+        // Voided, and still exposed. `generateDue()` never looks at status, so
+        // this row blocks its period while it is placeable and stops blocking
+        // the moment its start is missing - the schedule then bills a period
+        // that was deliberately waived, and the unique index cannot reject the
+        // replacement because one of its three columns is the null that caused
+        // the problem.
         $this->invoice($workspace, $company, $agreement, ['status' => 'voided', 'invoice_kind' => 'cadence_period'] + $startless);
+
+        // Counted, but not exposed: an ad-hoc invoice is excluded from the
+        // cadence guards by kind before its dates matter.
         $this->invoice($workspace, $company, $agreement, ['status' => 'issued', 'invoice_kind' => 'ad_hoc'] + $startless);
 
         $counts = app(UnplaceableInvoiceAuditor::class)->count($workspace);
 
         $this->assertSame(5, $counts->withoutAServicePeriodStart);
-        $this->assertSame(3, $counts->liveWithoutAServicePeriodStart);
+        $this->assertSame(4, $counts->ofAKindReadByAPeriodGuard, 'the voided row is exposure too: the guard it defeats has no status filter');
 
         // The end-boundary count is untouched by all of this: every row above
         // states an end. Asserted here because folding the start into

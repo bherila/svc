@@ -71,7 +71,7 @@ final class AuditUnplaceableInvoicesCommand extends Command
         // duplicate guards and costs a whole invoice.
         $this->newLine();
         $this->components->twoColumnDetail('Without a service period start', (string) $counts->withoutAServicePeriodStart);
-        $this->components->twoColumnDetail('... of those, live and read by a period guard', (string) $counts->liveWithoutAServicePeriodStart);
+        $this->components->twoColumnDetail('... of those, of a kind a period guard reads', (string) $counts->ofAKindReadByAPeriodGuard);
 
         $this->newLine();
         $this->components->twoColumnDetail('Without a cycle start or end', (string) $counts->withoutACycle);
@@ -92,9 +92,16 @@ final class AuditUnplaceableInvoicesCommand extends Command
             );
         }
 
+        // Narrowed to the cycle guards. It used to claim that *no* duplicate
+        // guard was blind, which was a statement about a wider set than this
+        // count covers: the guards that place an invoice by its service period
+        // are a different set reading a different column, and they get their
+        // own verdict below. A green line that overstates its own scope is
+        // worse than no line, because it is read as an all-clear for the
+        // question the operator actually has.
         if ($counts->liveWithoutACycle === 0) {
             $this->components->info(
-                'Every live invoice on an agreement can be matched to its cycle, so no duplicate guard is blind and no interim sum is short.'
+                'Every live invoice on an agreement can be matched to its cycle, so no cycle duplicate guard is blind and no interim sum is short.'
             );
         } else {
             $this->components->warn(
@@ -102,6 +109,19 @@ final class AuditUnplaceableInvoicesCommand extends Command
                 .($counts->cycleAffected > 0
                     ? '; '.$counts->cycleAffected.' of them carry overage a cadence invoice would then charge again.'
                     : '.')
+            );
+        }
+
+        if ($counts->ofAKindReadByAPeriodGuard === 0) {
+            $this->components->info(
+                'Every invoice a period guard reads states a period start, so the guards that place an invoice by its service period can see them all.'
+            );
+        } else {
+            $this->components->warn(
+                $counts->ofAKindReadByAPeriodGuard.' invoice(s) a period guard reads state no period start. '
+                .'BillingScheduleService::generateDue() places an invoice by comparing that date, and a null answers UNKNOWN rather than false, '
+                .'so a schedule can bill a period one of these already covers - and billing_schedule_service_period_unique will not reject the second, '
+                .'because a unique index does not constrain a null. Give them a period start.'
             );
         }
 

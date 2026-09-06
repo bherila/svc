@@ -15,6 +15,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Support\Billing\InvoiceKind;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
@@ -161,7 +162,7 @@ class BillingWorkflowTest extends TestCase
 
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.voided')->count());
 
-        $this->expectException(\DomainException::class);
+        $this->expectException(DomainException::class);
         $service->applyPayment($invoice, ['amount' => 100, 'currency' => 'USD', 'method' => 'cash'], $workspace);
     }
 
@@ -405,6 +406,128 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * An invoice attributable to nobody blocks - while only one schedule exists.
+     *
+     * This is the fail-closed half of #219 in its narrowest honest form. A row
+     * naming neither a schedule nor an agreement cannot be attributed anywhere
+     * else, so with a single schedule on the company it is this schedule's
+     * period and blocking it is right.
+     *
+     * Paired deliberately with the refusal below, which is the same fixture
+     * plus a rival: the two together are what stop the blocking rule being
+     * either dropped or widened, since each alone reads as the general case.
+     */
+    public function test_an_unattributed_invoice_blocks_the_only_schedule_that_could_own_it(): void
+    {
+        [, $workspace, $company] = $this->tenant('Sole Schedule Workspace');
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic agreement',
+            'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+            'line_template' => [$this->line()],
+        ]);
+
+        // The shape a migration leaves: a period, no kind, no agreement, no
+        // schedule. Nothing in this application writes it - `createDraft()`
+        // coalesces an absent *or null* kind to `ad_hoc`, so the null has to be
+        // written afterwards rather than passed in, which is itself the proof
+        // that only a migrated or hand-edited row can look like this.
+        app(InvoiceLifecycleService::class)->createDraft(
+            $workspace,
+            $company,
+            $this->invoiceData() + [
+                'service_period_start' => '2026-08-01',
+                'service_period_end' => '2026-08-31',
+            ],
+            [$this->line()],
+        )->forceFill(['invoice_kind' => null])->save();
+
+        app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertDatabaseCount('client_invoices', 1);
+        $this->assertSame(
+            0,
+            ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->count(),
+            'August is already covered by the unattributed invoice, so nothing new is raised',
+        );
+    }
+
+    /**
+     * With a rival schedule, an unattributed invoice is refused, not guessed.
+     *
+     * The row matches every schedule the company has, and at most one of them
+     * can be the one it covers. Treating it as unclaimed-therefore-blocking
+     * makes a single invoice suppress two: both schedules return it, both
+     * advance their own `next_run_on`, and at least one agreement goes unbilled
+     * for a period nothing charged - the silent revenue loss this guard's
+     * narrowing exists to prevent, arrived at from the other direction.
+     *
+     * Neither silent answer is available: billing anyway double-charges,
+     * skipping loses a period. So it refuses, and the assertions below are
+     * about the refusal being *safe* rather than merely loud - the transaction
+     * rolls back, `next_run_on` does not move, and nothing is created, so the
+     * run can simply be repeated once someone attributes the row.
+     */
+    public function test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it(): void
+    {
+        [, $workspace, $company] = $this->tenant('Ambiguous Owner Workspace');
+        $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
+            ]);
+
+            return ClientBillingSchedule::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+                'cadence' => 'monthly', 'next_run_on' => '2026-08-01', 'due_days' => 14, 'currency' => 'USD',
+                'line_template' => [$this->line()],
+            ]);
+        });
+
+        $orphan = app(InvoiceLifecycleService::class)->createDraft(
+            $workspace,
+            $company,
+            $this->invoiceData() + [
+                'service_period_start' => '2026-08-01',
+                'service_period_end' => '2026-08-31',
+            ],
+            [$this->line()],
+        );
+        // As above: the null kind is written, not passed, because `createDraft()`
+        // coalesces a null to `ad_hoc`.
+        $orphan->forceFill(['invoice_kind' => null])->save();
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedules[0], CarbonImmutable::parse('2026-08-15'));
+            $this->fail('An invoice that could belong to either schedule must not be attributed to one of them silently.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString($orphan->invoice_number, $refusal->getMessage());
+            $this->assertStringContainsString('2026-08-01', $refusal->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 1);
+        $this->assertSame(
+            '2026-08-01',
+            $schedules[0]->fresh()?->next_run_on?->format('Y-m-d'),
+            'the refusal rolls back: a schedule that billed nothing must not move on',
+        );
+
+        // Attributed, the ambiguity is gone and the run succeeds - so the
+        // refusal is a prompt to repair rather than a dead end.
+        $orphan->forceFill(['client_agreement_id' => $schedules[1]->client_agreement_id])->save();
+        app(BillingScheduleService::class)->generateDue($schedules[0]->fresh(), CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertSame(
+            1,
+            ClientInvoice::query()->where('client_billing_schedule_id', $schedules[0]->id)->count(),
+            'once the row names the other agreement, this schedule bills its own August',
+        );
+    }
+
+    /**
      * A foreign workspace's identical invoice neither blocks nor is returned.
      *
      * The guard now blocks on an invoice that names no schedule, so a row from
@@ -567,7 +690,7 @@ class BillingWorkflowTest extends TestCase
             'idempotency_key' => 'first-tab-key',
         ], $workspace);
 
-        $this->expectException(\DomainException::class);
+        $this->expectException(DomainException::class);
         $this->expectExceptionMessage('A pending payment already reserves the remaining invoice balance.');
         app(StripePaymentIntentService::class)
             ->create($invoice->fresh(), $workspace, null, 'second-tab-key');
@@ -584,7 +707,7 @@ class BillingWorkflowTest extends TestCase
             'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_pending_void',
         ], $workspace);
 
-        $this->expectException(\DomainException::class);
+        $this->expectException(DomainException::class);
         $this->expectExceptionMessage('Cancel or resolve pending payments before voiding this invoice.');
         $service->void($invoice, $workspace);
     }
@@ -604,7 +727,7 @@ class BillingWorkflowTest extends TestCase
         try {
             $service->setPaymentStatus($payment, 'succeeded', $workspace);
             $this->fail('Expected DomainException for a payment succeeding against a void invoice.');
-        } catch (\DomainException $exception) {
+        } catch (DomainException $exception) {
             $this->assertStringContainsString('void invoice', $exception->getMessage());
         }
         $fresh = $invoice->fresh();

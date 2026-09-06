@@ -42,6 +42,9 @@ use Illuminate\Support\Facades\DB;
  * null to a date as UNKNOWN. What it costs is a whole duplicate invoice rather
  * than a wrong number.
  *
+ * The second count carries no status filter, because the schedule guard it
+ * measures carries none either - see the comment on it below.
+ *
  * Counted separately rather than folded into `withoutAServicePeriod`, because
  * widening that would drag start-only rows into the overage funnel and
  * overstate the money exposure - the same overcount this class already refuses
@@ -95,11 +98,28 @@ final class UnplaceableInvoiceAuditor
         // invoice instead of naming the kinds they accept. A null kind is not
         // representable in either list and is admitted here, as everywhere - a
         // migrated invoice carries none and those guards still read it.
+        //
+        // **No status filter**, unlike every other funnel here, because the
+        // guard this measures has none. `BillingScheduleService::generateDue()`
+        // matches on tenant, period and ownership and never looks at status, so
+        // a *voided* invoice blocks its period - deliberately, since the
+        // replacement would collide with
+        // `billing_schedule_service_period_unique`. A voided row missing its
+        // start therefore defeats that guard exactly as a live one does, and
+        // the schedule bills a waived period again with nothing to reject the
+        // write, because a unique index does not constrain the null that caused
+        // it. Filtering to `live()` here by analogy with the cycle counts above
+        // reported that row as no exposure at all.
+        //
+        // `ClientInvoicingService::assertNoOverlappingInvoice()` *is* scoped to
+        // `live()`, so this over-reports for that one guard. That is the safe
+        // direction for an audit: it is a ceiling on the affected population,
+        // and a count that hides a real exposure is worse than one that names a
+        // row already harmless.
         $noPeriodStart = $this->invoices($workspace)->whereNull('service_period_start');
-        $liveNoPeriodStart = (clone $noPeriodStart)
-            ->whereIn('status', InvoiceStatus::live())
-            ->where(function (Builder $readByAPeriodGuard): void {
-                $readByAPeriodGuard
+        $readByAPeriodGuard = (clone $noPeriodStart)
+            ->where(function (Builder $kind): void {
+                $kind
                     ->whereNull('invoice_kind')
                     ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
             });
@@ -143,7 +163,7 @@ final class UnplaceableInvoiceAuditor
             invoices: $this->invoices($workspace)->count(),
             withoutAServicePeriod: $unplaceable->count(),
             withoutAServicePeriodStart: $noPeriodStart->count(),
-            liveWithoutAServicePeriodStart: $liveNoPeriodStart->count(),
+            ofAKindReadByAPeriodGuard: $readByAPeriodGuard->count(),
             chargedOfThose: $charged->count(),
             onAnAgreementOfThose: $onAgreement->count(),
             affected: $affected->count(),

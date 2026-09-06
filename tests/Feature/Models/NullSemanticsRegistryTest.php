@@ -184,6 +184,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
         'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
@@ -205,7 +206,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
-        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status',
+        'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
@@ -345,6 +346,18 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
                 ],
+                // And a fourth, which is where reading the null as "blocks"
+                // stops being safe. A row naming no agreement matches *every*
+                // schedule the company has, so with two of them one invoice
+                // suppresses both and an agreement goes unbilled. The null is
+                // therefore read as blocking only while this schedule is the
+                // one it could belong to, and refused outright when it is not -
+                // the one place in this registry where a null resolves to
+                // neither branch but to an error.
+                [
+                    'covered_by' => BillingWorkflowTest::class,
+                    'method' => 'test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
+                ],
             ],
             // What the citation proves is narrower than it reads: it is the
             // default `InvoiceLifecycleService::createDraft` picks when no kind
@@ -448,7 +461,7 @@ final class NullSemanticsRegistryTest extends TestCase
                 // instrument used to argue no such row exists.
                 [
                     'covered_by' => UnplaceableInvoiceAuditorTest::class,
-                    'method' => 'test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_and_status',
+                    'method' => 'test_the_period_start_count_is_separate_from_the_end_and_narrows_by_kind_not_status',
                 ],
             ],
             // Five branches, and the widest spread of readings any one column

@@ -49,8 +49,16 @@ So the claim here is deliberately split: **the end boundary is evidenced clean;
 the start boundary is now measurable and has not yet been measured against
 production**, because the count ships with this change and reaches the audit
 only on deploy. Run `svc:billing:audit-unplaceable-invoices` — or the MCP tool —
-afterwards. A non-zero `live_without_a_service_period_start` is a repair, not a
+afterwards. A non-zero `of_a_kind_read_by_a_period_guard` is a repair, not a
 guard change, and gets its own issue.
+
+That second count carries **no status filter**, unlike every other funnel in
+that audit. `generateDue()` has none either — a voided invoice blocks its
+period, because the replacement would collide with
+`billing_schedule_service_period_unique` — so a *voided* invoice missing its
+start defeats the guard exactly as a live one does, and the schedule bills a
+deliberately waived period again with nothing to reject the write. Scoping the
+count to live statuses reported that row as no exposure at all.
 
 An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
 a span, and no period guard asks about it.
@@ -93,11 +101,34 @@ an over-block:
 - **Agreement.** A company can hold several, each billing its own periods, and
   `ClientInvoicingService` creates cadence invoices with an agreement and no
   schedule — so an unlinked invoice for these dates may belong to a different
-  agreement entirely. One naming *no* agreement still blocks: there is nowhere
-  else to attribute it.
+  agreement entirely.
 
 Both over-blocks lose revenue silently, which is the failure mode this guard is
 least able to notice, so each has its own test.
+
+**And a row naming no agreement at all is refused, not guessed.** It matches
+every schedule the company has, and at most one of them can be the one it
+covers, so "unclaimed therefore blocking" makes a single invoice suppress
+several: each schedule returns it, each advances its own `next_run_on`, and at
+least one agreement goes unbilled for a period nothing charged. Neither silent
+answer is available — billing anyway double-charges, skipping loses a period —
+so the rule is kept only where it is unambiguous:
+
+- the company has **one** active schedule → nowhere else the row could belong,
+  so it blocks. This is #219's case and the ordinary one.
+- the company has **another** active schedule → `generateDue()` throws, naming
+  the invoice and its period. The transaction rolls back, `next_run_on` does
+  not move, and nothing is created, so the run can simply be repeated once
+  someone attributes the row.
+
+The refusal is deliberately narrow, per #144's lesson that a refusal on a null
+must be checked against the paths that write it. Nothing in this application
+writes this shape: `generateDue()` and `ClientInvoicingService` both set the
+agreement, and `createDraft()` without one stamps `ad_hoc`, which the kind
+condition has already excluded — it coalesces an absent *or explicitly null*
+kind, so even asking for a null kind there does not produce one. Only a
+migrated or hand-repaired row reaches it, and only while a second schedule is
+live.
 
 ## Regenerating Cadence Invoices
 
