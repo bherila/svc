@@ -71,14 +71,26 @@ each looked like a simplification and each hid a real exposure:
   a deliberately waived period again with nothing to reject the write. Scoping
   the count to live statuses reported that row as no exposure at all.
 
-The guard does not merely count these rows, either. A schedule that finds an
-invoice of its own — or its agreement's — with no complete period refuses the
-run and names the row, because no date comparison can establish whether it
-covers the period being billed and the unique index will not reject the
-duplicate. A periodless row naming *neither* owner does not halt anything: there
-is no date tying it to this period and no lineage tying it to this schedule, so
-it is reported for repair rather than allowed to stop every schedule the client
-has.
+The guard does not merely count these rows, either. A schedule that finds a
+**live** invoice of its own — or its agreement's — with no complete period
+refuses the run and names it, because no date comparison can establish whether
+it covers the period being billed and the unique index will not reject the
+duplicate. Two narrowings keep that from becoming a trap:
+
+- a periodless row naming *neither* owner does not halt anything — there is no
+  date tying it to this period and no lineage tying it to this schedule, so it
+  is reported for repair rather than allowed to stop every schedule the client
+  has;
+- a *voided* one does not halt anything either. `updateDraft()` accepts nothing
+  but a draft, so a voided invoice cannot be given a period in the application,
+  and refusing on one would halt the schedule on every run with a database edit
+  as the only way out.
+
+The audit still counts every status, because it reports what a guard *reads*
+rather than what refuses: a voided invoice with a complete period blocks its
+period, and the same row missing a boundary does not, so the period the void was
+meant to waive is billed again. That is worth repairing whether or not it halts
+a run.
 
 An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
 a span, and no period guard asks about it.
@@ -115,9 +127,12 @@ an invoice covering July *and* August did not stop August being billed — the
 dates were not equal, the row fell out of the query, and the second invoice's
 `(schedule, start, end)` tuple was distinct enough for the unique index to
 accept it. `assertNoOverlappingInvoice()` has always used inclusive overlap;
-this now does too. An invoice that overlaps the period without matching it is
-refused rather than treated either way: billing would charge the shared days
-twice, skipping would leave the rest of the period unbilled.
+this now does too. A **live** invoice that overlaps the period without matching
+it is refused rather than treated either way: billing would charge the shared
+days twice, skipping would leave the rest of the period unbilled. A voided one
+does not block — it charged nobody, it cannot be re-keyed once void, and
+`assertNoOverlappingInvoice()`'s own error tells operators to void the existing
+invoice first, which has to remain true.
 
 **A non-null id is a claim, not proof.** Both lineage columns are unconstrained
 integers, so an invoice can name a schedule or agreement that has been deleted

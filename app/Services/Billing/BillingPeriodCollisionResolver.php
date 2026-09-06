@@ -6,12 +6,12 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodClaim;
 use App\Support\Billing\PeriodClaimVerdict;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Tests\Feature\Concurrency\LockOrderConformanceTest;
 
 /**
  * Decide whether a billing period is already covered, and by whose invoice.
@@ -64,14 +64,31 @@ use Tests\Feature\Concurrency\LockOrderConformanceTest;
  * double-charges the shared days, skipping loses the days the other invoice
  * does not cover - so it is refused.
  *
- * ## Status is deliberately not read
+ * ## Status is read in one place, and only to keep a refusal escapable
  *
- * No status filter anywhere here. A voided invoice still blocks its period,
- * because regenerating it would write the same
+ * A voided invoice covering *exactly* this period still blocks it, whatever its
+ * status: voiding a cadence invoice is the documented way to waive its own
+ * period, and regenerating it would write the same
  * `(client_billing_schedule_id, service_period_start, service_period_end)` and
- * collide with the unique index - a hard failure rather than a silent skip.
- * Whether a voided cadence invoice should free its period is a product question
- * with its own issue; it is not decided by omission here.
+ * collide with the unique index anyway.
+ *
+ * The two *refusals* are scoped to `InvoiceStatus::live()`, because a refusal
+ * has to have a way out and for a voided row there was none.
+ * `InvoiceLifecycleService::updateDraft()` accepts nothing but a `draft`, so a
+ * voided invoice cannot be re-keyed or given a period in the application at
+ * all - a refusal on one would halt the schedule on every run with a database
+ * edit as the only remedy, while
+ * `ClientInvoicingService::assertNoOverlappingInvoice()` tells the operator to
+ * void the existing invoice first. Reading status here is what makes that
+ * advice true rather than a dead end. The waiver argument does not extend to
+ * these cases either: it is about not reselling *the same* cycle, and neither a
+ * differently-dated span nor a row with no period is that.
+ *
+ * `UnplaceableInvoiceAuditor` still counts every status, deliberately. It
+ * reports what a guard *reads*, and the exact-match block reads them all: a
+ * voided invoice with a complete period blocks, while the same row missing a
+ * boundary does not, so the period its void was meant to waive gets billed
+ * again. That is a repair worth surfacing whether or not it halts a run.
  */
 final class BillingPeriodCollisionResolver
 {
@@ -141,14 +158,32 @@ final class BillingPeriodCollisionResolver
         $scheduleId = $candidate->client_billing_schedule_id;
         $agreementId = $candidate->client_agreement_id;
 
-        // Lineage first, because every question below reads it. An id that does
+        // Kind first, and only for unlinked rows. `cycleGuardExclusions()` says
+        // an interim or ad-hoc invoice must never block a cadence one, and that
+        // exemption has to be reached before the lineage refusals below or it
+        // is not an exemption: an ad-hoc invoice whose `client_agreement_id`
+        // dangles would hard-refuse the whole run over a row that is not
+        // allowed to affect it either way. `client_invoices.client_agreement_id`
+        // carries no foreign key, so an import or a repaired row reaches this.
+        //
+        // Unlinked only, because a row naming *this* schedule is this
+        // schedule's whatever kind it carries - and one naming a schedule that
+        // does not resolve cannot establish that it is exempt any more than it
+        // can establish whose it is.
+        if ($scheduleId === null
+            && $candidate->invoice_kind !== null
+            && in_array($candidate->invoice_kind, InvoiceKind::cycleGuardExclusions(), true)) {
+            return PeriodClaim::clear();
+        }
+
+        // Lineage next, because every question below reads it. An id that does
         // not resolve is not evidence of anything, and the safe reading of "I
         // cannot tell whose this is" is never "not mine".
         if ($scheduleId !== null && ! $schedules->has($scheduleId)) {
-            return PeriodClaim::refused($this->danglingMessage($candidate, 'billing schedule', $start, $end));
+            return PeriodClaim::refused($this->danglingMessage($candidate, 'a billing schedule', $start, $end));
         }
         if ($agreementId !== null && ! $agreements->has($agreementId)) {
-            return PeriodClaim::refused($this->danglingMessage($candidate, 'agreement', $start, $end));
+            return PeriodClaim::refused($this->danglingMessage($candidate, 'an agreement', $start, $end));
         }
 
         // A schedule always names exactly one agreement -
@@ -186,18 +221,12 @@ final class BillingPeriodCollisionResolver
             return PeriodClaim::clear();
         }
 
-        // Unlinked from here down. `InvoiceKind::cycleGuardExclusions()` already
-        // says an interim or ad-hoc invoice must not block a cadence one, and
-        // `ClientInvoicingService::assertNoOverlappingInvoice()` reads the same
-        // list, so the two guards cannot drift apart. Neither kind carries a
-        // schedule, which is exactly why an unqualified null read one of them
-        // as this period's cadence invoice and advanced past an unbilled
-        // period.
-        if ($candidate->invoice_kind !== null
-            && in_array($candidate->invoice_kind, InvoiceKind::cycleGuardExclusions(), true)) {
-            return PeriodClaim::clear();
-        }
-
+        // Unlinked from here down; the kind exemption above has already let go
+        // of the interim and ad-hoc rows. `assertNoOverlappingInvoice()` reads
+        // the same list, so the two guards cannot drift apart. Neither kind
+        // carries a schedule, which is exactly why an unqualified null read one
+        // of them as this period's cadence invoice and advanced past an
+        // unbilled period.
         if ($agreementId !== null) {
             // `ClientInvoicingService` creates cadence invoices with an
             // agreement and no schedule, so this is the ordinary shape of a
@@ -240,13 +269,37 @@ final class BillingPeriodCollisionResolver
             && $candidate->service_period_end?->isSameDay($end) === true;
 
         if ($coversExactly) {
+            // Any status, including void. Voiding a cadence invoice is the
+            // documented way to waive its period, and regenerating one would
+            // write the same
+            // `(client_billing_schedule_id, service_period_start, service_period_end)`
+            // and collide with the unique index anyway.
             return PeriodClaim::alreadyBilled($candidate);
+        }
+
+        // A partial overlap is the one place status has to be read, and the
+        // reason is that the refusal below would otherwise have no way out. A
+        // voided invoice charged nobody, so it cannot stand in for this period;
+        // and `updateDraft()` refuses any status but `draft`, so a *voided*
+        // invoice cannot be re-keyed in the application at all. Refusing on one
+        // would halt the schedule on every run with the only remedy a database
+        // edit - while telling the operator to do something the application
+        // forbids, and contradicting
+        // `ClientInvoicingService::assertNoOverlappingInvoice()`, whose own
+        // error tells them to void the existing invoice first.
+        //
+        // So voiding is a real remedy here, as that message promises. The
+        // waiver argument does not reach this case either: it is about not
+        // reselling *the same* cycle, and this row names a different span.
+        if (! in_array((string) $candidate->status, InvoiceStatus::live(), true)) {
+            return PeriodClaim::clear();
         }
 
         return PeriodClaim::refused(sprintf(
             'Invoice %s covers %s to %s, which overlaps the period %s to %s being billed now without matching it. '
             .'Billing anyway would charge the shared days twice and skipping would leave the rest of the period '
-            .'unbilled, so neither is done. Re-key that invoice, or the schedule cadence, so the periods line up.',
+            .'unbilled, so neither is done. Re-key that invoice while it is still a draft, void it, or line the '
+            .'schedule cadence up with it.',
             $candidate->invoice_number,
             $candidate->service_period_start?->toDateString() ?? '?',
             $candidate->service_period_end?->toDateString() ?? '?',
@@ -320,6 +373,7 @@ final class BillingPeriodCollisionResolver
         return ClientInvoice::query()
             ->where('workspace_id', $schedule->workspace_id)
             ->where('client_company_id', $schedule->client_company_id)
+            ->whereIn('status', InvoiceStatus::live())
             ->where(function (Builder $missing): void {
                 $missing->whereNull('service_period_start')->orWhereNull('service_period_end');
             })
@@ -357,8 +411,8 @@ final class BillingPeriodCollisionResolver
             ->where('client_company_id', $schedule->client_company_id)
             ->whereNotNull('service_period_start')
             ->whereNotNull('service_period_end')
-            ->whereDate('service_period_start', '<=', $end->toDateString())
-            ->whereDate('service_period_end', '>=', $start->toDateString())
+            ->where('service_period_start', '<=', $end->toDateString())
+            ->where('service_period_end', '>=', $start->toDateString())
             ->orderBy('id')
             ->get();
     }
@@ -410,7 +464,7 @@ final class BillingPeriodCollisionResolver
     private function danglingMessage(ClientInvoice $candidate, string $what, CarbonImmutable $start, CarbonImmutable $end): string
     {
         return sprintf(
-            'Invoice %s overlaps %s to %s and names a %s that does not exist for this client and workspace, so it '
+            'Invoice %s overlaps %s to %s and names %s that does not exist for this client and workspace, so it '
             .'cannot be established whose period it covers. Treating it as another owner\'s would let this schedule '
             .'bill the period a second time. Correct its lineage before billing this period.',
             $candidate->invoice_number,

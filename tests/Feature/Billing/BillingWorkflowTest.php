@@ -14,6 +14,7 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -636,7 +637,14 @@ class BillingWorkflowTest extends TestCase
     {
         [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Dangling Agreement Workspace');
 
-        $orphan = $this->augustInvoice($workspace, $company, ['client_agreement_id' => $agreement->id]);
+        // The kind matters, and a fixture that leaves it to `createDraft()` does
+        // not test this: with no schedule passed it stamps `ad_hoc`, which the
+        // kind exemption releases before lineage is examined at all. A cadence
+        // invoice is what a period guard actually reads.
+        $orphan = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
         $orphan->forceFill(['client_agreement_id' => $agreement->id + 1_000])->save();
 
         $this->assertRefusedAndUnchanged($schedule, $orphan);
@@ -663,7 +671,10 @@ class BillingWorkflowTest extends TestCase
         ]);
         $siblingAgreement = $this->agreementFor($workspace, $sibling, 'Sibling');
 
-        $orphan = $this->augustInvoice($workspace, $company, ['client_agreement_id' => $agreement->id]);
+        $orphan = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
         $orphan->forceFill(['client_agreement_id' => $siblingAgreement->id])->save();
 
         $this->assertRefusedAndUnchanged($schedule, $orphan);
@@ -749,6 +760,90 @@ class BillingWorkflowTest extends TestCase
         ]);
 
         $this->assertRefusedAndUnchanged($schedule, $wide);
+    }
+
+    /**
+     * Voiding the wider invoice is a real way out of the overlap refusal.
+     *
+     * The refusal above has to be escapable, and for a *voided* invoice it was
+     * not: `updateDraft()` accepts nothing but a draft, so a voided invoice
+     * cannot be re-keyed in the application, and the schedule would refuse on
+     * every run with a database edit as the only remedy - while
+     * `ClientInvoicingService::assertNoOverlappingInvoice()` tells operators to
+     * "void the existing invoice first". This makes that advice true here too.
+     *
+     * A void charged nobody, so the row cannot stand in for this period; and
+     * the waiver rule it might otherwise invoke is about not reselling *the
+     * same* cycle, which a differently-dated span is not.
+     */
+    public function test_voiding_a_containing_invoice_lets_the_schedule_bill_the_period(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Voided Overlap Workspace');
+
+        $wide = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+            'service_period_start' => '2026-07-01',
+        ]);
+        $wide->forceFill(['status' => InvoiceStatus::Void->value])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertNotSame($wide->id, $created[0]->id);
+        $this->assertSame('2026-08-01', $created[0]->service_period_start?->format('Y-m-d'));
+    }
+
+    /**
+     * An exact match still blocks after it is voided, unlike an overlap.
+     *
+     * The counterpart to the test above, and the reason status is read in one
+     * place and not the other. Voiding a cadence invoice is the documented way
+     * to waive *its own* period, and regenerating it would write the same
+     * `(schedule, start, end)` and collide with
+     * `billing_schedule_service_period_unique` - so here the void is honoured
+     * and nothing new is raised.
+     */
+    public function test_a_voided_invoice_for_exactly_this_period_still_blocks_it(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Voided Exact Workspace');
+
+        $august = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ]);
+        $august->forceFill(['status' => InvoiceStatus::Void->value])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertDatabaseCount('client_invoices', 1);
+        $this->assertSame([$august->id], array_map(static fn ($i) => $i->id, $created));
+    }
+
+    /**
+     * An ad-hoc invoice is exempt before its lineage is ever examined.
+     *
+     * `cycleGuardExclusions()` says an interim or ad-hoc invoice must never
+     * block a cadence one, and an exemption reached only after the lineage
+     * refusals is not an exemption: `client_invoices.client_agreement_id`
+     * carries no foreign key, so an imported or repaired ad-hoc row with a
+     * dangling agreement hard-refused the whole run over an invoice that is not
+     * allowed to affect it in either direction.
+     */
+    public function test_an_ad_hoc_invoice_with_dangling_lineage_does_not_refuse_the_run(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Exempt Lineage Workspace');
+
+        $adHoc = $this->augustInvoice($workspace, $company, ['client_agreement_id' => $agreement->id]);
+        $adHoc->forceFill([
+            'invoice_kind' => InvoiceKind::AdHoc->value,
+            'client_agreement_id' => $agreement->id + 1_000,
+        ])->save();
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($schedule->id, $created[0]->client_billing_schedule_id);
     }
 
     /**
