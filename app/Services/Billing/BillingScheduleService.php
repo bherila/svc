@@ -48,7 +48,7 @@ final class BillingScheduleService
                 // recoverable by re-running once the named row is repaired;
                 // half-applied is not. Doing the classification for every
                 // period up front, before creating anything, would avoid the
-                // wasted work - see the follow-up issue.
+                // wasted work - #252.
                 if ($claim->verdict === PeriodClaimVerdict::Refused) {
                     throw new DomainException($claim->refusal());
                 }

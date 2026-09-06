@@ -48,7 +48,8 @@ the start boundary is now measurable and has not yet been measured against
 production**, because the count ships with this change and reaches the audit
 only on deploy. Run `svc:billing:audit-unplaceable-invoices` — or the MCP tool —
 afterwards. A non-zero `unplaceable_by_a_period_guard` is a repair, not a guard
-change, and gets its own issue.
+change, and must happen before the issue-time invariant in #251 is safe to
+turn on.
 
 That second count mirrors the guard rather than tidying it, in three ways that
 each looked like a simplification and each hid a real exposure:
@@ -194,7 +195,7 @@ deliberate: `createDraft()` and `issue()` each mutate invoices, activities and
 time entries, and a half-applied run leaves `next_run_on` pointing into the
 middle of a batch with some periods billed. All-or-nothing is recoverable by
 re-running; half-applied is not. Classifying every period up front, before
-creating anything, would avoid the wasted work and is worth doing separately.
+creating anything, would avoid the wasted work — #252.
 
 ## Regenerating Cadence Invoices
 
