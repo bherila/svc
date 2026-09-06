@@ -48,8 +48,9 @@ use Illuminate\Support\Facades\DB;
  * on it below.
  *
  * It is a *repair ceiling*: rows worth giving a period to, not rows that would
- * halt a run. {@see ScheduleRefusalAuditor} is the resolver-aligned count and
- * the one a deployment gates on.
+ * halt a run. {@see ScheduleGenerationPreflight} answers that question by
+ * running the real guard over the real due periods, and is the one a
+ * deployment gates on.
  *
  * Counted separately rather than folded into `withoutAServicePeriod`, because
  * widening that would drag start-only rows into the overage funnel and
@@ -141,7 +142,7 @@ final class UnplaceableInvoiceAuditor
         // different questions with different answers - a voided row is counted
         // here and cleared by the resolver - and one number cannot be both
         // without being wrong as whichever one it is not.
-        // `ScheduleRefusalAuditor` answers the second.
+        // `ScheduleGenerationPreflight` answers the second.
         $noPeriodStart = $this->invoices($workspace)->whereNull('service_period_start');
         $unplaceablePeriod = $this->invoices($workspace)->where(function (Builder $missing): void {
             $missing->whereNull('service_period_start')->orWhereNull('service_period_end');

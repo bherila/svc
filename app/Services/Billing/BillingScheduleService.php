@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
+use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\PeriodClaimVerdict;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
@@ -30,7 +31,8 @@ final class BillingScheduleService
             $nextRun = CarbonImmutable::parse((string) $locked->next_run_on);
             $template = $this->normalizedTemplate($locked->getAttribute('line_template'));
             while ($nextRun->lte($through)) {
-                [$start, $end, $next] = $this->period($nextRun, (string) $locked->cadence);
+                $period = BillingPeriod::beginningAt($nextRun, (string) $locked->cadence);
+                [$start, $end] = [$period->start, $period->end];
 
                 // Whether this period is already covered, and by whose invoice,
                 // is decided by `BillingPeriodCollisionResolver`. It used to be
@@ -51,6 +53,31 @@ final class BillingScheduleService
                 // wasted work - #252.
                 if ($claim->verdict === PeriodClaimVerdict::Refused) {
                     throw new DomainException($claim->refusal());
+                }
+
+                // A draft covering exactly this period has *claimed* it without
+                // *billing* it, and treating those as the same fact is how a
+                // period gets silently skipped. Reporting the draft as already
+                // billed advanced the cursor past a period no money had been
+                // asked for, and nothing brought it back:
+                // `InvoiceLifecycleService::discardDraft()` turns the draft into
+                // a void invoice that keeps its period, so even rewinding
+                // `next_run_on` met an exact void and honoured it as a waiver.
+                //
+                // Issuing it here instead is not available either - the draft
+                // may be another generator's, mid-review, and issuing is the
+                // act of asking a client for money. So the schedule stops and
+                // names it. Issue the draft and the next run advances normally;
+                // void it deliberately and the waiver is honoured.
+                if ($claim->verdict === PeriodClaimVerdict::PendingDraft) {
+                    throw new DomainException(sprintf(
+                        'Invoice %s is a draft covering exactly %s to %s, the period being billed now. A draft has '
+                        .'charged nobody, so this period is not billed and the schedule is not advanced past it. '
+                        .'Issue that draft to bill the period, or void it to waive the period deliberately.',
+                        $claim->invoice()->invoice_number,
+                        $start->toDateString(),
+                        $end->toDateString(),
+                    ));
                 }
 
                 if ($claim->verdict === PeriodClaimVerdict::AlreadyBilled) {
@@ -74,27 +101,12 @@ final class BillingScheduleService
                     $created[] = $this->invoices->issue($draft, $locked->workspace);
                 }
 
-                $nextRun = $next;
+                $nextRun = $period->next;
                 $locked->forceFill(['next_run_on' => $nextRun->toDateString()])->save();
             }
 
             return $created;
         });
-    }
-
-    /** @return array{0:CarbonImmutable,1:CarbonImmutable,2:CarbonImmutable} */
-    private function period(CarbonImmutable $start, string $cadence): array
-    {
-        $months = match ($cadence) {
-            'monthly' => 1,
-            'quarterly' => 3,
-            'semi_annual' => 6,
-            'annual' => 12,
-            default => throw new DomainException('Unsupported billing cadence.'),
-        };
-        $next = $start->addMonthsNoOverflow($months);
-
-        return [$start, $next->subDay(), $next];
     }
 
     private function invoiceNumber(ClientBillingSchedule $schedule, CarbonImmutable $start): string

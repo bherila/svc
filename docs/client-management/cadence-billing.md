@@ -114,8 +114,8 @@ rather than what refuses: a voided invoice with a complete period blocks its
 period, and the same row missing a boundary does not, so the period the void was
 meant to waive is billed again. That is worth repairing whether or not it halts
 a run. It is a **repair ceiling**, deliberately, and it is not the number to gate
-a deployment on — see [Sizing the refusals before deploying
-them](#sizing-the-refusals-before-deploying-them).
+a deployment on — see [Sizing the halts before deploying
+them](#sizing-the-halts-before-deploying-them).
 
 An **ad-hoc** invoice is the exception and stays nullable: it bills a thing, not
 a span, and no period guard asks about it.
@@ -246,21 +246,35 @@ middle of a batch with some periods billed. All-or-nothing is recoverable by
 re-running; half-applied is not. Classifying every period up front, before
 creating anything, would avoid the wasted work — #252.
 
-**A pending draft counts as billed, and the cursor moves.** An invoice of this
-schedule's covering *exactly* the period being billed reports it as already
-billed whatever its status, draft included — it is returned to the caller as
-though the run had just produced it, and `next_run_on` advances. Discarding that
-draft afterwards therefore leaves the period unbilled with the cursor already
-past it, and only a rewind will bill it.
+**A pending draft neither bills the period nor advances past it.** An invoice
+covering *exactly* the period being billed reports it as already billed — unless
+it is a **draft**, which has charged nobody. That case stops the run and names
+the draft.
 
-That is a choice, not a consequence, and it is the right one: regenerating would
-write the same `(schedule, start, end)` tuple and collide with the unique index
-anyway, and *refusing* on a draft would halt every schedule whose last run left
-one behind — which is the ordinary state of a schedule between generation and
-issue, not an anomaly. It is pinned by
-`BillingWorkflowTest::test_this_schedules_own_draft_for_the_period_counts_as_billed_and_advances_the_cursor`
-so nobody has to re-derive which way it goes. #251 tracks the issue-time
-invariant that would narrow the exposure further.
+An earlier revision reported a draft as already billed, and it is worth being
+precise about why that was wrong, because the argument for it was reasonable.
+Regenerating an exact match would collide with
+`billing_schedule_service_period_unique`, so the schedule genuinely cannot just
+raise another invoice. But advancing `next_run_on` past it meant the period was
+recorded as done when no money had been asked for — and nothing brought it back:
+`InvoiceLifecycleService::discardDraft()` turns the draft into a **void** invoice
+that keeps its period, so even rewinding the cursor met an exact void and
+honoured it as a deliberate waiver. The period was silently never billed.
+
+The unique-index argument does not even apply to the row that actually shows up
+here. The committed drafts in this system are the *other* generator's:
+`ClientInvoicingService` creates cadence invoices with an agreement and **no
+schedule**, and they sit as drafts while somebody reviews them. Their
+`client_billing_schedule_id` is null, so the index never constrained them. A
+schedule's own draft is not this shape — `generateDue()` creates and issues in
+one transaction, so a failure rolls it back and a success commits it issued.
+
+So the run stops, and the remedy is the thing the operator was going to do
+anyway: **issue** the draft and the next run advances without billing again;
+**void** it and the waiver is honoured deliberately rather than by accident.
+Pinned by `BillingWorkflowTest::test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule`
+and its two companions. #251 tracks the issue-time invariant that would narrow
+the surrounding exposure further.
 
 **A refusal is always safe, but it is not always cheap.** Nothing is billed
 twice and no period is skipped — that part is unconditional. Whether the run can
@@ -274,39 +288,62 @@ silently skipping a period nobody billed — but the messages say what would
 actually clear each case rather than offering a repair the application refuses
 to perform.
 
-### Sizing the refusals before deploying them
+### Sizing the halts before deploying them
 
-Because a refusal can be a standing halt, the blast radius has to be measurable
-before the refusals reach production rather than discovered one failed cron run
-at a time. `svc:billing:audit-schedule-refusals` answers that against a real
-database: how many rows would refuse, which reason each would refuse for, and —
-the number that actually matters — how many *schedules* would stop. Ten broken
-rows in one company halt one schedule, not ten.
+Because a halt can be a standing one, the blast radius has to be measurable
+before the guards reach production rather than discovered one failed cron run at
+a time.
 
 ```
-php artisan svc:billing:audit-schedule-refusals               # text
-php artisan svc:billing:audit-schedule-refusals --format=json # for a pipeline
+php artisan svc:billing:preflight-schedule-generation                    # text
+php artisan svc:billing:preflight-schedule-generation --format=json      # for a pipeline
+php artisan svc:billing:preflight-schedule-generation --through=2026-12-31
 ```
 
-It exits non-zero when it finds anything, so a deployment can gate on it. It
-prints counts only — never a row, an id, an invoice number, a company or a
-workspace — so a run against real client billing records is safe to paste into a
-public issue.
+It walks every **active** schedule's due periods — from `next_run_on` through
+the given date, cut by the same `BillingPeriod` arithmetic `generateDue()` uses
+— and runs the same resolver on each, stopping where the run would stop. It
+reports how many schedules would halt, how many on a refusal versus a pending
+draft, and which reason fired. It exits non-zero when it finds any, so a
+deployment can gate on it, and prints counts only, so a run against real client
+billing records is safe to paste into a public issue.
 
-Two things it deliberately does not claim:
+**It runs the real classifier over the real periods, and that is the whole
+design.** The first version of this did not: it classified *rows* with SQL that
+re-derived the resolver's decisions, and it was wrong in both directions — it
+cleared rows that halt production and flagged rows no schedule would reject. The
+cause was structural rather than a handful of bugs. Half the resolver's rules
+are about a `(schedule, period, invoice)` triple, and "does this invoice cover
+the period exactly" has no answer until you name the period. A row-at-a-time
+query cannot answer a question that has a period in it, so:
 
-- It **over-counts**: a row is counted if any schedule for its company could
-  reach it, and whether one ever does depends on which periods come due.
-- It **under-counts in one place, and that is the important one.** The last
-  refusal — a live invoice overlapping a period without matching it — depends
-  entirely on the period being billed and cannot be counted by any query. A zero
-  is therefore *not* a promise that no schedule halts. It bounds the lineage,
-  status and unplaceable-period reasons, which are exactly the ones a data
-  repair can clear ahead of time.
+- an exact void with dangling lineage **refuses** while the same row one day
+  narrower **clears**, and a row-level check saw one row and one answer;
+- a partial overlap could not be counted at all, which the old green line had to
+  admit in its own text;
+- a sole-owner schedule implicitly claims a row naming neither owner, so an
+  unknown status or a missing boundary on one refuses — the row-level version
+  called it clear;
+- an invoice naming a real agreement no schedule bills is *someone else's*, not
+  contested — the row-level version failed the gate on ordinary billing history;
+- an inactive schedule halts on nothing, because `generateDue()` returns before
+  consulting the resolver at all.
+
+Every one of those is now decided by the code that will decide it for real.
+`ScheduleGenerationPreflightTest` asserts the prediction and the run agree in
+**both** directions for every fixture — a gate that only ever proves "flagged →
+halted" can still be uselessly green, which is exactly how the row-level version
+shipped its bug.
+
+What it still does not promise: it takes no locks and writes nothing, so it
+describes the database as it is now rather than guaranteeing a future run — an
+invoice can be issued, voided or re-dated in between. And a schedule with
+nothing due is reported as *not due* rather than as clean, because no period of
+it was examined.
 
 `UnplaceableInvoiceAuditor` does not answer this question and must not be read
 as though it does. "Worth investigating" and "would stop a schedule generating"
-have different answers — a voided row is counted there and cleared by the
+have different answers — a voided row is counted there and often cleared by the
 resolver — and one number cannot be both without being wrong as whichever one it
 is not.
 

@@ -9,6 +9,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodClaim;
 use App\Support\Billing\PeriodClaimVerdict;
+use App\Support\Billing\PeriodRefusalReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -130,21 +131,36 @@ final class BillingPeriodCollisionResolver
         $schedules = $this->resolvedSchedules($schedule, $candidates);
         $agreements = $this->resolvedAgreements($schedule, $candidates);
 
+        // Strictly ordered: a refusal beats a pending draft, which beats a
+        // match, which beats nothing. Every one of them is a reason not to
+        // create an invoice, so the most cautious answer among the candidates
+        // is the answer for the period - and a verdict that fell through this
+        // aggregation would silently become `Clear`, which is the one outcome
+        // that writes a row. Candidates are ordered by id, so which of two
+        // equally cautious rows is reported does not depend on how the database
+        // happened to return them.
+        $pending = null;
         $billed = null;
         foreach ($candidates as $candidate) {
             $claim = $this->classify($schedule, $candidate, $start, $end, $schedules, $agreements);
+
             if ($claim->verdict === PeriodClaimVerdict::Refused) {
-                // A refusal wins over a match. Candidates are ordered by id, so
-                // which refusal is reported does not depend on how the database
-                // happened to return the rows.
                 return $claim;
+            }
+            if ($claim->verdict === PeriodClaimVerdict::PendingDraft && ! $pending instanceof PeriodClaim) {
+                $pending = $claim;
             }
             if ($claim->verdict === PeriodClaimVerdict::AlreadyBilled && ! $billed instanceof PeriodClaim) {
                 $billed = $claim;
             }
         }
 
-        return $billed ?? PeriodClaim::clear();
+        // A pending draft outranks a match even when something else has already
+        // billed the period. Two exact rows for one period is a repair somebody
+        // has to make - the unique index stops it happening again, but only for
+        // rows that name a schedule - and advancing past it would leave the
+        // draft behind to collide with a later run instead.
+        return $pending ?? $billed ?? PeriodClaim::clear();
     }
 
     /**
@@ -213,10 +229,16 @@ final class BillingPeriodCollisionResolver
         // not resolve is not evidence of anything, and the safe reading of "I
         // cannot tell whose this is" is never "not mine".
         if ($scheduleId !== null && ! $schedules->has($scheduleId)) {
-            return PeriodClaim::refused($this->danglingMessage($candidate, 'a billing schedule', $start, $end));
+            return PeriodClaim::refused(
+                $this->danglingMessage($candidate, 'a billing schedule', $start, $end),
+                PeriodRefusalReason::DanglingSchedule,
+            );
         }
         if ($agreementId !== null && ! $agreements->has($agreementId)) {
-            return PeriodClaim::refused($this->danglingMessage($candidate, 'an agreement', $start, $end));
+            return PeriodClaim::refused(
+                $this->danglingMessage($candidate, 'an agreement', $start, $end),
+                PeriodRefusalReason::DanglingAgreement,
+            );
         }
 
         // A schedule always names exactly one agreement -
@@ -234,7 +256,7 @@ final class BillingPeriodCollisionResolver
                 $candidate->invoice_number,
                 $start->toDateString(),
                 $end->toDateString(),
-            ));
+            ), PeriodRefusalReason::ContradictoryLineage);
         }
 
         if ($scheduleId === $schedule->id) {
@@ -286,7 +308,7 @@ final class BillingPeriodCollisionResolver
                 $candidate->invoice_number,
                 $start->toDateString(),
                 $end->toDateString(),
-            ));
+            ), PeriodRefusalReason::Unattributed);
         }
 
         return $this->mine($candidate, $status, $coversExactly, $start, $end);
@@ -326,13 +348,26 @@ final class BillingPeriodCollisionResolver
                 $start->toDateString(),
                 $end->toDateString(),
                 (string) $candidate->status,
-            ));
+            ), PeriodRefusalReason::UnknownStatus);
         }
 
         if ($coversExactly) {
-            // Any known status, void included. Voiding a cadence invoice is the
-            // documented way to waive its own period, and regenerating one
-            // would write the same
+            // A draft has reserved this period but charged nobody for it, and
+            // those are different facts. Reporting it as billed advanced
+            // `next_run_on` past a period no money had been asked for, and
+            // nothing brought it back: `discardDraft()` turns the draft into a
+            // *void* invoice keeping its period, so even rewinding the cursor
+            // met an exact void and read it as a deliberate waiver. Creating a
+            // second invoice would be the #219 defect, so the schedule does
+            // neither and says which draft is in the way.
+            if ($status === InvoiceStatus::Draft) {
+                return PeriodClaim::pendingDraft($candidate);
+            }
+
+            // Any other known status, void included. Issued, partially paid and
+            // paid have each asked the client for money; voiding a cadence
+            // invoice is the documented way to waive its own period, and
+            // regenerating one would write the same
             // `(client_billing_schedule_id, service_period_start, service_period_end)`
             // and collide with the unique index anyway.
             return PeriodClaim::alreadyBilled($candidate);
@@ -353,7 +388,7 @@ final class BillingPeriodCollisionResolver
                 $start->toDateString(),
                 $end->toDateString(),
                 $this->remedy($status),
-            ));
+            ), PeriodRefusalReason::IncompletePeriod);
         }
 
         // A known void never reaches here - it is cleared before ownership is
@@ -370,7 +405,7 @@ final class BillingPeriodCollisionResolver
             $start->toDateString(),
             $end->toDateString(),
             $this->remedy($status),
-        ));
+        ), PeriodRefusalReason::PartialOverlap);
     }
 
     /**
