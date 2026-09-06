@@ -19,7 +19,11 @@ use App\Services\Billing\ScheduleGenerationPreflight;
  * changes the numbers. So the reason travels with the claim.
  *
  * The cases are exactly the refusal sites in
- * {@see BillingPeriodCollisionResolver}, in the order they are evaluated.
+ * {@see BillingPeriodCollisionResolver}, in the order they are evaluated, and
+ * nothing else. A schedule can also halt for reasons that arise before the
+ * resolver is consulted at all - see {@see ScheduleDefect} - and those are
+ * counted separately rather than borrowed into this vocabulary, so that
+ * "refusals" in a report means refusals.
  */
 enum PeriodRefusalReason: string
 {
@@ -45,15 +49,16 @@ enum PeriodRefusalReason: string
     case PartialOverlap = 'partial_overlap';
 
     /**
-     * Not the resolver's, but the schedule's own: its cadence is a value this
-     * application cannot turn into a span.
+     * Two or more invoices each cover exactly this period.
      *
-     * `BillingPeriod::beginningAt()` throws on one rather than guessing a month
-     * count, so such a schedule halts before the resolver is ever consulted. It
-     * belongs here because the question a preflight answers is "what stops this
-     * schedule", and this stops it.
+     * The only case here that is a property of the *candidate set* rather than
+     * of one row, which is why it is decided after every candidate has been
+     * classified rather than at a refusal site. See
+     * {@see BillingPeriodCollisionResolver::resolve()} for why a lone pending
+     * draft and a pending draft alongside an already-billed row need opposite
+     * advice.
      */
-    case UnreadableCadence = 'unreadable_cadence';
+    case ConflictingExactClaims = 'conflicting_exact_claims';
 
     /**
      * A one-line description for an operator, with no identifiers in it.
@@ -68,7 +73,7 @@ enum PeriodRefusalReason: string
             self::UnknownStatus => 'carrying a status this application cannot read',
             self::IncompletePeriod => 'owned but missing a service period boundary',
             self::PartialOverlap => 'overlapping the period without matching it',
-            self::UnreadableCadence => 'on a schedule whose cadence this application cannot read',
+            self::ConflictingExactClaims => 'duplicated by another invoice covering exactly the same period',
         };
     }
 }

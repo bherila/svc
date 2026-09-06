@@ -131,36 +131,88 @@ final class BillingPeriodCollisionResolver
         $schedules = $this->resolvedSchedules($schedule, $candidates);
         $agreements = $this->resolvedAgreements($schedule, $candidates);
 
-        // Strictly ordered: a refusal beats a pending draft, which beats a
-        // match, which beats nothing. Every one of them is a reason not to
-        // create an invoice, so the most cautious answer among the candidates
-        // is the answer for the period - and a verdict that fell through this
-        // aggregation would silently become `Clear`, which is the one outcome
-        // that writes a row. Candidates are ordered by id, so which of two
-        // equally cautious rows is reported does not depend on how the database
+        // Every candidate is classified and the exact claims collected, rather
+        // than the first interesting one winning. A refusal still short-
+        // circuits - it is already the most cautious answer available and
+        // nothing later can soften it - but "billed" and "pending" cannot be
+        // ranked against each other one row at a time. Which of them is right
+        // is a property of the whole set: see below.
+        //
+        // The `match` is exhaustive with no `default` on purpose. An earlier
+        // revision tested for the verdicts it knew and let anything else fall
+        // through to `Clear` - the one outcome that writes an invoice - so a
+        // fifth case added to `PeriodClaimVerdict` would have failed *open*,
+        // silently, in the guard whose whole job is to fail closed. Now it
+        // throws instead. Candidates are ordered by id, so which of two equally
+        // cautious rows is reported does not depend on how the database
         // happened to return them.
-        $pending = null;
-        $billed = null;
+        $refusal = null;
+
+        /** @var list<PeriodClaim> $exact */
+        $exact = [];
+
         foreach ($candidates as $candidate) {
             $claim = $this->classify($schedule, $candidate, $start, $end, $schedules, $agreements);
 
-            if ($claim->verdict === PeriodClaimVerdict::Refused) {
-                return $claim;
-            }
-            if ($claim->verdict === PeriodClaimVerdict::PendingDraft && ! $pending instanceof PeriodClaim) {
-                $pending = $claim;
-            }
-            if ($claim->verdict === PeriodClaimVerdict::AlreadyBilled && ! $billed instanceof PeriodClaim) {
-                $billed = $claim;
+            match ($claim->verdict) {
+                PeriodClaimVerdict::Refused => $refusal = $claim,
+                PeriodClaimVerdict::PendingDraft, PeriodClaimVerdict::AlreadyBilled => $exact[] = $claim,
+                PeriodClaimVerdict::Clear => null,
+            };
+
+            if ($refusal instanceof PeriodClaim) {
+                return $refusal;
             }
         }
 
-        // A pending draft outranks a match even when something else has already
-        // billed the period. Two exact rows for one period is a repair somebody
-        // has to make - the unique index stops it happening again, but only for
-        // rows that name a schedule - and advancing past it would leave the
-        // draft behind to collide with a later run instead.
-        return $pending ?? $billed ?? PeriodClaim::clear();
+        // More than one invoice covering exactly this period is a repair
+        // somebody has to make, and until they do, no single-row answer is
+        // honest. It cannot be ruled out by the schema: the unique index
+        // constrains `(client_billing_schedule_id, service_period_start,
+        // service_period_end)` and does not constrain a null, so an unlinked
+        // cadence invoice from `ClientInvoicingService` and a schedule-linked
+        // one can both cover the same period.
+        //
+        // Reporting the pending draft alone - which is what an earlier revision
+        // did, ranking pending above billed - was worse than useless there. The
+        // halt was safe, but the message told the operator to *issue* the
+        // draft, and `InvoiceLifecycleService::issue()` checks only that the row
+        // is a draft: no overlap guard, no period guard. Following the
+        // instruction produced two issued invoices for one period, or undid a
+        // waiver an exact void had recorded. So the set is named as a set, and
+        // the advice is to remove the duplicate rather than to advance it.
+        if (count($exact) > 1) {
+            return PeriodClaim::refused(
+                $this->conflictMessage($exact, $start, $end),
+                PeriodRefusalReason::ConflictingExactClaims,
+            );
+        }
+
+        return $exact[0] ?? PeriodClaim::clear();
+    }
+
+    /**
+     * Name every invoice claiming the period, and say which way out is safe.
+     *
+     * @param  list<PeriodClaim>  $exact  two or more claims, each carrying an invoice
+     */
+    private function conflictMessage(array $exact, CarbonImmutable $start, CarbonImmutable $end): string
+    {
+        $numbers = array_map(
+            static fn (PeriodClaim $claim): string => (string) $claim->invoice()->invoice_number,
+            $exact,
+        );
+
+        return sprintf(
+            'Invoices %s each cover exactly %s to %s, the period being billed now, so which of them bills it cannot '
+            .'be decided here. The period is not billed again and the schedule is not advanced past it. Exactly one '
+            .'invoice should cover a period: discard the duplicate draft, or void the duplicate invoice. Do not issue '
+            .'a draft that duplicates one already issued, or one whose period an exact void has already waived - '
+            .'issuing performs no overlap check and would charge this client twice.',
+            implode(', ', $numbers),
+            $start->toDateString(),
+            $end->toDateString(),
+        );
     }
 
     /**

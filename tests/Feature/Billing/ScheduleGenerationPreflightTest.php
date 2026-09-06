@@ -12,6 +12,7 @@ use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodRefusalReason;
+use App\Support\Billing\ScheduleDefect;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -367,6 +368,218 @@ final class ScheduleGenerationPreflightTest extends TestCase
 
         $this->assertSame(1, $report->schedules);
         $this->assertSame(0, $report->wouldHalt);
+    }
+
+    /**
+     * Two invoices covering exactly the period is a conflict, not a pending
+     * draft - because the two need opposite advice.
+     *
+     * The halt was always safe. The *message* was not: an earlier revision
+     * ranked a pending draft above an already-billed match, so a period already
+     * billed by one invoice and claimed by a second draft was reported as the
+     * draft, and the operator was told to issue it.
+     * `InvoiceLifecycleService::issue()` checks only that the row is a draft -
+     * no overlap guard, no period guard - so following that instruction charged
+     * the client twice, or undid a waiver an exact void had recorded.
+     *
+     * All three reachable shapes are here. None of them needs a corrupted row:
+     * the unique index constrains
+     * `(client_billing_schedule_id, service_period_start, service_period_end)`
+     * and does not constrain a null, and `ClientInvoicingService` creates
+     * cadence invoices with an agreement and no schedule.
+     *
+     * @param  array<string, mixed>  $rival
+     */
+    #[DataProvider('conflictingExactClaims')]
+    public function test_two_invoices_covering_the_period_exactly_conflict_rather_than_advance(array $rival): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduled('conflict');
+
+        $this->invoice($workspace, $company, $this->resolve($rival, $schedule, $agreement, $agreement));
+
+        // The second claim: the ordinary unlinked cadence draft, which is what
+        // `ClientInvoicingService` produces and what the unique index cannot
+        // stop from coexisting with any of the rows above.
+        $this->invoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+            'status' => InvoiceStatus::Draft->value,
+            'service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31',
+        ]);
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->wouldHalt);
+        $this->assertSame(1, $report->refusalsByReason[PeriodRefusalReason::ConflictingExactClaims->value]);
+        $this->assertSame(
+            0,
+            $report->haltedByAPendingDraft,
+            'a contested period is not a pending draft; reporting it as one is what produced the bad advice',
+        );
+
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+    }
+
+    /**
+     * @return array<string, array{0: array<string, mixed>}>
+     */
+    public static function conflictingExactClaims(): array
+    {
+        $august = ['service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31'];
+
+        return [
+            // Already billed. Issuing the draft would ask for the money twice.
+            'an issued invoice this schedule owns' => [
+                ['client_billing_schedule_id' => ':schedule', 'client_agreement_id' => ':agreement',
+                    'status' => InvoiceStatus::Issued->value] + $august,
+            ],
+            // A deliberate waiver. Issuing the draft would undo it.
+            'an exact void waiving the period' => [
+                ['client_billing_schedule_id' => ':schedule', 'client_agreement_id' => ':agreement',
+                    'status' => InvoiceStatus::Void->value] + $august,
+            ],
+            // Neither is the one to issue, and issuing one leaves the other to
+            // collide with the next run.
+            'a second unlinked draft' => [
+                ['client_agreement_id' => ':agreement', 'invoice_kind' => InvoiceKind::CadencePeriod->value,
+                    'status' => InvoiceStatus::Draft->value] + $august,
+            ],
+        ];
+    }
+
+    /**
+     * A schedule whose backlog outruns the cap is inconclusive, never clean.
+     *
+     * This is the false green the cap creates if truncation is reported as a
+     * count and nothing else: the periods the run would halt on are exactly the
+     * ones nobody classified, so `wouldHalt === 0` is not evidence of anything.
+     * The chain below is the whole failure - clean within the cap, halting just
+     * past it, and correct once the cap is raised to cover it.
+     */
+    public function test_a_backlog_past_the_cap_is_inconclusive_rather_than_clean(): void
+    {
+        [$workspace, $company, , $schedule] = $this->scheduled('truncated');
+        $through = CarbonImmutable::parse('2026-11-15');
+
+        // November is the fourth due period, and it halts. A cap of three never
+        // reaches it.
+        $this->invoice($workspace, $company, [
+            'client_billing_schedule_id' => $schedule->id + 500,
+            'service_period_start' => '2026-11-01', 'service_period_end' => '2026-11-30',
+        ]);
+
+        $capped = app(ScheduleGenerationPreflight::class)->run($workspace, $through, periodCap: 3);
+
+        $this->assertSame(0, $capped->wouldHalt, 'the halting period was never looked at');
+        $this->assertFalse($capped->isConclusive(), 'which is exactly why zero halts must not read as clean');
+        $this->assertSame(1, $capped->schedulesTruncated);
+        $this->assertSame(3, $capped->periodsClassified);
+
+        // Raised past the backlog, it becomes an answer - and the right one.
+        $full = app(ScheduleGenerationPreflight::class)->run($workspace, $through, periodCap: 10);
+
+        $this->assertTrue($full->isConclusive());
+        $this->assertSame(1, $full->wouldHalt);
+        $this->assertSame(1, $full->refusalsByReason[PeriodRefusalReason::DanglingSchedule->value]);
+
+        // Which is what the run does, so the capped zero was a false green and
+        // not merely a conservative one.
+        $halted = false;
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule->fresh(), $through);
+        } catch (DomainException) {
+            $halted = true;
+        }
+
+        $this->assertTrue($halted, 'the run halts on the period the capped preflight never examined');
+    }
+
+    /**
+     * The boundary itself: a backlog exactly the size of the cap is examined in
+     * full, so it is conclusive.
+     *
+     * `>= $cap` is checked before a period is classified rather than after, so
+     * an off-by-one here would either report every full-cap schedule as
+     * inconclusive or let a schedule one period over slip through as clean.
+     */
+    public function test_a_backlog_exactly_the_size_of_the_cap_is_conclusive(): void
+    {
+        [$workspace] = $this->scheduled('at-the-cap');
+        $through = CarbonImmutable::parse('2026-10-15');
+
+        $exactly = app(ScheduleGenerationPreflight::class)->run($workspace, $through, periodCap: 3);
+        $this->assertTrue($exactly->isConclusive(), 'August, September and October are three periods and the cap is three');
+        $this->assertSame(3, $exactly->periodsClassified);
+
+        $oneShort = app(ScheduleGenerationPreflight::class)->run($workspace, $through, periodCap: 2);
+        $this->assertFalse($oneShort->isConclusive());
+        $this->assertSame(2, $oneShort->periodsClassified);
+    }
+
+    /**
+     * A cadence this application cannot read halts the schedule, and it is a
+     * defect of the *schedule* rather than a refusal about an invoice.
+     *
+     * Both halves matter. An earlier revision counted it as a refusal - so a
+     * report said a refusal had fired when no `PeriodClaim::refused()` had ever
+     * been built - and derived "due" from the period count, which this halt
+     * never increments, so the same schedule was reported as not due and as
+     * halting at the same time.
+     */
+    public function test_an_unreadable_cadence_halts_a_due_schedule_as_a_schedule_defect(): void
+    {
+        [$workspace, , , $schedule] = $this->scheduled('bad-cadence');
+        $schedule->forceFill(['cadence' => 'fortnightly'])->save();
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->wouldHalt);
+        $this->assertSame(1, $report->haltedByAScheduleDefect);
+        $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableCadence->value]);
+        $this->assertSame(0, $report->haltedByARefusal, 'no invoice refused anything; the schedule is the problem');
+        $this->assertSame(1, $report->schedulesDue, 'dueness is known from the cursor, before the cadence is parsed');
+
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+    }
+
+    /**
+     * `generateDue()` normalises the line template before its loop and throws on
+     * one that is not a list of objects, so a clean report has to have read it.
+     *
+     * Without this the command promised a rehearsal it had not performed: a due
+     * schedule with an imported or hand-edited template got "no active schedule
+     * would halt on this data" and then threw the moment it ran.
+     */
+    public function test_an_unbillable_line_template_halts_the_schedule(): void
+    {
+        [$workspace, , , $schedule] = $this->scheduled('bad-template');
+        $schedule->forceFill(['line_template' => 'a service, monthly'])->save();
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->wouldHalt);
+        $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableLineTemplate->value]);
+
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+    }
+
+    /**
+     * And an entry that is not an object, which is the shape an import is
+     * likelier to produce than a template that is not a list at all.
+     */
+    public function test_a_line_template_entry_that_is_not_an_object_halts_the_schedule(): void
+    {
+        [$workspace, , , $schedule] = $this->scheduled('bad-template-entry');
+        $schedule->forceFill(['line_template' => [
+            ['type' => 'service', 'description' => 'Retainer', 'quantity' => '1',
+                'unit_amount' => 100000, 'tax_amount' => 0, 'sort_order' => 1],
+            'Retainer',
+        ]])->save();
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableLineTemplate->value]);
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
     }
 
     /**

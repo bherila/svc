@@ -276,6 +276,28 @@ Pinned by `BillingWorkflowTest::test_a_pending_draft_for_the_period_neither_bill
 and its two companions. #251 tracks the issue-time invariant that would narrow
 the surrounding exposure further.
 
+**Two invoices covering the period exactly is a different answer, because it
+needs the opposite advice.** "Issue that draft" is sound only when the draft is
+the *lone* claim on the period. Beside an invoice that already covers the period
+exactly it is dangerous: `InvoiceLifecycleService::issue()` checks that the row
+is a draft and nothing else — no overlap guard, no period guard — so an operator
+following the instruction bills the period twice, or undoes a waiver an exact
+void had recorded. Two drafts are no better; issuing one leaves the other to
+collide with the next run.
+
+The state is reachable without anyone corrupting a row. The unique index
+constrains `(client_billing_schedule_id, service_period_start,
+service_period_end)`, and a null is not constrained, so the unlinked cadence
+draft described above can coexist with a schedule-linked invoice for the same
+period. So the resolver classifies **every** candidate, collects the ones
+covering the period exactly, and refuses as `conflicting_exact_claims` when
+there is more than one — naming both rows and saying to remove the duplicate
+rather than to advance it. An earlier revision ranked a pending draft above an
+already-billed match instead: the halt was safe, and the sentence it printed was
+not. Pinned by
+`BillingWorkflowTest::test_a_period_billed_and_claimed_by_a_draft_refuses_and_says_to_remove_the_duplicate`
+and, for all three shapes, by `ScheduleGenerationPreflightTest`.
+
 **A refusal is always safe, but it is not always cheap.** Nothing is billed
 twice and no period is skipped — that part is unconditional. Whether the run can
 simply be repeated depends on the row it names: a draft can be discarded and an
@@ -298,15 +320,30 @@ a time.
 php artisan svc:billing:preflight-schedule-generation                    # text
 php artisan svc:billing:preflight-schedule-generation --format=json      # for a pipeline
 php artisan svc:billing:preflight-schedule-generation --through=2026-12-31
+php artisan svc:billing:preflight-schedule-generation --periods-per-schedule=600
 ```
 
 It walks every **active** schedule's due periods — from `next_run_on` through
 the given date, cut by the same `BillingPeriod` arithmetic `generateDue()` uses
-— and runs the same resolver on each, stopping where the run would stop. It
-reports how many schedules would halt, how many on a refusal versus a pending
-draft, and which reason fired. It exits non-zero when it finds any, so a
-deployment can gate on it, and prints counts only, so a run against real client
-billing records is safe to paste into a public issue.
+— and runs the same resolver on each, stopping where the run would stop. It also
+reads what `generateDue()` reads before its loop: the cadence, and the line
+template. It reports how many schedules would halt, split by refusal, pending
+draft and defect of the schedule itself, and which reason fired. It exits
+non-zero when it finds any, so a deployment can gate on it, and prints counts
+only, so a run against real client billing records is safe to paste into a
+public issue.
+
+**A run is clean, halting, or inconclusive, and only the first is a pass.** Each
+schedule is examined for at most `--periods-per-schedule` periods (240 by
+default), because a schedule years behind has hundreds of due periods and each
+is a query — the audit must not become the incident. A schedule that hits the
+cap is reported as *truncated*, `complete` goes false, and the command **exits
+non-zero and withholds the green line**, because its unexamined periods are
+exactly the ones nobody classified: `would_halt === 0` there is not evidence of
+anything. Re-run with a larger cap to turn "I do not know" into an answer. An
+earlier revision let the pass hinge on `would_halt` alone, so a truncated run
+printed the all-clear and exited zero — a gate certifying what it declined to
+inspect.
 
 **It runs the real classifier over the real periods, and that is the whole
 design.** The first version of this did not: it classified *rows* with SQL that
@@ -335,11 +372,21 @@ Every one of those is now decided by the code that will decide it for real.
 halted" can still be uselessly green, which is exactly how the row-level version
 shipped its bug.
 
-What it still does not promise: it takes no locks and writes nothing, so it
-describes the database as it is now rather than guaranteeing a future run — an
-invoice can be issued, voided or re-dated in between. And a schedule with
-nothing due is reported as *not due* rather than as clean, because no period of
-it was examined.
+What it still does not promise. It rehearses what generation **reads** and not
+what it **writes**: `createDraft()` and `issue()` compose lines, price them,
+move time entries and take locks, and a failure inside any of them is outside
+this prediction. It takes no locks and writes nothing, so it describes the
+database as it is now rather than guaranteeing a future run — an invoice can be
+issued, voided or re-dated in between. A schedule with nothing due is reported
+as *not due* rather than as clean, because no period of it was examined.
+
+And it looks only **forward**, from each schedule's current `next_run_on`. A
+period the cursor has already passed is invisible to it however it got passed —
+including one skipped by the draft-as-billed rule that shipped in #250 and is
+removed here. Sizing *that* damage is a retrospective scan over rows behind the
+cursor, which is a different query and a different tool; #254 tracks it. Deploying
+this fix moves no cursor backward, so a clean preflight is not by itself a census
+of the defect it repairs.
 
 `UnplaceableInvoiceAuditor` does not answer this question and must not be read
 as though it does. "Worth investigating" and "would stop a schedule generating"

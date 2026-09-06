@@ -1275,6 +1275,60 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A period already billed *and* claimed by a draft is a conflict, and the
+     * message must not tell anyone to issue the draft.
+     *
+     * The halt was never the problem. An earlier revision ranked a pending
+     * draft above an already-billed match, so this shape was reported as the
+     * draft alone and the operator was told to issue it - and
+     * `InvoiceLifecycleService::issue()` checks only that the row is a draft,
+     * with no overlap or period guard, so following the instruction charged the
+     * client twice. The same sentence undid a waiver when the other row was an
+     * exact void.
+     *
+     * Reachable without a corrupted row: the unique index constrains
+     * `(client_billing_schedule_id, service_period_start, service_period_end)`
+     * and a null is not constrained, so a schedule-linked invoice and an
+     * unlinked cadence draft can cover the same period.
+     */
+    public function test_a_period_billed_and_claimed_by_a_draft_refuses_and_says_to_remove_the_duplicate(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Contested Period Workspace');
+
+        $issued = app(InvoiceLifecycleService::class)->issue(
+            $this->augustInvoice($workspace, $company, [
+                'client_agreement_id' => $agreement->id,
+                'client_billing_schedule_id' => $schedule->id,
+            ]),
+            $workspace,
+        );
+
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('two invoices covering the period exactly cannot be decided here');
+        } catch (DomainException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        // Both rows named, because a person has to find both to fix this.
+        $this->assertStringContainsString((string) $issued->invoice_number, $message);
+        $this->assertStringContainsString((string) $draft->invoice_number, $message);
+
+        // And the advice reversed: remove the duplicate, do not advance it.
+        $this->assertStringContainsString('discard the duplicate draft', $message);
+        $this->assertStringNotContainsString('Issue that draft to bill the period', $message);
+
+        // Refusals roll back, as every other one does.
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
      * A null `client_billing_schedule_id` is what makes a draft ad hoc.
      *
      * `createDraft` classifies on the absence of a schedule, not on who called

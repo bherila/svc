@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\PeriodClaimVerdict;
 use App\Support\Billing\PeriodRefusalReason;
+use App\Support\Billing\ScheduleDefect;
 use App\Support\Billing\ScheduleGenerationPreflightReport;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -51,30 +52,48 @@ use Illuminate\Support\Collection;
  * It stops at a schedule's first undecidable period, exactly as `generateDue()`
  * does, so a halted schedule contributes one reason rather than a pile of them.
  *
- * ## What it still cannot promise
+ * ## What it does and does not rehearse
  *
- * It takes no locks and writes nothing, so it is a prediction about a database
- * that can change underneath it. Between this and the run: an invoice can be
- * issued, voided or re-dated, a draft can appear, `next_run_on` can move. A
- * clean preflight is evidence that the *data* is in order now, not a guarantee
- * about a future run.
+ * It rehearses everything `generateDue()` reads before it writes: the schedule
+ * is active, its line template normalises, its cadence cuts a period, and the
+ * resolver's answer for each due period. Those are the halts this exists to
+ * size.
  *
- * It is also scoped to periods that are due by `$through`. A schedule with
- * nothing due is reported as not due rather than as clean, because no period
- * of it was examined.
+ * It rehearses nothing that happens while writing. `createDraft()` and
+ * `issue()` compose lines, price them, move time entries and take locks, and a
+ * failure inside any of them is outside this prediction - a clean report says
+ * no schedule halts *on the state of the data*, not that a run will succeed.
+ * Making that claim would mean performing the run.
+ *
+ * It also takes no locks and writes nothing, so it is a prediction about a
+ * database that can change underneath it. Between this and the run: an invoice
+ * can be issued, voided or re-dated, a draft can appear, `next_run_on` can
+ * move.
+ *
+ * And it looks only forward. Every question here starts at a schedule's
+ * *current* `next_run_on`, so a period the cursor has already passed is
+ * invisible to it however it got passed - including one skipped by the
+ * draft-as-billed rule this branch removes. Sizing that damage is a
+ * retrospective scan over rows behind the cursor, which is a different query
+ * and a different tool; see #254.
  */
 final class ScheduleGenerationPreflight
 {
     /**
-     * Periods examined per schedule before giving up on it.
+     * Periods examined per schedule before the answer for it becomes "I do not
+     * know".
      *
      * A schedule whose `next_run_on` sits years in the past has hundreds of
      * periods due, and each is a query. `generateDue()` would work through all
      * of them, so the cap is not a claim that it would not - it is a promise
-     * that the audit cannot itself become the incident. A truncated schedule is
-     * counted and reported rather than silently treated as clean.
+     * that the audit cannot itself become the incident.
+     *
+     * A schedule that hits it is reported as *truncated*, and a report with any
+     * truncation is inconclusive rather than clean: its unexamined periods are
+     * precisely the ones nobody has looked at. Raise `$periodCap` to finish the
+     * job on a run that is allowed to take longer.
      */
-    private const PERIOD_CAP = 240;
+    public const PERIOD_CAP = 240;
 
     public function __construct(
         private readonly BillingPeriodCollisionResolver $collisions,
@@ -94,13 +113,23 @@ final class ScheduleGenerationPreflight
      * asks one question of every tenant, which is the right shape for an
      * operator sizing a deployment and the wrong one for a tenant-facing
      * screen; such a screen passes its own workspace and gets its own day.
+     *
+     * @param  int|null  $periodCap  periods per schedule before it is reported truncated; defaults to {@see self::PERIOD_CAP}
      */
-    public function run(?Workspace $workspace = null, ?CarbonImmutable $through = null): ScheduleGenerationPreflightReport
-    {
+    public function run(
+        ?Workspace $workspace = null,
+        ?CarbonImmutable $through = null,
+        ?int $periodCap = null,
+    ): ScheduleGenerationPreflightReport {
         $through ??= $this->clock->today($workspace);
+        $cap = $periodCap ?? self::PERIOD_CAP;
 
         $refusals = array_fill_keys(
             array_map(static fn (PeriodRefusalReason $reason): string => $reason->value, PeriodRefusalReason::cases()),
+            0,
+        );
+        $defects = array_fill_keys(
+            array_map(static fn (ScheduleDefect $defect): string => $defect->value, ScheduleDefect::cases()),
             0,
         );
         $schedules = 0;
@@ -108,6 +137,7 @@ final class ScheduleGenerationPreflight
         $periods = 0;
         $refused = 0;
         $pending = 0;
+        $defective = 0;
         $truncated = 0;
 
         // Chunked, because this walks every schedule in the database and holds
@@ -116,21 +146,24 @@ final class ScheduleGenerationPreflight
         // schedule without consulting the resolver at all, so an invoice that
         // would halt one halts nothing.
         $this->schedules($workspace)->chunkById(200, function (Collection $chunk) use (
-            $through, &$refusals, &$schedules, &$due, &$periods, &$refused, &$pending, &$truncated
+            $through, $cap, &$refusals, &$defects, &$schedules, &$due, &$periods, &$refused, &$pending, &$defective, &$truncated
         ): void {
             foreach ($chunk as $schedule) {
                 $schedules++;
-                $outcome = $this->classifyDuePeriods($schedule, $through);
+                $outcome = $this->classifySchedule($schedule, $through, $cap);
 
                 $periods += $outcome['periods'];
-                if ($outcome['periods'] > 0) {
+                if ($outcome['due']) {
                     $due++;
                 }
                 if ($outcome['truncated']) {
                     $truncated++;
                 }
 
-                if ($outcome['reason'] instanceof PeriodRefusalReason) {
+                if ($outcome['defect'] instanceof ScheduleDefect) {
+                    $defective++;
+                    $defects[$outcome['defect']->value]++;
+                } elseif ($outcome['reason'] instanceof PeriodRefusalReason) {
                     $refused++;
                     $refusals[$outcome['reason']->value]++;
                 } elseif ($outcome['pending']) {
@@ -143,59 +176,66 @@ final class ScheduleGenerationPreflight
             schedules: $schedules,
             schedulesDue: $due,
             periodsClassified: $periods,
-            wouldHalt: $refused + $pending,
+            wouldHalt: $refused + $pending + $defective,
             haltedByARefusal: $refused,
             haltedByAPendingDraft: $pending,
+            haltedByAScheduleDefect: $defective,
             schedulesTruncated: $truncated,
             refusalsByReason: $refusals,
+            defectsByKind: $defects,
         );
     }
 
     /**
-     * Walk one schedule's due periods until something stops it.
+     * Walk one schedule until something stops it, in `generateDue()`'s order.
      *
-     * The loop is `generateDue()`'s, minus the writing: same starting cursor,
-     * same period arithmetic, same inclusive `<= $through`, same stop at the
-     * first period that cannot be decided. Only the outcome differs - it
-     * records what happened instead of throwing.
+     * Same order deliberately: template first, then a loop over periods from
+     * the same starting cursor with the same period arithmetic and the same
+     * inclusive `<= $through`, stopping at the first period that cannot be
+     * decided. Only the outcome differs - it records what happened instead of
+     * throwing.
      *
-     * An unreadable cadence is reported as a refusal rather than crashing the
-     * audit. `BillingPeriod` throws on one because billing a guessed span is
-     * worse than not billing, and the same schedule would throw out of
-     * `generateDue()` for the same reason - so it does halt, and the honest
-     * place to say so is the count.
+     * `due` is answered before the cadence is parsed, because that is when it
+     * becomes known: `$cursor <= $through` is the whole question, and a
+     * schedule with an unreadable cadence is a due schedule that halts rather
+     * than a schedule with nothing to do. Reporting it as not-due while
+     * counting it as a halt was an arithmetic contradiction in the output.
      *
-     * @return array{periods: int, reason: ?PeriodRefusalReason, pending: bool, truncated: bool}
+     * @return array{due: bool, periods: int, reason: ?PeriodRefusalReason, defect: ?ScheduleDefect, pending: bool, truncated: bool}
      */
-    private function classifyDuePeriods(ClientBillingSchedule $schedule, CarbonImmutable $through): array
+    private function classifySchedule(ClientBillingSchedule $schedule, CarbonImmutable $through, int $cap): array
     {
         $cursor = CarbonImmutable::parse((string) $schedule->next_run_on);
+        $due = $cursor->lte($through);
+
+        // Before the loop, exactly where `generateDue()` normalises it - so a
+        // malformed template halts a schedule whether or not it has a period
+        // due, and this reports it on the same terms.
+        if (! $this->templateIsBillable($schedule->getAttribute('line_template'))) {
+            return $this->outcome($due, 0, defect: ScheduleDefect::UnreadableLineTemplate);
+        }
+
         $periods = 0;
 
         while ($cursor->lte($through)) {
-            if ($periods >= self::PERIOD_CAP) {
-                return ['periods' => $periods, 'reason' => null, 'pending' => false, 'truncated' => true];
+            if ($periods >= $cap) {
+                return $this->outcome($due, $periods, truncated: true);
             }
 
             try {
                 $period = BillingPeriod::beginningAt($cursor, (string) $schedule->cadence);
             } catch (DomainException) {
-                return [
-                    'periods' => $periods,
-                    'reason' => PeriodRefusalReason::UnreadableCadence,
-                    'pending' => false,
-                    'truncated' => false,
-                ];
+                return $this->outcome($due, $periods, defect: ScheduleDefect::UnreadableCadence);
             }
 
             $periods++;
             $claim = $this->collisions->resolve($schedule, $period->start, $period->end);
 
             if ($claim->verdict === PeriodClaimVerdict::Refused) {
-                return ['periods' => $periods, 'reason' => $claim->reason(), 'pending' => false, 'truncated' => false];
+                return $this->outcome($due, $periods, reason: $claim->reason());
             }
             if ($claim->verdict === PeriodClaimVerdict::PendingDraft) {
-                return ['periods' => $periods, 'reason' => null, 'pending' => true, 'truncated' => false];
+                return $this->outcome($due, $periods, pending: true);
             }
 
             // `Clear` and `AlreadyBilled` both let the run move on. The
@@ -204,7 +244,52 @@ final class ScheduleGenerationPreflight
             $cursor = $period->next;
         }
 
-        return ['periods' => $periods, 'reason' => null, 'pending' => false, 'truncated' => false];
+        return $this->outcome($due, $periods);
+    }
+
+    /**
+     * @return array{due: bool, periods: int, reason: ?PeriodRefusalReason, defect: ?ScheduleDefect, pending: bool, truncated: bool}
+     */
+    private function outcome(
+        bool $due,
+        int $periods,
+        ?PeriodRefusalReason $reason = null,
+        ?ScheduleDefect $defect = null,
+        bool $pending = false,
+        bool $truncated = false,
+    ): array {
+        return [
+            'due' => $due,
+            'periods' => $periods,
+            'reason' => $reason,
+            'defect' => $defect,
+            'pending' => $pending,
+            'truncated' => $truncated,
+        ];
+    }
+
+    /**
+     * Whether `BillingScheduleService::normalizedTemplate()` would accept it.
+     *
+     * The same two conditions, asked rather than thrown. Kept as a predicate
+     * here rather than by calling into the service because that method is
+     * private to a class whose public entry point writes invoices, and a
+     * preflight that has to instantiate the mutating service to ask a question
+     * about data is one refactor away from performing the run.
+     */
+    private function templateIsBillable(mixed $value): bool
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+
+        foreach ($value as $line) {
+            if (! is_array($line)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -43,6 +43,13 @@ enum PeriodClaimVerdict
      * is the defect this whole class of guard exists to prevent - so the
      * schedule does neither and says so. Issue the draft and the next run
      * advances normally; void it deliberately and the waiver is honoured.
+     *
+     * That advice is only sound when the draft is the *lone* claim on the
+     * period, so this verdict is reached only then. A draft alongside another
+     * invoice covering the period exactly refuses instead - see
+     * {@see PeriodRefusalReason::ConflictingExactClaims} - because there the
+     * same sentence would be telling an operator to bill a period already
+     * billed, or to undo a waiver.
      */
     case PendingDraft;
 

@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Support\Billing\PeriodRefusalReason;
+use App\Support\Billing\ScheduleDefect;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
@@ -68,9 +69,11 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
             'schedules' => 1,
             'schedules_due' => 1,
             'periods_classified' => 1,
+            'complete' => true,
             'would_halt' => 1,
             'halted_by_a_refusal' => 1,
             'halted_by_a_pending_draft' => 0,
+            'halted_by_a_schedule_defect' => 0,
             'schedules_truncated' => 0,
             'refusals_by_reason' => [
                 'dangling_schedule_link' => 1,
@@ -80,9 +83,81 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
                 'unknown_status' => 0,
                 'incomplete_period' => 0,
                 'partial_overlap' => 0,
+                'conflicting_exact_claims' => 0,
+            ],
+            'defects_by_kind' => [
                 'unreadable_cadence' => 0,
+                'unreadable_line_template' => 0,
             ],
         ], $decoded['summary']);
+    }
+
+    /**
+     * A run that did not examine everything exits non-zero, in both formats.
+     *
+     * The failure this pins: an earlier revision made the pass hinge on
+     * `would_halt` alone, so a schedule whose backlog outran the cap - whose
+     * unexamined periods are precisely the ones nobody classified - printed the
+     * green line and exited zero. A gate that certifies what it declined to
+     * inspect is worse than no gate, because the pipeline stops asking.
+     */
+    public function test_a_truncated_run_fails_rather_than_certifying_what_it_did_not_examine(): void
+    {
+        $this->scheduledWorkspace('truncated');
+
+        $exit = Artisan::call('svc:billing:preflight-schedule-generation', [
+            '--through' => '2026-10-15', '--periods-per-schedule' => '2',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('inconclusive rather than clean', $output);
+        $this->assertStringNotContainsString('no active schedule would halt', $output);
+    }
+
+    /**
+     * And the JSON lane is not the lenient one. A pipeline is far likelier to
+     * test the exit code than to parse `complete` out of the payload, so the
+     * two have to agree.
+     */
+    public function test_a_truncated_json_run_reports_incomplete_and_exits_non_zero(): void
+    {
+        $this->scheduledWorkspace('truncated-json');
+
+        $exit = Artisan::call('svc:billing:preflight-schedule-generation', [
+            '--through' => '2026-10-15', '--periods-per-schedule' => '2', '--format' => 'json',
+        ]);
+        $decoded = json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $exit);
+        $this->assertFalse($decoded['summary']['complete']);
+        $this->assertSame(0, $decoded['summary']['would_halt'], 'nothing halted among the periods it did look at');
+        $this->assertSame(1, $decoded['summary']['schedules_truncated']);
+    }
+
+    /**
+     * Raising the cap is how an operator turns "I do not know" into an answer,
+     * so the option has to actually finish the job.
+     */
+    public function test_a_larger_cap_completes_a_backlog_that_truncated_at_the_smaller_one(): void
+    {
+        $this->scheduledWorkspace('uncapped');
+
+        $exit = Artisan::call('svc:billing:preflight-schedule-generation', [
+            '--through' => '2026-10-15', '--periods-per-schedule' => '12',
+        ]);
+
+        $this->assertSame(0, $exit);
+        $this->assertStringContainsString('no active schedule would halt', Artisan::output());
+    }
+
+    public function test_an_unusable_period_cap_is_rejected_rather_than_guessed(): void
+    {
+        foreach (['0', '-3', 'lots', '2.5'] as $cap) {
+            $this->assertSame(2, Artisan::call('svc:billing:preflight-schedule-generation', [
+                '--periods-per-schedule' => $cap,
+            ]), $cap.' is not a number of periods');
+        }
     }
 
     /**
@@ -99,6 +174,10 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
 
         foreach (PeriodRefusalReason::cases() as $reason) {
             $this->assertArrayHasKey($reason->value, $decoded['summary']['refusals_by_reason']);
+        }
+
+        foreach (ScheduleDefect::cases() as $defect) {
+            $this->assertArrayHasKey($defect->value, $decoded['summary']['defects_by_kind']);
         }
     }
 

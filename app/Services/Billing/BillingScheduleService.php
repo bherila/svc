@@ -69,6 +69,13 @@ final class BillingScheduleService
                 // act of asking a client for money. So the schedule stops and
                 // names it. Issue the draft and the next run advances normally;
                 // void it deliberately and the waiver is honoured.
+                //
+                // Safe advice only because the resolver reaches this verdict
+                // only when the draft is the sole claim on the period. A draft
+                // beside an invoice that already covers the period exactly
+                // refuses as a conflict instead, and says to remove the
+                // duplicate - `issue()` runs no overlap check, so "issue that
+                // draft" there would charge the client twice.
                 if ($claim->verdict === PeriodClaimVerdict::PendingDraft) {
                     throw new DomainException(sprintf(
                         'Invoice %s is a draft covering exactly %s to %s, the period being billed now. A draft has '
