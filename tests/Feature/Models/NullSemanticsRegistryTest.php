@@ -20,7 +20,7 @@ use Tests\Feature\Billing\InvoicingExamplesTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
-use Tests\Feature\Billing\ScheduleRefusalAuditorTest;
+use Tests\Feature\Billing\ScheduleGenerationPreflightTest;
 use Tests\Feature\Billing\UnknownBilledOverageRefusalTest;
 use Tests\Feature\Billing\UnplaceableInvoiceAuditorTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
@@ -190,11 +190,11 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
-        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\ScheduleRefusalAuditorTest::test_a_row_the_audit_counts_actually_halts_the_schedule',
+        'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\ScheduleGenerationPreflightTest::test_a_halting_shape_is_predicted_and_actually_halts',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again',
-        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\ScheduleRefusalAuditorTest::test_a_row_the_audit_counts_actually_halts_the_schedule',
+        'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\ScheduleGenerationPreflightTest::test_a_halting_shape_is_predicted_and_actually_halts',
         'client_invoices.cycle_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_end_is_still_counted',
         'client_invoices.cycle_start => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_interim_missing_only_its_cycle_start_is_still_counted',
         'client_invoices.due_date => covered_by:Tests\Feature\AgentApi\AgentReadApiTest::test_a_collectible_invoice_with_no_due_date_is_never_counted_as_overdue',
@@ -375,12 +375,12 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => BillingWorkflowTest::class,
                     'method' => 'test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
                 ],
-                // The same null, read a second time by the audit that sizes
-                // the refusals before they ship - see the note under
+                // The same null, read a second time by the preflight that
+                // sizes the halts before they ship - see the note under
                 // `client_billing_schedule_id`.
                 [
-                    'covered_by' => ScheduleRefusalAuditorTest::class,
-                    'method' => 'test_a_row_the_audit_counts_actually_halts_the_schedule',
+                    'covered_by' => ScheduleGenerationPreflightTest::class,
+                    'method' => 'test_a_halting_shape_is_predicted_and_actually_halts',
                 ],
             ],
             // What the citation proves is narrower than it reads: it is the
@@ -433,16 +433,16 @@ final class NullSemanticsRegistryTest extends TestCase
                     'method' => 'test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again',
                 ],
                 // And a second reader, which exists because the first one
-                // *halts*. `ScheduleRefusalAuditor` predicts which rows would
-                // stop a schedule so the damage can be sized before the
-                // refusals are deployed, and it has to read this null exactly
-                // as the guard does or the prediction is worthless. Pinned by
-                // the conformance test rather than by a count assertion: it
-                // runs `generateDue()` against each shape the audit counts, so
-                // a change to one reading that is not made to the other fails.
+                // *halts*. `ScheduleGenerationPreflight` predicts which
+                // schedules would stop so the damage can be sized before the
+                // guards are deployed. It reads this null exactly as the guard
+                // does because it *is* the guard - it runs the resolver over
+                // each schedule's real due periods rather than re-deriving the
+                // decision - and the conformance test asserts the prediction
+                // and the run agree in both directions.
                 [
-                    'covered_by' => ScheduleRefusalAuditorTest::class,
-                    'method' => 'test_a_row_the_audit_counts_actually_halts_the_schedule',
+                    'covered_by' => ScheduleGenerationPreflightTest::class,
+                    'method' => 'test_a_halting_shape_is_predicted_and_actually_halts',
                 ],
             ],
             // Not issued yet - on the draft path, where issuing stamps the

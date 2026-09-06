@@ -436,7 +436,8 @@ class BillingWorkflowTest extends TestCase
         // coalesces an absent *or null* kind to `ad_hoc`, so the null has to be
         // written afterwards rather than passed in, which is itself the proof
         // that only a migrated or hand-edited row can look like this.
-        app(InvoiceLifecycleService::class)->createDraft(
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $unattributed = $lifecycle->createDraft(
             $workspace,
             $company,
             $this->invoiceData() + [
@@ -444,7 +445,14 @@ class BillingWorkflowTest extends TestCase
                 'service_period_end' => '2026-08-31',
             ],
             [$this->line()],
-        )->forceFill(['invoice_kind' => null])->save();
+        );
+        $unattributed->forceFill(['invoice_kind' => null])->save();
+
+        // Issued, because *billed* is what this test is about. A draft covering
+        // the period is a different verdict - it has charged nobody, so the
+        // schedule neither bills it again nor advances past it - and that case
+        // has its own test below.
+        $lifecycle->issue($unattributed->fresh(), $workspace);
 
         app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
 
@@ -454,6 +462,7 @@ class BillingWorkflowTest extends TestCase
             ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->count(),
             'August is already covered by the unattributed invoice, so nothing new is raised',
         );
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     /**
@@ -1124,7 +1133,13 @@ class BillingWorkflowTest extends TestCase
                 $through = CarbonImmutable::parse($start)->addMonthsNoOverflow($months * 4);
                 $invoices = app(BillingScheduleService::class)->generateDue($schedule, $through);
 
-                $this->assertGreaterThanOrEqual(4, count($invoices), "{$cadence} from {$start} generated too few periods");
+                // Exactly five, not "at least four". The through-date is four
+                // cadence increments past the start and the loop is inclusive,
+                // so five period starts fall due. A lower bound would still
+                // pass if the cadence were shortened, or if the loop became
+                // exclusive and dropped the last period - both of which are
+                // changes to what gets billed.
+                $this->assertCount(5, $invoices, "{$cadence} from {$start} did not generate five periods");
 
                 $previousEnd = null;
                 foreach ($invoices as $invoice) {
@@ -1158,48 +1173,434 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
-     * A draft covering exactly this period counts as billed, and the cursor
-     * moves past it.
+     * A draft covering exactly this period is neither billed nor billed again.
      *
-     * Pinned because it is a *choice*, not a consequence, and the alternative
-     * is defensible enough that nobody should have to re-derive which one is in
-     * force. The draft is returned to the caller as though the run had just
-     * created it, and `next_run_on` advances - so discarding that draft
-     * afterwards leaves the period unbilled with the cursor already past it,
-     * and only a rewind will bill it.
+     * The shape is the ordinary one, and that is the point: `ClientInvoicingService`
+     * creates cadence invoices with an agreement and *no* schedule, and they sit
+     * as committed drafts while somebody reviews them. A schedule's own draft is
+     * not this shape - `generateDue()` creates and issues in one transaction, so
+     * a failure rolls the draft back and a success commits it issued.
      *
-     * It is still the right answer. A draft for exactly this period is a period
-     * this schedule has already been asked to bill; regenerating would write
-     * the same `(schedule, start, end)` tuple and collide with
-     * `billing_schedule_service_period_unique` anyway, and refusing instead
-     * would halt every schedule whose last run left a draft behind - which is
-     * the ordinary state of a schedule between generation and issue, not an
-     * anomaly. The exposure is bounded by discarding a draft being an operator
-     * action, and #251 tracks the issue-time invariant that would narrow it
-     * further.
+     * An earlier revision reported this as `AlreadyBilled`. That advanced
+     * `next_run_on` past a period no money had been asked for, and - the part
+     * that makes it a lost-billing path rather than a delay - nothing brought it
+     * back. The unique-index argument that justifies the exact-match rule does
+     * not apply to this row either: its `client_billing_schedule_id` is null, so
+     * the index never constrained it.
      */
-    public function test_this_schedules_own_draft_for_the_period_counts_as_billed_and_advances_the_cursor(): void
+    public function test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule(): void
     {
         [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Pending Draft Workspace');
 
+        // The other generator's shape: agreement, cadence kind, no schedule.
         $draft = $this->augustInvoice($workspace, $company, [
             'client_agreement_id' => $agreement->id,
-            'client_billing_schedule_id' => $schedule->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
         ]);
+        $this->assertNull($draft->client_billing_schedule_id);
         $this->assertSame('draft', $draft->status);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('the schedule should not decide a period a pending draft has claimed');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $draft->invoice_number, $refusal->getMessage());
+            $this->assertStringContainsString('charged nobody', $refusal->getMessage());
+        }
+
+        // No second invoice for the period...
+        $this->assertDatabaseCount('client_invoices', 1);
+        // ...and the cursor has not moved past a period nothing has billed.
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * Issuing the draft is what lets the schedule move on.
+     *
+     * The other half of the contract, and the reason the halt is a nuisance
+     * rather than a trap: the operator does the thing they were going to do
+     * anyway, and the next run advances without raising anything.
+     */
+    public function test_issuing_the_pending_draft_lets_the_schedule_advance_without_billing_again(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Issued Draft Workspace');
+
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+        app(InvoiceLifecycleService::class)->issue($draft, $workspace);
 
         $created = app(BillingScheduleService::class)
             ->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
 
-        // Returned as though the run had produced it, and still a draft - the
-        // schedule does not issue somebody else's work in passing.
         $this->assertCount(1, $created);
         $this->assertSame($draft->id, $created[0]->id);
-        $this->assertSame('draft', $created[0]->fresh()?->status);
-
-        // Nothing new, and the cursor is past August.
-        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertDatabaseCount('client_invoices', 1);
         $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * Discarding the draft waives the period, and that is deliberate.
+     *
+     * `discardDraft()` does not delete the row - it turns it into a *void*
+     * invoice keeping its period - so the period reads afterwards exactly as a
+     * deliberately waived one, and the schedule advances without billing it.
+     *
+     * That is the documented meaning of voiding a cadence invoice, so it is the
+     * right outcome; it is pinned here because it is also the reason the
+     * `PendingDraft` verdict has to exist. Under the old `AlreadyBilled`
+     * reading the schedule had *already* advanced before anyone discarded
+     * anything, so this waiver happened whether or not a person intended it,
+     * and rewinding the cursor could not undo it. Now the waiver only happens
+     * when somebody discards the draft on purpose.
+     */
+    public function test_discarding_the_pending_draft_waives_the_period_rather_than_rebilling_it(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Discarded Draft Workspace');
+
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+        $voided = app(InvoiceLifecycleService::class)->discardDraft($draft, $workspace, 'Superseded');
+
+        $this->assertSame('void', $voided->status);
+        $this->assertSame('2026-08-01', $voided->service_period_start?->toDateString());
+
+        app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertDatabaseCount('client_invoices', 1);
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * A period already billed *and* claimed by a draft is a conflict, and the
+     * message must not tell anyone to issue the draft.
+     *
+     * The halt was never the problem. An earlier revision ranked a pending
+     * draft above an already-billed match, so this shape was reported as the
+     * draft alone and the operator was told to issue it - and
+     * `InvoiceLifecycleService::issue()` checks only that the row is a draft,
+     * with no overlap or period guard, so following the instruction charged the
+     * client twice. The same sentence undid a waiver when the other row was an
+     * exact void.
+     *
+     * Reachable without a corrupted row: the unique index constrains
+     * `(client_billing_schedule_id, service_period_start, service_period_end)`
+     * and a null is not constrained, so a schedule-linked invoice and an
+     * unlinked cadence draft can cover the same period.
+     */
+    public function test_a_period_billed_and_claimed_by_a_draft_refuses_and_says_to_remove_the_duplicate(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Contested Period Workspace');
+
+        $issued = app(InvoiceLifecycleService::class)->issue(
+            $this->augustInvoice($workspace, $company, [
+                'client_agreement_id' => $agreement->id,
+                'client_billing_schedule_id' => $schedule->id,
+            ]),
+            $workspace,
+        );
+
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('two invoices covering the period exactly cannot be decided here');
+        } catch (DomainException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        // Both rows named, because a person has to find both to fix this.
+        $this->assertStringContainsString((string) $issued->invoice_number, $message);
+        $this->assertStringContainsString((string) $draft->invoice_number, $message);
+
+        // And the advice reversed: remove the duplicate, do not advance it.
+        $this->assertStringContainsString('discard draft '.$draft->invoice_number.' rather than issuing it', $message);
+        $this->assertStringNotContainsString('Issue that draft to bill the period', $message);
+
+        // Refusals roll back, as every other one does.
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * Following the advice releases the halt. That is the half the earlier
+     * revision never checked, and it was false.
+     *
+     * `discardDraft()` does not delete the row - it turns the draft into a
+     * *void* invoice keeping its period - and an exact void is itself an exact
+     * claim, so issued + draft became issued + void: still two rows, and the
+     * resolver refused the same period again with the same advice. Every
+     * remedy the message named looped back to the refusal it came from, and
+     * the only exit was a database edit.
+     *
+     * Now the surviving charged invoice beside a void reads as having billed
+     * the period, so the next run advances past it without creating or issuing
+     * anything.
+     */
+    public function test_discarding_the_duplicate_draft_releases_the_conflict_and_the_schedule_advances_without_billing_again(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Released Conflict Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        $issued = $lifecycle->issue(
+            $this->augustInvoice($workspace, $company, [
+                'client_agreement_id' => $agreement->id,
+                'client_billing_schedule_id' => $schedule->id,
+            ]),
+            $workspace,
+        );
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+
+        // First run refuses.
+        $this->assertRefusedAndUnchanged($schedule, $draft);
+
+        // The operator does what the message says.
+        $discarded = $lifecycle->discardDraft($draft, $workspace, 'Duplicate of '.$issued->invoice_number);
+        $this->assertSame('void', $discarded->status);
+        $this->assertSame('2026-08-01', $discarded->service_period_start?->toDateString(), 'the void keeps its period');
+
+        // Second run advances, and bills nothing.
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($issued->id, $created[0]->id, 'the invoice that charged for the period is the one reported');
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * Two issued invoices for one period halt, and voiding the unpaid one is
+     * the exit - and it is an exit.
+     *
+     * This is the shape where the conflict rule is wider than the defect that
+     * prompted it: an earlier revision read two charged rows as already billed
+     * and advanced, which is safe for the schedule and invisible for the
+     * client, who was asked for the money twice. Halting is the right call
+     * only if the halt can be cleared through the ordinary lifecycle, and
+     * under the status-blind rule it could not: `void()` keeps the period, so
+     * issued + issued became issued + void and refused again. A historical
+     * anomaly became a permanent outage with advice that could not end it.
+     */
+    public function test_voiding_the_unpaid_duplicate_releases_a_period_billed_twice(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Double Billed Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        $original = $lifecycle->issue(
+            $this->augustInvoice($workspace, $company, [
+                'client_agreement_id' => $agreement->id,
+                'client_billing_schedule_id' => $schedule->id,
+            ]),
+            $workspace,
+        );
+        $duplicate = $lifecycle->issue(
+            $this->augustInvoice($workspace, $company, [
+                'client_agreement_id' => $agreement->id,
+                'invoice_kind' => InvoiceKind::CadencePeriod->value,
+            ]),
+            $workspace,
+        );
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('a period two invoices have charged for must not be advanced past silently');
+        } catch (DomainException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        $this->assertStringContainsString((string) $original->invoice_number, $message);
+        $this->assertStringContainsString((string) $duplicate->invoice_number, $message);
+        $this->assertStringContainsString('Void the duplicate that has not been paid', $message);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+
+        $lifecycle->void($duplicate, $workspace, 'Duplicate of '.$original->invoice_number);
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($original->id, $created[0]->id);
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * When both duplicates have taken money there is no exit here, and the
+     * message must say so rather than recommend a void the application will
+     * refuse.
+     *
+     * `InvoiceLifecycleService::void()` throws once `paid_amount > 0`, so the
+     * sentence that is right for two issued rows is a dead end for two paid
+     * ones. The message is built from the same facts `void()` checks, and the
+     * refusal `void()` gives is asserted alongside it so the two cannot
+     * disagree without this test noticing.
+     */
+    public function test_two_paid_duplicates_halt_without_recommending_a_void_the_application_would_refuse(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Paid Twice Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        $paid = [];
+        foreach ([['client_billing_schedule_id' => $schedule->id], ['invoice_kind' => InvoiceKind::CadencePeriod->value]] as $i => $lineage) {
+            $invoice = $lifecycle->issue(
+                $this->augustInvoice($workspace, $company, $lineage + ['client_agreement_id' => $agreement->id]),
+                $workspace,
+            );
+            $lifecycle->applyPayment($invoice, [
+                'amount' => 10000, 'currency' => 'USD', 'method' => 'ach',
+                'status' => 'succeeded', 'idempotency_key' => 'synthetic-duplicate-payment-'.$i,
+            ], $workspace);
+            $paid[] = $invoice->fresh();
+        }
+        $this->assertSame(['paid', 'paid'], array_map(static fn (ClientInvoice $invoice): string => $invoice->status, $paid));
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('a period two paid invoices have charged for must not be advanced past silently');
+        } catch (DomainException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        $this->assertStringContainsString('money has been taken against every one of them', $message);
+        $this->assertStringContainsString('financial correction', $message);
+        $this->assertStringNotContainsString('Void the duplicate', $message);
+
+        // And the advice not given is advice the lifecycle would refuse.
+        try {
+            $lifecycle->void($paid[1], $workspace, 'Duplicate');
+            $this->fail('a paid invoice cannot be voided, so the message must not say to');
+        } catch (DomainException $refused) {
+            $this->assertStringContainsString('paid', $refused->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * Two drafts settle one step at a time, and each step's message is right
+     * for the state it finds.
+     *
+     * Discarding one leaves a draft beside an exact void, which is still
+     * contested: the void may be a deliberate waiver the draft would undo, or
+     * - as here - the discarded half of a repair the draft is meant to finish,
+     * and nothing in the rows says which. So the second run refuses again, with
+     * advice for that state, and issuing the survivor is what settles it.
+     */
+    public function test_two_drafts_are_settled_one_step_at_a_time_until_one_is_issued(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Two Drafts Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $lineage = ['client_agreement_id' => $agreement->id, 'invoice_kind' => InvoiceKind::CadencePeriod->value];
+
+        $keep = $this->augustInvoice($workspace, $company, $lineage);
+        $duplicate = $this->augustInvoice($workspace, $company, $lineage);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('two drafts for one period cannot be decided here');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('Discard all but one of them', $refusal->getMessage());
+        }
+
+        $lifecycle->discardDraft($duplicate, $workspace, 'Duplicate of '.$keep->invoice_number);
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('a draft beside an exact void is still contested');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('Discard the draft to keep the waiver, or issue it', $refusal->getMessage());
+            $this->assertStringContainsString((string) $keep->invoice_number, $refusal->getMessage());
+        }
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+
+        $lifecycle->issue($keep, $workspace);
+
+        $created = app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($keep->id, $created[0]->id);
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * The other exit from a draft beside an exact void: discard the draft too,
+     * and the period is waived.
+     *
+     * Two voids for one period are one waiver recorded twice, not a conflict,
+     * so the schedule advances without billing - exactly as it does past a
+     * lone exact void. Pinned because under the status-blind rule this was the
+     * state that could never be left: exact void + exact void refused forever.
+     */
+    public function test_discarding_the_draft_beside_an_exact_void_settles_the_period_as_waived(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Waived Twice Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        $waiver = $lifecycle->void(
+            $lifecycle->issue(
+                $this->augustInvoice($workspace, $company, [
+                    'client_agreement_id' => $agreement->id,
+                    'client_billing_schedule_id' => $schedule->id,
+                ]),
+                $workspace,
+            ),
+            $workspace,
+            'Waived',
+        );
+        $draft = $this->augustInvoice($workspace, $company, [
+            'client_agreement_id' => $agreement->id,
+            'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ]);
+
+        $this->assertRefusedAndUnchanged($schedule, $draft);
+
+        $lifecycle->discardDraft($draft, $workspace, 'Keeping the waiver on '.$waiver->invoice_number);
+
+        app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+
+        $this->assertDatabaseCount('client_invoices', 2);
+        $this->assertSame(
+            0,
+            ClientInvoice::query()->where('workspace_id', $workspace->id)->where('status', InvoiceStatus::Issued->value)->count(),
+            'nothing was issued for a waived period',
+        );
+        $this->assertSame('2026-09-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * A schedule with nothing to bill halts, rather than billing nothing.
+     *
+     * `MoneyService::invoiceTotals([])` sums nothing to zero and `issue()` does
+     * not ask whether an invoice has lines, so an earlier revision let a
+     * schedule whose template had been imported or hand-edited to `[]` create
+     * a draft with no lines, issue it for $0, and advance `next_run_on` - for
+     * every due period, each recorded as billed. The public contract already
+     * requires at least one line; the reader is now no looser than it.
+     */
+    public function test_a_schedule_with_an_empty_line_template_bills_nothing_and_does_not_advance(): void
+    {
+        [, , , $schedule] = $this->scheduledClient('Empty Template Workspace');
+        $schedule->forceFill(['line_template' => []])->save();
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('an empty template must not issue an invoice for nothing');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('at least one line', $refusal->getMessage());
+        }
+
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
     }
 
     /**

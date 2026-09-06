@@ -7,16 +7,16 @@ use App\Services\Billing\BillingPeriodCollisionResolver;
 /**
  * What a billing schedule should do about the period it is about to bill.
  *
- * Three answers rather than two, and the third is the point. A guard that can
- * only say "billed" or "not billed" has to pick one of them for a row it cannot
- * attribute, and both picks are wrong in a way nothing notices: answering
- * "billed" advances `next_run_on` past a period nothing charged, answering "not
- * billed" issues a second invoice for a period already covered. #219 and #224
- * are each one half of that.
+ * Four answers rather than two, and the two extra ones are the point. A guard
+ * that can only say "billed" or "not billed" has to pick one of them for a row
+ * it cannot attribute, and both picks are wrong in a way nothing notices:
+ * answering "billed" advances `next_run_on` past a period nothing charged,
+ * answering "not billed" issues a second invoice for a period already covered.
+ * #219 and #224 are each one half of that.
  *
- * So an undecidable row resolves to neither. See
- * {@see BillingPeriodCollisionResolver} for which shapes are undecidable and
- * why each one is.
+ * So an undecidable row resolves to neither, and neither does a row that has
+ * reserved the period without charging for it. See
+ * {@see BillingPeriodCollisionResolver} for which shapes are which and why.
  */
 enum PeriodClaimVerdict
 {
@@ -26,10 +26,52 @@ enum PeriodClaimVerdict
     case Clear;
 
     /**
-     * An invoice this schedule owns already covers exactly this period.
+     * A draft covers exactly this period, and it has charged nobody yet.
      *
-     * Any status. A voided invoice still answers this, deliberately - see
+     * The distinction this case exists to draw is between a period that has
+     * been *billed* and one that has merely been *claimed*. A draft is a
+     * proposal: `InvoiceStatus` says in as many words that a draft has charged
+     * nobody. Returning `AlreadyBilled` for one - which is what an earlier
+     * revision did - advanced `next_run_on` past a period no money had been
+     * asked for, and there was no automatic way back:
+     * `InvoiceLifecycleService::discardDraft()` turns the draft into a *void*
+     * invoice while keeping its period, so even rewinding the cursor produced
+     * an exact void, which is read as a deliberate waiver. The period was
+     * silently never billed.
+     *
+     * Creating a second invoice is equally wrong - two invoices for one period
+     * is the defect this whole class of guard exists to prevent - so the
+     * schedule does neither and says so. Issue the draft and the next run
+     * advances normally; void it deliberately and the waiver is honoured.
+     *
+     * That advice is only sound when the draft is the *lone* claim on the
+     * period, so this verdict is reached only then. A draft alongside another
+     * invoice covering the period exactly refuses instead - see
+     * {@see PeriodRefusalReason::ConflictingExactClaims} - because there the
+     * same sentence would be telling an operator to bill a period already
+     * billed, or to undo a waiver. That includes a draft beside an exact
+     * *void*: the void may be a deliberate waiver, or the discarded half of a
+     * repair the draft is meant to finish, and the rows do not say which.
+     */
+    case PendingDraft;
+
+    /**
+     * An invoice this schedule owns already covers exactly this period, and it
+     * is not a draft.
+     *
+     * Issued, partially paid and paid have all asked the client for money. A
+     * voided invoice answers this too, deliberately: voiding a cadence invoice
+     * is the documented way to waive its own period, and regenerating it would
+     * collide with the unique index anyway - see
      * {@see BillingPeriodCollisionResolver::resolve()}.
+     *
+     * When several invoices cover the period exactly, this is the answer only
+     * when at most one of them has charged for it and none is a draft: one
+     * charged invoice beside any number of exact voids, or exact voids alone.
+     * Those are the states the conflict repairs leave behind - `discardDraft()`
+     * and `void()` both keep the service period - and reading them as billed
+     * is what makes those repairs an exit rather than a loop. See
+     * {@see PeriodRefusalReason::ConflictingExactClaims}.
      */
     case AlreadyBilled;
 
