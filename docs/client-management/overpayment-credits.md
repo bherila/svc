@@ -61,8 +61,8 @@ The Zod schemas in `resources/js/client-management/types/invoice.ts` accept thes
 
 The existing Paid ↔ Issued transition rules still apply:
 
-- `total_payments >= invoice_total` → invoice marks **paid** (with `paid_date = latest payment date`). Overpayments qualify.
-- Deleting or reducing a payment so `total_payments < invoice_total` → invoice reverts to **issued**, `paid_date` cleared.
+- `total_payments >= invoice_total` → invoice marks **paid**. Overpayments qualify.
+- Reducing or refunding a payment so `total_payments < invoice_total` → invoice reverts to **partially_paid**, or to **issued** once nothing is paid. There is no payment-deletion path; see [Payments](payments.md) for the derived status table.
 
 `remaining_balance` can go negative; the UI surfaces it as *"Overpaid by $X"* on the issued/paid source invoice and offers an **Available credit** chip linking to the consumer invoice(s).
 

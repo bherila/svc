@@ -3,58 +3,148 @@
 Recording and validating payments against client invoices, and the invoice status transitions they drive. Part of the [Billing & Invoicing System](billing.md). See also [Overpayment credits](overpayment-credits.md) (overpaid amounts carry forward) and [Stripe billing](stripe-billing.md) (online payments for issued invoices).
 
 ## Payment Methods
-Supported payment methods:
-- Credit Card
-- ACH
-- Wire
-- Check
-- Other
+
+`method` is free text in the database — imports carry whatever the source system
+called it, and Stripe writes `stripe` itself — but the record-payment form
+offers a closed list so a hand-entered payment does not arrive as
+`bank_transfer`, `Bank Transfer` and `wire` on three different days:
+
+- Bank transfer, Wire, ACH, Check, Card, Cash
+- **Other…**, which asks for the name rather than storing the literal `other`
+
+The list lives in `resources/js/lib/payments.ts`. Nothing downstream reads
+`method`; it appears only on the invoice screen.
+
+## Payment status
+
+A payment carries exactly one of six statuses, and `InvoicePaymentStatus` is the
+whole vocabulary:
+
+| status | counts toward the invoice's paid amount |
+| --- | --- |
+| `succeeded` | yes |
+| `pending`, `failed`, `refunded`, `disputed`, `canceled` | no |
+
+The list is enforced at the **service** boundary, not only at the HTTP one. It
+used to be written down in four places — two validation rule lists, an
+`in_array` in `setPaymentStatus()`, and the literal `'succeeded'` the balance
+recomputation filtered on — and the four did not agree about who enforced it.
+`InvoiceLifecycleService::applyPayment()` and `svc:billing:payment` did not, and
+the column is an unconstrained `varchar(24)`, so `--status=paid` — the intuitive
+*invoice* word — or a mistyped `suceeded` was accepted end to end and produced a
+row the recomputation read as having contributed nothing. The invoice stayed
+`issued` for its whole balance with that payment sitting on it, so money
+genuinely received was invisible and the same balance could be collected again.
+
+Both sides now parse rather than compare:
+
+- **On write**, an unrecognised status is refused by name, and a non-string
+  value is refused by type rather than stringified. Omitting the field still
+  means `succeeded`; supplying an empty string does not, because that is a value
+  someone chose.
+- **On recomputation**, every payment row is validated before any of them is
+  totalled. A status this application cannot read is not evidence that the row
+  moved no money, so the balance is not recomputed at all. Write-side validation
+  does not cover this — an import, a migration or a hand-repair can put such a
+  row there without passing through `applyPayment()`.
+
+Repairing one is still possible: `setPaymentStatus()` writes the recognised
+replacement *before* it recomputes, so reclassifying the offending row succeeds.
+A second unreadable row rolls that repair back — one at a time is a repair, two
+is a balance nobody can total.
 
 ## Payment Validation
 The system enforces strict payment validation to maintain data integrity:
 
 1. **Overpayment Prevention**:
-   - When adding a new payment, the amount cannot exceed the invoice's remaining balance
-   - When updating an existing payment, the total payments cannot exceed the invoice total
-   - Both endpoints return HTTP 422 with a descriptive error message if validation fails
+   - A **succeeded** payment cannot exceed the invoice's remaining balance. A
+     payment in any other status has moved no money yet, so it is not checked
+     against the balance on the way in; the check applies when it is transitioned
+     to `succeeded`, where successful payments net of refunds cannot exceed the
+     invoice total
+   - The refusal is a `DomainException`, rendered as HTTP 422 for a JSON request
+     and as a `billing` validation error otherwise
 
 2. **Payment Amount Rules**:
-   - Minimum payment amount: $0.01
-   - Payment amounts must be numeric
-   - Payment date is required and must be a valid date
+   - `amount` is an integer in **minor units**, minimum 1 — so $0.01
+   - `currency` must match the invoice's, as an uppercase ISO 4217 code
+   - `received_on` is optional; omitted, it defaults to today in the
+     workspace's timezone
 
 ## Invoice Status Transitions
 
-The invoice status automatically updates based on payment activity:
+**Draft → Issued is never a payment transition.** It happens only through
+`InvoiceLifecycleService::issue()`, which sets the issue date, flips client
+visibility, records `invoice.issued`, and enforces the service-period and
+`invoice_kind` invariants in the [domain contract](../domain-contract.md).
 
-1. **Draft → Issued**: Manual action by admin (sets `issue_date`)
-2. **Issued → Paid**: Automatically triggered when `total_payments >= invoice_total`
-   - `paid_date` is set to the latest payment date
-   - Status changes from "issued" to "paid"
-3. **Paid → Issued**: Automatically triggered when a payment is deleted or updated, causing `remaining_balance > 0`
-   - `paid_date` is cleared
-   - Status reverts to "issued"
+Everything after that is derived. `refreshStatus()` recomputes the paid and
+balance amounts from the invoice's payments and settles the status from the
+result:
 
-## Partially Paid Status
+| derived from | status |
+| --- | --- |
+| paid ≥ total | `paid` |
+| 0 < paid < total | `partially_paid` |
+| paid = 0 | `issued` |
+| the invoice was already void | `void` (payments never revive it) |
 
-While the database status remains "issued", the UI displays a special "PARTIALLY PAID" badge (blue background) when:
-- Invoice status is "issued", AND
-- Total payments > 0, AND
-- Remaining balance > 0
+`partially_paid` is a real database status, not a UI-only badge — this schema
+carries five invoice statuses where the predecessor's column had four, and code
+ported from that world writes exhaustive four-element lists that silently omit
+it. `InvoiceStatus` exists so the vocabulary and the questions asked of it live
+in one place.
 
-This provides clear visual feedback that payment has been received but is not yet complete.
+The transition is derived in both directions: reducing or refunding a payment so
+that `paid < total` moves a `paid` invoice back to `partially_paid` or `issued`
+on the next recomputation. There is no payment-deletion path; a payment is
+withdrawn by transitioning it to `failed`, `canceled` or `refunded`.
+
+**Two shapes may not be recomputed at all**, because deriving a status for them
+would be an act rather than a reading:
+
+- a **draft** carrying a payment. The derivation answers `issued` for any
+  non-void invoice, so it would promote the draft straight past `issue()` — past
+  the period and kind invariants, past the issue date, visibility and activity —
+  into a status the emailer will send. `applyPayment()` refuses to attach a
+  payment to a draft, so this shape arrives imported or hand-edited.
+- an invoice whose **status this application does not recognise**. It would be
+  silently normalised into one of the four outcomes above;
+  `InvoiceStatus::isSettledValue()` and `hasChargedValue()` both read an unknown
+  status as settled and charged precisely because code that cannot interpret a
+  state must not act on it, and rewriting it is the strongest action available.
+
+Both refuse inside the payment transaction, so the payment insert or update
+rolls back and neither row is changed.
+
+> `client_invoices.paid_on` exists in the schema but nothing in this application
+> writes it. Documentation inherited from the predecessor describes a
+> `paid_date` set to the latest payment date; treat the derived `paid_amount`
+> and `balance_amount` above as the source of truth.
 
 ## Payment Table Display
 
-The payments table on the invoice detail page uses a compact style consistent with line items:
-- Rows are clickable to edit payments (admin only)
-- Edit icon appears on hover in the rightmost column
-- Each row shows: payment date, amount, method, and notes
-- When invoice is fully paid (status = 'paid'), the "Add Payment" button is hidden
+The payments table on the invoice detail page is **read only**. Each row shows
+the received date, status, method, reference and amount.
 
-## Payment Workflow (Admin Only)
+## Payment Workflow
 
-1. **Add Payment**: Click "Add Payment" button → Modal opens with default amount = remaining balance
-2. **Edit Payment**: Click payment row or hover edit icon → Modal opens with current values
-3. **Delete Payment**: Open payment modal → Click "Delete" button
-4. **Validation**: System prevents overpayment at API level with user-friendly error messages
+Recording a payment is the one write the screen offers, through **Record
+payment** (`POST /workspaces/{workspace}/invoices/{clientInvoice}/payments`,
+which requires `manage` on the workspace). Amount, currency and method are
+required; status defaults to `succeeded`. Overpayment is refused at the service
+boundary and surfaced as above. An `Idempotency-Key` header, or an
+`idempotency_key` field, makes a retry safe.
+
+There is no edit or delete. A payment is corrected by transitioning its status
+or its refunded amount through `InvoiceLifecycleService`, which recomputes the
+invoice and records the corresponding activity — history is preserved rather
+than rewritten. The console equivalent of recording one is:
+
+```
+php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \
+    --workspace=<workspace> [--status=succeeded] [--idempotency-key=<key>]
+```
+
+`--status` accepts only the six values above; anything else is refused rather
+than stored.

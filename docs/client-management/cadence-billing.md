@@ -43,13 +43,20 @@ out — the same null-in-a-predicate class this whole section is about, reproduc
 in the instrument used to measure it. The audit now reports
 `without_a_service_period_start` and `unplaceable_by_a_period_guard` beside it.
 
-So the claim here is deliberately split: **the end boundary is evidenced clean;
-the start boundary is now measurable and has not yet been measured against
-production**, because the count ships with this change and reaches the audit
-only on deploy. Run `svc:billing:audit-unplaceable-invoices` — or the MCP tool —
-afterwards. A non-zero `unplaceable_by_a_period_guard` is a repair, not a guard
-change, and must happen before the issue-time invariant in #251 is safe to
-turn on.
+The claim was deliberately split when this section was written — the end
+boundary evidenced clean, the start boundary measurable but not yet measured,
+because the count shipped with that change and reached the audit only on deploy.
+**Both are now evidenced clean.** Production was measured before #251's
+issue-time invariant shipped and carries zero invoices missing either boundary.
+
+That measurement was taken on the unfiltered population rather than on the
+headline `unplaceable_by_a_period_guard`, which narrows unlinked rows by kind
+exactly as the guard does and therefore drops unlinked `interim_overage` and
+`ad_hoc` rows — an ordinary interim invoice is unlinked, so the field can read
+zero with an incomplete interim draft present. Re-run
+`svc:billing:audit-unplaceable-invoices` — or the MCP tool — after every import
+and bulk edit, and read the raw counts rather than only that field. A non-zero
+result is a repair, not a guard change.
 
 That second count mirrors the guard rather than tidying it, in three ways that
 each looked like a simplification and each hid a real exposure:
@@ -246,6 +253,25 @@ middle of a batch with some periods billed. All-or-nothing is recoverable by
 re-running; half-applied is not. Classifying every period up front, before
 creating anything, would avoid the wasted work — #252.
 
+**The rules below apply only once a candidate has been established as this
+schedule's claim**, or its agreement's — the `mine()` branch. A row that
+resolves to another schedule or another agreement is *someone else's* and
+clears, and so does a known void that does not cover the period exactly, before
+any of them is consulted. A malformed invoice belonging to nobody in this
+picture does not halt the run.
+
+Inside that branch, two shapes refuse before the period is even compared,
+because neither can be placed at all: a **status** no `InvoiceStatus` case
+matches (`unknown_status`), and an **`invoice_kind`** this application does not
+recognise (`unsupported_invoice_kind`). The kind case has two incompatible
+identities — `invoiceKindValue()` calls it `cadence_period` while the
+raw-column guards do not — so what it has already billed cannot be established.
+It used to fall through to the exact-match rules and answer `PendingDraft`,
+whose message says to issue the draft or void it: issuing is refused by
+`issue()`, and voiding leaves an exact void the branch below reads as a
+**deliberate waiver**, so the cursor advanced past a period nobody had been
+charged for. Neither instruction was true, so neither is given.
+
 **A pending draft neither bills the period nor advances past it.** An invoice
 covering *exactly* the period being billed reports it as already billed — unless
 it is a **draft**, which has charged nobody. That case stops the run and names
@@ -273,17 +299,23 @@ So the run stops, and the remedy is the thing the operator was going to do
 anyway: **issue** the draft and the next run advances without billing again;
 **void** it and the waiver is honoured deliberately rather than by accident.
 Pinned by `BillingWorkflowTest::test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule`
-and its two companions. #251 tracks the issue-time invariant that would narrow
-the surrounding exposure further.
+and its two companions.
+
+#251 has since narrowed the surrounding exposure from the other side: a draft
+that claims a span and states no complete period can no longer be **issued** at
+all, so "issue that draft" is never advice to create a live row the next run
+cannot place. See [the domain contract](../domain-contract.md) for the three
+shapes `issue()` now refuses.
 
 **Two invoices covering the period exactly is a different answer, because it
 needs the opposite advice.** "Issue that draft" is sound only when the draft is
 the *lone* claim on the period. Beside an invoice that already covers the period
-exactly it is dangerous: `InvoiceLifecycleService::issue()` checks that the row
-is a draft and nothing else — no overlap guard, no period guard — so an operator
-following the instruction bills the period twice, or undoes a waiver an exact
-void had recorded. Two drafts are no better; issuing one leaves the other to
-collide with the next run.
+exactly it is dangerous. Since #251 `InvoiceLifecycleService::issue()` does
+check the row's service period and its `invoice_kind`, but it still holds **no
+overlap guard**: both rows here state the same complete period, so both pass
+those invariants and an operator following the instruction bills the period
+twice, or undoes a waiver an exact void had recorded. Two drafts are no better;
+issuing one leaves the other to collide with the next run.
 
 The state is reachable without anyone corrupting a row. The unique index
 constrains `(client_billing_schedule_id, service_period_start,
