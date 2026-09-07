@@ -300,27 +300,29 @@ final class InvoiceLineComposerTest extends TestCase
     }
 
     /**
-     * An invoice with no period end dates its termination work as nothing, and
-     * its subcontractor work as today.
+     * An invoice with no period end composes no termination line at all.
      *
-     * `addDeferredTerminationLine()` reads `service_period_end` twice and reads
-     * it two different ways. The ordinary line takes it as a value, so a null
-     * lands as a null `line_date` and the charge falls out of every dated
-     * window - the service-period widening, the replay line key, the audit
-     * queries. The flat-hourly line takes it through `Carbon::parse()`, and
-     * `parse(null)` is *now*: the subcontractor charge is dated to whenever the
-     * termination happened to be run, which can be months after the work and
-     * outside the agreement's own term.
+     * `addDeferredTerminationLine()` read `service_period_end` through
+     * `Carbon::parse()` twice, and `parse(null)` is *now* rather than a
+     * refusal: the subcontractor charge was dated to whenever the termination
+     * happened to be run, which for work held by agreement for months can be
+     * outside the agreement's own term. Worse for a test, the answer changed
+     * with the calendar, which is why nothing caught it - the composed row was
+     * never wrong twice in the same way.
      *
-     * Two readings, one column, opposite failure modes, and neither of them is
-     * the period the client is being billed for. The control below is the same
-     * two entries on an invoice that states its end, where both lines take that
-     * date.
+     * So the period end is resolved once, before anything is composed, and a
+     * missing one refuses: this method cannot derive the date a termination
+     * charge belongs on, and an invoice that does not state it has to be
+     * repaired rather than guessed at.
+     *
+     * The whole case runs under two deliberately distant clocks. The stated end
+     * composes both lines on that date under either one, and the missing end
+     * refuses under either one, so neither assertion can be reading the wall
+     * clock - which is the property the old behaviour lacked and the reason
+     * this test is written twice over rather than once.
      */
-    public function test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today(): void
+    public function test_a_termination_line_on_an_undated_invoice_is_refused_under_any_clock(): void
     {
-        Carbon::setTestNow('2026-09-04 11:30:00');
-
         $composed = function (?string $periodEnd): ClientInvoice {
             $ordinary = $this->entry(60);
             $flat = $this->entry(120);
@@ -343,26 +345,40 @@ final class InvoiceLineComposerTest extends TestCase
             return $invoice->refresh();
         };
 
-        $dated = $composed('2026-03-31');
-        $this->assertSame(
-            '2026-03-31',
-            $dated->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail()->line_date?->format('Y-m-d'),
-        );
-        $this->assertSame(
-            '2026-03-31',
-            $dated->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail()->line_date?->format('Y-m-d'),
-        );
+        foreach (['2026-09-04 11:30:00', '2027-02-17 23:45:00'] as $now) {
+            Carbon::setTestNow($now);
 
-        $undated = $composed(null);
-        $this->assertNull(
-            $undated->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail()->line_date,
-            'The termination charge carries no date at all',
-        );
-        $this->assertSame(
-            '2026-09-04',
-            $undated->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail()->line_date?->format('Y-m-d'),
-            'The subcontractor charge is dated to the run, not to the period',
-        );
+            $dated = $composed('2026-03-31');
+            $this->assertSame(
+                '2026-03-31',
+                $dated->lines()->where('type', InvoiceLineType::AdditionalHours->value)->firstOrFail()->line_date?->format('Y-m-d'),
+            );
+            $this->assertSame(
+                '2026-03-31',
+                $dated->lines()->where('type', InvoiceLineType::Subcontractor->value)->firstOrFail()->line_date?->format('Y-m-d'),
+                'The stated end dates the charge, whatever the run date is',
+            );
+
+            // The refusal is caught by message rather than by `fail()` inside
+            // the `try`: PHPUnit's own assertion error is a `RuntimeException`
+            // too, so a `fail()` there would be swallowed by this very catch.
+            $before = ClientInvoiceLine::query()->count();
+            $refusal = null;
+            try {
+                $composed(null);
+            } catch (RuntimeException $exception) {
+                $refusal = $exception->getMessage();
+            }
+            $this->assertNotNull($refusal, 'An invoice with no period end must not compose a termination line.');
+            $this->assertStringContainsString('states no service period end', (string) $refusal);
+            $this->assertSame(
+                $before,
+                ClientInvoiceLine::query()->count(),
+                'The refusal comes before the ordinary line is written, not between the two readings',
+            );
+        }
+
+        Carbon::setTestNow();
     }
 
     public function test_an_entry_spanning_two_lines_is_split_into_rows_that_can_recombine(): void
