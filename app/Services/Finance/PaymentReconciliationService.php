@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\MoneyService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -62,7 +63,10 @@ final class PaymentReconciliationService
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
-            if ($lockedPayment->status !== 'succeeded') {
+            // Fail-closed already: an unreadable status is not `succeeded` and
+            // is refused here, which is the right answer - a row nobody can
+            // read cannot be shown to hold money there is anything to allocate.
+            if ($lockedPayment->status !== InvoicePaymentStatus::Succeeded->value) {
                 throw new DomainException('Only successful payments can be reconciled.');
             }
             if ($lockedPayment->currency !== $currency) {

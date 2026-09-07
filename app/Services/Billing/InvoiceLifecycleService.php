@@ -457,7 +457,34 @@ final class InvoiceLifecycleService
                 throw new DomainException('A paid invoice cannot be voided.');
             }
 
-            $hasPendingPayments = $locked->payments()->where('status', 'pending')->exists();
+            // Before the pending check, because it is the same question asked
+            // of a row that cannot answer it. The check below is a positive
+            // filter, so a payment whose status this application cannot read is
+            // not seen as pending and does not block the void - and an
+            // in-flight payment is exactly what that guard exists to catch.
+            //
+            // Scoped to the invoice's own workspace. `payments()` is keyed on
+            // `client_invoice_id` alone, and `workspace_id` on the payment is
+            // unconstrained lineage that a legacy or repaired row can point
+            // elsewhere; without this, another tenant's payment could both
+            // block this void and have its public id read back in the refusal.
+            $unreadablePayment = $locked->payments()
+                ->where('workspace_id', $locked->workspace_id)
+                ->get(['public_id', 'status'])
+                ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
+            if ($unreadablePayment !== null) {
+                throw new DomainException(
+                    'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
+                    .(string) $unreadablePayment->status.'", so whether money is in flight against this '
+                    .'invoice cannot be established and it must not be voided. Classify or correct that '
+                    .'payment status first.'
+                );
+            }
+
+            $hasPendingPayments = $locked->payments()
+                ->where('workspace_id', $locked->workspace_id)
+                ->where('status', InvoicePaymentStatus::Pending->value)
+                ->exists();
             if ($hasPendingPayments) {
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
             }
@@ -602,9 +629,13 @@ final class InvoiceLifecycleService
                 throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
+                // A positive filter, so another row of an unreadable status is
+                // not counted here and this check can pass on an understated
+                // total. `refreshStatus()` below is the backstop: it refuses to
+                // total a set containing one and rolls this transaction back.
                 $otherPaid = (int) $invoice->payments()
                     ->where('id', '!=', $lockedPayment->id)
-                    ->where('status', 'succeeded')
+                    ->where('status', InvoicePaymentStatus::Succeeded->value)
                     ->get(['amount', 'refunded_amount'])
                     ->sum(fn (ClientInvoicePayment $other): int => max(0, $other->amount - $other->refunded_amount));
                 if (($lockedPayment->amount - $lockedPayment->refunded_amount) > ($invoice->total_amount - $otherPaid)) {
@@ -659,7 +690,15 @@ final class InvoiceLifecycleService
             }
 
             $lockedPayment = $query->firstOrFail();
-            if (! in_array($lockedPayment->status, ['succeeded', 'refunded'], true)) {
+            // Fail-closed already: an unreadable status matches neither case
+            // and is refused, which is the right answer - a row nobody can read
+            // cannot be shown to hold money there is anything to refund.
+            $refundable = match (InvoicePaymentStatus::tryFrom((string) $lockedPayment->status)) {
+                InvoicePaymentStatus::Succeeded, InvoicePaymentStatus::Refunded => true,
+                InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed,
+                InvoicePaymentStatus::Disputed, InvoicePaymentStatus::Canceled, null => false,
+            };
+            if (! $refundable) {
                 throw new DomainException('Only a successful payment can be refunded.');
             }
             if ($amount < 0 || $amount > $lockedPayment->amount) {
@@ -674,7 +713,9 @@ final class InvoiceLifecycleService
             $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
-                'status' => $amount === $lockedPayment->amount ? 'refunded' : 'succeeded',
+                'status' => $amount === $lockedPayment->amount
+                    ? InvoicePaymentStatus::Refunded->value
+                    : InvoicePaymentStatus::Succeeded->value,
             ])->save();
             $this->refreshStatus($invoice);
             $this->recordPaymentActivity(
