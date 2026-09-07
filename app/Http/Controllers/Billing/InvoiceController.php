@@ -210,8 +210,15 @@ class InvoiceController extends Controller
             $workspace,
         );
 
+        // The invoice already checked above, handed to the model rather than
+        // loaded from it. `load('invoice')` is a `belongsTo` read on
+        // `client_invoice_id` alone - the same unscoped shape the service was
+        // just corrected for - and there is nothing to look up: this is the
+        // row whose tenancy this method has already asserted twice.
+        $payment->setRelation('invoice', $clientInvoice);
+
         return $request->expectsJson()
-            ? response()->json(['data' => $payment->load('invoice')])
+            ? response()->json(['data' => $payment])
             : redirect()->back()->with('status', 'Payment date corrected.');
     }
 
