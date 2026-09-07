@@ -4,7 +4,20 @@ namespace App\Services\Mcp;
 
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 
-/** A deliberately fixed allow-list for the Agent MCP release. */
+/**
+ * A deliberately fixed allow-list for the Agent MCP release.
+ *
+ * Three gates, because the blast radii differ and one flag cannot express
+ * that. Time writes have their own authoritative emergency cutoff;
+ * `AGENT_API_WRITES_ENABLED` is the workflow cutover; and the invoice tools
+ * sit behind a second flag inside it, so agent-assisted time approval no
+ * longer arrives with agent-initiated invoice delivery attached (#242).
+ *
+ * A tool withheld here is withheld everywhere it matters: the MCP surface
+ * never lists or dispatches it, `AgentMcpServerFactory` drops any prompt whose
+ * `requiredCapabilities` name it, `AgentCapabilities` stops advertising the
+ * matching capability, and the REST routes carry the same middleware.
+ */
 final class AgentMcpToolCatalog
 {
     /** @return list<ToolDefinition> */
@@ -28,11 +41,15 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('time_entries.delete', 'Delete editable time', 'Soft-delete authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
             ];
         }
-        if ((bool) config('agent_api.writes_enabled')) {
+        if ($this->writesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('time_entries.approve', 'Approve time', 'Approve a bounded batch of draft time entries after version checks.', [$writes, 'timeEntriesApprove'], 'time_entries.approve', false, false, true),
                 new ToolDefinition('tasks.create', 'Create task', 'Create a task in an authorized project.', [$writes, 'tasksCreate'], 'tasks.create', false, false, true),
                 new ToolDefinition('tasks.update', 'Update task', 'Update an authorized task using its current version.', [$writes, 'tasksUpdate'], 'tasks.update', false, false, true),
+            ];
+        }
+        if ($this->invoiceWritesEnabled()) {
+            $definitions = [...$definitions,
                 new ToolDefinition('invoices.create_draft', 'Create invoice draft', 'Create a draft from explicit manual lines and/or explicit approved time.', [$writes, 'invoicesCreateDraft'], 'invoices.create_draft', false, false, true),
                 new ToolDefinition('invoices.update_draft', 'Update invoice draft', 'Replace a draft invoice selection and lines using its current version.', [$writes, 'invoicesUpdateDraft'], 'invoices.update_draft', false, false, true),
                 new ToolDefinition('invoices.discard_draft', 'Discard invoice draft', 'Discard a draft and release its selected time only after explicit confirmation.', [$writes, 'invoicesDiscardDraft'], 'invoices.discard_draft', false, true, true),
@@ -43,6 +60,25 @@ final class AgentMcpToolCatalog
         }
 
         return $definitions;
+    }
+
+    private function writesEnabled(): bool
+    {
+        return (bool) config('agent_api.writes_enabled');
+    }
+
+    /**
+     * Nested inside the cutover above rather than independent of it.
+     *
+     * `AGENT_API_WRITES_ENABLED` keeps meaning what it means today for tasks
+     * and time approval, so turning it off still withdraws everything; the
+     * invoice flag only ever narrows further. The two are read together rather
+     * than the invoice one standing alone, because an agent that may not
+     * approve time has no business issuing an invoice built from it.
+     */
+    private function invoiceWritesEnabled(): bool
+    {
+        return $this->writesEnabled() && (bool) config('agent_api.invoice_writes_enabled');
     }
 
     private function timeEntryWritesEnabled(): bool
