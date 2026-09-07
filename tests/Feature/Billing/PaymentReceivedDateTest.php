@@ -318,6 +318,38 @@ final class PaymentReceivedDateTest extends TestCase
     }
 
     /**
+     * A payment for the whole balance can be retried with its own key.
+     *
+     * Found while moving the date bound, and the same defect one field over:
+     * the over-balance check was measured against a figure the first execution
+     * of this same request moves. A payment settling an invoice in full leaves
+     * nothing owed, so retrying it was refused outright before the row it
+     * matches was ever looked for - the larger the payment, the less idempotent
+     * it was, and settling an invoice in full is the ordinary case.
+     */
+    public function test_a_payment_for_the_whole_balance_is_still_idempotent(): void
+    {
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        $service = app(InvoiceLifecycleService::class);
+        $whole = [
+            'amount' => 10000, 'currency' => 'USD', 'method' => 'wire',
+            'idempotency_key' => 'synthetic-whole-balance',
+        ];
+
+        $first = $service->applyPayment($invoice, $whole, $workspace);
+        $retried = $service->applyPayment($invoice->fresh(), $whole, $workspace);
+
+        $this->assertSame($first->id, $retried->id);
+        $this->assertDatabaseCount('client_invoice_payments', 1);
+        $this->assertSame('paid', $invoice->fresh()?->status);
+
+        // Still refused under a key of its own, which is the check's real job.
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('Payment cannot exceed the invoice balance.');
+        $service->applyPayment($invoice->fresh(), [...$whole, 'idempotency_key' => 'synthetic-whole-balance-2'], $workspace);
+    }
+
+    /**
      * The floor is two calendar years, including on the day that has no
      * two-years-ago.
      *

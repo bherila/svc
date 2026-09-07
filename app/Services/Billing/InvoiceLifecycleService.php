@@ -562,10 +562,6 @@ final class InvoiceLifecycleService
                 ? PaymentDateBounds::calendarDate($data['received_on'])
                 : $bounds->latest();
 
-            if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
-                throw new DomainException('Payment cannot exceed the invoice balance.');
-            }
-
             $key = isset($data['idempotency_key']) ? (string) $data['idempotency_key'] : null;
             if ($key !== null && $key !== '') {
                 $existing = ClientInvoicePayment::query()
@@ -609,12 +605,24 @@ final class InvoiceLifecycleService
             }
 
             // Nothing above this line has written anything, and everything
-            // below creates a payment - which is exactly the boundary the
-            // time-relative bound belongs on. A date the caller never named is
-            // today by construction and passes trivially; one they did is
-            // measured against the window as it stands at the moment the row
-            // is made.
+            // below creates a payment - which is exactly the boundary the two
+            // state-dependent refusals belong on. A date the caller never named
+            // is today by construction and passes trivially; one they did is
+            // measured against the window as it stands at the moment the row is
+            // made.
             $bounds->assertWithin($receivedOn);
+
+            // And the balance, for the same reason and more sharply. This is
+            // measured against a figure the first execution of *this same
+            // request* moves: a payment for the whole balance leaves nothing
+            // owed, so retrying it with its own key was refused outright with
+            // "Payment cannot exceed the invoice balance" before the row it
+            // matches was ever looked for. The larger the payment the less
+            // idempotent it was, and a payment settling an invoice in full is
+            // the ordinary case rather than an edge one.
+            if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
+                throw new DomainException('Payment cannot exceed the invoice balance.');
+            }
 
             $payment = $locked->payments()->create([
                 'workspace_id' => $locked->workspace_id,
