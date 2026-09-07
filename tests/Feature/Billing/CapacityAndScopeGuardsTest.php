@@ -16,6 +16,7 @@ use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\RetainerCalculator;
 use App\Support\Billing\CorrectionFacts;
@@ -1284,6 +1285,30 @@ final class CapacityAndScopeGuardsTest extends TestCase
         // one's work.
         $this->assertSame(5.0, (float) $draft->refresh()->hours_billed_at_rate);
         $this->assertSame(5.0, (float) $replacement->refresh()->hours_billed_at_rate);
+
+        // And here is where the two rows stop being equivalent (#251).
+        //
+        // Raising the replacement is correct and must stay allowed: the
+        // undated draft has charged nobody, so refusing to generate beside it
+        // would withhold work genuinely owed - the leak
+        // `test_an_unplaceable_interim_draft_does_not_suppress_interim_billing`
+        // exists to prevent. The double charge is not created here; it is
+        // created if the stale draft is *also* issued.
+        //
+        // So the replacement issues normally and the undated draft cannot,
+        // which is the whole of the fix: two drafts, one door, one of them
+        // refused at it.
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $this->assertSame('issued', $lifecycle->issue($replacement->refresh(), $this->workspace)->status);
+
+        try {
+            $lifecycle->issue($draft->refresh(), $this->workspace);
+            $this->fail('The undated draft must not become a second charge for the same hours.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('no service period end', $refusal->getMessage());
+        }
+
+        $this->assertSame('draft', $draft->refresh()->status, 'The refusal leaves it a draft to repair');
     }
 
     /** Cadence reconciliation also refuses a row no date can place. */

@@ -118,6 +118,12 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
                 'contradictory_lineage' => 0,
                 'unattributed_and_contested' => 0,
                 'unknown_status' => 0,
+                // Added with the resolver's unsupported-kind refusal: an exact
+                // draft of a kind the application cannot read used to answer
+                // `PendingDraft`, telling the operator to issue it - which
+                // `InvoiceLifecycleService::issue()` refuses - or void it, which
+                // this resolver then read as a deliberate waiver.
+                'unsupported_invoice_kind' => 0,
                 'incomplete_period' => 0,
                 'partial_overlap' => 0,
                 'conflicting_exact_claims' => 0,

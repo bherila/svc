@@ -18,7 +18,7 @@ class ApplyPaymentCommand extends Command
         {--received-on= : Received date}
         {--reference= : External payment reference}
         {--notes= : Internal note}
-        {--status=succeeded : Payment lifecycle status}
+        {--status=succeeded : Payment lifecycle status: pending, succeeded, failed, refunded, disputed or canceled}
         {--idempotency-key= : Stable retry key}
         {--format=text : Output text or json}';
 

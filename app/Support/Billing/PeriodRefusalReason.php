@@ -42,6 +42,26 @@ enum PeriodRefusalReason: string
     /** Carries a status no case matches, so it cannot be shown to have charged nobody. */
     case UnknownStatus = 'unknown_status';
 
+    /**
+     * Carries an `invoice_kind` no case matches, so what it claims to bill
+     * cannot be established.
+     *
+     * The same shape as {@see self::UnknownStatus} on the neighbouring column,
+     * and refused for the same reason: `invoice_kind` is a varchar, the model
+     * reads an unrecognised value as `cadence_period` while the raw-column
+     * guards do not, and a row the two disagree about cannot be shown to have
+     * charged nobody.
+     *
+     * Reached *before* the exact-period branch on purpose. Without it an exact
+     * draft of an unknown kind answered `PendingDraft`, whose message tells the
+     * operator to issue it or void it - and `InvoiceLifecycleService::issue()`
+     * now refuses such a row, while voiding it produces an exact void that this
+     * resolver reads as a deliberate waiver. The schedule then advanced past a
+     * period nobody had been charged for, with only a void row standing where
+     * the invoice should be. Refusing keeps the period unbilled and visible.
+     */
+    case UnsupportedKind = 'unsupported_invoice_kind';
+
     /** This schedule's, but missing a boundary, so no comparison can place it. */
     case IncompletePeriod = 'incomplete_period';
 
@@ -77,6 +97,7 @@ enum PeriodRefusalReason: string
             self::ContradictoryLineage => 'whose schedule and agreement disagree',
             self::Unattributed => 'unattributed where another owner could claim them',
             self::UnknownStatus => 'carrying a status this application cannot read',
+            self::UnsupportedKind => 'carrying an invoice kind this application cannot read',
             self::IncompletePeriod => 'owned but missing a service period boundary',
             self::PartialOverlap => 'overlapping the period without matching it',
             self::ConflictingExactClaims => 'duplicated by another invoice covering exactly the same period',

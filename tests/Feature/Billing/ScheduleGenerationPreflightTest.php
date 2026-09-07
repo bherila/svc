@@ -113,6 +113,27 @@ final class ScheduleGenerationPreflightTest extends TestCase
                 ],
                 PeriodRefusalReason::PartialOverlap,
             ],
+            // Both statuses, because the defect this reason closes spanned
+            // them: an exact *draft* of an unrecognised kind answered
+            // `PendingDraft`, telling the operator to issue it - refused - or
+            // void it, and the resulting exact *void* was then read as a
+            // deliberate waiver, so the schedule advanced past a period nobody
+            // had been charged for. Neither may halt for any other reason, and
+            // neither may stop halting.
+            'unsupported kind on an owned draft' => [
+                [
+                    'client_billing_schedule_id' => ':schedule', 'client_agreement_id' => ':agreement',
+                    'invoice_kind' => 'cadence-v2',
+                ] + $august,
+                PeriodRefusalReason::UnsupportedKind,
+            ],
+            'unsupported kind on an owned exact void' => [
+                [
+                    'client_billing_schedule_id' => ':schedule', 'client_agreement_id' => ':agreement',
+                    'invoice_kind' => 'cadence-v2', 'status' => InvoiceStatus::Void->value,
+                ] + $august,
+                PeriodRefusalReason::UnsupportedKind,
+            ],
             'pending draft claiming the period' => [
                 ['client_agreement_id' => ':agreement', 'invoice_kind' => InvoiceKind::CadencePeriod->value] + $august,
                 null,

@@ -209,6 +209,13 @@ final class BillingTenantIsolationTest extends TestCase
             'invoice_number' => $number,
             'currency' => 'USD',
             'status' => 'draft',
+            // Said rather than left null, which reads as `cadence_period` and
+            // may not be issued without a service period (#251). These are two
+            // bare drafts against a company with no schedule and no agreement,
+            // which is exactly the shape `createDraft()` classifies as ad hoc -
+            // and keeping them exempt keeps this test about the credit pool
+            // rather than about the period guard.
+            'invoice_kind' => 'ad_hoc',
             'subtotal_amount' => $amount,
             'tax_amount' => 0,
             'total_amount' => $amount,
