@@ -10,6 +10,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceInvoiceCounter;
 use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\BilledOverageLedger;
 use App\Services\Billing\BillingCycleResolver;
@@ -330,6 +331,42 @@ final class CapacityAndScopeGuardsTest extends TestCase
         $this->assertInstanceOf(
             ClientInvoice::class,
             $generator->generateInterimOverageInvoice($this->company, Carbon::parse('2024-01-01'), $agreement->fresh()),
+        );
+    }
+
+    /**
+     * A month with an overage to bill and no time in it consumes no number.
+     *
+     * The interim generator now takes the two numbering rows before it
+     * recombines fragments, because recombination locks time entries and
+     * numbering outranks them - #222. Taking the *lock* early is not the same
+     * as taking a *number* early, and the difference is only visible on this
+     * path: the cycle is over its retainer, so there is a target to bill, and
+     * the month itself holds no time, so the generator returns null after it
+     * has already locked the counter. Allocating there instead of at the create
+     * would burn a number per empty month and leave a gap in the client's
+     * sequence, which is what the counter row not existing pins.
+     */
+    public function test_an_interim_month_with_no_time_of_its_own_allocates_no_invoice_number(): void
+    {
+        $project = $this->project('Interim numbering');
+        $agreement = $this->quarterlyAgreement($project);
+        // 15h in January against a 10h quarterly retainer: the cycle is over,
+        // so February has a cumulative overage to bill and nothing to bill it
+        // from.
+        $this->entry($project, '2024-01-10', 900);
+
+        $this->assertNull(app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+            $this->company,
+            Carbon::parse('2024-02-01'),
+            $agreement->fresh(),
+        ));
+
+        $this->assertSame(0, ClientInvoice::query()->count());
+        $this->assertSame(
+            0,
+            WorkspaceInvoiceCounter::query()->count(),
+            'No invoice was created, so no number may have been drawn - the counter row is only made by an allocation',
         );
     }
 

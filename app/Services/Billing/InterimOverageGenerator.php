@@ -208,6 +208,29 @@ final class InterimOverageGenerator
                 return null;
             }
 
+            // Numbering before time, which is the order every cadence path
+            // takes and the order the registry declares. Recombination locks a
+            // lineage group of `client_time_entries` (position 9) and the
+            // create below allocates a number, which locks `workspaces` and
+            // `workspace_invoice_counters` (positions 7 and 8) - so taken in
+            // written order this path walks backwards, and a cadence generation
+            // holding the counter and reaching for the same client's time is
+            // holding exactly what this is waiting for. Moving the
+            // recombination after the create is not available: whether an
+            // invoice is created at all depends on the hours the recombined
+            // entries carry, so the merge has to happen first. Taking the
+            // numbering rows early is what is left, and it is enough - the
+            // rows are held to commit regardless of when they are acquired.
+            //
+            // Only on the create path. A refresh reuses the number the draft
+            // already has, allocates nothing, and so has never had the pair to
+            // invert; making it lock the counter anyway would serialise every
+            // regeneration in the workspace against every other one to buy an
+            // ordering property it already satisfies.
+            if ($wasCreated) {
+                $this->invoiceNumberAllocator->lockNumbering($company->workspace_id);
+            }
+
             $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
 
             $entries = ClientTimeEntry::query()
