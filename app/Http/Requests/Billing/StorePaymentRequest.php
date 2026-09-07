@@ -19,7 +19,14 @@ class StorePaymentRequest extends FormRequest
         return [
             'amount' => ['required', 'integer', 'min:1'],
             'currency' => ['required', 'regex:/^[A-Z]{3}$/'],
-            'received_on' => ['nullable', 'date'],
+            // The same format the read endpoint filters by. `date` accepted
+            // anything `strtotime()` could make sense of, so "next friday"
+            // reached the service and was stored as whatever day the request
+            // happened to run on - a value the finance window that reads this
+            // column could never have asked for. The bounds themselves live in
+            // the service, where every caller crosses; this is the cheap format
+            // rule the browser gets a field error from.
+            'received_on' => ['nullable', 'date_format:Y-m-d'],
             'method' => ['required', 'string', 'max:40'],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:10000'],
