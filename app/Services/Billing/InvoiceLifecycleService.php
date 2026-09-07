@@ -332,14 +332,32 @@ final class InvoiceLifecycleService
      */
     private function repairPath(ClientInvoice $invoice): string
     {
-        if ($invoice->client_billing_schedule_id === null) {
+        // The origin test is agreement *and* schedule, not schedule alone. An
+        // earlier revision read "no schedule link" as "manually created", which
+        // is wrong in this system: neither `ClientInvoicingService` nor
+        // `InterimOverageGenerator` ever writes `client_billing_schedule_id`,
+        // so an ordinary generated cadence or interim draft has none. Telling
+        // an operator to recreate one of those through the invoice create
+        // endpoint produces an unlinked `ad_hoc` row with no agreement - and
+        // the cadence overlap guard deliberately excludes ad hoc, so the real
+        // cadence invoice can then be generated beside it. Copy the generated
+        // retainer lines across, as "create it again" invites, and the client
+        // pays for them twice.
+        $manuallyCreated = InvoiceKind::tryFrom((string) $invoice->invoice_kind) === InvoiceKind::AdHoc
+            && $invoice->client_billing_schedule_id === null
+            && $invoice->client_agreement_id === null;
+
+        if ($manuallyCreated) {
             return 'Discard this draft and create it again with a complete service period - the invoice '
                 .'create endpoint accepts both boundaries.';
         }
 
-        return 'Discard this draft and re-run its billing schedule, which writes both boundaries and the '
-            .'kind itself. Recreating it by hand would not restore the link: the invoice create endpoint '
-            .'cannot name a schedule.';
+        return 'This draft was generated, or carries a classification this application did not assign, so '
+            .'manual invoice creation cannot repair it: that path names no agreement, no billing schedule '
+            .'and no kind, and would replace a cadence or interim invoice with an unlinked ad-hoc one that '
+            .'the overlap guards ignore. No in-app operation changes an existing invoice\'s service period '
+            .'or kind. Do not issue it, and do not discard it merely to retry billing - an exact void is '
+            .'read as a deliberate waiver of its period. Establish the intended replacement path first.';
     }
 
     private function undatedPeriodRefusal(ClientInvoice $invoice): string
@@ -367,10 +385,7 @@ final class InvoiceLifecycleService
             .'so it cannot be issued. The model reads an unrecognised kind as a cadence invoice while the '
             .'raw-column guards do not, so an issued one is invisible to the check that stops a later '
             .'correction selling the same retainer and recurring items a second time. '
-            .$this->repairPath($invoice)
-            .' Discarding is also the exit a halted schedule names: `BillingScheduleService` stops on a '
-            .'draft covering exactly the period it is billing and offers issuing or voiding, and voiding '
-            .'stays available for a draft this refuses to issue.';
+            .$this->repairPath($invoice);
     }
 
     private function reversedPeriodRefusal(ClientInvoice $invoice): string
@@ -629,8 +644,36 @@ final class InvoiceLifecycleService
         });
     }
 
-    public function refreshStatus(ClientInvoice $invoice): ClientInvoice
+    /**
+     * Recompute a live invoice's paid and balance amounts from its payments.
+     *
+     * **Not a way into `issued`.** The derivation below answers `issued` for
+     * any non-void invoice with no succeeded payment, so handing it a *draft*
+     * promoted that draft straight past {@see self::issue()} - past the period
+     * and kind invariants, and past the issue date, visibility and activity
+     * that make an issued invoice legible. The result was a row that is
+     * `issued` for `InvoiceStatus::collectible()`, and so emailable to a
+     * client, while carrying a null `issued_at`, no `invoice.issued` activity,
+     * and whatever malformed period it was refused for.
+     *
+     * `recordPayment()` does not stop this: it checks the amount against the
+     * balance and nothing about status, and a draft's balance is its total. A
+     * pending payment recorded against a malformed draft was therefore enough.
+     * Production carries no payment against a draft, so refusing costs nothing.
+     *
+     * Private, because every caller is in this class and the transition it
+     * guards belongs to `issue()`.
+     */
+    private function refreshStatus(ClientInvoice $invoice): ClientInvoice
     {
+        if ($invoice->status === 'draft') {
+            throw new DomainException(
+                'A draft invoice cannot have its payment status refreshed: that would move it to issued '
+                .'without the checks issue() performs. Issue the invoice first, or correct the payment '
+                .'recorded against a draft.'
+            );
+        }
+
         $paid = (int) $invoice->payments()
             ->where('status', 'succeeded')
             ->get(['amount', 'refunded_amount'])

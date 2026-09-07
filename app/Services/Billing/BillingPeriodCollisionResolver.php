@@ -570,6 +570,33 @@ final class BillingPeriodCollisionResolver
             ), PeriodRefusalReason::UnknownStatus);
         }
 
+        // Before the exact-period branch, and for the same reason the status
+        // check above precedes it. An unrecognised kind used to fall through to
+        // `PendingDraft`, which tells the operator to issue the draft or void
+        // it - but `InvoiceLifecycleService::issue()` refuses a row of an
+        // unknown kind, and voiding it leaves an exact void that the branch
+        // below reads as a deliberate waiver. Between them the period went
+        // unbilled and the cursor moved past it. Neither instruction was true,
+        // so neither is given.
+        //
+        // A null kind is not this case: it reads as `cadence_period` on the
+        // model, in `cycleAlreadySold()` and in `findRefreshableMonthlyInvoice()`,
+        // and the whole application agrees about it.
+        if ($candidate->invoice_kind !== null && InvoiceKind::tryFrom((string) $candidate->invoice_kind) === null) {
+            return PeriodClaim::refused(sprintf(
+                'Invoice %s belongs to this billing schedule or its agreement, covers %s to %s, and carries the '
+                .'invoice kind "%s", which this application does not recognise. The model reads an unrecognised '
+                .'kind as a cadence invoice and the guards that read the column do not, so what it has already '
+                .'billed cannot be established. Do not issue it - that is refused - and do not void it to clear '
+                .'this, because an exact void is read as a deliberate waiver of the period. Classify or correct '
+                .'that kind before billing this period.',
+                $candidate->invoice_number,
+                $start->toDateString(),
+                $end->toDateString(),
+                (string) $candidate->invoice_kind,
+            ), PeriodRefusalReason::UnsupportedKind);
+        }
+
         if ($coversExactly) {
             // A draft has reserved this period but charged nobody for it, and
             // those are different facts. Reporting it as billed advanced

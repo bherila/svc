@@ -3,6 +3,8 @@
 namespace Tests\Feature\Billing;
 
 use App\Http\Requests\Billing\StoreInvoiceRequest;
+use App\Models\ClientAgreement;
+use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -11,9 +13,11 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\ServicePeriodRequirement;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -447,50 +451,69 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     public function test_each_refusal_names_a_repair_that_exists(): void
     {
         $lifecycle = app(InvoiceLifecycleService::class);
-
-        $unlinked = $this->refusalFor($lifecycle, $this->draft('cadence_period', '2024-01-01', null));
-        $reversed = $this->refusalFor($lifecycle, $this->draft('ad_hoc', '2026-02-01', '2026-01-31'));
-        $unsupported = $this->refusalFor($lifecycle, $this->draft('reconciliation', '2024-01-01', '2024-01-31'));
-
-        $linkedDraft = $this->draft('cadence_period', '2024-01-01', null);
-        $linkedDraft->forceFill(['client_billing_schedule_id' => 4242])->save();
-        $linked = $this->refusalFor($lifecycle, $linkedDraft->refresh());
-
-        // The unlinked remedy: create the invoice again, stating the period.
-        // Only true while the create endpoint accepts both boundaries.
         $rules = (new StoreInvoiceRequest)->rules();
+
+        // The only shape the manual endpoint can actually reproduce: ad hoc,
+        // naming neither a schedule nor an agreement. It is told to recreate,
+        // and that instruction is true only because the endpoint takes both
+        // boundaries.
+        $manual = $this->draft('ad_hoc', '2026-02-01', '2026-01-31');
+        $this->assertNull($manual->client_agreement_id);
         $this->assertArrayHasKey('service_period_start', $rules);
         $this->assertArrayHasKey('service_period_end', $rules);
-        foreach ([$unlinked, $reversed, $unsupported] as $message) {
-            $this->assertStringContainsString('Discard this draft and create it again', $message);
-        }
-
-        // The linked remedy is different precisely because that endpoint cannot
-        // name a schedule, so recreating by hand would drop the link.
-        $this->assertArrayNotHasKey('client_billing_schedule_id', $rules);
-        $this->assertArrayNotHasKey('client_agreement_id', $rules);
-        $this->assertStringContainsString('re-run its billing schedule', $linked);
-        $this->assertTrue(
-            Route::has('svc.billing.schedules.generate'),
-            'The linked remedy names a schedule re-run, so that route has to exist',
+        $this->assertStringContainsString(
+            'Discard this draft and create it again',
+            $this->refusalFor($lifecycle, $manual),
         );
 
-        // Discarding is the step both remedies open with, and the exit
-        // `BillingScheduleService` already offers on a halted schedule. It has
-        // no kind or period guard of its own, so it stays available for every
-        // draft refused above.
-        foreach ([$unlinked, $reversed, $unsupported, $linked] as $message) {
-            $this->assertStringStartsWith('Discard this draft', substr($message, strpos($message, 'Discard this draft')));
+        // Everything else is generated or unclassified, and must *not* be sent
+        // there. `ClientInvoicingService` and `InterimOverageGenerator` write no
+        // `client_billing_schedule_id`, so "no schedule link" does not mean
+        // "hand-made" - and the endpoint names no agreement, schedule or kind,
+        // so recreating a cadence draft through it yields an unlinked ad-hoc
+        // row the overlap guards ignore.
+        $this->assertArrayNotHasKey('client_agreement_id', $rules);
+        $this->assertArrayNotHasKey('client_billing_schedule_id', $rules);
+        $this->assertArrayNotHasKey('invoice_kind', $rules);
+
+        $agreementOwned = $this->draft('cadence_period', '2024-01-01', null);
+        $agreementOwned->forceFill(['client_agreement_id' => $this->agreement()->id])->save();
+
+        $scheduleLinked = $this->draft('interim_overage', '2024-01-01', null);
+        $scheduleLinked->forceFill(['client_billing_schedule_id' => 4242])->save();
+
+        $generated = [
+            'unlinked cadence' => $this->refusalFor($lifecycle, $this->draft('cadence_period', '2024-01-01', null)),
+            'agreement-owned cadence' => $this->refusalFor($lifecycle, $agreementOwned->refresh()),
+            'schedule-linked interim' => $this->refusalFor($lifecycle, $scheduleLinked->refresh()),
+            'unrecognised kind' => $this->refusalFor($lifecycle, $this->draft('reconciliation', '2024-01-01', '2024-01-31')),
+        ];
+
+        foreach ($generated as $case => $message) {
+            $this->assertStringContainsString('manual invoice creation cannot repair it', $message, $case);
+            $this->assertStringContainsString('do not discard it merely to retry billing', $message, $case);
+            $this->assertStringNotContainsString('Discard this draft and create it again', $message, $case);
+        }
+
+        // Neither of the two instructions this guard has already shipped and
+        // had to withdraw may come back.
+        foreach ([...array_values($generated), $this->refusalFor($lifecycle, $this->draft('ad_hoc', '2026-02-01', '2026-01-31'))] as $message) {
             $this->assertStringNotContainsString('Give it a service period', $message);
             $this->assertStringNotContainsString('administrative repair path', $message);
         }
+    }
 
-        $discardable = $this->draft('reconciliation', '2024-01-01', '2024-01-31');
-        $this->assertSame(
-            'void',
-            $lifecycle->discardDraft($discardable, $this->workspace, 'Refused at issue')->status,
-            'A draft this refuses to issue must still be discardable, or the remedy is not a remedy',
-        );
+    private function agreement(): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Undated agreement',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'starts_on' => '2026-01-01',
+        ]);
     }
 
     private function refusalFor(InvoiceLifecycleService $lifecycle, ClientInvoice $invoice): string
@@ -501,6 +524,121 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
         } catch (DomainException $refusal) {
             return $refusal->getMessage();
         }
+    }
+
+    /**
+     * An exact draft of an unsupported kind has no false exit, in either
+     * direction.
+     *
+     * Against a **real** schedule and a real agreement, because the loop this
+     * closes only exists end to end. The schedule used to halt on such a draft
+     * with `PendingDraft`'s "Issue that draft to bill the period, or void it" -
+     * and issuing is refused, while voiding leaves an exact void that `mine()`
+     * reads as a deliberate waiver, so the next run advanced the cursor past a
+     * period nobody had been charged for with only the void row standing in for
+     * the invoice. Asserting a route name exists would not have caught any of
+     * that; only running the schedule does.
+     */
+    public function test_an_exact_unsupported_kind_draft_has_no_false_issue_or_rerun_exit(): void
+    {
+        [$schedule, $draft] = $this->scheduleWithExactDraft('cadence-v2');
+        $service = app(BillingScheduleService::class);
+        $cursorBefore = (string) $schedule->next_run_on;
+
+        // 1. The schedule refuses, and does not tell anyone to issue it.
+        try {
+            $service->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('A schedule must not run past a draft of an unrecognised kind.');
+        } catch (DomainException $halt) {
+            $this->assertStringContainsString('does not recognise', $halt->getMessage());
+            $this->assertStringNotContainsString('Issue that draft', $halt->getMessage());
+        }
+        $this->assertSame($cursorBefore, (string) $schedule->fresh()?->next_run_on, 'The cursor does not move');
+
+        // 2. Issuing is refused, and says so without promising a rerun.
+        $refusal = $this->refusalFor(app(InvoiceLifecycleService::class), $draft->refresh());
+        $this->assertStringContainsString('unrecognised invoice kind', $refusal);
+        $this->assertStringContainsString('do not discard it merely to retry billing', $refusal);
+        $this->assertStringNotContainsString('re-run its billing schedule', $refusal);
+
+        // 3. Discarding does not become a silent waiver. The exact void is
+        //    still an unrecognised kind, so the schedule keeps refusing rather
+        //    than reading it as a period deliberately given up.
+        app(InvoiceLifecycleService::class)->discardDraft($draft->refresh(), $this->workspace, 'Unrecognised kind');
+        $this->assertSame('void', $draft->refresh()->status);
+
+        try {
+            $service->generateDue($schedule->fresh(), CarbonImmutable::parse('2026-08-15'));
+            $this->fail('An exact void of an unrecognised kind must not be read as a waiver.');
+        } catch (DomainException $halt) {
+            $this->assertStringContainsString('does not recognise', $halt->getMessage());
+        }
+
+        $this->assertSame($cursorBefore, (string) $schedule->fresh()?->next_run_on, 'The period is not skipped');
+        $this->assertSame(
+            0,
+            ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->where('status', 'issued')->count(),
+            'Nothing was billed, and nothing pretends the period was',
+        );
+    }
+
+    /**
+     * The control: with a kind the application recognises, the same fixture
+     * halts on the draft and names the exits that really work.
+     */
+    public function test_an_exact_recognised_draft_still_halts_with_its_documented_exits(): void
+    {
+        [$schedule, $draft] = $this->scheduleWithExactDraft('cadence_period');
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-08-15'));
+            $this->fail('A schedule must not advance past a pending draft.');
+        } catch (DomainException $halt) {
+            $this->assertStringContainsString('Issue that draft', $halt->getMessage());
+        }
+
+        // And that instruction is true: this draft states a complete period, so
+        // issuing it is exactly what the message says it is.
+        $this->assertSame('issued', app(InvoiceLifecycleService::class)->issue($draft->refresh(), $this->workspace)->status);
+    }
+
+    /**
+     * @return array{0: ClientBillingSchedule, 1: ClientInvoice}
+     */
+    private function scheduleWithExactDraft(string $kind): array
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'title' => 'Undated agreement '.$kind,
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'status' => 'active',
+            'starts_on' => '2026-01-01',
+        ]);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $agreement->id,
+            'cadence' => 'monthly',
+            'next_run_on' => '2026-08-01',
+            'due_days' => 14,
+            'currency' => 'USD',
+            'line_template' => [[
+                'type' => 'adjustment',
+                'description' => 'Monthly',
+                'quantity' => 1,
+                'unit_amount' => 10000,
+            ]],
+        ]);
+
+        $draft = $this->draft($kind, '2026-08-01', '2026-08-31');
+        $draft->forceFill([
+            'client_billing_schedule_id' => $schedule->id,
+            'client_agreement_id' => $agreement->id,
+        ])->save();
+
+        return [$schedule, $draft->refresh()];
     }
 
     private function draft(?string $kind, ?string $start, ?string $end): ClientInvoice
