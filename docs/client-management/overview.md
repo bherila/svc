@@ -31,20 +31,21 @@ tables and their invariants is [the domain contract](../domain-contract.md).
 
 ### Tenancy
 
-Every tenant-owned row carries a direct `workspace_id`, even when ownership
-could also be reached through a parent. Most also carry an immutable UUID
-`public_id`, and every row an external surface addresses does — but that half is
-not universal: `client_invoice_line_time_entries`,
-`client_portal_project_access`, `workspace_invoice_counters`,
-`agent_mutation_audits` and the `stripe_payment_method_states` adapter index all
-carry `workspace_id` and no `public_id`, because nothing outside the application
-names them. Tenant-owned models use
+The rule, owned by
+[the domain contract](../domain-contract.md#cross-cutting-invariants): every
+business row carries a direct `workspace_id` even when ownership could be
+reached through a parent, plus an immutable UUID `public_id`. In practice the
+`public_id` half holds for every row an external surface addresses and not for
+the join tables, counters and adapter indexes nothing outside the application
+names. Which is which is a property of the migrations rather than of this page —
+`rg -n "uuid\('public_id'\)" database/migrations` against the `Schema::create`
+blocks that declare a `workspace_id` answers it. Tenant-owned models use
 `App\Models\Concerns\BelongsToWorkspace`, which names `workspace_id` in the
 `UPDATE`/`DELETE` statement itself rather than relying on the read that found
 the row. External surfaces address rows by `public_id`; the integer key is
-kept out of payloads by an `#[Hidden]` attribute on the model — which the
-audit, import-ledger and invoice-counter models do not carry, no controller
-serializing them. See [tenant foreign keys](tenant-foreign-keys.md) for
+kept out of payloads by an `#[Hidden]` attribute on the model
+(`rg -n 'Hidden\(\[' app/Models` lists the models that declare one). See
+[tenant foreign keys](tenant-foreign-keys.md) for
 the composite `(workspace_id, parent_id)` keys that make a cross-tenant
 reference unstorable.
 
@@ -72,22 +73,30 @@ asks depends on what is being written:
 
 | write | asks |
 | --- | --- |
-| client company, project, project access, task (web) | `manage` on the workspace |
+| client company, project, project access | `manage` on the workspace |
+| task, **through the web routes** (`ClientTaskController`) | `manage` on the workspace |
+| task, **through the agent API or MCP** (`AgentTaskMutationAction`, shared by both) | `ProjectAccess::canManageTasks()` on the project |
 | invoices, payments, billing schedules | `manage` on the workspace |
 | expenses (read `view`, write `manage`) | `manage` on the workspace |
 | **log time** | `ProjectAccess::canLogTime()` on the entry's project |
 | **edit or delete a time entry** | `canLogTime()` on the project, plus the entry being the actor's own or the actor being a workspace manager |
 | **approve time** | `view` on the workspace, then `canApproveTime()` on each entry's own project |
 | **set a time entry's billing rate explicitly** | `canApproveTime()` on the project |
-| agent-API task writes | `ProjectAccess::canManageTasks()` on the project |
 
-The time-entry routes are the ones that differ, and deliberately: the browser
-door asked `manage` while `TimeEntryMutationService` asked `canLogTime()`, so a
-contributor could log time through a token and not through a screen (#101). Both
-doors now ask `canLogTime()`, which admits everyone `manage` admitted —
-`projectRole()` resolves a workspace owner or admin to `ProjectRole::Owner` —
-plus the project contributors and managers who could already write through the
-API. Describing these as requiring `manage` understates who may use them.
+Asking the project rather than the workspace is not a widening:
+`ProjectAccess::projectRole()` resolves a workspace owner or admin to
+`ProjectRole::Owner`, so everyone `manage` admitted still passes. It admits, in
+addition, the project owners and managers who are ordinary workspace members.
+
+The time-entry rows have a history worth knowing. The browser door asked
+`manage` while `TimeEntryMutationService` asked `canLogTime()`, so a contributor
+could log time through a token and not through a screen, and the time sheet
+worked around the disagreement by not offering a form whose POST would have been
+refused (#101). Both doors now ask `canLogTime()`. Task writes never converged
+the same way: the web routes still ask `manage` and the agent path asks
+`canManageTasks()`, so the two doors do not admit the same people.
+
+Re-derive any row of this table with `rg -n 'Gate::authorize|abort_unless\(\$?this->access|canLogTime|canApproveTime|canManageTasks' app/Http app/Services`.
 
 `ProjectAccess::viewableProjectIds()` and `reachableCompanyIds()` resolve "which
 projects" and "which clients" in one query each. They exist because the client
@@ -100,9 +109,16 @@ portal user sees inside one company. A membership's `access_scope` is `company`
 by default; set to `projects`, the viewer sees only the projects listed in
 `client_portal_project_access`. `visibleProjectIds()` returns `null` for
 unrestricted and an empty list for a scoped user granted nothing — those are
-different answers. The narrowing is applied on the portal page, the read API,
-attachments, proposals and agreements alike, not only while rendering a project
-list. `svc:portal:project-access` sets and clears it.
+different answers.
+
+The rule is that the narrowing is one decision applied wherever a portal surface
+reads, not a filter applied while rendering a project list — scoping only the
+list leaves every direct resource URL working for a project the user was never
+granted. `PortalAccess` exists to be that one decision;
+`rg -n 'PortalAccess|visibleProjectIds|canViewProject|constrainProjectQuery' app/`
+shows which surfaces currently ask it, which is the question to ask when adding
+one rather than a list this page can keep true.
+`svc:portal:project-access` sets and clears the scope.
 
 `client_company_memberships.role` defaults to `client`. Nothing in this
 application reads it, and there is no client/subcontractor distinction at the
@@ -237,7 +253,9 @@ two lines has to become two rows.
 #### `client_company_activity`
 
 - `id`, `public_id`, `workspace_id`, `client_company_id`, `actor_user_id`
-- `action` — every key a native writer records: `agreement.created`,
+- `action` — the keys a native writer records today, derived from the
+  `activities->record()` call sites (`rg -n 'activities->record\(' app/`):
+  `agreement.created`,
   `agreement.updated`, `agreement.activated`, `agreement.signed`,
   `invoice.generated`, `invoice.updated`, `invoice.issued`,
   `invoice.marked_paid`, `invoice.voided` (which a discarded draft also
@@ -341,10 +359,22 @@ POST   /workspaces/{workspace}/billing-schedules/{schedule}/generate
 and [File storage](#file-storage).
 
 **Agent API** (`/api/v1`, OAuth bearer) mirrors the read surface and carries the
-task, time-entry and invoice writes: `POST|PATCH|DELETE
-/api/v1/workspaces/{workspace}/time-entries`, `POST
-/api/v1/workspaces/{workspace}/invoices` and its `discard`, `issue`, `send` and
-`void` transitions. `POST|DELETE /api/v1/mcp` is the MCP endpoint. See
+task, time-entry and invoice writes. Each route needs its own scope, and the
+item routes carry the record's UUID:
+
+```
+POST   /api/v1/workspaces/{workspace}/projects/{project}/tasks
+PATCH  /api/v1/workspaces/{workspace}/tasks/{task}
+POST   /api/v1/workspaces/{workspace}/time-entries
+PATCH  /api/v1/workspaces/{workspace}/time-entries/{entry}
+DELETE /api/v1/workspaces/{workspace}/time-entries/{entry}
+POST   /api/v1/workspaces/{workspace}/time-entries/approve
+POST   /api/v1/workspaces/{workspace}/invoices
+PATCH  /api/v1/workspaces/{workspace}/invoices/{invoice}
+POST   /api/v1/workspaces/{workspace}/invoices/{invoice}/{discard,issue,send,void}
+```
+
+`POST|DELETE /api/v1/mcp` is the MCP endpoint. See
 [the MCP contract](../mcp-product-contract.md).
 
 ## Frontend
@@ -368,40 +398,58 @@ JSON or a redirect rather than a screen — the operator invoice list is
   `agreements/`, `time/`, `expenses/`, `navigation/`, `ui/`).
 - Shared types in `resources/js/types/`.
 
-`WorkspaceShell` (`resources/js/layouts/workspace-shell.tsx`) draws the navbar
-row and the page's `<main>` in one container, and a page inside it supplies
-content only. Thirteen pages use it: `clients/agreement`, `clients/expenses`,
-`clients/home`, `clients/invoice`, `clients/invoices`, `clients/project`,
-`clients/proposal`, `clients/settings`, `clients/tasks`, `portal/invoice`,
-`portal/time`, `time`, and `workspaces/enter`.
+### Interface rules this document does not certify
 
-**Two authenticated pages do not, and both are outstanding exceptions** rather
-than a rule with a carve-out:
+Three rules govern how a screen is built. They are owned by `AGENTS.md` and
+explained, with the defect behind each, in
+[the interface guide](../ui.md):
 
-- `operations.tsx`, rendered by `/workspaces/{workspace}/operations`. The route
-  sits outside the `ResolveWorkspaceNavigation` group deliberately, and its
-  comment records why: every workflow the page holds is moving to the client
-  module that owns it, so it is not gaining a switcher it is about to lose.
-- `clients/index.tsx`, rendered by `ClientDirectoryController::index()` for
-  `/workspaces/{workspace}/clients`. It supplies its own
-  `<main className="mx-auto ... max-w-6xl">`, back-link, command-palette trigger
-  and appearance selector. No comment records a reason for this one.
+| rule | where it is stated |
+| --- | --- |
+| Render an authenticated screen through `WorkspaceShell`; the navbar row and the page's `<main>` share `SHELL_CONTAINER`, and a page supplies content only | [One shell, one column](../ui.md#one-shell-one-column) |
+| Send finished URLs and capabilities from the server, never ids for the browser to assemble or booleans for it to interpret | [The server decides destinations and capabilities](../ui.md#the-server-decides-destinations-and-capabilities) |
+| Print a stored enum through `statusLabel`, never straight from the column | [Show stored values as words](../ui.md#show-stored-values-as-words) |
 
-`welcome.tsx` and `workspaces/index.tsx` also have no shell and are not
-exceptions: the shell is per-workspace chrome, and neither page has a workspace
-— `/` is unauthenticated and `/app` is the selector you reach before choosing
-one.
+**The codebase does not satisfy any of the three everywhere yet, and this page
+deliberately does not track which screens comply.** Earlier revisions carried
+that inventory and it was wrong three times running: each round named the
+exceptions then known, the next round found more, and a list a reader trusts is
+worse than no list. The compliance question is answered by the code, and it
+moves whenever a page is added or a payload changes — so what belongs here is
+how to ask it, not a snapshot of the answer.
 
-**Finished URLs are the rule and `clients/index.tsx` is the exception.**
-`ClientDirectoryController::index()` sends workspace and company ids, and the
-page assembles `/workspaces/${workspaceId}/clients/${company.id}` and
-`/workspaces/${workspace.id}/time` in the browser. Everywhere else the server
-sends the destination and the capability, so a module the viewer's route family
-does not serve arrives as `null` and its tab is not rendered.
+Ask it like this:
 
-There are no strict/relaxed hydration schema pairs; stored enums are printed
-through `statusLabel` rather than straight from the column. The layout rules and
-the checks a page has to pass are in [the interface guide](../ui.md).
+```bash
+# Screens with no shell. Add the Blade views: a controller returning view()
+# rather than Inertia::render() cannot appear in this search at all.
+rg --files-without-match WorkspaceShell resources/js/pages \
+   --glob '*.tsx' --glob '!*.test.tsx'
+rg -n "return view\(" app/Http/Controllers
+
+# URLs assembled in the browser.
+rg -n 'href=\{`|router\.(get|post|patch|put|delete)\(`' resources/js
+
+# Enums printed raw: compare what a controller sends against what the page
+# wraps. `statusLabel` is the only correct printer.
+rg -n statusLabel resources/js
+```
+
+Two results are not violations. `welcome.tsx` is unauthenticated, and
+`workspaces/index.tsx` is the workspace selector — the shell is per-workspace
+chrome and neither page has a workspace yet.
+
+One exception is genuinely documented at its own site, which is the only reason
+it is named here: `operations.tsx` sits outside the `ResolveWorkspaceNavigation`
+group deliberately, and the route comment in `routes/web.php` records why —
+every workflow the page holds is moving to the client module that owns it, so it
+is not gaining a switcher it is about to lose. Any other divergence the searches
+above turn up is unrecorded, and should be read as work outstanding rather than
+as a decision.
+
+One thing this page does state, because it is a fact about the payload rather
+than about compliance: there are no strict/relaxed hydration schema pairs. A
+page parses what the server sent.
 
 ## Subcontractors
 
@@ -572,11 +620,14 @@ catch-up charges to restore it. Once allocated, the flag stays set and the hours
 still count as billed. `ClientTimeEntry::scopeDeferredOnlyOnceAllocated()` is
 that rule, and it is what the ledger queries ask — four of them had written
 `where('is_deferred', false)` by hand, so once the invoice was issued those
-hours vanished from every later rebuild. Other call sites do still filter
-`is_deferred` directly, in `InvoiceLineComposer`, `ClientInvoicingService`,
-`InterimOverageGenerator`, `DraftInvoiceTimeRegenerator` and
-`InvoiceFromTimeService`; those are choosing what to put on a new draft rather
-than rebuilding a ledger. See [deferred billing](deferred-billing.md).
+hours vanished from every later rebuild.
+
+Not every read of the column goes through the scope, and not every one should:
+choosing what to put on a *new* draft is a different question from rebuilding a
+ledger. Before adding one, check which question you are asking against the
+existing sites — `rg -n "is_deferred" app/Services app/Queries` — because
+answering the ledger question by hand is the defect above.
+See [deferred billing](deferred-billing.md).
 
 ### Generating invoices
 
@@ -615,11 +666,13 @@ There are three write paths, and they are not the same one.
    exists to stop.
 
 `ClientInvoicingService::generateAllInvoices()` — the whole-company cadence
-sweep — has no HTTP route and no button. Its only callers are
-`svc:billing:replay` and `svc:billing:rehearse-generation`, both of which run
-inside a rolled-back transaction. The predecessor's "Run Invoicing" control and
-its `POST /api/client/mgmt/companies/{company}/invoices/generate-all` endpoint
-do not exist here.
+sweep — has no HTTP route and no button. At the time of writing its only callers
+are `svc:billing:replay` and `svc:billing:rehearse-generation`, both of which
+run inside a rolled-back transaction; confirm with
+`rg -n generateAllInvoices app/` before relying on it. The predecessor's "Run
+Invoicing" control and its
+`POST /api/client/mgmt/companies/{company}/invoices/generate-all` endpoint do
+not exist here.
 
 Generation never touches a settled invoice. `InvoiceStatus::isSettledValue()`
 guards it, and `SettledInvoicesUntouchedTest` holds the property for every
@@ -645,9 +698,11 @@ path anywhere.
 
 Correcting one means transitioning its status or its refunded amount through
 `InvoiceLifecycleService::setPaymentStatus()` / `setRefundedAmount()`, so history
-is preserved rather than rewritten — but note that **`StripeWebhookService` is
-their only caller**. No route, console command or agent tool reaches either, so
-today a hand-entered payment can be recorded and cannot be corrected in place.
+is preserved rather than rewritten — but note that **`StripeWebhookService` was
+their only caller** when this was written, so a hand-entered payment could be
+recorded and not corrected in place. Check with
+`rg -n 'setPaymentStatus|setRefundedAmount' app/` rather than taking that as
+current.
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
 sums each `succeeded` payment's amount less its `refunded_amount`, floors each
@@ -673,8 +728,10 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
 
 ## Security
 
-- Application routes are behind the `auth` middleware. Four other categories
-  are not, and each is guarded by something else:
+- Application routes are behind the `auth` middleware. Other categories are
+  not, and each is guarded by something else. Re-derive the whole boundary with
+  `php artisan route:list --except-vendor` and read the middleware column; the
+  categories below are what that showed when this was written:
   - the **agent API** (`/api/v1/*`) uses `auth:api` (Passport) with a scope
     check per route and an expected OAuth resource;
   - the **finance reconciliation API** uses `auth:sanctum` with the
@@ -690,13 +747,18 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
   - **sign-in and OAuth discovery** — `/`, `/login`, `/oauth/redirect`,
     `/oauth/callback`, `POST /oauth/register` (throttled) and the
     `/.well-known/oauth-*` documents.
-- Reads require `view` on the workspace. Writes require `manage` for client,
-  project, task, invoice, schedule and expense records; the time-entry writes
-  ask `ProjectAccess` about the entry's own project instead, so a project
-  contributor or manager who is not a workspace owner or admin can log, edit and
-  approve time. See the table under [Authorization](#authorization).
-- The portal requires `viewPortal` and is then narrowed by `PortalAccess` on
-  every surface, not only on the project list.
+- Reads require `view` on the workspace. Writes split two ways: client,
+  project, project-access, **web** task, invoice, billing-schedule and expense
+  routes require `manage`, while the time-entry writes and the **agent and MCP**
+  task writes ask a `ProjectAccess` predicate about the record's own project —
+  `canLogTime()`, `canApproveTime()`, `canManageTasks()`. So a project owner or
+  manager who is an ordinary workspace member can log, edit and approve time,
+  and can create and update tasks through the agent API and MCP, without being a
+  workspace owner or admin. See the table under
+  [Authorization](#authorization).
+- The portal requires `viewPortal`, and reads are then narrowed by
+  `PortalAccess`. Adding a portal surface means asking it too; see
+  [Portal narrowing](#authorization) for how to check which surfaces do.
 - Every tenant-owned update and delete names `workspace_id` in its own
   statement, through `BelongsToWorkspace::setKeysForSaveQuery()` and, for a
   pivot, `ScopesPivotDeletesToWorkspace`. That is a
@@ -735,10 +797,13 @@ and a status the vocabulary does not recognise refuses every move. Only a
 draft's facts may be rewritten. Withdrawal of an approval clears the approver
 and the timestamp rather than keeping them as history.
 
-Reads and writes go through `App\Queries\Expenses\WorkspaceExpenses`, the only
-place that resolves a company or project for a workspace. Every transition locks
-the row and re-reads its status under that lock, through the lock-order
-registry.
+Reads and writes go through `App\Queries\Expenses\WorkspaceExpenses`, which the
+model's own docblock names as the only place that resolves a company or project
+for a workspace, so a caller cannot assemble an expense out of ids it did not
+check. Each transition locks the row and re-reads its status under that lock;
+that requirement is stated in
+[the domain contract](../domain-contract.md#engagement-tables) and the ordering
+in [concurrency.md](concurrency.md).
 
 Routes:
 
