@@ -571,12 +571,13 @@ final class InvoiceLifecycleService
             return InvoicePaymentStatus::Succeeded;
         }
 
-        $status = InvoicePaymentStatus::tryFrom((string) $raw);
+        $status = is_string($raw) ? InvoicePaymentStatus::tryFrom($raw) : null;
 
         if ($status === null) {
             throw new DomainException(
-                'Unsupported payment status "'.(string) $raw.'". A payment must carry one of: '
-                .implode(', ', InvoicePaymentStatus::all()).'. Nothing has been changed.'
+                'Unsupported payment status "'.(is_string($raw) ? $raw : get_debug_type($raw)).'". A payment '
+                .'must carry one of: '.implode(', ', InvoicePaymentStatus::all())
+                .'. Nothing has been changed.'
             );
         }
 
