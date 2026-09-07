@@ -330,12 +330,14 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_generated_draft_without_an_agreement_fails_closed',
                 ],
-                // The second reading is the companion search, and it is silent
-                // where the first is loud: regeneration asks only for drafts
-                // that name an agreement, so a draft missing one is never
-                // considered for an entry moved into its period, the draft that
-                // owned the entry still gives it up, and the work ends up
-                // billed by nothing.
+                // The second reading is the companion search, which reaches
+                // the same refusal by a different route since #220:
+                // regeneration asks only for drafts that name an agreement, so
+                // a draft missing one is never considered for an entry moved
+                // into its period. It stays unconsidered - rebuilding it is the
+                // unsafe act the first reading refuses - and the move that
+                // needed it is refused instead of committing and leaving the
+                // work billed by nothing.
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,
                     'method' => 'test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
@@ -476,11 +478,12 @@ final class NullSemanticsRegistryTest extends TestCase
             //
             // Regeneration finds the *other* drafts a moved entry belongs to
             // with `whereDate('service_period_start', '<=', ...)`, and SQL drops
-            // a null: the destination draft is never rebuilt, the source draft
-            // still gives the entry up, and the work ends up billed by nothing.
-            // Replay builds no source scope at all when either boundary is
-            // missing, so the invoice proves against zero source minutes rather
-            // than against its own.
+            // a null: the destination draft is never rebuilt while the source
+            // draft gives the entry up. Since #220 the move is refused rather
+            // than committed, because widening the search would mean inventing
+            // the boundary the draft does not state. Replay builds no source
+            // scope at all when either boundary is missing, so the invoice
+            // proves against zero source minutes rather than against its own.
             'service_period_start' => [
                 [
                     'covered_by' => DraftInvoiceTimeRegenerationTest::class,

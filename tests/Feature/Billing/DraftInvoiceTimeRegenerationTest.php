@@ -148,15 +148,17 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
     }
 
     /**
-     * A companion draft with no period start is never rebuilt for the new date.
+     * A companion draft with no period start is never rebuilt, so the move is
+     * refused rather than left billed by nothing.
      *
      * `DraftInvoiceTimeRegenerator::regenerate()` finds the *other* drafts a
      * moved entry now belongs to with `whereDate('service_period_start', '<=',
      * ...)`. SQL compares a null to a date as UNKNOWN and `WHERE` drops the
      * row, so a draft missing only that boundary is invisible to the search - it
      * keeps whatever it was last built from while the invoice that used to own
-     * the entry correctly gives it up. The entry ends up on no invoice at all,
-     * and nothing says so.
+     * the entry correctly gives it up. Widening the search would mean inventing
+     * the boundary the draft does not state, so the edit is refused instead and
+     * the work stays where it is billed.
      *
      * The control runs first and on the same rows: with the boundary present
      * the destination draft absorbs the move, so the difference below is the
@@ -203,24 +205,36 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertNull($august->refresh()->service_period_start);
         $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
 
-        $move($moved, '2026-08-10');
+        try {
+            $move($moved, '2026-08-10');
+            $this->fail('A move no companion draft can absorb must not commit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('states no service period start', $exception->getMessage());
+            $this->assertStringContainsString('2026-08-10', $exception->getMessage());
+        }
 
-        $this->assertSame(0, $july->refresh()->total_amount, 'The owning draft still gives the entry up.');
-        $this->assertSame(12000, $august->refresh()->total_amount, 'The undated draft never sees the arrival.');
-        $this->assertFalse($moved->fresh()?->invoiceLines()->exists(), 'The moved work is now billed by nothing.');
+        $this->assertSame('2026-07-14', $moved->fresh()?->worked_on?->format('Y-m-d'), 'The refused move is rolled back.');
+        $this->assertSame(12000, $july->refresh()->total_amount, 'The owning draft keeps the work.');
+        $this->assertSame(12000, $august->refresh()->total_amount, 'The undated draft is still not rebuilt.');
+        $this->assertTrue(
+            $moved->fresh()?->invoiceLines()->where('client_invoice_id', $july->id)->exists(),
+            'The work is still billed by the invoice that owned it.',
+        );
     }
 
     /**
-     * A companion draft with no agreement is never rebuilt for a moved entry.
+     * A companion draft with no agreement is never rebuilt, and the move that
+     * needed it is refused out loud instead of silently.
      *
      * The same search as the case above, on a different column: it asks only
      * for drafts that name an agreement, and then only for one whose scope
      * covers the entry's project. Both readings drop a null. The comment on the
      * direct path says why a null agreement must not be regenerated - the
      * lookup that follows drops its project scoping and would rebuild the
-     * invoice with every project's work on it - and this is the same refusal
-     * reached silently: the destination draft is simply never considered, the
-     * source draft gives the entry up, and the work is billed by nothing.
+     * invoice with every project's work on it - so the draft below must stay
+     * unrebuilt, and it does. What changes is the silence: the same unsafe
+     * condition the direct path answers with a 409 now answers with one here,
+     * rather than letting the source draft give the entry up to nothing.
      *
      * The control runs first on the same rows, and `service_period_start` and
      * `service_period_end` both stay set and covering the destination date, so
@@ -265,11 +279,167 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
         $this->assertSame('2026-08-01', $august->service_period_start?->format('Y-m-d'));
         $this->assertSame('2026-08-31', $august->service_period_end?->format('Y-m-d'));
 
+        try {
+            $move($moved, '2026-08-10');
+            $this->fail('A move no companion draft can absorb must not commit.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('states no agreement', $exception->getMessage());
+            $this->assertStringContainsString('2026-08-10', $exception->getMessage());
+        }
+
+        $this->assertSame('2026-07-14', $moved->fresh()?->worked_on?->format('Y-m-d'), 'The refused move is rolled back.');
+        $this->assertSame(12000, $july->refresh()->total_amount, 'The owning draft keeps the work.');
+        $this->assertSame(
+            12000,
+            $august->refresh()->total_amount,
+            'The unattributed draft is still never rebuilt - the refusal above is not a licence to rebuild it.',
+        );
+        $this->assertNull($august->client_agreement_id, 'And it is still unattributed.');
+        $this->assertTrue(
+            $moved->fresh()?->invoiceLines()->where('client_invoice_id', $july->id)->exists(),
+            'The work is still billed by the invoice that owned it.',
+        );
+    }
+
+    /**
+     * Only an unevaluable draft that could have absorbed the entry refuses it.
+     *
+     * The refusal exists because a draft missing a load-bearing fact might have
+     * been the moved work's home and nothing can tell. Where the facts it does
+     * state already rule the new date out, that doubt does not arise: the draft
+     * is not the missing home, the entry is unallocated for the ordinary reason
+     * that no draft covers its date, and the edit stands. Being unallocated is
+     * not itself the defect - being unallocated *and* unmentioned is.
+     *
+     * Both halves run against the same malformed draft, and the only thing that
+     * changes between them is the period it states, so the difference is the
+     * overlap and not the null.
+     */
+    public function test_a_move_is_refused_only_by_an_unevaluable_draft_that_could_have_absorbed_it(): void
+    {
+        $agreement = $this->agreement();
+        $moved = $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 60]);
+        $july = $this->generateJuly($agreement);
+        $unattributed = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'UNATTRIBUTED-DRAFT',
+            'status' => 'draft',
+            'invoice_kind' => 'cadence_period',
+            'service_period_start' => '2026-08-01',
+            'service_period_end' => '2026-08-31',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        $move = function (ClientTimeEntry $entry, string $date): void {
+            app(TimeEntryMutationService::class)->update(
+                $this->workspace,
+                $entry->refresh(),
+                $this->manager,
+                [
+                    'expected_version' => AgentApiVersion::for($entry->refresh()),
+                    'worked_on' => $date,
+                ],
+            );
+        };
+
+        // It states no agreement and its period covers the destination, so it
+        // might have been the home for this work.
+        try {
+            $move($moved, '2026-08-10');
+            $this->fail('A draft that might have absorbed the move must stop it.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertStringContainsString('UNATTRIBUTED-DRAFT', $exception->getMessage());
+        }
+        $this->assertSame('2026-07-14', $moved->fresh()?->worked_on?->format('Y-m-d'));
+
+        // Same draft, same missing agreement, a period that cannot cover the
+        // destination date.
+        $unattributed->forceFill([
+            'service_period_start' => '2026-09-01',
+            'service_period_end' => '2026-09-30',
+        ])->save();
+
         $move($moved, '2026-08-10');
 
-        $this->assertSame(0, $july->refresh()->total_amount, 'The owning draft still gives the entry up.');
-        $this->assertSame(12000, $august->refresh()->total_amount, 'The unattributed draft never sees the arrival.');
-        $this->assertFalse($moved->fresh()?->invoiceLines()->exists(), 'The moved work is now billed by nothing.');
+        $this->assertSame('2026-08-10', $moved->fresh()?->worked_on?->format('Y-m-d'));
+        $this->assertSame(0, $july->refresh()->total_amount, 'The owning draft gives the entry up.');
+        $this->assertFalse(
+            $moved->fresh()?->invoiceLines()->exists(),
+            'Nothing covers August, so the work waits for the invoice that will.',
+        );
+        $this->assertSame(0, $unattributed->refresh()->total_amount, 'And the malformed draft is still never rebuilt.');
+    }
+
+    /**
+     * An unevaluable draft belonging to someone else never refuses a move here.
+     *
+     * The refusal reads other invoices, so it is a tenant-scoped query like any
+     * other: a draft in another workspace - written here as a legacy row the
+     * composite keys would now refuse - and a draft for another client of this
+     * workspace are both outside the question being asked, and neither may
+     * strand an edit that concerns neither of them. Both state no agreement and
+     * both cover the destination date, so each would refuse this move if either
+     * predicate were dropped.
+     */
+    public function test_an_unevaluable_draft_in_another_tenant_scope_does_not_refuse_a_move(): void
+    {
+        $agreement = $this->agreement();
+        $moved = $this->approvedEntry(['worked_on' => '2026-07-14', 'minutes' => 60]);
+        $july = $this->generateJuly($agreement);
+
+        $otherWorkspace = Workspace::query()->create(['name' => 'Other tenant', 'slug' => 'other-tenant']);
+        $foreign = $this->writingLegacyCrossTenantRows(fn (): ClientInvoice => ClientInvoice::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'FOREIGN-UNATTRIBUTED-DRAFT',
+            'status' => 'draft',
+            'invoice_kind' => 'cadence_period',
+            'service_period_start' => '2026-08-01',
+            'service_period_end' => '2026-08-31',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]));
+
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other local client',
+            'slug' => 'other-local-client',
+        ]);
+        $otherClientsDraft = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $otherCompany->id,
+            'invoice_number' => 'OTHER-CLIENT-UNATTRIBUTED-DRAFT',
+            'status' => 'draft',
+            'invoice_kind' => 'cadence_period',
+            'service_period_start' => '2026-08-01',
+            'service_period_end' => '2026-08-31',
+            'currency' => 'USD',
+            'subtotal_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 0,
+        ]);
+
+        app(TimeEntryMutationService::class)->update(
+            $this->workspace,
+            $moved,
+            $this->manager,
+            [
+                'expected_version' => AgentApiVersion::for($moved),
+                'worked_on' => '2026-08-10',
+            ],
+        );
+
+        $this->assertSame('2026-08-10', $moved->fresh()?->worked_on?->format('Y-m-d'));
+        $this->assertSame(0, $july->refresh()->total_amount);
+        $this->assertSame($otherWorkspace->id, $foreign->fresh()?->workspace_id);
+        $this->assertSame(0, $foreign->fresh()?->total_amount);
+        $this->assertSame(0, $otherClientsDraft->fresh()?->total_amount);
     }
 
     /**
