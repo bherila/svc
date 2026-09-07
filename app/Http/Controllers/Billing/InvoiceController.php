@@ -179,11 +179,22 @@ class InvoiceController extends Controller
      * Correct the day an already-recorded payment arrived on.
      *
      * The narrowest write on this controller: one column, on one payment, of
-     * one invoice, in one workspace. Three of those four are checked here
-     * rather than left to the binding - the payment binds by a public id unique
-     * across every workspace, so a member of one client's screens could
-     * otherwise correct another invoice's payment by pasting its id, and the
-     * redirect would land them back on a screen that never showed it.
+     * one invoice, in one workspace.
+     *
+     * **Both records are resolved rather than bound.** Route-model binding
+     * resolves a parameter by its route key before this method runs, and both
+     * of these bind by a `public_id` that is unique across every workspace - so
+     * a request naming another tenant's invoice or payment selected and
+     * materialised that row with no workspace predicate, and a check made here
+     * could refuse the write but could not un-read it. The scoped lookups below
+     * are the same shape `ExpenseController` already uses for its own child
+     * writes, which take the id as a string for exactly this reason.
+     *
+     * They also *are* the tenancy check, which is why there is no longer an
+     * `assertTenant()` or an `abort_unless()` after them: an invoice that is
+     * not this workspace's and a payment that is not that invoice's are both
+     * simply not found, and a row nobody can name is a better answer than a row
+     * described and then refused.
      *
      * Everything else about the payment is out of reach by construction:
      * {@see CorrectPaymentDateRequest} validates one field, and
@@ -192,30 +203,35 @@ class InvoiceController extends Controller
     public function correctPaymentDate(
         CorrectPaymentDateRequest $request,
         Workspace $workspace,
-        ClientInvoice $clientInvoice,
-        ClientInvoicePayment $clientInvoicePayment,
+        string $clientInvoice,
+        string $clientInvoicePayment,
         InvoiceLifecycleService $service,
     ): JsonResponse|RedirectResponse {
         Gate::authorize('manage', $workspace);
-        $service->assertTenant($workspace, $clientInvoice);
-        abort_unless(
-            (int) $clientInvoicePayment->workspace_id === (int) $workspace->id
-                && (int) $clientInvoicePayment->client_invoice_id === (int) $clientInvoice->id,
-            404,
-        );
+
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('public_id', $clientInvoice)
+            ->firstOrFail();
+
+        $existing = ClientInvoicePayment::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)
+            ->where('public_id', $clientInvoicePayment)
+            ->firstOrFail();
 
         $payment = $service->setPaymentReceivedOn(
-            $clientInvoicePayment,
+            $existing,
             (string) $request->validated('received_on'),
             $workspace,
         );
 
-        // The invoice already checked above, handed to the model rather than
-        // loaded from it. `load('invoice')` is a `belongsTo` read on
+        // The invoice resolved above, handed to the model rather than loaded
+        // from it. `load('invoice')` is a `belongsTo` read on
         // `client_invoice_id` alone - the same unscoped shape the service was
-        // just corrected for - and there is nothing to look up: this is the
-        // row whose tenancy this method has already asserted twice.
-        $payment->setRelation('invoice', $clientInvoice);
+        // corrected for - and there is nothing to look up: this is the row
+        // whose tenancy the query above already established.
+        $payment->setRelation('invoice', $invoice);
 
         return $request->expectsJson()
             ? response()->json(['data' => $payment])

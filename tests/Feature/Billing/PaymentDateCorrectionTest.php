@@ -264,6 +264,64 @@ final class PaymentDateCorrectionTest extends TestCase
     }
 
     /**
+     * The whole request, not the service inside it.
+     *
+     * Three rounds of review found this defect three times, one layer apart
+     * each time: the service's invoice read, then the company behind it, then
+     * the route-model binding above both. A guard that watches one layer keeps
+     * passing while the defect moves to the next, so this one starts at the
+     * request.
+     *
+     * Route-model binding is the layer the service-level guard structurally
+     * cannot see. Laravel resolves a bound parameter by its route key *before*
+     * the controller runs, and both of these bind by a `public_id` unique
+     * across every workspace - so naming another tenant's payment selected and
+     * materialised it, and the check that followed could refuse the write but
+     * not un-read the row.
+     *
+     * Same closed-world rule as the service guard, over a real HTTP request:
+     * every table the request touches must carry a workspace or be named as one
+     * that cannot have an owning workspace.
+     */
+    public function test_the_correction_request_issues_no_tenant_owned_query_without_a_workspace(): void
+    {
+        [$owner, $workspace, $invoice, $payment] = $this->recordedPayment();
+
+        /** @var array<string, list<string>> $byTable */
+        $byTable = [];
+        DB::listen(function (QueryExecuted $query) use (&$byTable): void {
+            $sql = $this->withoutIdentifierQuoting($query->sql);
+            foreach ($this->tablesIn($sql) as $table) {
+                $byTable[$table][] = $sql;
+            }
+        });
+
+        $this->actingAs($owner)
+            ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '2026-08-18'])
+            ->assertOk();
+
+        // The binding layer really was exercised, so an empty capture cannot be
+        // mistaken for a clean one: both records are named in the URL by a
+        // public id and both have to be found before anything is written.
+        $this->assertArrayHasKey('client_invoices', $byTable);
+        $this->assertArrayHasKey('client_invoice_payments', $byTable);
+
+        foreach ($byTable as $table => $statements) {
+            if (in_array($table, self::TABLES_WITHOUT_AN_OWNING_WORKSPACE, true)) {
+                continue;
+            }
+
+            foreach ($statements as $sql) {
+                $this->assertStringContainsString(
+                    'workspace_id',
+                    $sql,
+                    "A tenant-owned query in the correction request carried no workspace: {$sql}",
+                );
+            }
+        }
+    }
+
+    /**
      * Every payment path reads the company scoped, not just the correction.
      *
      * The unscoped company read was found in the correction and fixed in
@@ -370,11 +428,15 @@ final class PaymentDateCorrectionTest extends TestCase
      *
      * `workspaces` is the tenant itself: a workspace row is read by its own
      * key, and asking it to carry a `workspace_id` is asking it to be its own
-     * parent. Nothing else is exempt - a table added to this list is a claim
-     * that has to be argued for, which is the point of the list being here
-     * rather than of the assertion being narrower.
+     * parent. `users` is the other thing a workspace does not own - a person
+     * belongs to as many workspaces as they are a member of, which is what
+     * `workspace_memberships` records, and that table does carry one.
+     *
+     * Nothing else is exempt. A table added to this list is a claim that has to
+     * be argued for, which is the point of the list being here rather than of
+     * the assertion being narrower.
      */
-    private const TABLES_WITHOUT_AN_OWNING_WORKSPACE = ['workspaces'];
+    private const TABLES_WITHOUT_AN_OWNING_WORKSPACE = ['workspaces', 'users'];
 
     /** Identifier quoting is the driver's business: SQLite quotes, MariaDB backticks. */
     private function withoutIdentifierQuoting(string $sql): string
