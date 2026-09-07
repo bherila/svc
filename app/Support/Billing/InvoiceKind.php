@@ -27,6 +27,18 @@ enum InvoiceKind: string
      * schedule is read by the period guards whatever kind it carries, so the
      * ad-hoc exemption below holds only while the row names none.
      *
+     * `interim_overage` is included, and it is the one kind where this
+     * deliberately does **not** mirror the guards.
+     * `BillingPeriodCollisionResolver` clears an unlinked interim row, and
+     * `UnplaceableInvoiceAuditor` leaves it out of the count operators gate on,
+     * both via {@see self::cycleGuardExclusions()}. That is right for them and
+     * is the reason this must differ: an unplaceable interim *draft* has
+     * charged nobody, so suppressing the interim that would bill the work would
+     * withhold money genuinely owed. The resolver clearing it is precisely why
+     * the stale draft has to be stopped at the door instead - issue both and
+     * the client is charged twice for the same hours, with nothing on either
+     * invoice to show it (#218).
+     *
      * `terminal` is included, and that is a decision rather than a default.
      * The enum calls it a closing invoice generated at agreement termination,
      * and termination-line composition reads `service_period_end` to decide

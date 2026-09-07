@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -15,6 +16,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\ServicePeriodRequirement;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -431,65 +433,73 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     /**
      * Every refusal names a repair this application can actually perform.
      *
-     * Asserted whole rather than by fragment. `updateDraft()` accepts currency,
-     * totals, due date, notes and lines only - it can set neither service-period
-     * boundary nor the kind - so an earlier "Give it a service period start and
-     * end." told the operator to do something no endpoint offers. A substring
-     * assertion would not have caught that, and would not catch it coming back.
+     * Asserting the wording is not enough, and the first version of this test
+     * only did that - it compared the message to a literal copied from the same
+     * source string, which pins the sentence and proves nothing about the thing
+     * it promises. That is exactly how "Give it a service period start and
+     * end." survived, and then how "correct its stored period through the
+     * audited administrative repair path" survived: **nothing** in the
+     * application writes either boundary on an existing row.
+     *
+     * So this asserts the endpoint the message names actually offers what the
+     * message says it does.
      */
     public function test_each_refusal_names_a_repair_that_exists(): void
     {
         $lifecycle = app(InvoiceLifecycleService::class);
-        $discardAndRecreate = 'Discard and recreate this draft with a complete service period. '
-            .'If the draft came from imported or repaired data, correct its stored period through the '
-            .'audited administrative repair path before issuing it.';
 
-        $messages = [];
-        foreach ([
-            'undated' => $this->draft('cadence_period', '2024-01-01', null),
-            'reversed' => $this->draft('cadence_period', '2026-02-01', '2026-01-31'),
-            'unsupported' => $this->draft('reconciliation', '2024-01-01', '2024-01-31'),
-        ] as $case => $invoice) {
-            try {
-                $lifecycle->issue($invoice, $this->workspace);
-                $this->fail('The '.$case.' draft must not be issued.');
-            } catch (DomainException $refusal) {
-                $messages[$case] = $refusal->getMessage();
-            }
+        $unlinked = $this->refusalFor($lifecycle, $this->draft('cadence_period', '2024-01-01', null));
+        $reversed = $this->refusalFor($lifecycle, $this->draft('ad_hoc', '2026-02-01', '2026-01-31'));
+        $unsupported = $this->refusalFor($lifecycle, $this->draft('reconciliation', '2024-01-01', '2024-01-31'));
+
+        $linkedDraft = $this->draft('cadence_period', '2024-01-01', null);
+        $linkedDraft->forceFill(['client_billing_schedule_id' => 4242])->save();
+        $linked = $this->refusalFor($lifecycle, $linkedDraft->refresh());
+
+        // The unlinked remedy: create the invoice again, stating the period.
+        // Only true while the create endpoint accepts both boundaries.
+        $rules = (new StoreInvoiceRequest)->rules();
+        $this->assertArrayHasKey('service_period_start', $rules);
+        $this->assertArrayHasKey('service_period_end', $rules);
+        foreach ([$unlinked, $reversed, $unsupported] as $message) {
+            $this->assertStringContainsString('Discard this draft and create it again', $message);
         }
 
-        $this->assertSame(
-            'A cadence_period invoice states no service period end, so it cannot be issued. '
-            .'It is a claim about a span of time, and one that states no span cannot be placed against any '
-            .'other: the period guards read both boundaries, and a null answers UNKNOWN rather than false, '
-            .'so the same work can be billed again with nothing able to reject it. '
-            .$discardAndRecreate,
-            $messages['undated'],
-        );
-        $this->assertSame(
-            'The service period start cannot follow the service period end, so this invoice cannot be '
-            .'issued. A reversed span is placed by no period guard - it fails the overlap test for every '
-            .'period, including the ones on either side of it - so ordinary invoices can be generated '
-            .'beside it for the work it already charged. '
-            .$discardAndRecreate,
-            $messages['reversed'],
-        );
-        $this->assertSame(
-            'This invoice carries an unrecognised invoice kind (reconciliation), so it cannot be issued. '
-            .'The model reads an unrecognised kind as a cadence invoice while the raw-column guards do '
-            .'not, so an issued one is invisible to the check that stops a later correction selling the '
-            .'same retainer and recurring items a second time. Discard and recreate this draft with a '
-            .'supported invoice kind, or correct its stored kind through the audited administrative '
-            .'repair path.',
-            $messages['unsupported'],
+        // The linked remedy is different precisely because that endpoint cannot
+        // name a schedule, so recreating by hand would drop the link.
+        $this->assertArrayNotHasKey('client_billing_schedule_id', $rules);
+        $this->assertArrayNotHasKey('client_agreement_id', $rules);
+        $this->assertStringContainsString('re-run its billing schedule', $linked);
+        $this->assertTrue(
+            Route::has('svc.billing.schedules.generate'),
+            'The linked remedy names a schedule re-run, so that route has to exist',
         );
 
-        foreach ($messages as $case => $message) {
-            $this->assertStringNotContainsString(
-                'Give it a service period',
-                $message,
-                'The '.$case.' refusal must not name an operation updateDraft() does not offer',
-            );
+        // Discarding is the step both remedies open with, and the exit
+        // `BillingScheduleService` already offers on a halted schedule. It has
+        // no kind or period guard of its own, so it stays available for every
+        // draft refused above.
+        foreach ([$unlinked, $reversed, $unsupported, $linked] as $message) {
+            $this->assertStringStartsWith('Discard this draft', substr($message, strpos($message, 'Discard this draft')));
+            $this->assertStringNotContainsString('Give it a service period', $message);
+            $this->assertStringNotContainsString('administrative repair path', $message);
+        }
+
+        $discardable = $this->draft('reconciliation', '2024-01-01', '2024-01-31');
+        $this->assertSame(
+            'void',
+            $lifecycle->discardDraft($discardable, $this->workspace, 'Refused at issue')->status,
+            'A draft this refuses to issue must still be discardable, or the remedy is not a remedy',
+        );
+    }
+
+    private function refusalFor(InvoiceLifecycleService $lifecycle, ClientInvoice $invoice): string
+    {
+        try {
+            $lifecycle->issue($invoice, $this->workspace);
+            $this->fail('Invoice '.$invoice->invoice_number.' must not be issued.');
+        } catch (DomainException $refusal) {
+            return $refusal->getMessage();
         }
     }
 

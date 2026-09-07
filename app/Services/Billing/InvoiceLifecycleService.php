@@ -24,19 +24,6 @@ use RuntimeException;
 
 final class InvoiceLifecycleService
 {
-    /**
-     * How an operator actually repairs a refused draft.
-     *
-     * Said once, and deliberately not "give it a service period":
-     * {@see self::updateDraft()} accepts currency, totals, due date, notes and
-     * lines only. It can set neither service-period boundary nor the kind, so
-     * an instruction to correct one in place names an operation this
-     * application does not have.
-     */
-    private const REPAIR_PATH = 'Discard and recreate this draft with a complete service period. '
-        .'If the draft came from imported or repaired data, correct its stored period through the '
-        .'audited administrative repair path before issuing it.';
-
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
@@ -262,7 +249,7 @@ final class InvoiceLifecycleService
             if ($locked->service_period_start !== null
                 && $locked->service_period_end !== null
                 && $locked->service_period_start->gt($locked->service_period_end)) {
-                throw new DomainException($this->reversedPeriodRefusal());
+                throw new DomainException($this->reversedPeriodRefusal($locked));
             }
 
             $issueDate = $locked->issue_date ?? $this->clock->today($locked->workspace);
@@ -324,6 +311,37 @@ final class InvoiceLifecycleService
      * Named rather than a generic "invalid invoice": the operator reading this
      * has to know that the fix is to give the row a period, not to retry.
      */
+    /**
+     * How an operator actually repairs a refused draft.
+     *
+     * Every word of this is constrained by what the application can do, because
+     * the first version of this guard shipped "Give it a service period start
+     * and end." and {@see self::updateDraft()} accepts currency, totals, due
+     * date, notes and lines only - it can set neither boundary nor the kind.
+     * The replacement then named an "audited administrative repair path", which
+     * was worse: **nothing** writes `service_period_start` or
+     * `service_period_end` on an existing row. Every write of either is at
+     * creation - here, in `ClientInvoicingService`, and in
+     * `BillingScheduleService::bill()`. There is no repair-in-place at all.
+     *
+     * So the only true instruction is to replace the row, and which replacement
+     * is possible depends on the link: `StoreInvoiceRequest` accepts both
+     * boundaries but neither `client_billing_schedule_id` nor
+     * `client_agreement_id`, so a schedule-linked draft cannot be recreated by
+     * hand without losing the link that makes it the schedule's.
+     */
+    private function repairPath(ClientInvoice $invoice): string
+    {
+        if ($invoice->client_billing_schedule_id === null) {
+            return 'Discard this draft and create it again with a complete service period - the invoice '
+                .'create endpoint accepts both boundaries.';
+        }
+
+        return 'Discard this draft and re-run its billing schedule, which writes both boundaries and the '
+            .'kind itself. Recreating it by hand would not restore the link: the invoice create endpoint '
+            .'cannot name a schedule.';
+    }
+
     private function undatedPeriodRefusal(ClientInvoice $invoice): string
     {
         $missing = match (true) {
@@ -340,7 +358,7 @@ final class InvoiceLifecycleService
             .'It is a claim about a span of time, and one that states no span cannot be placed against any '
             .'other: the period guards read both boundaries, and a null answers UNKNOWN rather than false, '
             .'so the same work can be billed again with nothing able to reject it. '
-            .self::REPAIR_PATH;
+            .$this->repairPath($invoice);
     }
 
     private function unsupportedKindRefusal(ClientInvoice $invoice): string
@@ -349,17 +367,19 @@ final class InvoiceLifecycleService
             .'so it cannot be issued. The model reads an unrecognised kind as a cadence invoice while the '
             .'raw-column guards do not, so an issued one is invisible to the check that stops a later '
             .'correction selling the same retainer and recurring items a second time. '
-            .'Discard and recreate this draft with a supported invoice kind, or correct its stored kind '
-            .'through the audited administrative repair path.';
+            .$this->repairPath($invoice)
+            .' Discarding is also the exit a halted schedule names: `BillingScheduleService` stops on a '
+            .'draft covering exactly the period it is billing and offers issuing or voiding, and voiding '
+            .'stays available for a draft this refuses to issue.';
     }
 
-    private function reversedPeriodRefusal(): string
+    private function reversedPeriodRefusal(ClientInvoice $invoice): string
     {
         return 'The service period start cannot follow the service period end, so this invoice cannot be '
             .'issued. A reversed span is placed by no period guard - it fails the overlap test for every '
             .'period, including the ones on either side of it - so ordinary invoices can be generated '
             .'beside it for the work it already charged. '
-            .self::REPAIR_PATH;
+            .$this->repairPath($invoice);
     }
 
     /**

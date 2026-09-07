@@ -12,6 +12,12 @@ namespace App\Support\Billing;
  * billing schedule - so scattering `invoice_kind === 'ad_hoc'` comparisons
  * across the guards that care is how the two halves drift apart.
  *
+ * One place, but not the same answer as the guards give. For `interim_overage`
+ * this is deliberately stricter than `BillingPeriodCollisionResolver` and
+ * `UnplaceableInvoiceAuditor`, which both clear an unlinked interim row - see
+ * {@see InvoiceKind::requiresCompleteServicePeriod()} for why that divergence
+ * is the point rather than a drift. Everywhere else the two agree.
+ *
  * It reads the **raw** column rather than {@see ClientInvoice::invoiceKindValue()},
  * which collapses a null kind and an unrecognised one into `cadence_period`.
  * That default is right where it is used - a migrated row with no kind is an
