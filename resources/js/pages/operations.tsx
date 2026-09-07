@@ -5,6 +5,10 @@ import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
+import {
+    predatesInvoiceIssue,
+    predatesInvoiceIssueWarning,
+} from '@/lib/payments';
 import { todayIn } from '@/lib/time';
 
 type TimeEntry = {
@@ -64,6 +68,7 @@ type Invoice = {
     paid_amount: number;
     balance_amount: number;
     currency: string;
+    issue_date: string | null;
     due_date: string | null;
     attachments: Attachment[];
 };
@@ -465,7 +470,14 @@ function InvoiceForm({
     );
 }
 
-function PaymentForm({
+/**
+ * Recording a payment against one invoice, including the day it arrived.
+ *
+ * Exported for its own test: the date this writes is what the finance window
+ * reconciles by, and it was initialised, posted and never rendered - so every
+ * payment recorded here was dated the day it was typed in, silently.
+ */
+export function PaymentForm({
     workspaceId,
     invoice,
     timezone,
@@ -476,9 +488,10 @@ function PaymentForm({
 }) {
     const form = useForm({
         amount: (invoice.balance_amount / 100).toFixed(2),
-        // Same calendar as the time form. Nothing validates this one, so
-        // a payment entered in the evening west of UTC simply lands in the
-        // next month's revenue without complaint.
+        // Same calendar as the time form, and now rendered as well as sent:
+        // the field was initialised here and posted and had no control, so a
+        // cheque that cleared last Tuesday could only be recorded as having
+        // arrived today. The service bounds it against this same calendar.
         received_on: todayIn(timezone),
         method: 'bank_transfer',
         reference: '',
@@ -487,6 +500,12 @@ function PaymentForm({
         status: 'succeeded',
         idempotency_key: crypto.randomUUID(),
     });
+
+    // A service refusal arrives under `billing` rather than under a field, so
+    // it is not one of this form's own keys; the bag itself carries whatever
+    // the server put in it.
+    const errors: Record<string, string | undefined> = form.errors;
+    const refusal = errors.billing ?? errors.received_on;
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -518,6 +537,21 @@ function PaymentForm({
                 required
             />
             <input
+                className={`${inputClass} max-w-44`}
+                type="date"
+                // Today on the workspace's calendar. No floor here: how far
+                // back this workspace records payments is the service's
+                // policy, and it names the earliest acceptable date when it
+                // refuses one.
+                max={todayIn(timezone)}
+                value={form.data.received_on}
+                onChange={(event) =>
+                    form.setData('received_on', event.target.value)
+                }
+                aria-label="Payment received on"
+                required
+            />
+            <input
                 className={`${inputClass} max-w-52`}
                 placeholder="Payment reference"
                 value={form.data.reference}
@@ -528,6 +562,30 @@ function PaymentForm({
             <button className={secondaryButtonClass} disabled={form.processing}>
                 Record payment
             </button>
+            {predatesInvoiceIssue(
+                form.data.received_on,
+                invoice.issue_date,
+            ) && (
+                <p
+                    role="status"
+                    className="w-full text-sm wrap-anywhere text-amber-700 dark:text-amber-500"
+                >
+                    {predatesInvoiceIssueWarning(invoice.issue_date ?? '')}
+                </p>
+            )}
+            {/*
+             * The service's refusals arrive as a `billing` validation error,
+             * and this form used to drop them: a date outside the workspace's
+             * window failed silently and the operator saw the form sit there.
+             */}
+            {refusal !== undefined && (
+                <p
+                    role="alert"
+                    className="w-full text-sm wrap-anywhere text-red-700"
+                >
+                    {refusal}
+                </p>
+            )}
         </form>
     );
 }

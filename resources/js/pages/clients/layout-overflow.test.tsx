@@ -1,7 +1,8 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ClientHome from '@/pages/clients/home';
+import ClientInvoiceDetail from '@/pages/clients/invoice';
 import ClientInvoices from '@/pages/clients/invoices';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
@@ -234,6 +235,77 @@ describe('client screens under data that does not fit', () => {
             container.querySelector<HTMLInputElement>('#repository-project-1')
                 ?.value,
         ).toBe(LONG_REPOSITORY);
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
+    /**
+     * One invoice, with its record-payment form open.
+     *
+     * The form gained a fourth field, which is one more track competing for the
+     * same row, and the payments table gained a marker beside a date. Both are
+     * asked here against a reference nobody would type and a method name that
+     * runs on, because a column that is sized by its widest child is how a
+     * table pushes the page sideways.
+     */
+    it('keeps the invoice detail and its payment form inside the window', () => {
+        const { container } = render(
+            <ClientInvoiceDetail
+                company={company}
+                invoices_href="/workspaces/workspace-1/clients/company-1/invoices"
+                pdf_href="/workspaces/workspace-1/invoices/invoice-1/pdf"
+                actions={{
+                    issue: null,
+                    send: null,
+                    payment:
+                        '/workspaces/workspace-1/invoices/invoice-1/payments',
+                    void: null,
+                }}
+                email={null}
+                deliveries={[]}
+                invoice={{
+                    id: 'invoice-1',
+                    invoice_number: LONG_INVOICE_NUMBER,
+                    status: 'partially_paid',
+                    currency: 'USD',
+                    issue_date: '2026-08-02',
+                    due_date: '2026-09-01',
+                    total_amount: 375000,
+                    paid_amount: 125000,
+                    balance_amount: 250000,
+                }}
+                lines={[
+                    {
+                        id: 'line-1',
+                        type: 'service',
+                        description: LONG_DESCRIPTION,
+                        quantity: 1,
+                        hours: 40,
+                        line_date: '2026-08-30',
+                        unit_amount: 375000,
+                        total_amount: 375000,
+                    },
+                ]}
+                line_detail={{}}
+                payments={[
+                    {
+                        id: 'payment-1',
+                        status: 'succeeded',
+                        method: LONG_INVOICE_NUMBER,
+                        reference: LONG_REPOSITORY,
+                        received_on: '2026-07-01',
+                        amount: 125000,
+                        refunded_amount: 0,
+                        currency: 'USD',
+                    },
+                ]}
+                timezone="America/Los_Angeles"
+            />,
+        );
+
+        fireEvent.click(
+            container.querySelectorAll('button')[1] as HTMLButtonElement,
+        );
+
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
