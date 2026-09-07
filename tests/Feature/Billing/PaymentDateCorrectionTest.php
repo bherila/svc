@@ -200,42 +200,143 @@ final class PaymentDateCorrectionTest extends TestCase
     }
 
     /**
-     * Every query in the correction path names a workspace.
+     * Every tenant-owned query in the correction path names a workspace.
      *
-     * The refusal below is the outcome; this is the rule AGENTS.md actually
-     * states, and it is the part that changed. The invoice used to be reached
-     * through `$lockedPayment->invoice`, a `belongsTo` on `client_invoice_id`
-     * alone - so the *read* that produced the model was bounded by a child key
-     * and nothing else, and only the lock taken afterwards was scoped. The
-     * outcome was already right, because that lock re-queried with the
-     * workspace and refused; what was wrong was that a foreign tenant's invoice
-     * row was selected and materialised on the way there.
+     * The rule AGENTS.md states, asserted over the whole path rather than over
+     * one table. Two findings arrived here one relation apart - the invoice,
+     * reached through a `belongsTo` on `client_invoice_id` alone, and then the
+     * company behind it, reached through `client_company_id` alone - and the
+     * first version of this test watched only `client_invoices`, so it went on
+     * passing while the next dereference walked straight past it. A guard that
+     * enumerates one table is a guard against one bug.
      *
-     * Asserted on the SQL rather than on the result, therefore, because an
-     * assertion about the result cannot see this at all.
+     * So this is closed-world: every table the path touches must either carry a
+     * workspace in the SQL or be named below as one that cannot be owned by a
+     * workspace. A new relation read is a failure by default rather than a
+     * silence.
+     *
+     * Asserted on the shape of the SQL and not on the result, because the
+     * outcome of these reads was already correct - a scoped lock or the
+     * activity recorder refused the mismatch afterwards. What was wrong is that
+     * a foreign tenant's row was selected and materialised on the way there,
+     * which no assertion about the result can see.
+     *
+     * Matched with the quoting stripped, because the identifier quoting is the
+     * driver's business: SQLite writes `"client_invoices"` and MariaDB writes
+     * backticks, and this suite runs SQLite locally while only the MariaDB job
+     * in CI sees the other. A literal `from "client_invoices"` matches nothing
+     * there, the captured list comes back empty, and the assertion passes or
+     * fails for a reason that has nothing to do with tenancy.
      */
-    public function test_the_correction_issues_no_invoice_query_without_a_workspace(): void
+    public function test_the_correction_issues_no_tenant_owned_query_without_a_workspace(): void
     {
         [, $workspace, , $payment] = $this->recordedPayment();
 
-        /** @var list<string> $invoiceReads */
-        $invoiceReads = [];
-        DB::listen(function (QueryExecuted $query) use (&$invoiceReads): void {
-            if (str_contains($query->sql, 'from "client_invoices"')) {
-                $invoiceReads[] = $query->sql;
+        /** @var array<string, list<string>> $byTable */
+        $byTable = [];
+        DB::listen(function (QueryExecuted $query) use (&$byTable): void {
+            $sql = $this->withoutIdentifierQuoting($query->sql);
+            foreach ($this->tablesIn($sql) as $table) {
+                $byTable[$table][] = $sql;
             }
         });
 
         app(InvoiceLifecycleService::class)->setPaymentReceivedOn($payment, '2026-08-18', $workspace);
 
-        $this->assertNotSame([], $invoiceReads, 'The correction must read the invoice it records against.');
-        foreach ($invoiceReads as $sql) {
+        // The path really did read the two relations the findings were about,
+        // so an empty capture cannot be mistaken for a clean one.
+        $this->assertArrayHasKey('client_invoices', $byTable);
+        $this->assertArrayHasKey('client_companies', $byTable);
+
+        foreach ($byTable as $table => $statements) {
+            if (in_array($table, self::TABLES_WITHOUT_AN_OWNING_WORKSPACE, true)) {
+                continue;
+            }
+
+            foreach ($statements as $sql) {
+                $this->assertStringContainsString(
+                    'workspace_id',
+                    $sql,
+                    "A tenant-owned query on {$table} carried no workspace: {$sql}",
+                );
+            }
+        }
+    }
+
+    /**
+     * Every payment path reads the company scoped, not just the correction.
+     *
+     * The unscoped company read was found in the correction and fixed in
+     * `recordPaymentActivity()`, which all four payment paths record through -
+     * so the fix is shared and this is what says so. Narrower than the
+     * closed-world guard above on purpose: `applyPayment()` and its siblings
+     * recompute the invoice, and `refreshStatus()` reads a payment set through
+     * a relation that carries no workspace of its own. That is a real and
+     * pre-existing shape, older than this branch and in the middle of the money
+     * arithmetic, and widening this assertion to cover it would make the test
+     * about a change nobody here is making.
+     */
+    public function test_every_payment_path_reads_the_company_with_a_workspace(): void
+    {
+        [, $workspace, $invoice, $payment] = $this->recordedPayment();
+        $service = app(InvoiceLifecycleService::class);
+
+        /** @var list<string> $companyReads */
+        $companyReads = [];
+        DB::listen(function (QueryExecuted $query) use (&$companyReads): void {
+            $sql = $this->withoutIdentifierQuoting($query->sql);
+            if (in_array('client_companies', $this->tablesIn($sql), true)) {
+                $companyReads[] = $sql;
+            }
+        });
+
+        $service->applyPayment($invoice, [
+            'amount' => 2000, 'currency' => 'USD', 'method' => 'ach', 'received_on' => '2026-08-26',
+        ], $workspace);
+        $service->setPaymentReceivedOn($payment, '2026-08-18', $workspace);
+        $service->setRefundedAmount($payment->refresh(), 500, $workspace);
+        $service->setPaymentStatus($payment->refresh(), 'canceled', $workspace);
+
+        $this->assertNotSame([], $companyReads, 'The payment paths must read the company they record against.');
+        foreach ($companyReads as $sql) {
             $this->assertStringContainsString(
                 'workspace_id',
                 $sql,
-                'A tenant-owned invoice query in the correction path carried no workspace: '.$sql,
+                'A payment path read a client company with no workspace: '.$sql,
             );
         }
+    }
+
+    /**
+     * The guard above reads both drivers' SQL, which it cannot prove in place.
+     *
+     * This suite runs SQLite and only the MariaDB job in CI sees the other, so
+     * a driver-sensitive assertion is invisible here by construction - which is
+     * exactly how the first version of the test above reached CI matching the
+     * literal `from "client_invoices"` and failing on MariaDB with "the
+     * correction must read the invoice it records against", an empty capture
+     * reported as a missing read.
+     *
+     * So the part that depends on the driver is separated out and checked
+     * against both spellings directly, on whichever engine this happens to run.
+     */
+    public function test_the_query_shape_guard_reads_either_drivers_quoting(): void
+    {
+        $sqlite = 'select * from "client_invoices" where "client_invoices"."id" = ? and "workspace_id" = ? limit 1';
+        $mariadb = 'select * from `client_invoices` where `client_invoices`.`id` = ? and `workspace_id` = ? limit 1';
+
+        foreach ([$sqlite, $mariadb] as $statement) {
+            $unquoted = $this->withoutIdentifierQuoting($statement);
+
+            $this->assertSame(['client_invoices'], $this->tablesIn($unquoted));
+            $this->assertStringContainsString('workspace_id', $unquoted);
+        }
+
+        // And a statement that genuinely lacks a workspace is still seen to.
+        $this->assertStringNotContainsString(
+            'workspace_id',
+            $this->withoutIdentifierQuoting('select * from `client_companies` where `id` = ? limit 1'),
+        );
     }
 
     /**
@@ -262,6 +363,39 @@ final class PaymentDateCorrectionTest extends TestCase
         } catch (ModelNotFoundException) {
             $this->assertSame('2026-08-25', $payment->fresh()?->received_on?->toDateString());
         }
+    }
+
+    /**
+     * Tables a workspace cannot own, and why each is here.
+     *
+     * `workspaces` is the tenant itself: a workspace row is read by its own
+     * key, and asking it to carry a `workspace_id` is asking it to be its own
+     * parent. Nothing else is exempt - a table added to this list is a claim
+     * that has to be argued for, which is the point of the list being here
+     * rather than of the assertion being narrower.
+     */
+    private const TABLES_WITHOUT_AN_OWNING_WORKSPACE = ['workspaces'];
+
+    /** Identifier quoting is the driver's business: SQLite quotes, MariaDB backticks. */
+    private function withoutIdentifierQuoting(string $sql): string
+    {
+        return str_replace(['`', '"', '[', ']'], '', $sql);
+    }
+
+    /**
+     * The tables one statement reads or writes, from unquoted SQL.
+     *
+     * @return list<string>
+     */
+    private function tablesIn(string $sql): array
+    {
+        $matches = [];
+        preg_match_all('/\b(?:from|into|update|join)\s+([a-z0-9_]+)/i', $sql, $matches);
+
+        /** @var list<string> $tables */
+        $tables = array_values(array_unique($matches[1]));
+
+        return $tables;
     }
 
     private function correctionUrl(Workspace $workspace, ClientInvoice $invoice, ClientInvoicePayment $payment): string

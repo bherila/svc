@@ -21,6 +21,7 @@ use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -851,7 +852,14 @@ final class InvoiceLifecycleService
                 ['previous_received_on' => $previous, 'received_on' => $next],
             );
 
-            return $lockedPayment->refresh();
+            // The row this transaction locked, wrote and still holds, rather
+            // than `refresh()`. That re-reads by primary key alone, which is a
+            // tenant-owned query with no tenant in it - harmless in itself,
+            // since a primary key cannot reach another workspace's row, but it
+            // is a shape the query-shape guard would have to carve an exception
+            // for and the next reader would copy. There is also nothing to
+            // re-read: the save above is the only write to this row.
+            return $lockedPayment;
         });
     }
 
@@ -1147,6 +1155,8 @@ final class InvoiceLifecycleService
         ?string $occurrence = null,
         array $extra = [],
     ): void {
+        $this->loadOwningCompany($invoice);
+
         $this->activities->record(
             $invoice->workspace,
             $invoice->clientCompany,
@@ -1170,6 +1180,13 @@ final class InvoiceLifecycleService
             return;
         }
 
+        // Here as well as in `recordPaymentActivity()`. Every path that reaches
+        // this one happens to record a payment activity first, so the relation
+        // is already loaded and scoped by the time it is read here - which is a
+        // guarantee about call order rather than about this method, and the
+        // wrong kind to depend on.
+        $this->loadOwningCompany($invoice);
+
         $this->activities->record(
             $invoice->workspace,
             $invoice->clientCompany,
@@ -1178,6 +1195,40 @@ final class InvoiceLifecycleService
             ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
             occurrence: $occurrence,
         );
+    }
+
+    /**
+     * Load an invoice's company with its workspace as well as its key.
+     *
+     * `$invoice->clientCompany` is a `belongsTo` on `client_company_id` alone,
+     * so reading it lazily selects a company by a child key and nothing else -
+     * and an invoice migrated in from before #113's composite tenant keys can
+     * name one in another workspace. `ClientActivityRecorder` refuses the
+     * mismatch, but only once the foreign tenant's row has been read and
+     * materialised, which is the same shape as an unscoped invoice read one
+     * relation earlier. Constrained the way `InvoiceController::index()`
+     * already constrains this relation, and for the same reason.
+     *
+     * Called from {@see self::recordPaymentActivity()} rather than from the
+     * correction that surfaced it, because all four payment paths record
+     * through there and all four read this relation the same way.
+     *
+     * A named guard rather than three lines inline, for the same reason
+     * {@see self::assertCompanyTenant()} is one: it is the check every caller
+     * needs and none of them should be restating.
+     */
+    private function loadOwningCompany(ClientInvoice $invoice): void
+    {
+        $invoice->load([
+            'clientCompany' => fn (Relation $relation) => $relation->where('workspace_id', $invoice->workspace_id),
+        ]);
+
+        if ($invoice->clientCompany === null) {
+            throw new DomainException(
+                'This invoice names a client company in another workspace, so nothing about its '
+                .'payments can be recorded against a client. Nothing has been changed.'
+            );
+        }
     }
 
     private function assertCompanyTenant(Workspace $workspace, ClientCompany $company): void
