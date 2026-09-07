@@ -14,6 +14,7 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
@@ -184,6 +185,35 @@ final class InvoiceLifecycleService
                 throw new DomainException('Only draft invoices can be issued.');
             }
 
+            // Before anything is spent, moved or recorded, and deliberately
+            // after the charged-status return above: an invoice that already
+            // took money keeps its idempotent `issue()`, because refusing it
+            // here would turn a malformed *existing* row into an error on a
+            // path that used to be a no-op. Those rows belong to the census and
+            // the repair, not to this transition.
+            //
+            // The transition is the right place for it rather than
+            // `createDraft()`. A draft that states no period has charged nobody
+            // and must keep being allowed: `InterimOverageGenerator` raises a
+            // correctly placed interim *beside* an unplaceable draft precisely
+            // so work genuinely owed is still billed (see
+            // `CapacityAndScopeGuardsTest::test_an_unplaceable_interim_draft_does_not_suppress_interim_billing`).
+            // What must not happen is that the stale draft is then issued too,
+            // at which point two invoices claim the same hours for the same
+            // period with nothing on either to show it - #218.
+            //
+            // #250 fixed the other half at generation time:
+            // `BillingPeriodCollisionResolver` refuses a run when a row it must
+            // place states no complete period. That stops the money mutation
+            // but not the row, which is why the same rule is needed on the door
+            // every issuance goes through - browser, command, API and MCP all
+            // arrive here.
+            $requirement = ServicePeriodRequirement::for($locked->invoice_kind);
+            if ($requirement->requiresBothBoundaries()
+                && ($locked->service_period_start === null || $locked->service_period_end === null)) {
+                throw new DomainException($this->undatedPeriodRefusal($locked, $requirement));
+            }
+
             $issueDate = $locked->issue_date ?? $this->clock->today($locked->workspace);
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
                 throw new DomainException('The due date cannot precede the issue date.');
@@ -235,6 +265,31 @@ final class InvoiceLifecycleService
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
+    }
+
+    /**
+     * Say which boundary is missing, and why this kind may not go without it.
+     *
+     * Named rather than a generic "invalid invoice": the operator reading this
+     * has to know that the fix is to give the row a period, not to retry.
+     */
+    private function undatedPeriodRefusal(ClientInvoice $invoice, ServicePeriodRequirement $requirement): string
+    {
+        $missing = match (true) {
+            $invoice->service_period_start === null && $invoice->service_period_end === null => 'no service period at all',
+            $invoice->service_period_start === null => 'no service period start',
+            default => 'no service period end',
+        };
+
+        $kind = $requirement === ServicePeriodRequirement::Undecidable
+            ? 'An invoice of an unrecognised kind ('.(string) $invoice->invoice_kind.')'
+            : 'A '.$invoice->invoiceKindValue().' invoice';
+
+        return $kind.' states '.$missing.', so it cannot be issued. '
+            .'An invoice of this kind is a claim about a span of time, and one that states no span cannot be '
+            .'placed against any other: the period guards read both boundaries, and a null answers UNKNOWN '
+            .'rather than false, so the same work can be billed again with nothing able to reject it. '
+            .'Give it a service period start and end.';
     }
 
     /**

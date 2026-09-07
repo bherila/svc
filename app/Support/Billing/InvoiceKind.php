@@ -18,6 +18,33 @@ enum InvoiceKind: string
     case AdHoc = 'ad_hoc';
 
     /**
+     * Whether an invoice of this kind is a claim about a span of time, and so
+     * may not be issued without stating both ends of it.
+     *
+     * Asked through {@see ServicePeriodRequirement}, which handles the two
+     * values this enum cannot represent - a null kind and an unrecognised one.
+     *
+     * `terminal` is included, and that is a decision rather than a default.
+     * The enum calls it a closing invoice generated at agreement termination,
+     * and termination-line composition reads `service_period_end` to decide
+     * what the closing period covers; an undated one is the deferred-termination
+     * defect waiting to happen rather than a legitimate shape. No test
+     * establishes a deliberately undated terminal invoice, and production holds
+     * none of this kind at all, so nothing argues for the exemption.
+     *
+     * Exhaustive with no `default`, so a fifth kind is a compile-time question
+     * rather than one silently answered "exempt" - the safe direction here is
+     * to require the period, and a `default` would pick the other one.
+     */
+    public function requiresCompleteServicePeriod(): bool
+    {
+        return match ($this) {
+            self::CadencePeriod, self::InterimOverage, self::Terminal => true,
+            self::AdHoc => false,
+        };
+    }
+
+    /**
      * Invoice kinds that are not tied to a recurring agreement cycle and must not
      * block cadence invoice generation when their periods overlap.
      *
