@@ -142,10 +142,12 @@ response as for an inaccessible agreement.
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
 scope. They and `tasks.create` / `tasks.update` use tenant-scoped application
-actions directly. The broader write flag also retains legacy compatibility
-registrations for `time_entries.approve`, `invoices.create_draft`,
-`invoices.update_draft`, `invoices.discard_draft`, `invoices.issue`,
-`invoices.send`, and `invoices.void`; those capabilities still enter the
+actions directly. The broader write flag also retains a legacy compatibility
+registration for `time_entries.approve`. The six invoice registrations -
+`invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
+`invoices.issue`, `invoices.send`, and `invoices.void` - require *both* that
+flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
+registers `time_entries.approve` and no invoice tool. All seven still enter the
 versioned Agent API through `InternalAgentApiTransport`. They are disabled by
 default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
