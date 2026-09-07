@@ -776,16 +776,30 @@ final class InvoiceLifecycleService
                 $query->where('workspace_id', $workspace->id);
             }
             $lockedPayment = $query->firstOrFail();
-            // Stated rather than assumed. The foreign key makes an orphaned
-            // payment unstorable, and a correction is not the operation to
-            // discover that a migrated row disagrees: without an invoice there
-            // is no workspace calendar to bound the date against and no client
-            // to record the correction under.
-            $owner = $lockedPayment->invoice;
-            if ($owner === null) {
-                throw new DomainException('This payment is not attached to an invoice, so its date cannot be corrected here.');
-            }
-            $invoice = $this->lockInvoice($owner, $workspace);
+            // Resolved and locked in one scoped query, rather than read through
+            // `$lockedPayment->invoice` and then locked. The relation is a
+            // `belongsTo` on `client_invoice_id` alone, so the read that finds
+            // the invoice is bounded by a child key and nothing else - and a
+            // row migrated in from before #113's composite tenant keys can name
+            // an invoice in another workspace. Locking it afterwards makes the
+            // *lock* scoped and leaves the read that produced the model
+            // unscoped, which is a tenant-owned query without a tenant in it.
+            //
+            // Bounded by the payment's own workspace rather than the caller's:
+            // that is the stronger of the two, because the payment was already
+            // constrained to the caller's workspace above where one was given,
+            // and it is the only bound available where one was not - the
+            // console command passes none.
+            //
+            // `firstOrFail()` rather than a message: an invoice that is not
+            // this payment's tenant's is not found, which is the answer a
+            // cross-tenant reach should get, and it is what the sibling
+            // corrections' `lockInvoice()` already answers.
+            $invoice = ClientInvoice::query()
+                ->whereKey($lockedPayment->client_invoice_id)
+                ->where('workspace_id', $lockedPayment->workspace_id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
             // The invoice's own workspace, not the caller's: the bound is a
             // statement about which day it is where this money was received.
             $next = $this->receivedOn($receivedOn, $invoice->workspace);

@@ -12,9 +12,12 @@ use App\Services\Billing\InvoiceLifecycleService;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -33,6 +36,7 @@ use Tests\TestCase;
 final class PaymentDateCorrectionTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
@@ -193,6 +197,71 @@ final class PaymentDateCorrectionTest extends TestCase
 
         $this->assertSame('2026-08-25', $otherPayment->fresh()?->received_on?->toDateString());
         $this->assertSame('2026-08-25', $payment->fresh()?->received_on?->toDateString());
+    }
+
+    /**
+     * Every query in the correction path names a workspace.
+     *
+     * The refusal below is the outcome; this is the rule AGENTS.md actually
+     * states, and it is the part that changed. The invoice used to be reached
+     * through `$lockedPayment->invoice`, a `belongsTo` on `client_invoice_id`
+     * alone - so the *read* that produced the model was bounded by a child key
+     * and nothing else, and only the lock taken afterwards was scoped. The
+     * outcome was already right, because that lock re-queried with the
+     * workspace and refused; what was wrong was that a foreign tenant's invoice
+     * row was selected and materialised on the way there.
+     *
+     * Asserted on the SQL rather than on the result, therefore, because an
+     * assertion about the result cannot see this at all.
+     */
+    public function test_the_correction_issues_no_invoice_query_without_a_workspace(): void
+    {
+        [, $workspace, , $payment] = $this->recordedPayment();
+
+        /** @var list<string> $invoiceReads */
+        $invoiceReads = [];
+        DB::listen(function (QueryExecuted $query) use (&$invoiceReads): void {
+            if (str_contains($query->sql, 'from "client_invoices"')) {
+                $invoiceReads[] = $query->sql;
+            }
+        });
+
+        app(InvoiceLifecycleService::class)->setPaymentReceivedOn($payment, '2026-08-18', $workspace);
+
+        $this->assertNotSame([], $invoiceReads, 'The correction must read the invoice it records against.');
+        foreach ($invoiceReads as $sql) {
+            $this->assertStringContainsString(
+                'workspace_id',
+                $sql,
+                'A tenant-owned invoice query in the correction path carried no workspace: '.$sql,
+            );
+        }
+    }
+
+    /**
+     * A payment naming an invoice in another workspace is not corrected.
+     *
+     * Unstorable since #113's composite tenant keys, and reachable in a
+     * database migrated from before them - which is the population the scoped
+     * query is the second line of defence for. The refusal is a "not found"
+     * rather than an explanation, because an invoice that is not this tenant's
+     * is not one to describe to them.
+     */
+    public function test_a_payment_naming_a_foreign_invoice_cannot_be_corrected(): void
+    {
+        [, $workspace, , $payment] = $this->recordedPayment('Alpha');
+        [, , $foreignInvoice] = $this->recordedPayment('Beta');
+
+        $this->writingLegacyCrossTenantRows(
+            fn () => $payment->forceFill(['client_invoice_id' => $foreignInvoice->id])->save(),
+        );
+
+        try {
+            app(InvoiceLifecycleService::class)->setPaymentReceivedOn($payment->refresh(), '2026-08-18', $workspace);
+            $this->fail('A payment was corrected against an invoice in another workspace.');
+        } catch (ModelNotFoundException) {
+            $this->assertSame('2026-08-25', $payment->fresh()?->received_on?->toDateString());
+        }
     }
 
     private function correctionUrl(Workspace $workspace, ClientInvoice $invoice, ClientInvoicePayment $payment): string
