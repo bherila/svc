@@ -12,6 +12,7 @@ use App\Services\Billing\OverpaymentCreditService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Support\Billing\InvoicePaymentStatus;
 use DomainException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -343,6 +344,109 @@ final class PaymentStatusVocabularyTest extends TestCase
         $this->expectExceptionMessage('must not be created');
         app(StripePaymentIntentService::class)
             ->create($invoice->refresh(), $this->workspace, null, 'a-key');
+    }
+
+    /**
+     * A case variant is unreadable too, and the guards must agree with the enum
+     * about that.
+     *
+     * `InvoicePaymentStatus::tryFrom('SUCCEEDED')` is null, so `refreshStatus()`
+     * refuses the row. An earlier revision asked the opposite question in SQL,
+     * with `whereNotIn('status', InvoicePaymentStatus::all())` - and the
+     * connection collates `utf8mb4_unicode_ci`, so MariaDB reads `SUCCEEDED` as
+     * equal to `succeeded` and cleared exactly the row the guard existed to
+     * catch. The guard and the recomputation then disagreed about the same
+     * value: one let the invoice be voided, the other refused to total it.
+     *
+     * **This test only fails on MariaDB.** SQLite compares `=` case-sensitively,
+     * so the local suite passed against the broken predicate; the `Tests on
+     * MariaDB` job is what covers it. Asked in PHP, both engines agree.
+     *
+     * @param  string  $status  a value only a collation would call recognised
+     */
+    #[DataProvider('caseVariantStatuses')]
+    public function test_a_case_variant_status_is_unreadable_too(string $status): void
+    {
+        [$invoice, $payment] = $this->paidBySettledPayment();
+        $payment->forceFill(['status' => $status])->save();
+        $invoice->forceFill(['status' => 'issued', 'paid_amount' => 0, 'balance_amount' => 10000])->save();
+
+        $this->assertTrue($payment->refresh()->hasUnreadableStatus());
+
+        try {
+            app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Cleanup');
+            $this->fail('A case-variant status must not be read as recognised.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('unrecognised status', $refusal->getMessage());
+        }
+
+        $this->assertSame('issued', $invoice->refresh()->status);
+    }
+
+    /** Values the enum rejects that a case-insensitive collation would accept. */
+    public static function caseVariantStatuses(): iterable
+    {
+        yield 'upper' => ['SUCCEEDED'];
+        yield 'title' => ['Pending'];
+        yield 'mixed' => ['ReFuNdEd'];
+    }
+
+    /**
+     * A payment cannot name a workspace other than its invoice's.
+     *
+     * The new guards read `ClientInvoice::payments()`, which is keyed on
+     * `client_invoice_id` alone, so on the face of it a foreign row could halt
+     * this tenant's void and have its public id read back in the refusal - a
+     * cross-tenant disclosure produced by a guard added for their protection.
+     *
+     * It cannot, and the reason is a constraint rather than a predicate:
+     * `cip_ws_invoice_fk` is a composite foreign key on
+     * `(workspace_id, client_invoice_id)` into `client_invoices (workspace_id,
+     * id)`, so the row below is rejected by the database. The queries carry an
+     * explicit `workspace_id` anyway, because a guard whose tenant scope is
+     * enforced somewhere else is one migration away from having none - but the
+     * isolation this test pins is the constraint's, which is the part that
+     * holds whatever the query says.
+     */
+    public function test_a_payment_cannot_name_another_workspace_than_its_invoice(): void
+    {
+        $invoice = $this->issuedInvoice();
+        $intruderWorkspace = Workspace::query()->create(['name' => 'Intruder', 'slug' => 'intruder']);
+
+        try {
+            ClientInvoicePayment::query()->create([
+                'workspace_id' => $intruderWorkspace->id,
+                'client_invoice_id' => $invoice->id,
+                'status' => 'settled',
+                'amount' => 10000,
+                'refunded_amount' => 0,
+                'currency' => 'USD',
+                'method' => 'ach',
+                'received_on' => '2026-08-15',
+            ]);
+            $this->fail('A payment must not name a workspace other than its invoice\'s.');
+        } catch (QueryException $refusal) {
+            $this->assertStringContainsString('FOREIGN KEY', $refusal->getMessage());
+        }
+
+        $this->assertSame(0, $invoice->payments()->count());
+
+        // And the guard still reaches the tenant's own row, so scoping the
+        // query has not narrowed it past the thing it exists to catch.
+        $payment = $invoice->payments()->create([
+            'workspace_id' => $this->workspace->id,
+            'status' => 'pending',
+            'amount' => 10000,
+            'refunded_amount' => 0,
+            'currency' => 'USD',
+            'method' => 'ach',
+            'received_on' => '2026-08-15',
+        ]);
+        $payment->forceFill(['status' => 'settled'])->save();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('must not be voided');
+        app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Cleanup');
     }
 
     /**

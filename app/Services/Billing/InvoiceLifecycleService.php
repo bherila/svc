@@ -462,7 +462,16 @@ final class InvoiceLifecycleService
             // filter, so a payment whose status this application cannot read is
             // not seen as pending and does not block the void - and an
             // in-flight payment is exactly what that guard exists to catch.
-            $unreadablePayment = $locked->payments()->ofUnreadableStatus()->first();
+            //
+            // Scoped to the invoice's own workspace. `payments()` is keyed on
+            // `client_invoice_id` alone, and `workspace_id` on the payment is
+            // unconstrained lineage that a legacy or repaired row can point
+            // elsewhere; without this, another tenant's payment could both
+            // block this void and have its public id read back in the refusal.
+            $unreadablePayment = $locked->payments()
+                ->where('workspace_id', $locked->workspace_id)
+                ->get(['public_id', 'status'])
+                ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
             if ($unreadablePayment !== null) {
                 throw new DomainException(
                     'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
@@ -473,6 +482,7 @@ final class InvoiceLifecycleService
             }
 
             $hasPendingPayments = $locked->payments()
+                ->where('workspace_id', $locked->workspace_id)
                 ->where('status', InvoicePaymentStatus::Pending->value)
                 ->exists();
             if ($hasPendingPayments) {

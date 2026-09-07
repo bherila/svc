@@ -71,10 +71,15 @@ class OverpaymentCreditService
         // reported anywhere. A `DomainException` rather than the integrity
         // failure above, because this one is operator-correctable: classify the
         // payment and the ledger builds.
-        $unreadablePayment = ClientInvoicePayment::query()
-            ->whereIn('client_invoice_id', $invoices->modelKeys())
-            ->ofUnreadableStatus()
-            ->first();
+        // Over the eager load, which is already narrowed to this company's
+        // workspace, and after the foreign-payment check above has established
+        // that no row belongs to another one. Asked in PHP rather than as a
+        // `whereNotIn`, because the connection collates case-insensitively and
+        // SQL would clear the rows this exists to catch - see
+        // {@see ClientInvoicePayment::hasUnreadableStatus()}.
+        $unreadablePayment = $invoices
+            ->flatMap(fn (ClientInvoice $invoice): iterable => $invoice->payments)
+            ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
         if ($unreadablePayment !== null) {
             throw new DomainException(
                 'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'

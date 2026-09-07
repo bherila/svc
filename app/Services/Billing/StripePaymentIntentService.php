@@ -69,7 +69,14 @@ final class StripePaymentIntentService
         // beside a charge that may already be moving - the double charge this
         // reservation was added to prevent, reached by the one route it does
         // not cover.
-        $unreadablePayment = $invoice->payments()->ofUnreadableStatus()->first();
+        // Scoped to the invoice's own workspace, like the reservation below:
+        // `payments()` is keyed on `client_invoice_id` alone, and a payment row
+        // pointing at another tenant must neither block this charge nor have
+        // its public id read back to this one.
+        $unreadablePayment = $invoice->payments()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->get(['public_id', 'status'])
+            ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
         if ($unreadablePayment !== null) {
             throw new DomainException(
                 'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
@@ -83,6 +90,7 @@ final class StripePaymentIntentService
         // distinct client-supplied idempotency keys each mint a full-balance intent
         // and the customer is charged twice.
         $reservedPending = (int) $invoice->payments()
+            ->where('workspace_id', $invoice->workspace_id)
             ->where('status', InvoicePaymentStatus::Pending->value)
             ->get(['amount', 'refunded_amount'])
             ->sum(fn (ClientInvoicePayment $payment): int => max(0, $payment->amount - $payment->refunded_amount));

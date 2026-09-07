@@ -5,10 +5,10 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -36,32 +36,32 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
     }
 
     /**
-     * Payments carrying a status this application cannot read.
+     * Does this row carry a status the application cannot read?
      *
      * The column is an unconstrained `varchar(24)` and stays that way, because
      * an import carries whatever the source system called it. Every guard that
-     * reads payment status is a *positive* filter — the succeeded ones, the
-     * pending ones — so a row outside the vocabulary drops out of all of them
+     * reads payment status is a *positive* filter - the succeeded ones, the
+     * pending ones - so a row outside the vocabulary drops out of all of them
      * at once: it contributes nothing to a balance, reserves nothing against a
      * new charge, and blocks nothing from being voided. Each of those is a
-     * different money decision made on the strength of a value nobody read.
+     * money decision made on the strength of a value nobody read. This is how
+     * a guard asks the opposite question.
      *
-     * This is how a guard asks the opposite question. The null is spelled out
-     * because `NOT IN` answers UNKNOWN for one and would drop the row from
-     * this filter too — the same null-in-a-predicate class the period guards
-     * exist for. The column is `NOT NULL` today; the predicate does not depend
-     * on it staying that way.
+     * **Asked in PHP, deliberately, rather than as a `whereNotIn`.** The
+     * connection collates `utf8mb4_unicode_ci` by default, so SQL reads
+     * `SUCCEEDED` as equal to `succeeded` while
+     * {@see InvoicePaymentStatus::tryFrom()} does not. A SQL predicate would
+     * therefore clear exactly the rows this exists to catch, and disagree with
+     * the recomputation that refuses them - the guard and the thing it guards
+     * would be answering different questions on the same row.
+     * {@see InvoiceLifecycleService::refreshStatus()}
+     * already validates row by row for the same reason.
      *
-     * @param  Builder<self>  $query
-     * @return Builder<self>
+     * The payment set of one invoice is small and every caller loads it anyway.
      */
-    public function scopeOfUnreadableStatus(Builder $query): Builder
+    public function hasUnreadableStatus(): bool
     {
-        return $query->where(function (Builder $unreadable): void {
-            $unreadable
-                ->whereNull('status')
-                ->orWhereNotIn('status', InvoicePaymentStatus::all());
-        });
+        return InvoicePaymentStatus::tryFrom((string) $this->getAttribute('status')) === null;
     }
 
     /** @return BelongsTo<ClientInvoice, $this> */
