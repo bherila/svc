@@ -5,6 +5,10 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientProject;
+use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceKind;
@@ -68,10 +72,9 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
             yield $kind.', neither' => [$kind, null, null];
         }
 
-        // Not representable in `InvoiceKind`, and both handled by
+        // Not representable in `InvoiceKind`, and handled by
         // `ServicePeriodRequirement` rather than by the enum.
         yield 'null kind, no end' => [null, '2024-01-01', null];
-        yield 'unrecognised kind, no start' => ['reconciliation', null, '2024-01-31'];
     }
 
     #[DataProvider('unplaceableCombinations')]
@@ -97,6 +100,13 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     public function test_a_refusal_leaves_the_draft_untouched(): void
     {
         $invoice = $this->draft('cadence_period', '2024-01-01', null);
+
+        // The two mutations `issue()` performs that this test's earlier version
+        // only claimed to cover. That they are reachable at all is proved by
+        // `test_a_successful_issue_does_mutate_that_same_fixture`, which issues
+        // the identical fixture on a complete invoice and watches both change.
+        ['credit' => $credit, 'entry' => $entry] = $this->attachCreditAndTime($invoice);
+        $totalBefore = (int) $invoice->refresh()->total_amount;
         $activitiesBefore = ClientCompanyActivity::query()->count();
 
         try {
@@ -121,6 +131,98 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
             0,
             ClientCompanyActivity::query()->where('action', 'invoice.issued')->count(),
         );
+
+        $this->assertSame(-2500, (int) $credit->refresh()->total_amount, 'The credit line is not trimmed');
+        $this->assertSame(1, $fresh->lines()->where('type', 'credit')->count(), 'The credit line is not deleted');
+        $this->assertSame($totalBefore, (int) $fresh->total_amount, 'The totals are not recomputed');
+        $this->assertSame('approved', $entry->refresh()->status, 'Approved time is not marked invoiced');
+    }
+
+    /**
+     * The control for the test above, and the reason it is worth anything.
+     *
+     * A fixture that no successful run would touch proves nothing when a
+     * refusal leaves it alone. So the same credit line and the same approved
+     * entry are put on a *complete* invoice and issued: the credit line is
+     * deleted, the totals move, and the entry becomes `invoiced`. Those are the
+     * three mutations the refusal above is asserting the absence of.
+     */
+    public function test_a_successful_issue_does_mutate_that_same_fixture(): void
+    {
+        $invoice = $this->draft('cadence_period', '2024-01-01', '2024-01-31');
+        $credit = $this->attachCreditAndTime($invoice);
+        $entry = $credit['entry'];
+        $totalBefore = (int) $invoice->refresh()->total_amount;
+
+        app(InvoiceLifecycleService::class)->issue($invoice->refresh(), $this->workspace);
+
+        $fresh = $invoice->refresh();
+        $this->assertSame('issued', $fresh->status);
+        $this->assertSame(
+            0,
+            $fresh->lines()->where('type', 'credit')->count(),
+            'With no overpayment available the credit line is deleted, so the refusal above has something to prevent',
+        );
+        $this->assertNotSame($totalBefore, (int) $fresh->total_amount, 'The totals are recomputed');
+        $this->assertSame('invoiced', $entry->refresh()->status);
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.issued')->count());
+    }
+
+    /**
+     * @return array{credit: ClientInvoiceLine, entry: ClientTimeEntry}
+     */
+    private function attachCreditAndTime(ClientInvoice $invoice): array
+    {
+        // The company holds no overpayment, so `capOverpaymentCreditAtIssue()`
+        // finds nothing available and deletes this line outright rather than
+        // trimming it - a mutation large enough to be unmistakable either way.
+        $credit = $invoice->lines()->create([
+            'workspace_id' => $this->workspace->id,
+            'type' => 'credit',
+            'description' => 'Applied overpayment',
+            'quantity' => 1,
+            'unit_amount' => -2500,
+            'tax_amount' => 0,
+            'total_amount' => -2500,
+            'sort_order' => 1,
+        ]);
+        // Carried on the invoice as well, the way an applied credit really is -
+        // otherwise the stored total never included it, and the recalculation a
+        // successful issue performs would land back on the same number and look
+        // like no recalculation at all.
+        $invoice->forceFill(['total_amount' => 7500, 'balance_amount' => 7500])->save();
+
+        $entry = $this->approvedEntry();
+        $invoice->lines()->where('type', 'adjustment')->first()?->timeEntries()->attach($entry->id, [
+            'workspace_id' => $this->workspace->id,
+        ]);
+
+        return ['credit' => $credit, 'entry' => $entry];
+    }
+
+    private function approvedEntry(): ClientTimeEntry
+    {
+        $project = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'name' => 'Undated Project',
+        ]);
+
+        return ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id,
+            'worked_on' => '2024-01-15',
+            'minutes' => 60,
+            'description' => 'Work',
+            'is_billable' => true,
+            'is_deferred' => false,
+            'status' => 'approved',
+            'currency' => 'USD',
+            'billing_rate_amount' => 20000,
+            'billing_rate_source' => 'agreement',
+        ]);
     }
 
     /** Ad hoc bills a thing rather than a span, and stays exempt. */
@@ -147,7 +249,6 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
         yield 'interim' => ['interim_overage'];
         yield 'terminal' => ['terminal'];
         yield 'null kind' => [null];
-        yield 'unrecognised kind' => ['reconciliation'];
     }
 
     /**
@@ -184,15 +285,212 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
         $this->assertTrue(InvoiceKind::Terminal->requiresCompleteServicePeriod());
         $this->assertFalse(InvoiceKind::AdHoc->requiresCompleteServicePeriod());
 
-        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for(null));
-        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for('cadence_period'));
-        $this->assertSame(ServicePeriodRequirement::Exempt, ServicePeriodRequirement::for('ad_hoc'));
-        $this->assertSame(ServicePeriodRequirement::Undecidable, ServicePeriodRequirement::for('reconciliation'));
+        $unlinked = false;
+        $linked = true;
 
-        // Undecidable requires the period rather than refusing outright: the
-        // invariant is about the span, not about kind hygiene.
-        $this->assertTrue(ServicePeriodRequirement::Undecidable->requiresBothBoundaries());
+        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for(null, $unlinked));
+        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for('cadence_period', $unlinked));
+        $this->assertSame(ServicePeriodRequirement::Exempt, ServicePeriodRequirement::for('ad_hoc', $unlinked));
+        $this->assertSame(ServicePeriodRequirement::UnsupportedKind, ServicePeriodRequirement::for('reconciliation', $unlinked));
+
+        // Ownership overrides the kind exemption, mirroring the resolver: its
+        // `cycleGuardExclusions()` branch is reached only when the row names no
+        // schedule.
+        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for('ad_hoc', $linked));
+        $this->assertSame(ServicePeriodRequirement::Required, ServicePeriodRequirement::for('cadence_period', $linked));
+
+        // An unrecognised kind is refused before ownership is consulted: it may
+        // not be issued at all, so there is nothing for the link to change.
+        $this->assertSame(ServicePeriodRequirement::UnsupportedKind, ServicePeriodRequirement::for('reconciliation', $linked));
+
+        $this->assertTrue(ServicePeriodRequirement::Required->requiresBothBoundaries());
         $this->assertFalse(ServicePeriodRequirement::Exempt->requiresBothBoundaries());
+    }
+
+    /**
+     * An unrecognised kind cannot be issued at all, complete period or not.
+     *
+     * Not a tightening for tidiness. The application gives such a row two
+     * incompatible identities: `invoiceKindValue()` answers `cadence_period`,
+     * so the model and every activity payload call it a cadence invoice, while
+     * `ClientInvoicingService::cycleAlreadySold()` matches
+     * `invoice_kind IS NULL OR invoice_kind = 'cadence_period'` on the raw
+     * column and does not see it. Issued, it is a cadence invoice that is
+     * invisible to the guard stopping a later correction from selling the same
+     * retainer and recurring items a second time - and the service-period
+     * overlap guard does not cover that case, which is why the cycle guard
+     * exists separately.
+     *
+     * The complete period is the point of the fixture: an implementation that
+     * only required the dates would issue this.
+     */
+    #[DataProvider('unrecognisedKinds')]
+    public function test_an_unrecognised_kind_cannot_be_issued_even_with_a_complete_period(string $kind): void
+    {
+        $invoice = $this->draft($kind, '2024-01-01', '2024-01-31');
+        $activitiesBefore = ClientCompanyActivity::query()->count();
+
+        try {
+            app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
+            $this->fail('An invoice of an unrecognised kind must not be issued.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('unrecognised invoice kind', $refusal->getMessage());
+        }
+
+        $this->assertSame('draft', $invoice->refresh()->status);
+        $this->assertNull($invoice->issued_at);
+        $this->assertFalse((bool) $invoice->is_visible_to_client);
+        $this->assertSame($activitiesBefore, ClientCompanyActivity::query()->count());
+        $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'invoice.issued')->count());
+    }
+
+    public static function unrecognisedKinds(): iterable
+    {
+        yield 'a plausible one' => ['reconciliation'];
+        yield 'a versioned one' => ['cadence-v2'];
+        yield 'the empty string' => [''];
+    }
+
+    /**
+     * Ad hoc is exempt only while the row names no schedule.
+     *
+     * `BillingPeriodCollisionResolver` reaches its kind exemption only for an
+     * unlinked row - "a row naming this schedule is this schedule's whatever
+     * kind it carries" - so a schedule-linked ad-hoc invoice with no period is
+     * read there as unbounded, established as the schedule's, and refused.
+     * Issuing one manufactures a live row that halts the schedule's next run,
+     * which is the population the guard exists to keep out.
+     *
+     * The link is set as a bare id rather than against a real schedule row
+     * because `client_invoices.client_billing_schedule_id` carries no foreign
+     * key - an imported or hand-edited row reaches exactly this shape, and the
+     * requirement reads only whether the column is set.
+     */
+    #[DataProvider('incompleteBoundaries')]
+    public function test_a_schedule_linked_ad_hoc_draft_missing_a_boundary_cannot_be_issued(?string $start, ?string $end): void
+    {
+        $invoice = $this->draft('ad_hoc', $start, $end);
+        $invoice->forceFill(['client_billing_schedule_id' => 4242])->save();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('An invoice naming a billing schedule states');
+
+        app(InvoiceLifecycleService::class)->issue($invoice->refresh(), $this->workspace);
+    }
+
+    public static function incompleteBoundaries(): iterable
+    {
+        yield 'no start' => [null, '2024-01-31'];
+        yield 'no end' => ['2024-01-01', null];
+        yield 'neither' => [null, null];
+    }
+
+    /** The control for the pair above: unlinked, it stays exempt. */
+    public function test_an_unlinked_ad_hoc_draft_without_a_period_still_issues(): void
+    {
+        $issued = app(InvoiceLifecycleService::class)
+            ->issue($this->draft('ad_hoc', null, null), $this->workspace);
+
+        $this->assertSame('issued', $issued->status);
+        $this->assertNull($issued->client_billing_schedule_id);
+    }
+
+    /**
+     * Both boundaries present is necessary and not sufficient.
+     *
+     * `possiblyOverlapping()` asks `service_period_start <= $end` and
+     * `service_period_end >= $start`. A row whose start follows its end fails
+     * one of those for *every* period, including the two it sits between - so
+     * it leaves the collision resolver entirely, and the unique index does not
+     * object because the reversed tuple differs from either valid one.
+     * Ordinary invoices can then be generated beside it for work it charged.
+     *
+     * Asked of ad hoc too: a period may be absent, but one that is stated has
+     * to mean something.
+     */
+    #[DataProvider('everySupportedKind')]
+    public function test_a_reversed_service_period_cannot_be_issued(?string $kind): void
+    {
+        $invoice = $this->draft($kind, '2026-02-01', '2026-01-31');
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The service period start cannot follow the service period end');
+
+        app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
+    }
+
+    public static function everySupportedKind(): iterable
+    {
+        yield 'cadence' => ['cadence_period'];
+        yield 'interim' => ['interim_overage'];
+        yield 'terminal' => ['terminal'];
+        yield 'ad hoc' => ['ad_hoc'];
+        yield 'null kind' => [null];
+    }
+
+    /**
+     * Every refusal names a repair this application can actually perform.
+     *
+     * Asserted whole rather than by fragment. `updateDraft()` accepts currency,
+     * totals, due date, notes and lines only - it can set neither service-period
+     * boundary nor the kind - so an earlier "Give it a service period start and
+     * end." told the operator to do something no endpoint offers. A substring
+     * assertion would not have caught that, and would not catch it coming back.
+     */
+    public function test_each_refusal_names_a_repair_that_exists(): void
+    {
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $discardAndRecreate = 'Discard and recreate this draft with a complete service period. '
+            .'If the draft came from imported or repaired data, correct its stored period through the '
+            .'audited administrative repair path before issuing it.';
+
+        $messages = [];
+        foreach ([
+            'undated' => $this->draft('cadence_period', '2024-01-01', null),
+            'reversed' => $this->draft('cadence_period', '2026-02-01', '2026-01-31'),
+            'unsupported' => $this->draft('reconciliation', '2024-01-01', '2024-01-31'),
+        ] as $case => $invoice) {
+            try {
+                $lifecycle->issue($invoice, $this->workspace);
+                $this->fail('The '.$case.' draft must not be issued.');
+            } catch (DomainException $refusal) {
+                $messages[$case] = $refusal->getMessage();
+            }
+        }
+
+        $this->assertSame(
+            'A cadence_period invoice states no service period end, so it cannot be issued. '
+            .'It is a claim about a span of time, and one that states no span cannot be placed against any '
+            .'other: the period guards read both boundaries, and a null answers UNKNOWN rather than false, '
+            .'so the same work can be billed again with nothing able to reject it. '
+            .$discardAndRecreate,
+            $messages['undated'],
+        );
+        $this->assertSame(
+            'The service period start cannot follow the service period end, so this invoice cannot be '
+            .'issued. A reversed span is placed by no period guard - it fails the overlap test for every '
+            .'period, including the ones on either side of it - so ordinary invoices can be generated '
+            .'beside it for the work it already charged. '
+            .$discardAndRecreate,
+            $messages['reversed'],
+        );
+        $this->assertSame(
+            'This invoice carries an unrecognised invoice kind (reconciliation), so it cannot be issued. '
+            .'The model reads an unrecognised kind as a cadence invoice while the raw-column guards do '
+            .'not, so an issued one is invisible to the check that stops a later correction selling the '
+            .'same retainer and recurring items a second time. Discard and recreate this draft with a '
+            .'supported invoice kind, or correct its stored kind through the audited administrative '
+            .'repair path.',
+            $messages['unsupported'],
+        );
+
+        foreach ($messages as $case => $message) {
+            $this->assertStringNotContainsString(
+                'Give it a service period',
+                $message,
+                'The '.$case.' refusal must not name an operation updateDraft() does not offer',
+            );
+        }
     }
 
     private function draft(?string $kind, ?string $start, ?string $end): ClientInvoice

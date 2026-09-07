@@ -22,7 +22,10 @@ enum InvoiceKind: string
      * may not be issued without stating both ends of it.
      *
      * Asked through {@see ServicePeriodRequirement}, which handles the two
-     * values this enum cannot represent - a null kind and an unrecognised one.
+     * values this enum cannot represent - a null kind and an unrecognised one -
+     * and the question kind alone cannot answer: a row naming a billing
+     * schedule is read by the period guards whatever kind it carries, so the
+     * ad-hoc exemption below holds only while the row names none.
      *
      * `terminal` is included, and that is a decision rather than a default.
      * The enum calls it a closing invoice generated at agreement termination,

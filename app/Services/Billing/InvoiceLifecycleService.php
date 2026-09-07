@@ -24,6 +24,19 @@ use RuntimeException;
 
 final class InvoiceLifecycleService
 {
+    /**
+     * How an operator actually repairs a refused draft.
+     *
+     * Said once, and deliberately not "give it a service period":
+     * {@see self::updateDraft()} accepts currency, totals, due date, notes and
+     * lines only. It can set neither service-period boundary nor the kind, so
+     * an instruction to correct one in place names an operation this
+     * application does not have.
+     */
+    private const REPAIR_PATH = 'Discard and recreate this draft with a complete service period. '
+        .'If the draft came from imported or repaired data, correct its stored period through the '
+        .'audited administrative repair path before issuing it.';
+
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
@@ -208,10 +221,48 @@ final class InvoiceLifecycleService
             // but not the row, which is why the same rule is needed on the door
             // every issuance goes through - browser, command, API and MCP all
             // arrive here.
-            $requirement = ServicePeriodRequirement::for($locked->invoice_kind);
+            //
+            // Ownership is part of the question, not only kind. The resolver's
+            // kind exemption is reached only for an *unlinked* row, because a
+            // row naming this schedule is this schedule's whatever kind it
+            // carries - so a schedule-linked ad-hoc invoice with no period is
+            // read there as unbounded, established as the schedule's, and
+            // refused. Issuing one manufactures a live row that halts the
+            // schedule's next run.
+            $requirement = ServicePeriodRequirement::for(
+                $locked->invoice_kind,
+                $locked->client_billing_schedule_id !== null,
+            );
+
+            // Before the period question, and regardless of it. An unrecognised
+            // kind is `cadence_period` to `invoiceKindValue()` and to nothing
+            // that reads the raw column, so an issued one is a cadence invoice
+            // the cycle guard cannot see - and `cycleAlreadySold()` is what
+            // stops a later correction selling the same retainer twice.
+            if ($requirement === ServicePeriodRequirement::UnsupportedKind) {
+                throw new DomainException($this->unsupportedKindRefusal($locked));
+            }
+
             if ($requirement->requiresBothBoundaries()
                 && ($locked->service_period_start === null || $locked->service_period_end === null)) {
-                throw new DomainException($this->undatedPeriodRefusal($locked, $requirement));
+                throw new DomainException($this->undatedPeriodRefusal($locked));
+            }
+
+            // Both boundaries present is necessary and not sufficient. A
+            // reversed interval states a span no period guard can place either:
+            // `possiblyOverlapping()` asks `start <= $end` and `end >= $start`,
+            // and a row whose start follows its end fails one of those for
+            // *every* period, including the two it sits between. It leaves the
+            // resolver entirely, and `billing_schedule_service_period_unique`
+            // does not object because the reversed tuple differs from either
+            // valid one - so ordinary invoices can be generated beside it.
+            //
+            // Asked of an exempt row too. An ad-hoc invoice need not state a
+            // period, but one that does must mean something by it.
+            if ($locked->service_period_start !== null
+                && $locked->service_period_end !== null
+                && $locked->service_period_start->gt($locked->service_period_end)) {
+                throw new DomainException($this->reversedPeriodRefusal());
             }
 
             $issueDate = $locked->issue_date ?? $this->clock->today($locked->workspace);
@@ -273,7 +324,7 @@ final class InvoiceLifecycleService
      * Named rather than a generic "invalid invoice": the operator reading this
      * has to know that the fix is to give the row a period, not to retry.
      */
-    private function undatedPeriodRefusal(ClientInvoice $invoice, ServicePeriodRequirement $requirement): string
+    private function undatedPeriodRefusal(ClientInvoice $invoice): string
     {
         $missing = match (true) {
             $invoice->service_period_start === null && $invoice->service_period_end === null => 'no service period at all',
@@ -281,15 +332,34 @@ final class InvoiceLifecycleService
             default => 'no service period end',
         };
 
-        $kind = $requirement === ServicePeriodRequirement::Undecidable
-            ? 'An invoice of an unrecognised kind ('.(string) $invoice->invoice_kind.')'
-            : 'A '.$invoice->invoiceKindValue().' invoice';
+        $subject = $invoice->client_billing_schedule_id === null
+            ? 'A '.$invoice->invoiceKindValue().' invoice'
+            : 'An invoice naming a billing schedule';
 
-        return $kind.' states '.$missing.', so it cannot be issued. '
-            .'An invoice of this kind is a claim about a span of time, and one that states no span cannot be '
-            .'placed against any other: the period guards read both boundaries, and a null answers UNKNOWN '
-            .'rather than false, so the same work can be billed again with nothing able to reject it. '
-            .'Give it a service period start and end.';
+        return $subject.' states '.$missing.', so it cannot be issued. '
+            .'It is a claim about a span of time, and one that states no span cannot be placed against any '
+            .'other: the period guards read both boundaries, and a null answers UNKNOWN rather than false, '
+            .'so the same work can be billed again with nothing able to reject it. '
+            .self::REPAIR_PATH;
+    }
+
+    private function unsupportedKindRefusal(ClientInvoice $invoice): string
+    {
+        return 'This invoice carries an unrecognised invoice kind ('.(string) $invoice->invoice_kind.'), '
+            .'so it cannot be issued. The model reads an unrecognised kind as a cadence invoice while the '
+            .'raw-column guards do not, so an issued one is invisible to the check that stops a later '
+            .'correction selling the same retainer and recurring items a second time. '
+            .'Discard and recreate this draft with a supported invoice kind, or correct its stored kind '
+            .'through the audited administrative repair path.';
+    }
+
+    private function reversedPeriodRefusal(): string
+    {
+        return 'The service period start cannot follow the service period end, so this invoice cannot be '
+            .'issued. A reversed span is placed by no period guard - it fails the overlap test for every '
+            .'period, including the ones on either side of it - so ordinary invoices can be generated '
+            .'beside it for the work it already charged. '
+            .self::REPAIR_PATH;
     }
 
     /**
