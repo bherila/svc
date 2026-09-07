@@ -541,6 +541,11 @@ final class InvoiceLifecycleService
             // reason the status is: `svc:billing:payment`, an import and a
             // hand-repair never cross that door. Omitted still means today on
             // this workspace's calendar, which is what every caller relied on.
+            //
+            // Whether the caller *said* a date is kept, because it is a
+            // different question from what the date is, and only the
+            // idempotency check below needs to tell them apart.
+            $claimsDate = ($data['received_on'] ?? null) !== null;
             $receivedOn = $this->receivedOn($data['received_on'] ?? null, $locked->workspace);
 
             if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
@@ -554,11 +559,34 @@ final class InvoiceLifecycleService
                     ->where('idempotency_key', $key)
                     ->first();
                 if ($existing !== null) {
+                    // The date is one of the fields that define this payment,
+                    // so a key reused with a different one is a different
+                    // payment and is refused like any other mismatch. The
+                    // sequence that makes this matter is the one this field
+                    // creates: a response is lost, the operator notices the
+                    // date was wrong, corrects it and retries with the same
+                    // key - and without this they are told it succeeded while
+                    // the original reconciliation date stands.
+                    //
+                    // Only when the caller named a date, though. `received_on`
+                    // is optional and defaults to today on the workspace's
+                    // calendar, so a caller who omits it is making no claim
+                    // about the date at all - the value in the row is this
+                    // service's own earlier choice. Comparing the fallback
+                    // would make the guard fire on the clock rather than on
+                    // anything the caller varied: an identical retry that
+                    // crosses the workspace's midnight, or a replay run the
+                    // next day, computes a later today and would be refused as
+                    // "a different payment" when nothing about the request
+                    // differs. Compared against the parsed value rather than
+                    // the raw field, so a date that only differs in its
+                    // spelling is still the same date.
                     if ($existing->client_invoice_id !== $locked->id
                         || $existing->amount !== $amount
                         || $existing->currency !== $currency
                         || $existing->method !== ($data['method'] ?? null)
-                        || $existing->status !== $status->value) {
+                        || $existing->status !== $status->value
+                        || ($claimsDate && $existing->received_on?->toDateString() !== $receivedOn)) {
                         throw new DomainException('The idempotency key is already bound to a different payment.');
                     }
 

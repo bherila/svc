@@ -186,6 +186,79 @@ final class PaymentReceivedDateTest extends TestCase
     }
 
     /**
+     * The date is one of the fields an idempotency key is bound to.
+     *
+     * The sequence this field creates: a response is lost, the operator
+     * notices the date was wrong, corrects it and retries with the same key.
+     * Without the date in the comparison they are told the payment succeeded
+     * and the original reconciliation date stands - a wrong month, reported as
+     * a success, with nothing anywhere disagreeing.
+     */
+    public function test_a_key_reused_with_a_different_date_is_refused(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-08-29 12:00:00 UTC'));
+
+        try {
+            [, $workspace, $invoice] = $this->issuedInvoice();
+            $service = app(InvoiceLifecycleService::class);
+            $recorded = [
+                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire',
+                'received_on' => '2026-08-25', 'idempotency_key' => 'synthetic-date-retry',
+            ];
+            $first = $service->applyPayment($invoice, $recorded, $workspace);
+
+            // The identical retry is still idempotent, and still the same row.
+            $retried = $service->applyPayment($invoice, $recorded, $workspace);
+            $this->assertSame($first->id, $retried->id);
+            $this->assertSame('2026-08-25', $retried->received_on?->toDateString());
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('The idempotency key is already bound to a different payment.');
+
+            $service->applyPayment($invoice, [...$recorded, 'received_on' => '2026-08-18'], $workspace);
+        } finally {
+            Date::setTestNow();
+        }
+    }
+
+    /**
+     * A caller who never named a date cannot be refused for the clock moving.
+     *
+     * `received_on` is optional and defaults to today on the workspace's
+     * calendar, so an omitted field is not a claim about the date - the value
+     * in the row is this service's own earlier choice. Comparing the fallback
+     * would make the guard fire on the clock rather than on anything the
+     * caller varied: this retry crosses the workspace's midnight and nothing
+     * about the request differs.
+     */
+    public function test_an_undated_retry_across_midnight_is_still_the_same_payment(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-08-29 23:59:00 UTC'));
+
+        try {
+            [, $workspace, $invoice] = $this->issuedInvoice();
+            $service = app(InvoiceLifecycleService::class);
+            $undated = [
+                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire',
+                'idempotency_key' => 'synthetic-undated-retry',
+            ];
+            $first = $service->applyPayment($invoice, $undated, $workspace);
+            $this->assertSame('2026-08-29', $first->received_on?->toDateString());
+
+            Date::setTestNow(CarbonImmutable::parse('2026-08-30 00:01:00 UTC'));
+            $retried = $service->applyPayment($invoice, $undated, $workspace);
+
+            $this->assertSame($first->id, $retried->id);
+            // Unchanged, too: an idempotent retry returns the recorded payment
+            // rather than restamping it with the day the retry happened.
+            $this->assertSame('2026-08-29', $retried->received_on?->toDateString());
+            $this->assertDatabaseCount('client_invoice_payments', 1);
+        } finally {
+            Date::setTestNow();
+        }
+    }
+
+    /**
      * The floor is two calendar years, including on the day that has no
      * two-years-ago.
      *
