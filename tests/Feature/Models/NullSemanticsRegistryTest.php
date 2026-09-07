@@ -209,7 +209,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_cadence_draft_with_no_period_end_fails_closed',
-        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+        'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\InvoiceLineComposerTest::test_a_termination_line_on_an_undated_invoice_is_refused_under_any_clock',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_end_proves_no_source_minutes',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_period_start_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest::test_an_invoice_with_no_period_start_proves_no_source_minutes',
@@ -542,9 +542,15 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => CapacityAndScopeGuardsTest::class,
                     'method' => 'test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
                 ],
+                // The composer read it through `Carbon::parse()`, which answers
+                // a null with *now*, so a termination charge was dated to the
+                // run rather than to the period - a different answer on every
+                // run, and the reason no test caught it. Refused since #135
+                // item 2: the period end is the only statement of the date a
+                // termination charge belongs on.
                 [
                     'covered_by' => InvoiceLineComposerTest::class,
-                    'method' => 'test_a_termination_line_on_an_undated_invoice_dates_nothing_and_subcontractors_today',
+                    'method' => 'test_a_termination_line_on_an_undated_invoice_is_refused_under_any_clock',
                 ],
                 [
                     'covered_by' => ReplaySourceScopeNullBranchesTest::class,
