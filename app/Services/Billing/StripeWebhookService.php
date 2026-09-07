@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
@@ -125,13 +126,18 @@ final class StripeWebhookService
     {
         $payment = $this->findPayment($object);
         $providerCreatedAt = max(0, (int) ($event->created ?? 0));
+        // Stripe's vocabulary on the left, this application's on the right.
+        // The mapping is the one place the two meet, so the right-hand side
+        // names enum cases rather than strings that happen to agree today.
         $status = match ((string) $event->type) {
-            'payment_intent.succeeded' => 'succeeded',
-            'payment_intent.processing' => 'pending',
-            'payment_intent.payment_failed' => 'failed',
-            'payment_intent.canceled' => 'canceled',
-            'charge.dispute.created' => 'disputed',
-            'charge.dispute.closed' => ($object['status'] ?? null) === 'won' ? 'succeeded' : 'disputed',
+            'payment_intent.succeeded' => InvoicePaymentStatus::Succeeded->value,
+            'payment_intent.processing' => InvoicePaymentStatus::Pending->value,
+            'payment_intent.payment_failed' => InvoicePaymentStatus::Failed->value,
+            'payment_intent.canceled' => InvoicePaymentStatus::Canceled->value,
+            'charge.dispute.created' => InvoicePaymentStatus::Disputed->value,
+            'charge.dispute.closed' => ($object['status'] ?? null) === 'won'
+                ? InvoicePaymentStatus::Succeeded->value
+                : InvoicePaymentStatus::Disputed->value,
             default => null,
         };
 
@@ -155,7 +161,7 @@ final class StripeWebhookService
 
                 return;
             }
-            if ($status === 'succeeded') {
+            if ($status === InvoicePaymentStatus::Succeeded->value) {
                 $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
                 $currency = strtoupper((string) ($object['currency'] ?? ''));
                 if ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
@@ -188,8 +194,8 @@ final class StripeWebhookService
         // Stripe event timestamps have one-second precision. Within a tied
         // second, keep a failure rather than returning it to processing.
         return $lastCreatedAt === $providerCreatedAt
-            && $payment->status === 'failed'
-            && $nextStatus === 'pending';
+            && $payment->status === InvoicePaymentStatus::Failed->value
+            && $nextStatus === InvoicePaymentStatus::Pending->value;
     }
 
     private function recordPaymentEvent(
@@ -209,12 +215,22 @@ final class StripeWebhookService
 
     private function isStalePaymentTransition(string $current, string $next): bool
     {
-        return match ($current) {
-            'succeeded' => in_array($next, ['pending', 'failed'], true),
-            'disputed' => in_array($next, ['pending', 'failed'], true),
-            'refunded' => $next !== 'refunded',
-            'canceled' => $next !== 'canceled',
-            default => false,
+        $backwards = [InvoicePaymentStatus::Pending->value, InvoicePaymentStatus::Failed->value];
+
+        // Exhaustive over the vocabulary, and the unreadable case is answered
+        // deliberately rather than inherited from a `default`. An unknown
+        // *current* status is not evidence that a recognised replacement is
+        // stale - it is the one transition worth applying, because writing a
+        // status this application can read is exactly the repair
+        // `InvoiceLifecycleService::setPaymentStatus()` supports. Calling it
+        // stale here would strand the row unreadable with no route back, and
+        // every balance on that invoice refuses while it stays that way.
+        return match (InvoicePaymentStatus::tryFrom($current)) {
+            InvoicePaymentStatus::Succeeded,
+            InvoicePaymentStatus::Disputed => in_array($next, $backwards, true),
+            InvoicePaymentStatus::Refunded => $next !== InvoicePaymentStatus::Refunded->value,
+            InvoicePaymentStatus::Canceled => $next !== InvoicePaymentStatus::Canceled->value,
+            InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed, null => false,
         };
     }
 
@@ -286,7 +302,7 @@ final class StripeWebhookService
             'currency' => $currency,
             'received_on' => $this->clock->today($workspace)->toDateString(),
             'method' => 'stripe',
-            'status' => 'succeeded',
+            'status' => InvoicePaymentStatus::Succeeded->value,
             'provider' => 'stripe',
             'provider_payment_identifier' => (string) ($object['id'] ?? ''),
         ]);

@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -61,11 +62,28 @@ final class StripePaymentIntentService
             ];
         }
 
+        // A payment nobody can classify may be exactly the in-flight one this
+        // reservation exists to account for. The sum below is a positive
+        // filter, so an unreadable row reserves nothing, `$chargeAmount` comes
+        // back as the whole balance, and a second full-balance intent is minted
+        // beside a charge that may already be moving - the double charge this
+        // reservation was added to prevent, reached by the one route it does
+        // not cover.
+        $unreadablePayment = $invoice->payments()->ofUnreadableStatus()->first();
+        if ($unreadablePayment !== null) {
+            throw new DomainException(
+                'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
+                .(string) $unreadablePayment->status.'", so whether it already reserves this balance '
+                .'cannot be established and a new payment intent must not be created. Classify or correct '
+                .'that payment status first.'
+            );
+        }
+
         // Pending intents reserve balance: without this, two concurrent requests with
         // distinct client-supplied idempotency keys each mint a full-balance intent
         // and the customer is charged twice.
         $reservedPending = (int) $invoice->payments()
-            ->where('status', 'pending')
+            ->where('status', InvoicePaymentStatus::Pending->value)
             ->get(['amount', 'refunded_amount'])
             ->sum(fn (ClientInvoicePayment $payment): int => max(0, $payment->amount - $payment->refunded_amount));
         $chargeAmount = $invoice->balance_amount - $reservedPending;
@@ -105,7 +123,7 @@ final class StripePaymentIntentService
             'currency' => $invoice->currency,
             'received_on' => $this->clock->today($invoice->workspace)->toDateString(),
             'method' => 'stripe',
-            'status' => 'pending',
+            'status' => InvoicePaymentStatus::Pending->value,
             'provider' => 'stripe',
             'provider_payment_identifier' => $intentId,
             'idempotency_key' => $idempotencyKey,

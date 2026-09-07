@@ -8,7 +8,9 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Services\Billing\Balances\OverpaymentLedger;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 
@@ -62,6 +64,24 @@ class OverpaymentCreditService
         if ($hasForeignPayments) {
             throw new RuntimeException('An invoice in the credit ledger contains a payment owned by another workspace.');
         }
+        // Credit is derived by a positive filter over settled payments, so a
+        // row whose status this application cannot read contributes nothing and
+        // the overpayment it may represent silently disappears - the client is
+        // shown less credit than they paid for, and the difference is never
+        // reported anywhere. A `DomainException` rather than the integrity
+        // failure above, because this one is operator-correctable: classify the
+        // payment and the ledger builds.
+        $unreadablePayment = ClientInvoicePayment::query()
+            ->whereIn('client_invoice_id', $invoices->modelKeys())
+            ->ofUnreadableStatus()
+            ->first();
+        if ($unreadablePayment !== null) {
+            throw new DomainException(
+                'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
+                .(string) $unreadablePayment->status.'", so how much this client has overpaid cannot be '
+                .'established and no credit can be derived. Classify or correct that payment status first.'
+            );
+        }
         // The engine reasons in whole currency units; this schema stores minor
         // units. Convert at the boundary, never inside the arithmetic.
 
@@ -76,7 +96,7 @@ class OverpaymentCreditService
             // refunded payment is not collected cash and must not become credit
             // the client can spend.
             $settled = $invoice->payments
-                ->where('status', 'succeeded')
+                ->where('status', InvoicePaymentStatus::Succeeded->value)
                 ->sum(fn ($payment): int => (int) $payment->amount - (int) $payment->refunded_amount);
             $paymentsTotal = ((int) $settled) / 100;
             $invoiceTotal = ((int) $invoice->total_amount) / 100;

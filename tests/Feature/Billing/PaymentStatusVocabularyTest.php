@@ -8,6 +8,8 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\OverpaymentCreditService;
+use App\Services\Billing\StripePaymentIntentService;
 use App\Support\Billing\InvoicePaymentStatus;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -256,6 +258,139 @@ final class PaymentStatusVocabularyTest extends TestCase
         $this->assertSame('settled', $payment->refresh()->status, 'The reclassification rolls back');
         $this->assertSame('reconciling', $other->refresh()->status);
         $this->assertSame('paid', $invoice->refresh()->status);
+    }
+
+    /**
+     * Voiding is refused while a payment cannot be read.
+     *
+     * `void()` asks "is money in flight" with `where('status', 'pending')`, a
+     * positive filter, so an unreadable row is not seen as pending and the
+     * invoice voids out from under whatever that payment turns out to be. The
+     * guard exists precisely to stop that, and an unclassifiable row is the one
+     * case where it cannot say the answer is no.
+     */
+    public function test_an_unreadable_payment_stops_an_invoice_being_voided(): void
+    {
+        [$invoice, $payment] = $this->paidBySettledPayment();
+        $invoice->forceFill(['status' => 'issued', 'paid_amount' => 0, 'balance_amount' => 10000])->save();
+
+        try {
+            app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Cleanup');
+            $this->fail('An invoice carrying an unreadable payment must not be voided.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('unrecognised status', $refusal->getMessage());
+            $this->assertStringContainsString('must not be voided', $refusal->getMessage());
+        }
+
+        $this->assertSame('issued', $invoice->refresh()->status);
+        $this->assertNull($invoice->voided_at);
+
+        // Control: classify it and the void the operator wanted goes through,
+        // so the refusal names a repair that actually releases the invoice.
+        app(InvoiceLifecycleService::class)
+            ->setPaymentStatus($payment, 'canceled', $this->workspace);
+        app(InvoiceLifecycleService::class)->void($invoice->refresh(), $this->workspace, 'Cleanup');
+        $this->assertSame('void', $invoice->refresh()->status);
+    }
+
+    /**
+     * Credit is not derived over a payment nobody can read.
+     *
+     * The overpaid figure is a positive filter over settled payments, so an
+     * unreadable row contributes nothing and the overpayment it may represent
+     * disappears - the client is shown less credit than they paid for, and
+     * nothing reports the difference. This is the same defect as the balance
+     * one, on the number that decides what the *next* invoice charges.
+     */
+    public function test_an_unreadable_payment_stops_credit_being_derived(): void
+    {
+        [$invoice, $payment] = $this->paidBySettledPayment();
+
+        try {
+            app(OverpaymentCreditService::class)
+                ->availableCreditForCompany($this->company, 'USD');
+            $this->fail('Credit must not be derived over an unreadable payment.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('unrecognised status', $refusal->getMessage());
+            $this->assertStringContainsString('overpaid', $refusal->getMessage());
+        }
+
+        app(InvoiceLifecycleService::class)
+            ->setPaymentStatus($payment, 'succeeded', $this->workspace);
+        $this->assertSame(
+            0.0,
+            app(OverpaymentCreditService::class)->availableCreditForCompany($this->company, 'USD'),
+            'Classified, the ledger builds again',
+        );
+        $this->assertSame('paid', $invoice->refresh()->status);
+    }
+
+    /**
+     * A new Stripe intent is not minted beside a payment nobody can read.
+     *
+     * Pending payments reserve the balance so two tabs cannot each charge it in
+     * full. That sum is a positive filter too, so an unreadable row reserves
+     * nothing, the charge amount comes back as the whole balance, and the
+     * double charge the reservation was added to prevent is reached by the one
+     * route it does not cover. Refused before Stripe is called at all.
+     */
+    public function test_an_unreadable_payment_stops_a_new_payment_intent(): void
+    {
+        [$invoice] = $this->paidBySettledPayment();
+        $invoice->forceFill(['status' => 'issued', 'paid_amount' => 0, 'balance_amount' => 10000])->save();
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('must not be created');
+        app(StripePaymentIntentService::class)
+            ->create($invoice->refresh(), $this->workspace, null, 'a-key');
+    }
+
+    /**
+     * The vocabulary is not written down anywhere else.
+     *
+     * The same guard {@see InvoiceStatusVocabularyTest} keeps on invoice
+     * statuses, for the same reason: this list was written in four places and
+     * the four disagreed about who enforced it, which is how an unvalidated
+     * `--status` reached an unconstrained column. A hand-written list fails
+     * silently here, by dropping a payment out of a money decision rather than
+     * by erroring.
+     *
+     * @var list<string>
+     */
+    private const GUARDED = [
+        'app/Services/Billing/InvoiceLifecycleService.php',
+        'app/Services/Billing/OverpaymentCreditService.php',
+        'app/Services/Billing/StripePaymentIntentService.php',
+        'app/Services/Billing/StripeWebhookService.php',
+        'app/Services/Finance/PaymentReconciliationService.php',
+        'app/Http/Controllers/Api/V1/InvoicePaymentController.php',
+        'app/Http/Requests/Billing/StorePaymentRequest.php',
+    ];
+
+    public function test_no_service_enumerates_payment_statuses_by_hand(): void
+    {
+        $offenders = [];
+
+        foreach (self::GUARDED as $relative) {
+            $contents = file_get_contents(base_path($relative));
+            if ($contents === false) {
+                $this->fail("Could not read {$relative}");
+            }
+
+            foreach (explode("\n", $contents) as $number => $line) {
+                if (preg_match_all("/'(pending|succeeded|failed|refunded|disputed|canceled)'/", $line, $matches) >= 1
+                    && count($matches[1]) >= 2) {
+                    $offenders[] = sprintf('%s:%d  %s', $relative, $number + 1, trim($line));
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders, sprintf(
+            "These lines enumerate payment statuses by hand:\n\n%s\n\n"
+            .'Use InvoicePaymentStatus - its cases, ::all(), ::contributesToPaidAmount(), or the '
+            .'ofUnreadableStatus() scope for the negative question.',
+            implode("\n", $offenders),
+        ));
     }
 
     /** The vocabulary itself, so a seventh value is a deliberate edit. */
