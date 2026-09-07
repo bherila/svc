@@ -143,22 +143,52 @@ rolls back and neither row is changed.
 
 ## Payment Table Display
 
-The payments table on the invoice detail page is **read only**. Each row shows
-the received date, status, method, reference and amount.
+The payments table on the invoice detail page shows the received date, status,
+method, reference and amount. The only write it offers is **Correct date**,
+described below; a row dated before the invoice's `issue_date` is marked, and
+the table says once, underneath, what the marker means.
+
+## Correcting a payment's date
+
+`POST /workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on`,
+requiring `manage` on the workspace, and reaching
+`InvoiceLifecycleService::setPaymentReceivedOn()`.
+
+This is **not** a payment-edit path and does not open one. The request names one
+field and the service writes one column: amount, currency, method, status and
+refunded amount are unreachable through it, and what a payment is worth is still
+corrected by transitioning its status or its refunded amount. What it does add
+is a remedy for a mistyped day, which is not a money correction — it moves no
+amount and cannot move an invoice's balance — and whose only previous remedy was
+to cancel the payment and record it again, inventing a cancellation that never
+happened.
+
+The same bounds apply as on the way in, measured against the *invoice's*
+workspace. The operation follows `setPaymentStatus()` and `setRefundedAmount()`:
+it locks the payment row and then the invoice through it, in the order
+`LockResource` declares, and records an `invoice.payment_date_corrected`
+activity carrying the date it replaced. It deliberately does not recompute the
+invoice — `received_on` is not an input to `refreshStatus()`, and that
+recomputation refuses an invoice carrying any payment of an unreadable status,
+so calling it would make correcting a date fail because of an unrelated row.
 
 ## Payment Workflow
 
-Recording a payment is the one write the screen offers, through **Record
+Recording a payment is the main write the screen offers, through **Record
 payment** (`POST /workspaces/{workspace}/invoices/{clientInvoice}/payments`,
 which requires `manage` on the workspace). Amount, currency and method are
 required; status defaults to `succeeded`. Overpayment is refused at the service
 boundary and surfaced as above. An `Idempotency-Key` header, or an
 `idempotency_key` field, makes a retry safe.
 
+Recording a payment is a five-field form: amount, method, reference, the date
+the money arrived, and the invoice's own currency, which is not asked for.
+
 There is no edit or delete. A payment is corrected by transitioning its status
 or its refunded amount through `InvoiceLifecycleService`, which recomputes the
 invoice and records the corresponding activity — history is preserved rather
-than rewritten. The console equivalent of recording one is:
+than rewritten. The one exception is its date, which is a bookkeeping
+correction rather than a money one and has its own narrow path above. The console equivalent of recording one is:
 
 ```
 php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \

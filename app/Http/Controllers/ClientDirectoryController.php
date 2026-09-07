@@ -316,6 +316,14 @@ class ClientDirectoryController extends Controller
                 'method' => $payment->method,
                 'reference' => $payment->reference,
                 'received_on' => $payment->received_on?->toDateString(),
+                // A finished URL, and null for a viewer who cannot manage the
+                // workspace - the browser assembles nothing and interprets no
+                // boolean. It corrects the date and only the date; what a
+                // payment is worth is still corrected through its status or its
+                // refunded amount.
+                'correct_date_href' => $manages
+                    ? $base.'/payments/'.$payment->public_id.'/received-on'
+                    : null,
                 'amount' => (int) $payment->amount,
                 'refunded_amount' => (int) $payment->refunded_amount,
                 'currency' => $payment->currency,

@@ -310,6 +310,13 @@ final class LockOrderConformanceTest extends TestCase
         ], $this->workspace);
         $lifecycle->setPaymentStatus($payment, 'succeeded', $this->workspace);
         $lifecycle->setRefundedAmount($payment->refresh(), 100, $this->workspace);
+        // A date correction takes the same pair for the same reason: it starts
+        // from the payment row and reaches the invoice through it.
+        $lifecycle->setPaymentReceivedOn(
+            $payment->refresh(),
+            CarbonImmutable::now($this->workspace->timezone)->subDay()->toDateString(),
+            $this->workspace,
+        );
         app(PaymentReconciliationService::class)->upsert(
             $this->workspace,
             $payment->refresh(),

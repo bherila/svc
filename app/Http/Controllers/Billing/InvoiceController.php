@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Billing\CorrectPaymentDateRequest;
 use App\Http\Requests\Billing\CreateStripePaymentIntentRequest;
 use App\Http\Requests\Billing\SendInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\StorePaymentRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
@@ -171,6 +173,46 @@ class InvoiceController extends Controller
         return $request->expectsJson()
             ? response()->json(['data' => $payment->load('invoice')], 201)
             : redirect()->back()->with('status', 'Payment recorded.');
+    }
+
+    /**
+     * Correct the day an already-recorded payment arrived on.
+     *
+     * The narrowest write on this controller: one column, on one payment, of
+     * one invoice, in one workspace. Three of those four are checked here
+     * rather than left to the binding - the payment binds by a public id unique
+     * across every workspace, so a member of one client's screens could
+     * otherwise correct another invoice's payment by pasting its id, and the
+     * redirect would land them back on a screen that never showed it.
+     *
+     * Everything else about the payment is out of reach by construction:
+     * {@see CorrectPaymentDateRequest} validates one field, and
+     * {@see InvoiceLifecycleService::setPaymentReceivedOn()} writes one column.
+     */
+    public function correctPaymentDate(
+        CorrectPaymentDateRequest $request,
+        Workspace $workspace,
+        ClientInvoice $clientInvoice,
+        ClientInvoicePayment $clientInvoicePayment,
+        InvoiceLifecycleService $service,
+    ): JsonResponse|RedirectResponse {
+        Gate::authorize('manage', $workspace);
+        $service->assertTenant($workspace, $clientInvoice);
+        abort_unless(
+            (int) $clientInvoicePayment->workspace_id === (int) $workspace->id
+                && (int) $clientInvoicePayment->client_invoice_id === (int) $clientInvoice->id,
+            404,
+        );
+
+        $payment = $service->setPaymentReceivedOn(
+            $clientInvoicePayment,
+            (string) $request->validated('received_on'),
+            $workspace,
+        );
+
+        return $request->expectsJson()
+            ? response()->json(['data' => $payment->load('invoice')])
+            : redirect()->back()->with('status', 'Payment date corrected.');
     }
 
     public function stripePaymentIntent(CreateStripePaymentIntentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, StripePaymentIntentService $service): JsonResponse

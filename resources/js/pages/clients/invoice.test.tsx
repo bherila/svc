@@ -125,6 +125,8 @@ describe('recording a payment against an invoice', () => {
                             method: 'check',
                             reference: null,
                             received_on: '2026-07-01',
+                            correct_date_href:
+                                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
                             amount: 4000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -135,6 +137,8 @@ describe('recording a payment against an invoice', () => {
                             method: 'wire',
                             reference: null,
                             received_on: '2026-08-20',
+                            correct_date_href:
+                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
                             amount: 1000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -154,5 +158,67 @@ describe('recording a payment against an invoice', () => {
         expect(screen.getByRole('status')).toHaveTextContent(
             'One payment above is dated before this invoice was issued on Aug 15, 2026.',
         );
+    });
+});
+
+/**
+ * Correcting the date, and only the date.
+ *
+ * There is no payment-edit path in this application by design - a payment is
+ * corrected through its status or its refunded amount - and this does not add
+ * one. A mistyped day moves no money, and the remedy before this was to cancel
+ * the payment and record it again, which invents a cancellation that never
+ * happened and leaves it in the client's history.
+ */
+describe('correcting a recorded payment date', () => {
+    function payment(overrides: Record<string, unknown> = {}) {
+        return {
+            id: 'payment-1',
+            status: 'succeeded',
+            method: 'check',
+            reference: null,
+            received_on: '2026-08-20',
+            correct_date_href:
+                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+            amount: 4000,
+            refunded_amount: 0,
+            currency: 'USD',
+            ...overrides,
+        };
+    }
+
+    it('sends the corrected date to the URL the server supplied', () => {
+        render(<ClientInvoiceDetail {...props({ payments: [payment()] })} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Correct date' }));
+
+        const field = screen.getByLabelText(
+            'Corrected date for the $40.00 payment',
+        );
+        // Seeded with the date on the row, so a correction starts from what is
+        // recorded rather than from an empty field.
+        expect(field).toHaveValue('2026-08-20');
+
+        fireEvent.change(field, { target: { value: '2026-08-18' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+            { received_on: '2026-08-18' },
+            expect.anything(),
+        );
+    });
+
+    /** A capability the viewer does not have arrives as null, and is not drawn. */
+    it('offers nothing to a viewer the server sent no URL for', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({ payments: [payment({ correct_date_href: null })] })}
+            />,
+        );
+
+        expect(
+            screen.queryByRole('button', { name: 'Correct date' }),
+        ).toBeNull();
     });
 });

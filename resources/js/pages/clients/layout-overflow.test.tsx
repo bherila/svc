@@ -293,6 +293,8 @@ describe('client screens under data that does not fit', () => {
                         method: LONG_INVOICE_NUMBER,
                         reference: LONG_REPOSITORY,
                         received_on: '2026-07-01',
+                        correct_date_href:
+                            '/workspaces/workspace-1/invoices/invoice-1/payments/payment-1/received-on',
                         amount: 125000,
                         refunded_amount: 0,
                         currency: 'USD',

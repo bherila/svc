@@ -69,6 +69,12 @@ type InvoicePayment = {
     method: string | null;
     reference: string | null;
     received_on: string | null;
+    /**
+     * Where a corrected date is sent, or null for a viewer who may not correct
+     * one. A finished URL rather than an id and a boolean, like every other
+     * capability on this page.
+     */
+    correct_date_href: string | null;
     amount: number;
     refunded_amount: number;
     currency: string | null;
@@ -149,6 +155,10 @@ export default function ClientInvoiceDetail({
     // Set when the dialog opens rather than at mount, so a screen left open
     // overnight offers today rather than the day it was loaded.
     const [receivedOn, setReceivedOn] = useState('');
+    // Which payment's date is being corrected, and to what. One at a time,
+    // because a correction is a repair rather than an editing mode.
+    const [correcting, setCorrecting] = useState<string | null>(null);
+    const [correctedDate, setCorrectedDate] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
 
@@ -167,6 +177,7 @@ export default function ClientInvoiceDetail({
                 setNotice(null);
                 setPaying(false);
                 setVoiding(false);
+                setCorrecting(null);
             },
             onError: (errors) =>
                 setNotice(
@@ -575,16 +586,93 @@ export default function ClientInvoiceDetail({
                                         {payments.map((payment) => (
                                             <TableRow key={payment.id}>
                                                 <TableCell>
-                                                    {formatDay(
-                                                        payment.received_on,
-                                                    )}
-                                                    {predatesInvoiceIssue(
-                                                        payment.received_on,
-                                                        invoice.issue_date,
-                                                    ) && (
-                                                        <span className="ml-2 text-xs text-amber-700 dark:text-amber-500">
-                                                            predates issue
+                                                    {correcting ===
+                                                    payment.id ? (
+                                                        <span className="flex flex-wrap items-center gap-2">
+                                                            <Input
+                                                                aria-label={`Corrected date for the ${formatMoney(payment.amount, payment.currency)} payment`}
+                                                                type="date"
+                                                                className="w-40"
+                                                                max={todayIn(
+                                                                    timezone,
+                                                                )}
+                                                                value={
+                                                                    correctedDate
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setCorrectedDate(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <Button
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                onClick={() =>
+                                                                    post(
+                                                                        payment.correct_date_href ??
+                                                                            '',
+                                                                        {
+                                                                            received_on:
+                                                                                correctedDate,
+                                                                        },
+                                                                    )
+                                                                }
+                                                            >
+                                                                Save
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() =>
+                                                                    setCorrecting(
+                                                                        null,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Cancel
+                                                            </Button>
                                                         </span>
+                                                    ) : (
+                                                        <>
+                                                            {formatDay(
+                                                                payment.received_on,
+                                                            )}
+                                                            {predatesInvoiceIssue(
+                                                                payment.received_on,
+                                                                invoice.issue_date,
+                                                            ) && (
+                                                                <span className="ml-2 text-xs text-amber-700 dark:text-amber-500">
+                                                                    predates
+                                                                    issue
+                                                                </span>
+                                                            )}
+                                                            {payment.correct_date_href !==
+                                                                null && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="ml-2"
+                                                                    onClick={() => {
+                                                                        setCorrectedDate(
+                                                                            payment.received_on ??
+                                                                                todayIn(
+                                                                                    timezone,
+                                                                                ),
+                                                                        );
+                                                                        setCorrecting(
+                                                                            payment.id,
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Correct date
+                                                                </Button>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
