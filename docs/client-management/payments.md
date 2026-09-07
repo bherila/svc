@@ -71,6 +71,25 @@ The system enforces strict payment validation to maintain data integrity:
    - `received_on` is optional; omitted, it defaults to today in the
      workspace's timezone
 
+3. **Payment Date Rules**:
+   - `received_on` is a calendar date written `YYYY-MM-DD` — the same format
+     the finance read endpoint filters this column by. `date` used to be the
+     write-side rule, so `01/02/2026`, `2026-8-15` and a whole ISO 8601 instant
+     were accepted and stored as whatever day the parser chose
+   - **Not in the future**, and not more than
+     `PaymentDateBounds::FLOOR_YEARS_BEFORE_TODAY` (two) years back. Both ends
+     are measured against `WorkspaceClock::today($invoice->workspace)`, so a
+     workspace west of UTC is not refused its own evening and a year typed one
+     digit wrong does not reconcile into 2015
+   - **A payment may predate the invoice's `issue_date`.** A deposit or an
+     advance retainer applied to an invoice issued afterwards is a real
+     arrangement, so this is not refused. The recording form warns as the date
+     is entered, and the payments table marks the row; the write succeeds
+   - The bounds live in `InvoiceLifecycleService::applyPayment()` as a
+     `DomainException`, because `svc:billing:payment`, an import and a
+     hand-repair never cross the HTTP door. `StorePaymentRequest` keeps the
+     cheap format rule so the browser gets a field error
+
 ## Invoice Status Transitions
 
 **Draft → Issued is never a payment transition.** It happens only through
@@ -147,4 +166,6 @@ php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \
 ```
 
 `--status` accepts only the six values above; anything else is refused rather
-than stored.
+than stored, and `--received-on` is bounded by the same rule the screens are:
+`YYYY-MM-DD`, not in the future, not more than two years back, on the
+workspace's calendar.

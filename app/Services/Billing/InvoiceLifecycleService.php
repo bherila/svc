@@ -15,6 +15,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\PaymentDateBounds;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -535,6 +536,12 @@ final class InvoiceLifecycleService
             // service and svc:billing:payment did not.
             $status = $this->paymentStatus($data['status'] ?? null);
 
+            // Bounded here rather than only at the HTTP door, for the same
+            // reason the status is: `svc:billing:payment`, an import and a
+            // hand-repair never cross that door. Omitted still means today on
+            // this workspace's calendar, which is what every caller relied on.
+            $receivedOn = $this->receivedOn($data['received_on'] ?? null, $locked->workspace);
+
             if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
                 throw new DomainException('Payment cannot exceed the invoice balance.');
             }
@@ -564,7 +571,7 @@ final class InvoiceLifecycleService
                 'amount' => $amount,
                 'refunded_amount' => 0,
                 'currency' => $currency,
-                'received_on' => $data['received_on'] ?? $this->clock->today($locked->workspace)->toDateString(),
+                'received_on' => $receivedOn,
                 'method' => $this->requiredString($data['method'] ?? null, 'method'),
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
@@ -609,6 +616,24 @@ final class InvoiceLifecycleService
         }
 
         return $status;
+    }
+
+    /**
+     * The day a payment arrived, bounded by the workspace's own calendar.
+     *
+     * Omitted means today, which is the default every caller relied on when
+     * this was `$data['received_on'] ?? $this->clock->today(...)`. Supplied, it
+     * must be a real `Y-m-d` date inside the window
+     * {@see PaymentDateBounds} draws - and a date before the invoice's
+     * `issue_date` is deliberately *not* refused here: a deposit or an advance
+     * retainer applied to an invoice issued afterwards is a real arrangement,
+     * so the screens warn about one and the write succeeds.
+     */
+    private function receivedOn(mixed $raw, Workspace|string|null $workspace): string
+    {
+        $bounds = PaymentDateBounds::asOf($this->clock->today($workspace));
+
+        return $raw === null ? $bounds->latest() : $bounds->parse($raw);
     }
 
     public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
