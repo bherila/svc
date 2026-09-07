@@ -47,7 +47,7 @@ and, below that, from a project membership.
 
 - **`WorkspacePolicy::view`** — any `workspace_memberships` row for the viewer.
 - **`WorkspacePolicy::manage`** — a membership whose `role` is `owner` or
-  `admin`. Every operator write route requires it.
+  `admin`.
 - **`ClientCompanyPolicy::viewPortal`** — a workspace `owner` or `admin`, or a
   `client_company_memberships` row for that company. Any workspace membership
   used to admit a viewer here, which made the portal a way around project
@@ -58,6 +58,28 @@ and, below that, from a project membership.
   `manager`, `contributor`, `viewer` (`App\Support\AgentApi\ProjectRole`).
   Owners and managers may manage tasks and approve time; everyone but a viewer
   may log time.
+
+**`manage` is not the bar for every write.** Which of the two levels a write
+asks depends on what is being written:
+
+| write | asks |
+| --- | --- |
+| client company, project, project access, task (web) | `manage` on the workspace |
+| invoices, payments, billing schedules | `manage` on the workspace |
+| expenses (read `view`, write `manage`) | `manage` on the workspace |
+| **log time** | `ProjectAccess::canLogTime()` on the entry's project |
+| **edit or delete a time entry** | `canLogTime()` on the project, plus the entry being the actor's own or the actor being a workspace manager |
+| **approve time** | `view` on the workspace, then `canApproveTime()` on each entry's own project |
+| **set a time entry's billing rate explicitly** | `canApproveTime()` on the project |
+| agent-API task writes | `ProjectAccess::canManageTasks()` on the project |
+
+The time-entry routes are the ones that differ, and deliberately: the browser
+door asked `manage` while `TimeEntryMutationService` asked `canLogTime()`, so a
+contributor could log time through a token and not through a screen (#101). Both
+doors now ask `canLogTime()`, which admits everyone `manage` admitted —
+`projectRole()` resolves a workspace owner or admin to `ProjectRole::Owner` —
+plus the project contributors and managers who could already write through the
+API. Describing these as requiring `manage` understates who may use them.
 
 `ProjectAccess::viewableProjectIds()` and `reachableCompanyIds()` resolve "which
 projects" and "which clients" in one query each. They exist because the client
@@ -205,13 +227,17 @@ two lines has to become two rows.
 #### `client_company_activity`
 
 - `id`, `public_id`, `workspace_id`, `client_company_id`, `actor_user_id`
-- `action` — a key such as `agreement.created`, `agreement.activated`,
-  `agreement.signed`, `agreement.updated`, `invoice.generated`,
-  `invoice.updated`, `invoice.issued`, `invoice.marked_paid`, `invoice.voided`,
-  `invoice.payment_received`, `invoice.payment_failed`,
+- `action` — every key a native writer records: `agreement.created`,
+  `agreement.updated`, `agreement.activated`, `agreement.signed`,
+  `invoice.generated`, `invoice.updated`, `invoice.issued`,
+  `invoice.marked_paid`, `invoice.voided` (which a discarded draft also
+  records), `invoice.payment_received`, `invoice.payment_failed`,
   `invoice.payment_canceled`, `invoice.payment_disputed`,
-  `invoice.payment_refunded`, `payment_method.attached`,
-  `payment_method.detached`, or `payment_method.default_changed`
+  `invoice.payment_refunded`, `payment_method.added`,
+  `payment_method.removed`, `payment_method.default_changed`.
+  `payment_method.attached` and `payment_method.detached` are **Stripe event
+  types**, not activity keys — `StripeWebhookService` handles those two and the
+  rows they produce read `payment_method.added` and `payment_method.removed`.
 - `subject_type` — a stable native subject kind, or the imported predecessor
   class name on preserved rows
 - `subject_public_id` — the UUID of a native agreement, invoice, payment or
@@ -254,7 +280,11 @@ POST   /workspaces/{workspace}/projects/{clientProject}/tasks
 PATCH  /workspaces/{workspace}/tasks/{clientTask}
 ```
 
-**Portal** — authorized by `viewPortal` and then narrowed by `PortalAccess`:
+**Portal** — every read is authorized by `viewPortal` and then narrowed by
+`PortalAccess`. The one write, accepting a proposal, instead asks
+`EngagementAuthorization::canActAsClient()` — a portal membership on that
+company, or workspace `manage` — and refuses a proposal that is not visible to
+the client:
 
 ```
 GET    /portal/{clientCompany}
@@ -265,7 +295,9 @@ GET    /portal/{clientCompany}/proposals/{clientProposal}
 POST   /portal/{clientCompany}/proposals/{clientProposal}/accept
 ```
 
-**Engagement**:
+**Engagement** — the time-entry writes ask the *project*, not the workspace
+(see the table under [Authorization](#authorization)); proposals and agreements
+ask `manage`:
 
 ```
 GET    /workspaces/{workspace}/clients/{clientCompany}/time      time sheet
@@ -320,10 +352,24 @@ single Blade shell. There is no per-page Vite entry point and no
   `agreements/`, `time/`, `expenses/`, `navigation/`, `ui/`).
 - Shared types in `resources/js/types/`.
 
-Every authenticated screen renders through `WorkspaceShell`; the layout rules
-and the checks they have to pass are in [the interface guide](../ui.md). There
-are no strict/relaxed hydration schema pairs — the server sends finished URLs,
-capabilities and labels rather than values for the browser to interpret.
+`WorkspaceShell` (`resources/js/layouts/workspace-shell.tsx`) draws the navbar
+row and the page's `<main>` in one container, and a page inside it supplies
+content only. Every client and portal page uses it, as do `time.tsx` and
+`workspaces/enter.tsx`.
+
+**`operations.tsx` is the outstanding exception.** The authenticated
+`/workspaces/{workspace}/operations` route renders it, and it supplies its own
+chrome instead. That is deliberate rather than an oversight: the route sits
+outside the `ResolveWorkspaceNavigation` group precisely so it does not resolve
+a switcher, and the route comment records why — every workflow the page holds is
+moving to the client module that owns it, so it is not gaining a switcher it is
+about to lose. Until that move finishes, the shell rule in `AGENTS.md` has one
+page it does not describe.
+
+The layout rules and the checks a page has to pass are in
+[the interface guide](../ui.md). There are no strict/relaxed hydration schema
+pairs — the server sends finished URLs, capabilities and labels rather than
+values for the browser to interpret.
 
 ## Subcontractors
 
@@ -512,8 +558,18 @@ There are three write paths, and they are not the same one.
    that draft in the same transaction, through
    `DraftInvoiceTimeRegenerator` → `ClientInvoicingService::regenerateDraftInvoice()`
    (or `InvoiceFromTimeService` for an ad-hoc selection). A move across periods
-   also rebuilds the companion draft that now covers the new date. Editing time
-   on an **issued, paid or void** invoice is refused.
+   also rebuilds the companion draft that now covers the new date.
+
+   The guard is an allowlist, not a denylist: `assertDraftEditable()` refuses
+   unless the allocating invoice's status is exactly `draft`, so `issued`,
+   `partially_paid`, `paid`, `void` and any status this application cannot read
+   are all refused, for editing and for deletion alike. Approving allocated time
+   is refused too, whatever its status, because approval stamps the rate and so
+   changes what the line bills without touching the line.
+   `DraftInvoiceTimeRegenerationTest::immutableInvoiceStatuses()` covers
+   `issued`, `partially_paid`, `paid`, `void` and an unrecognised value. Writing
+   this rule out as "issued, paid or void" is the four-status list this page
+   exists to stop.
 
 `ClientInvoicingService::generateAllInvoices()` — the whole-company cadence
 sweep — has no HTTP route and no button. Its only callers are
@@ -544,10 +600,16 @@ payment-deletion path: a payment is corrected by transitioning its status or its
 refunded amount, so history is preserved rather than rewritten.
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
-recomputes them from the invoice's succeeded, non-refunded payments and settles
-the status: `paid` at or above the total, `partially_paid` between, `issued` at
-zero, and `void` stays `void`. Draft → issued is never a payment transition; it
-happens only through `issue()`.
+sums each `succeeded` payment's amount less its `refunded_amount`, floors each
+at zero, caps the total at the invoice total, and settles the status from the
+result: `paid` at or above the total, `partially_paid` above zero and below it,
+`issued` at zero, and `void` stays `void` whatever has been paid. Draft → issued
+is never a payment transition; it happens only through `issue()`.
+
+The status match is exhaustive with no `default`, and two shapes throw instead
+of being recomputed: a **draft** carrying a payment, and an invoice whose stored
+status this application does not recognise. A payment row whose own status is
+unrecognised stops the recomputation for the same reason.
 
 > `client_invoices.paid_on` exists in the schema and **nothing in this
 > application writes it**. Documentation inherited from the predecessor
@@ -563,8 +625,11 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
 
 - Every route is behind the `auth` middleware; the agent API is behind OAuth
   bearer tokens with scoped abilities.
-- Reads require `view` on the workspace, writes require `manage`, and project
-  work is narrowed further by `ProjectAccess`.
+- Reads require `view` on the workspace. Writes require `manage` for client,
+  project, task, invoice, schedule and expense records; the time-entry writes
+  ask `ProjectAccess` about the entry's own project instead, so a project
+  contributor or manager who is not a workspace owner or admin can log, edit and
+  approve time. See the table under [Authorization](#authorization).
 - The portal requires `viewPortal` and is then narrowed by `PortalAccess` on
   every surface, not only on the project list.
 - Every tenant-owned update and delete names `workspace_id` in its own
