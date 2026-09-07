@@ -259,6 +259,65 @@ final class PaymentReceivedDateTest extends TestCase
     }
 
     /**
+     * A retry does not expire because the floor moved under it.
+     *
+     * The floor is relative to today, so a payment dated exactly on it is below
+     * it tomorrow. Asking that question before the idempotency row is looked
+     * for meant an identical retry - same key, same payload - was refused as
+     * too old purely because the workspace date advanced, which is the one
+     * thing a lost-response retry must not do.
+     */
+    public function test_a_retry_of_a_payment_dated_on_the_floor_survives_the_floor_moving(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-08-29 12:00:00 UTC'));
+
+        try {
+            [, $workspace, $invoice] = $this->issuedInvoice();
+            $service = app(InvoiceLifecycleService::class);
+            $onTheFloor = [
+                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire',
+                'received_on' => '2024-08-29', 'idempotency_key' => 'synthetic-floor-retry',
+            ];
+            $first = $service->applyPayment($invoice, $onTheFloor, $workspace);
+
+            // The next day, the same date is a day below the floor.
+            Date::setTestNow(CarbonImmutable::parse('2026-08-30 12:00:00 UTC'));
+            $retried = $service->applyPayment($invoice->fresh(), $onTheFloor, $workspace);
+
+            $this->assertSame($first->id, $retried->id);
+            $this->assertSame('2024-08-29', $retried->received_on?->toDateString());
+            $this->assertDatabaseCount('client_invoice_payments', 1);
+        } finally {
+            Date::setTestNow();
+        }
+    }
+
+    /**
+     * A new payment below the floor is still refused, on the same day.
+     *
+     * The window did not stop being applied; it moved to the one moment it
+     * describes, which is a payment being recorded.
+     */
+    public function test_a_new_payment_below_the_floor_is_still_refused_under_a_fresh_key(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-08-30 12:00:00 UTC'));
+
+        try {
+            [, $workspace, $invoice] = $this->issuedInvoice();
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('A payment cannot be dated before 2024-08-30');
+
+            app(InvoiceLifecycleService::class)->applyPayment($invoice, [
+                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire',
+                'received_on' => '2024-08-29', 'idempotency_key' => 'synthetic-below-floor',
+            ], $workspace);
+        } finally {
+            Date::setTestNow();
+        }
+    }
+
+    /**
      * The floor is two calendar years, including on the day that has no
      * two-years-ago.
      *

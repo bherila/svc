@@ -98,15 +98,27 @@ final class PaymentDateBounds
     }
 
     /**
-     * Read a proposed payment date, or refuse it by name.
+     * Read a calendar date, without asking whether it may be recorded today.
      *
      * Parsed rather than compared, for the same reason payment status is: a
      * value this application cannot read is not a value it may guess at. A
      * non-string is refused by type instead of being stringified, `Y-m-d` is
      * the only spelling accepted, and `2026-02-31` is refused rather than
      * rolled forward into March.
+     *
+     * **Static, and separate from {@see self::assertWithin()}, because the two
+     * questions have different lifetimes.** Whether a string is a calendar date
+     * is a fact about the string and never changes. Whether that date may be
+     * recorded is a fact about the clock, and stops being true as the clock
+     * moves - a date on the floor today is below it tomorrow.
+     *
+     * Anything matching an already-recorded payment must therefore ask only the
+     * first question. An idempotent retry compares what the caller sent against
+     * what is stored, and that comparison cannot depend on the day the retry
+     * happens or a lost-response retry stops being safe overnight. Only the
+     * caller that is about to *create* a payment asks the second.
      */
-    public function parse(mixed $raw): string
+    public static function calendarDate(mixed $raw): string
     {
         if (! is_string($raw)) {
             throw new DomainException(
@@ -126,6 +138,17 @@ final class PaymentDateBounds
             );
         }
 
+        return $value;
+    }
+
+    /**
+     * Refuse a calendar date this workspace may not record a payment on now.
+     *
+     * The time-relative half. Ask it at the moment a payment is being written
+     * and not before: it is the answer that expires.
+     */
+    public function assertWithin(string $value): string
+    {
         if ($value < $this->earliest) {
             throw new DomainException(
                 'A payment cannot be dated before '.$this->earliest.'. "'.$value.'" is '
@@ -143,5 +166,16 @@ final class PaymentDateBounds
         }
 
         return $value;
+    }
+
+    /**
+     * Both questions at once, for a caller that asks them at the same moment.
+     *
+     * The date correction is the one such caller: it neither creates a row nor
+     * matches an existing one, so the shape and the window are decided together.
+     */
+    public function parse(mixed $raw): string
+    {
+        return $this->assertWithin(self::calendarDate($raw));
     }
 }

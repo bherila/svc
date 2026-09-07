@@ -542,11 +542,25 @@ final class InvoiceLifecycleService
             // hand-repair never cross that door. Omitted still means today on
             // this workspace's calendar, which is what every caller relied on.
             //
-            // Whether the caller *said* a date is kept, because it is a
+            // Shape now, window later. Whether this is a calendar date is a
+            // fact about the string and has to be settled before it can be
+            // compared with anything; whether it may be *recorded* is a fact
+            // about the clock, and asking it here would make an idempotent
+            // retry expire. A payment dated on the floor is below the floor
+            // tomorrow, so the same key with the same payload would be refused
+            // as too old before the row it matches was ever looked for - a
+            // lost-response retry that stops being safe because the workspace
+            // date advanced. {@see PaymentDateBounds::assertWithin()} is
+            // therefore asked once, below, where a new payment is created.
+            //
+            // Whether the caller *said* a date is kept too, because it is a
             // different question from what the date is, and only the
-            // idempotency check below needs to tell them apart.
+            // idempotency check needs to tell them apart.
+            $bounds = PaymentDateBounds::asOf($this->clock->today($locked->workspace));
             $claimsDate = ($data['received_on'] ?? null) !== null;
-            $receivedOn = $this->receivedOn($data['received_on'] ?? null, $locked->workspace);
+            $receivedOn = $claimsDate
+                ? PaymentDateBounds::calendarDate($data['received_on'])
+                : $bounds->latest();
 
             if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
                 throw new DomainException('Payment cannot exceed the invoice balance.');
@@ -593,6 +607,14 @@ final class InvoiceLifecycleService
                     return $existing;
                 }
             }
+
+            // Nothing above this line has written anything, and everything
+            // below creates a payment - which is exactly the boundary the
+            // time-relative bound belongs on. A date the caller never named is
+            // today by construction and passes trivially; one they did is
+            // measured against the window as it stands at the moment the row
+            // is made.
+            $bounds->assertWithin($receivedOn);
 
             $payment = $locked->payments()->create([
                 'workspace_id' => $locked->workspace_id,
@@ -662,6 +684,10 @@ final class InvoiceLifecycleService
     {
         $bounds = PaymentDateBounds::asOf($this->clock->today($workspace));
 
+        // Both halves together, unlike {@see self::applyPayment()}: a
+        // correction neither creates a row nor matches an existing one, so
+        // there is no moment between the two questions for the clock to move
+        // through.
         return $raw === null ? $bounds->latest() : $bounds->parse($raw);
     }
 
