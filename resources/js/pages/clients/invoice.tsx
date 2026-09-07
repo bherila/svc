@@ -262,6 +262,16 @@ export default function ClientInvoiceDetail({
                                         ),
                                     );
                                     setReceivedOn(todayIn(timezone));
+                                    // Cleared rather than carried. The
+                                    // dialog's state outlives one submission,
+                                    // and a reference identifies one payment:
+                                    // the second cheque recorded in a sitting
+                                    // would otherwise arrive under the first
+                                    // one's number. The method is deliberately
+                                    // kept - nothing downstream reads it, and
+                                    // an operator who always takes cheques
+                                    // should not re-pick it every time.
+                                    setReference('');
                                     setPaying(true);
                                 }}
                             >

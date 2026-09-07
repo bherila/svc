@@ -113,6 +113,48 @@ describe('recording a payment against an invoice', () => {
         expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled();
     });
 
+    /**
+     * A backdate does not outlive the payment it was typed for.
+     *
+     * The dialog is state on a page that stays mounted, so the question is not
+     * whether the fields are reset but whether they can be shown holding the
+     * last payment's values. They cannot: `setPaying(true)` is reached from one
+     * control, and that control re-seeds the amount, the date and the reference
+     * on the same click - so the form is never displayed carrying anything the
+     * previous submission left. Verified here rather than reasoned about,
+     * including across a change of day, because reasoning is what a second
+     * `setPaying(true)` added later would quietly invalidate.
+     */
+    it('re-seeds the form every time it is opened, not once at mount', () => {
+        inertia.post.mockImplementation(
+            (
+                _href: string,
+                _data: Record<string, unknown>,
+                options: { onSuccess: () => void },
+            ) => options.onSuccess(),
+        );
+
+        render(<ClientInvoiceDetail {...props()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        fireEvent.change(screen.getByLabelText('Received'), {
+            target: { value: '2026-07-01' },
+        });
+        fireEvent.change(screen.getByLabelText('Reference'), {
+            target: { value: 'CHK-1041' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+
+        // The dialog closed on success, and the day has since turned over.
+        expect(screen.queryByLabelText('Received')).toBeNull();
+        vi.setSystemTime(new Date('2026-09-02T12:00:00Z'));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        expect(screen.getByLabelText('Received')).toHaveValue('2026-09-02');
+        // A reference identifies one payment; the second cheque of a sitting
+        // must not arrive under the first one's number.
+        expect(screen.getByLabelText('Reference')).toHaveValue('');
+    });
+
     /** The same fact wherever the payment is shown beside its invoice. */
     it('marks a recorded payment that predates the issue date', () => {
         render(
@@ -207,6 +249,76 @@ describe('correcting a recorded payment date', () => {
             { received_on: '2026-08-18' },
             expect.anything(),
         );
+    });
+
+    /**
+     * One row's correction cannot bleed into another's.
+     *
+     * The editor is a single `correcting` id and a single date, which is what
+     * makes two rows unable to be open at once - and also what would let a date
+     * typed against one row appear under another. It does not, because opening
+     * any row seeds the date from that row before it becomes the open one.
+     */
+    it('seeds each row from its own recorded date, after a save and after a cancel', () => {
+        inertia.post.mockImplementation(
+            (
+                _href: string,
+                _data: Record<string, unknown>,
+                options: { onSuccess: () => void },
+            ) => options.onSuccess(),
+        );
+
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        payment(),
+                        payment({
+                            id: 'payment-2',
+                            amount: 2500,
+                            received_on: '2026-08-05',
+                            correct_date_href:
+                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        const open = (index: number) =>
+            fireEvent.click(
+                screen.getAllByRole('button', { name: 'Correct date' })[index],
+            );
+
+        // Saved on the first row.
+        open(0);
+        fireEvent.change(
+            screen.getByLabelText('Corrected date for the $40.00 payment'),
+            { target: { value: '2026-08-18' } },
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        open(1);
+        expect(
+            screen.getByLabelText('Corrected date for the $25.00 payment'),
+        ).toHaveValue('2026-08-05');
+
+        // Abandoned on the second row, which is the sharper case: nothing was
+        // submitted, so nothing else had a reason to clear the field.
+        fireEvent.change(
+            screen.getByLabelText('Corrected date for the $25.00 payment'),
+            { target: { value: '2026-07-04' } },
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+        open(0);
+        expect(
+            screen.getByLabelText('Corrected date for the $40.00 payment'),
+        ).toHaveValue('2026-08-20');
+        // And one at a time: the other row is a date and a control again.
+        expect(
+            screen.queryByLabelText('Corrected date for the $25.00 payment'),
+        ).toBeNull();
     });
 
     /** A capability the viewer does not have arrives as null, and is not drawn. */

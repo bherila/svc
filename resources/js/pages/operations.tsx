@@ -519,6 +519,17 @@ export function PaymentForm({
                 onSuccess: () => {
                     form.setData('idempotency_key', crypto.randomUUID());
                     form.reset('reference', 'notes');
+                    // Back to today, and read from the clock rather than
+                    // `form.reset('received_on')`. Inertia keeps this form
+                    // mounted across the redirect, so a date typed to record a
+                    // backdated payment stayed in the field and the *next*
+                    // payment recorded here silently carried it - the same
+                    // wrong-period defect this field exists to fix, arrived at
+                    // from the other side and quieter, because a stale date
+                    // reads exactly like the default it replaced. `reset()`
+                    // would restore the value captured when the page loaded,
+                    // which is yesterday's on a screen left open overnight.
+                    form.setData('received_on', todayIn(timezone));
                 },
             },
         );
