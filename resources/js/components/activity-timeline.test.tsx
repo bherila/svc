@@ -82,3 +82,85 @@ describe('activity timeline', () => {
         expect(screen.getByText('By Synthetic Manager')).toBeVisible();
     });
 });
+
+/**
+ * A date correction is the record that justifies allowing the edit.
+ *
+ * The service writes `invoice.payment_date_corrected` carrying the date it
+ * replaced, and the whole argument for permitting a date-only edit at all - in
+ * a codebase with no payment-edit path - was that the change would be recorded.
+ * An action absent from these maps is classified as system noise and folded
+ * away behind a button, with the two dates it carries rendered nowhere even
+ * when it is expanded, which is an audit record nobody can see.
+ */
+describe('a corrected payment date', () => {
+    const corrected: CompanyActivity = {
+        id: 'activity-3',
+        action: 'invoice.payment_date_corrected',
+        actor_name: 'Synthetic Operator',
+        payload: {
+            amount: 4000,
+            currency: 'USD',
+            previous_received_on: '2026-08-25',
+            received_on: '2026-08-18',
+        },
+        created_at: '2026-08-29T18:00:00.000Z',
+    };
+
+    it('is shown without expanding system activity, with both dates', () => {
+        render(<ActivityTimeline activities={[corrected]} />);
+
+        expect(screen.getByText('Payment date corrected')).toBeVisible();
+        expect(
+            screen.getByText('Received Aug 25, 2026 → Aug 18, 2026'),
+        ).toBeVisible();
+        // Nothing was hidden, so there is no disclosure control at all.
+        expect(screen.queryByRole('button')).toBeNull();
+    });
+
+    /** An imported payment can carry no date, and the correction still reads. */
+    it('says so when the payment had no date to begin with', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        ...corrected,
+                        payload: {
+                            ...corrected.payload,
+                            previous_received_on: null,
+                        },
+                    },
+                ]}
+            />,
+        );
+
+        expect(
+            screen.getByText('Received not recorded → Aug 18, 2026'),
+        ).toBeVisible();
+    });
+
+    /**
+     * An imported payload carrying a `received_on` of its own is a payment's
+     * date, not a change to one, so it is not read as a correction.
+     */
+    it('does not read an imported payment date as a correction', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-4',
+                        action: 'invoice.payment_received',
+                        actor_name: null,
+                        payload: {
+                            external_payload: { received_on: '2026-08-18' },
+                        },
+                        created_at: '2026-08-29T17:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByText('Payment received')).toBeVisible();
+        expect(screen.queryByText(/Received /)).toBeNull();
+    });
+});
