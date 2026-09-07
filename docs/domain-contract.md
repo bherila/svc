@@ -108,6 +108,20 @@ workflow. It is intentionally provider-neutral and contains no production data.
   notes, and lifecycle timestamps
 - issued invoices are immutable except through explicit payment, void, email,
   or correction operations; generation never silently rewrites them
+- an invoice that claims a **span of time** may not be issued without stating
+  both `service_period_start` and `service_period_end`. That covers
+  `cadence_period`, `interim_overage`, `terminal`, a null kind (which reads as
+  legacy cadence), and **any** row naming a billing schedule whatever kind it
+  carries. Only an unlinked `ad_hoc` invoice bills a thing rather than a span,
+  and it is the one exempt shape
+- an `invoice_kind` this application does not recognise may not be issued at
+  all, complete period or not. The model reads such a row as `cadence_period`
+  while the raw-column cycle guard does not, so issuing one produces a cadence
+  invoice invisible to the guard that stops the same retainer being sold twice
+- a service period whose start follows its end may not be issued, for any kind.
+  It overlaps nothing, so it leaves the collision guards entirely, and the
+  unique index does not object because the reversed tuple differs from either
+  valid one
 - lines store type, description, quantity, unit amount, tax amount, total amount,
   and ordering
 - `client_invoice_line_time_entries` explicitly associates billed time entries
@@ -123,11 +137,19 @@ workflow. It is intentionally provider-neutral and contains no production data.
 `client_invoice_payments`
 
 - payment belongs to the same workspace as its invoice
-- status: `pending`, `succeeded`, `failed`, `refunded`, `disputed`, or `canceled`
+- status: `pending`, `succeeded`, `failed`, `refunded`, `disputed`, or
+  `canceled`. `InvoicePaymentStatus` is the whole vocabulary, and it is enforced
+  at the **service** boundary rather than only the HTTP one, so no supported
+  path — form request, API, console or MCP — can store another value
 - amount/currency, received date, method, reference, notes, optional provider and
   provider payment identifier, and optional external finance transaction UUID
 - successful non-refunded payments determine invoice paid and balance amounts;
-  transitions are idempotent
+  transitions are idempotent. That sum is a *positive* filter, so a stored
+  status outside the vocabulary is **not** silently counted as zero:
+  recomputation refuses, rather than leaving money already received outstanding
+  and collectible a second time. Reclassifying the row through
+  `setPaymentStatus()` is the repair, and it recomputes *after* writing the
+  replacement so that path stays open; a second unreadable row rolls it back
 
 `payment_reconciliations`
 
