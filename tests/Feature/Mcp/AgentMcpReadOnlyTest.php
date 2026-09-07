@@ -228,7 +228,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'params' => ['name' => 'log-time-across-projects', 'arguments' => []],
         ], $limitedSession)->assertOk()->assertJsonPath('error.code', -32002);
 
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $this->actingAsMcp($user, [
             AgentApiScopes::MCP_USE,
             AgentApiScopes::IDENTITY_READ,
@@ -1125,7 +1125,7 @@ final class AgentMcpReadOnlyTest extends TestCase
 
     public function test_write_catalog_is_conditionally_registered_after_cutover(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $user = User::factory()->create();
         $workspace = Workspace::query()->create(['name' => 'MCP write workspace', 'slug' => 'mcp-write-workspace']);
         WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);

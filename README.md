@@ -166,6 +166,16 @@ entries that have not been approved or invoiced. Set
 `AGENT_API_TIME_ENTRY_WRITES_ENABLED=false` for an emergency time-write cutoff;
 `AGENT_API_WRITES_ENABLED` remains the separate full workflow-write cutover.
 
+Agent-initiated **invoice** writes need a second flag inside that cutover:
+`AGENT_API_INVOICE_WRITES_ENABLED` defaults to false, and the six invoice tools
+(`create_draft`, `update_draft`, `discard_draft`, `issue`, `send`, `void`), their
+REST routes, the `billing:write` and `billing:deliver` capabilities, and the
+`prepare-invoice-safely` prompt require **both** flags. The boundary follows
+blast radius: creating a task is recoverable bookkeeping, while `issue`
+allocates approved time irreversibly and `send` puts a document in front of a
+paying client. Turning `AGENT_API_WRITES_ENABLED` off still withdraws
+everything; the invoice flag only ever narrows further.
+
 Browser-based MCP clients must use an exact origin listed in
 `AGENT_API_MCP_ALLOWED_ORIGINS`; unlisted origins receive no CORS authorization and
 their MCP requests are rejected. This browser-origin list does not change which HTTP

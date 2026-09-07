@@ -156,7 +156,7 @@ final class AgentMutationIntegrityTest extends TestCase
 
     public function test_a_failure_halfway_through_a_time_batch_rolls_back_the_first_entry_and_receipt(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$user, $workspace, , $project] = $this->tenant();
         ClientProjectMembership::query()->create([
             'workspace_id' => $workspace->id,
@@ -185,7 +185,7 @@ final class AgentMutationIntegrityTest extends TestCase
 
     public function test_task_and_invoice_side_effects_are_replay_safe_and_audited(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         Queue::fake();
         [$user, $workspace, $company, $project] = $this->tenant();
         $this->actingAsAgent($user, [
@@ -247,7 +247,7 @@ final class AgentMutationIntegrityTest extends TestCase
 
     public function test_a_web_task_mutation_invalidates_an_agent_version(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$user, $workspace, , $project] = $this->tenant();
         $task = ClientTask::query()->create([
             'workspace_id' => $workspace->id,

@@ -25,7 +25,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_updating_a_draft_releases_removed_time_for_another_invoice(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $firstTime = $this->approvedTime($owner, $workspace, $company, $project, 'First allocation');
         $replacementTime = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');
@@ -63,7 +63,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_discarding_a_draft_releases_time_and_allows_reinvoicing(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $entry = $this->approvedTime($owner, $workspace, $company, $project, 'Discarded allocation');
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE]);
@@ -84,7 +84,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_voiding_an_unissued_draft_also_releases_time(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $entry = $this->approvedTime($owner, $workspace, $company, $project, 'Draft void allocation');
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
@@ -103,7 +103,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_voiding_an_unpaid_issued_invoice_restores_and_releases_time(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $entry = $this->approvedTime($owner, $workspace, $company, $project, 'Issued allocation');
         $this->actingAsAgent($owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
@@ -127,7 +127,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_manual_line_cannot_attribute_another_clients_project(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company] = $this->tenant();
         $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Other Client', 'slug' => 'other-client-'.Str::random(6)]);
         $otherProject = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $otherCompany->id, 'name' => 'Other Project']);
@@ -153,7 +153,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
 
     public function test_workspace_counter_survives_legacy_numbers_and_failed_drafts(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SVC-00009', 'status' => 'draft', 'currency' => 'USD']);
         ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'LEGACY-LATEST', 'status' => 'draft', 'currency' => 'USD']);
@@ -191,7 +191,7 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
      */
     public function test_every_tenant_owned_write_in_the_lifecycle_names_the_workspace(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $time = $this->approvedTime($owner, $workspace, $company, $project, 'Original allocation');
         $replacement = $this->approvedTime($owner, $workspace, $company, $project, 'Replacement allocation');

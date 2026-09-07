@@ -24,7 +24,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
 
     public function test_mcp_can_log_approve_and_invoice_time_using_an_effective_agreement_rate(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->agreement($workspace, $company, $project, 12345, '2026-08-01');
         $this->actingAsAgent($owner, [
@@ -75,7 +75,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
 
     public function test_approval_uses_the_most_specific_effective_rate_and_snapshots_it(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->agreement($workspace, $company, null, 10000, '2026-01-01');
         $olderProjectRate = $this->agreement($workspace, $company, $project, 15000, '2026-08-01');
@@ -123,7 +123,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
 
     public function test_missing_rate_blocks_billable_approval_but_manager_override_and_nonbillable_time_work(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $billable = $this->time($owner, $workspace, $company, $project, true);
         $nonbillable = $this->time($owner, $workspace, $company, $project, false);
@@ -153,7 +153,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
 
     public function test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $flat = $this->time($owner, $workspace, $company, $project, true);
         $flat->update([
@@ -203,7 +203,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
      */
     public function test_flat_hourly_time_with_a_currency_but_no_amount_is_refused(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $entry = $this->time($owner, $workspace, $company, $project, true);
         $entry->update([
@@ -236,7 +236,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
      */
     public function test_flat_hourly_time_with_an_amount_but_no_currency_is_refused(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->actingAsAgent($owner, [AgentApiScopes::TIME_APPROVE]);
         $path = "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve";
@@ -279,7 +279,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
      */
     public function test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->agreement($workspace, $company, null, 20000, '2026-01-01');
 
@@ -310,7 +310,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
 
     public function test_contributor_cannot_supply_authoritative_rate_or_cost_fields(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         [, $workspace, , $project] = $this->tenant();
         $contributor = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $contributor->id, 'role' => 'member']);

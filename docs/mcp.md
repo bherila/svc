@@ -109,6 +109,14 @@ credentials before discovery or execution. Read execution repeats scope
 checks before tenant and object lookup. `AGENT_API_WRITES_ENABLED` defaults to
 false; the independent `AGENT_API_TIME_ENTRY_WRITES_ENABLED` defaults to
 true and is an emergency cutoff for the three time-entry write tools.
+`AGENT_API_INVOICE_WRITES_ENABLED` also defaults to false and is nested inside
+the workflow cutover rather than independent of it: the six invoice write tools
+require both, as do their REST routes, the `billing:write` and
+`billing:deliver` capabilities, and the `prepare-invoice-safely` prompt, which
+names two of those tools in its required capabilities. Approving time and
+creating a task are recoverable; `invoices.issue` allocates approved time
+irreversibly and `invoices.send` puts a document in front of a paying client,
+so the two groups no longer turn on together.
 
 ## Public capability inventory
 

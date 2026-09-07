@@ -131,7 +131,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_nested_mutation_input_schemas_advertise_the_rest_constraints(): void
     {
-        config(['agent_api.writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $definitions = collect($this->definitions())->keyBy('name');
         $factory = app(AgentMcpInputSchemaFactory::class);
 

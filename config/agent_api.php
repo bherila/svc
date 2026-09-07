@@ -6,6 +6,11 @@ return [
     // This independent switch is authoritative so it remains an emergency cutoff
     // even after the broader workflow write surface is enabled.
     'time_entry_writes_enabled' => (bool) env('AGENT_API_TIME_ENTRY_WRITES_ENABLED', true),
+    // Nested inside the cutover above rather than independent of it: invoice
+    // writes require both. The boundary follows blast radius - a task is
+    // recoverable bookkeeping, while issuing allocates time irreversibly and
+    // sending puts a document in front of a paying client (#242).
+    'invoice_writes_enabled' => (bool) env('AGENT_API_INVOICE_WRITES_ENABLED', false),
     // Global MCP emergency stop and optional reviewed capability kill switches.
     'mcp_enabled' => (bool) env('AGENT_API_MCP_ENABLED', true),
     'mcp_feature_flags' => [],

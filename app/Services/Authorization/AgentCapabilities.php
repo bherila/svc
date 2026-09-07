@@ -114,6 +114,14 @@ final class AgentCapabilities
             $mapping += [
                 AgentApiScopes::TASKS_WRITE => 'tasks:write',
                 AgentApiScopes::TIME_APPROVE => 'time:approve',
+            ];
+        }
+        // Advertised only when the surface behind them exists. A capability
+        // list is what an agent plans against, so naming `billing:deliver`
+        // while every invoice route answers 404 turns a deliberate cutover
+        // into a confusing failure part-way through a workflow (#242).
+        if ($this->invoiceWritesEnabled()) {
+            $mapping += [
                 AgentApiScopes::BILLING_WRITE => 'billing:write',
                 AgentApiScopes::BILLING_DELIVER => 'billing:deliver',
             ];
@@ -141,6 +149,12 @@ final class AgentCapabilities
     private function writesEnabled(): bool
     {
         return (bool) config('agent_api.writes_enabled');
+    }
+
+    /** Nested inside {@see self::writesEnabled()}, never independent of it. */
+    private function invoiceWritesEnabled(): bool
+    {
+        return $this->writesEnabled() && (bool) config('agent_api.invoice_writes_enabled');
     }
 
     private function timeEntryWritesEnabled(): bool
