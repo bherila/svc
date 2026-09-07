@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
+use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class InvoicePaymentController extends Controller
 {
@@ -16,7 +18,7 @@ class InvoicePaymentController extends Controller
     {
         Gate::authorize('view', $workspace);
         $validated = $request->validate([
-            'status' => ['sometimes', 'in:pending,succeeded,failed,refunded,disputed,canceled'],
+            'status' => ['sometimes', Rule::in(InvoicePaymentStatus::all())],
             'invoice' => ['sometimes', 'uuid'],
             'received_from' => ['sometimes', 'date_format:Y-m-d'],
             'received_to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:received_from'],
@@ -25,7 +27,7 @@ class InvoicePaymentController extends Controller
 
         $payments = ClientInvoicePayment::query()
             ->where('workspace_id', $workspace->id)
-            ->where('status', $validated['status'] ?? 'succeeded')
+            ->where('status', $validated['status'] ?? InvoicePaymentStatus::Succeeded->value)
             ->when(isset($validated['invoice']), fn ($query) => $query->whereHas(
                 'invoice',
                 fn ($query) => $query->where('public_id', $validated['invoice']),

@@ -13,6 +13,7 @@ use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\Locks;
@@ -356,8 +357,8 @@ final class InvoiceLifecycleService
         return 'This draft was generated, or carries a classification this application did not assign, so '
             .'manual invoice creation cannot repair it: that path names no agreement, no billing schedule '
             .'and no kind, and would replace a cadence or interim invoice with an unlinked ad-hoc one that '
-            .'the overlap guards ignore. No in-app operation changes an existing invoice\'s service period '
-            .'or kind. Do not issue it, and do not discard it merely to retry billing - an exact void is '
+            .'the overlap guards ignore. No general operator-facing operation changes an '
+            .'existing invoice\'s service period or kind. Do not issue it, and do not discard it merely to retry billing - an exact void is '
             .'read as a deliberate waiver of its period. Establish the intended replacement path first.';
     }
 
@@ -497,7 +498,17 @@ final class InvoiceLifecycleService
             if ($amount === 0) {
                 throw new DomainException('Payment amount must be greater than zero.');
             }
-            if (($data['status'] ?? 'succeeded') === 'succeeded' && $amount > $locked->balance_amount) {
+
+            // Parsed, not compared. Every check below asks whether this
+            // payment succeeded, and each one written as `=== 'succeeded'`
+            // answers no for a value it simply cannot read - so an
+            // unrecognised status skipped the over-balance check, was stored
+            // verbatim, and was then read as contributing nothing by
+            // refreshStatus(). The web layer constrained the value; this
+            // service and svc:billing:payment did not.
+            $status = $this->paymentStatus($data['status'] ?? null);
+
+            if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
                 throw new DomainException('Payment cannot exceed the invoice balance.');
             }
 
@@ -512,7 +523,7 @@ final class InvoiceLifecycleService
                         || $existing->amount !== $amount
                         || $existing->currency !== $currency
                         || $existing->method !== ($data['method'] ?? null)
-                        || $existing->status !== ($data['status'] ?? 'succeeded')) {
+                        || $existing->status !== $status->value) {
                         throw new DomainException('The idempotency key is already bound to a different payment.');
                     }
 
@@ -522,7 +533,7 @@ final class InvoiceLifecycleService
 
             $payment = $locked->payments()->create([
                 'workspace_id' => $locked->workspace_id,
-                'status' => $data['status'] ?? 'succeeded',
+                'status' => $status->value,
                 'amount' => $amount,
                 'refunded_amount' => 0,
                 'currency' => $currency,
@@ -538,7 +549,7 @@ final class InvoiceLifecycleService
 
             $previousInvoiceStatus = $locked->status;
             $this->refreshStatus($locked);
-            if ($payment->status === 'succeeded') {
+            if ($status === InvoicePaymentStatus::Succeeded) {
                 $this->recordPaymentActivity($locked, $payment, 'invoice.payment_received');
                 $this->recordMarkedPaid($locked, $previousInvoiceStatus, $payment->public_id);
             }
@@ -547,26 +558,49 @@ final class InvoiceLifecycleService
         });
     }
 
-    public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
+    /**
+     * Parse a proposed payment status, refusing one this application cannot read.
+     *
+     * Null means succeeded, which is the default every caller relied on when
+     * this was `$data['status'] ?? 'succeeded'`. An empty string does not: it
+     * is a value someone supplied, and it is not one of the six.
+     */
+    private function paymentStatus(mixed $raw): InvoicePaymentStatus
     {
-        if (! in_array($status, ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled'], true)) {
-            throw new DomainException('Unsupported payment status.');
+        if ($raw === null) {
+            return InvoicePaymentStatus::Succeeded;
         }
 
-        return DB::transaction(function () use ($payment, $status, $workspace): ClientInvoicePayment {
+        $status = InvoicePaymentStatus::tryFrom((string) $raw);
+
+        if ($status === null) {
+            throw new DomainException(
+                'Unsupported payment status "'.(string) $raw.'". A payment must carry one of: '
+                .implode(', ', InvoicePaymentStatus::all()).'. Nothing has been changed.'
+            );
+        }
+
+        return $status;
+    }
+
+    public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
+    {
+        $next = $this->paymentStatus($status);
+
+        return DB::transaction(function () use ($payment, $next, $workspace): ClientInvoicePayment {
             $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
             $lockedPayment = $query->firstOrFail();
             $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
-            if ($lockedPayment->status === $status) {
+            if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
-            if ($status === 'succeeded' && $invoice->status === 'void') {
+            if ($next === InvoicePaymentStatus::Succeeded && $invoice->status === 'void') {
                 throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
             }
-            if ($status === 'succeeded') {
+            if ($next === InvoicePaymentStatus::Succeeded) {
                 $otherPaid = (int) $invoice->payments()
                     ->where('id', '!=', $lockedPayment->id)
                     ->where('status', 'succeeded')
@@ -576,29 +610,38 @@ final class InvoiceLifecycleService
                     throw new DomainException('Successful payments cannot exceed the invoice total.');
                 }
             }
-            if ($status === 'refunded') {
+            if ($next === InvoicePaymentStatus::Refunded) {
                 $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
             }
             $previousInvoiceStatus = $invoice->status;
             $lockedPayment->forceFill([
-                'status' => $status,
-                'refunded_amount' => $status === 'refunded'
+                'status' => $next->value,
+                'refunded_amount' => $next === InvoicePaymentStatus::Refunded
                     ? $lockedPayment->amount
                     : $lockedPayment->refunded_amount,
             ])->save();
+
+            // After the write, deliberately. This is the one operation that can
+            // *repair* an unreadable payment status, and refreshStatus() refuses
+            // to recompute a balance over one - so checking before the save
+            // would make the inconsistency permanent, unfixable by the only
+            // operation that addresses it. Any *other* payment still carrying an
+            // unknown status does roll this back, which is the intended answer:
+            // one row at a time is a repair, two is a balance nobody can total.
             $this->refreshStatus($invoice);
-            $action = match ($status) {
-                'succeeded' => 'invoice.payment_received',
-                'failed' => 'invoice.payment_failed',
-                'canceled' => 'invoice.payment_canceled',
-                'disputed' => 'invoice.payment_disputed',
-                'refunded' => 'invoice.payment_refunded',
-                default => null,
+
+            $action = match ($next) {
+                InvoicePaymentStatus::Succeeded => 'invoice.payment_received',
+                InvoicePaymentStatus::Failed => 'invoice.payment_failed',
+                InvoicePaymentStatus::Canceled => 'invoice.payment_canceled',
+                InvoicePaymentStatus::Disputed => 'invoice.payment_disputed',
+                InvoicePaymentStatus::Refunded => 'invoice.payment_refunded',
+                InvoicePaymentStatus::Pending => null,
             };
             if ($action !== null) {
                 $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid());
             }
-            if ($status === 'succeeded') {
+            if ($next === InvoicePaymentStatus::Succeeded) {
                 $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
             }
 
@@ -670,8 +713,18 @@ final class InvoiceLifecycleService
      * `issued` is the same class of defect as the draft case, arrived at from
      * the other side.
      *
-     * Production carries no payment against a draft and no invoice of an
-     * unrecognised status, so both refusals cost nothing to adopt.
+     * A third shape is refused inside the derivation rather than at the door.
+     * The paid amount is a *positive* filter over succeeded payments, so a
+     * payment row carrying an unreadable status contributes nothing and the
+     * invoice comes back owing its full balance with that payment already
+     * recorded against it - money received, invisible, and collectible a
+     * second time. Same reasoning as the invoice status above, one table down,
+     * and failing the other way: there the danger is rewriting a state, here
+     * it is silently valuing one at zero.
+     *
+     * Production carries no payment against a draft, no invoice of an
+     * unrecognised status, and no payment of an unrecognised status - all 16
+     * are succeeded - so none of the three refusals costs anything to adopt.
      *
      * Private, because every caller is in this class and the transition it
      * guards belongs to `issue()`.
@@ -697,10 +750,36 @@ final class InvoiceLifecycleService
             ),
         };
 
-        $paid = (int) $invoice->payments()
-            ->where('status', 'succeeded')
-            ->get(['amount', 'refunded_amount'])
-            ->sum(fn (ClientInvoicePayment $payment): int => max(0, $payment->amount - $payment->refunded_amount));
+        // Every payment, not just the succeeded ones. The sum below is a
+        // positive filter, so a row carrying a status this application cannot
+        // read silently contributes nothing - and "contributed nothing" is a
+        // claim about money that an uninterpretable state cannot support. The
+        // invoice would stay `issued` for its full balance with the payment
+        // already recorded against it, and the same balance could be collected
+        // twice. Validating on write does not cover this: an import, a
+        // migration or a hand-repair can put such a row here without passing
+        // through applyPayment().
+        $paid = 0;
+
+        foreach ($invoice->payments()->get(['public_id', 'status', 'amount', 'refunded_amount']) as $payment) {
+            $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
+
+            if ($paymentStatus === null) {
+                throw new DomainException(
+                    'Payment '.(string) $payment->public_id.' on invoice '.(string) $invoice->invoice_number
+                    .' carries the unrecognised status "'.(string) $payment->status.'", so whether it '
+                    .'contributed money cannot be established and this invoice\'s paid and balance amounts '
+                    .'must not be recomputed - treating it as nothing would leave money already received '
+                    .'outstanding and collectible again. Nothing has been changed. Classify or correct that '
+                    .'payment status first.'
+                );
+            }
+
+            if ($paymentStatus->contributesToPaidAmount()) {
+                $paid += max(0, (int) $payment->amount - (int) $payment->refunded_amount);
+            }
+        }
+
         $paid = min($paid, (int) $invoice->total_amount);
         $balance = max(0, (int) $invoice->total_amount - $paid);
         $status = $invoice->status === 'void'
