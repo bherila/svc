@@ -8,6 +8,7 @@ use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\BillingScheduleLineTemplate;
 use App\Support\Billing\PeriodClaim;
 use App\Support\Billing\PeriodClaimVerdict;
+use App\Support\Billing\PlannedBillingPeriod;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -20,7 +21,32 @@ final class BillingScheduleService
         private readonly BillingPeriodCollisionResolver $collisions,
     ) {}
 
-    /** @return list<ClientInvoice> */
+    /**
+     * Bill every period this schedule is due for, up to and including `$through`.
+     *
+     * Two passes over the same periods, under one lock and one transaction.
+     * The first classifies every due period and mutates nothing; the second
+     * creates and issues. A period the first pass cannot decide throws there,
+     * before anything has been written.
+     *
+     * The order is the whole point. `BillingPeriodCollisionResolver` can refuse
+     * a period whose lineage is dangling or contradictory, that overlaps
+     * another invoice partially, or that a draft has claimed without billing -
+     * and a single pass reached that refusal on the third period only after
+     * `createDraft()` and `issue()` had written invoices, lines, activities and
+     * time-entry statuses for the first two. Those writes were rolled back, and
+     * had been doomed from the moment the third period was read.
+     *
+     * Whole-run atomicity is unchanged and deliberate, not something this order
+     * relaxes. Committing the clear periods and refusing the rest would leave
+     * `next_run_on` pointing into the middle of a batch, some of the schedule's
+     * periods billed and a partial-success contract nothing else here has.
+     * All-or-nothing is recoverable by re-running once the named row is
+     * repaired; half-applied is not. What changes is that the refusal no longer
+     * has a rollback of real money-facing writes behind it - #252.
+     *
+     * @return list<ClientInvoice>
+     */
     public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through): array
     {
         return DB::transaction(function () use ($schedule, $through): array {
@@ -28,9 +54,6 @@ final class BillingScheduleService
             if (! $locked->is_active) {
                 return [];
             }
-
-            $created = [];
-            $nextRun = CarbonImmutable::parse((string) $locked->next_run_on);
 
             // Read before the loop, so a schedule that cannot bill anything
             // halts whether or not a period is due, and read through the same
@@ -40,49 +63,83 @@ final class BillingScheduleService
             // an issued invoice for nothing.
             $template = BillingScheduleLineTemplate::normalize($locked->getAttribute('line_template'));
 
-            while ($nextRun->lte($through)) {
-                $period = BillingPeriod::beginningAt($nextRun, (string) $locked->cadence);
-
-                // Whether this period is already covered, and by whose invoice,
-                // is decided by `BillingPeriodCollisionResolver`. It used to be
-                // one nested `where` closure here, and three reviews each found
-                // a real defect inside it; the reasoning is long enough to need
-                // its own class and its own tests per branch.
-                $claim = $this->collisions->resolve($locked, $period->start, $period->end);
-
-                // A refusal rolls the whole transaction back, including periods
-                // already created earlier in this loop. That is deliberate:
-                // `createDraft()` and `issue()` each mutate invoices,
-                // activities and time entries, so a partial run would leave
-                // some of a schedule's periods billed and its `next_run_on`
-                // pointing into the middle of the batch. All-or-nothing is
-                // recoverable by re-running once the named row is repaired;
-                // half-applied is not. Doing the classification for every
-                // period up front, before creating anything, would avoid the
-                // wasted work - #252.
-                //
-                // Exhaustive, with no `default`, and that is the point of it
-                // being a `match` rather than the if-chain it replaced. The
-                // chain tested for the verdicts it knew and let anything else
-                // fall into the arm that creates and issues an invoice - so a
-                // fifth verdict added to `PeriodClaimVerdict` would have failed
-                // *open* here, writing an invoice for a period the resolver had
-                // declined to decide, in the one place whose job is to fail
-                // closed. Now it throws `UnhandledMatchError` instead, and
-                // PHPStan rejects the omission before that.
-                $created[] = match ($claim->verdict) {
-                    PeriodClaimVerdict::Refused => throw new DomainException($claim->refusal()),
-                    PeriodClaimVerdict::PendingDraft => throw new DomainException($this->pendingDraftMessage($claim, $period)),
-                    PeriodClaimVerdict::AlreadyBilled => $claim->invoice(),
-                    PeriodClaimVerdict::Clear => $this->bill($locked, $period, $template),
-                };
-
-                $nextRun = $period->next;
-                $locked->forceFill(['next_run_on' => $nextRun->toDateString()])->save();
+            [$plan, $nextRun] = $this->plan($locked, $through);
+            if ($plan === []) {
+                return [];
             }
+
+            // Second pass. Every period here has already been decided, so
+            // nothing below can halt the run on the state of the data, and
+            // nothing above has written anything.
+            $created = [];
+            foreach ($plan as $planned) {
+                $created[] = $planned->existingInvoice() ?? $this->bill($locked, $planned->period, $template);
+            }
+
+            // Once, at the end, rather than after each period. A refusal used
+            // to be able to arrive with the cursor already advanced past
+            // earlier periods in the same transaction; the rollback undid that
+            // too, but there is now no point in the run at which the stored
+            // cursor and the invoices disagree.
+            $locked->forceFill(['next_run_on' => $nextRun->toDateString()])->save();
 
             return $created;
         });
+    }
+
+    /**
+     * Classify every period due by `$through`, writing nothing.
+     *
+     * Refusals happen here, which is what makes this a first pass rather than
+     * a prediction: it throws for the same reasons and with the same messages
+     * the single-pass loop did, only earlier. The schedule must already be
+     * locked - {@see BillingPeriodCollisionResolver} takes no lock of its own,
+     * and the plan is only good for as long as the lock the caller holds.
+     *
+     * @return array{0: list<PlannedBillingPeriod>, 1: CarbonImmutable} the plan, and where the schedule
+     *                                                                  stands once every period in it is billed
+     *
+     * @throws DomainException if any due period cannot be decided.
+     */
+    private function plan(ClientBillingSchedule $schedule, CarbonImmutable $through): array
+    {
+        $plan = [];
+        $nextRun = CarbonImmutable::parse((string) $schedule->next_run_on);
+
+        while ($nextRun->lte($through)) {
+            $period = BillingPeriod::beginningAt($nextRun, (string) $schedule->cadence);
+
+            // Whether this period is already covered, and by whose invoice,
+            // is decided by `BillingPeriodCollisionResolver`. It used to be
+            // one nested `where` closure here, and three reviews each found
+            // a real defect inside it; the reasoning is long enough to need
+            // its own class and its own tests per branch.
+            $claim = $this->collisions->resolve($schedule, $period->start, $period->end);
+
+            // Exhaustive, with no `default`, and that is the point of it
+            // being a `match` rather than the if-chain it replaced. The
+            // chain tested for the verdicts it knew and let anything else
+            // fall into the arm that creates and issues an invoice - so a
+            // fifth verdict added to `PeriodClaimVerdict` would have failed
+            // *open* here, writing an invoice for a period the resolver had
+            // declined to decide, in the one place whose job is to fail
+            // closed. Now it throws `UnhandledMatchError` instead, and
+            // PHPStan rejects the omission before that.
+            //
+            // A refusal still rolls the whole transaction back, including any
+            // period already planned. Nothing has been created yet, so there
+            // is nothing for the rollback to undo beyond the lock itself.
+            $plan[] = match ($claim->verdict) {
+                PeriodClaimVerdict::Refused => throw new DomainException($claim->refusal()),
+                PeriodClaimVerdict::PendingDraft => throw new DomainException($this->pendingDraftMessage($claim, $period)),
+                PeriodClaimVerdict::AlreadyBilled => PlannedBillingPeriod::alreadyBilled($period, $claim->invoice()),
+                PeriodClaimVerdict::Clear => PlannedBillingPeriod::toBill($period),
+            };
+
+            $nextRun = $period->next;
+        }
+
+        return [$plan, $nextRun];
     }
 
     /**
