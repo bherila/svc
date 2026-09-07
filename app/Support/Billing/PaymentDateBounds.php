@@ -68,7 +68,19 @@ final class PaymentDateBounds
         $day = $today->startOfDay();
 
         return new self(
-            $day->subYears(self::FLOOR_YEARS_BEFORE_TODAY)->toDateString(),
+            // Clamped rather than overflowed. Two years before the 29th of
+            // February is a day that does not exist, and PHP's default year
+            // arithmetic answers the 1st of March - which makes the window a
+            // day *shorter* on that one day of every fourth year, so a payment
+            // dated exactly two calendar years earlier is refused for being
+            // too old. The no-overflow form answers the 28th, which is the
+            // reading that keeps the advertised window the advertised size and
+            // errs towards accepting a real payment rather than refusing one.
+            //
+            // The only arithmetic here. `startOfDay()` cannot overflow a
+            // calendar and the upper bound is today itself, so this is the one
+            // place in this class where the question arises.
+            $day->subYearsNoOverflow(self::FLOOR_YEARS_BEFORE_TODAY)->toDateString(),
             $day->toDateString(),
         );
     }

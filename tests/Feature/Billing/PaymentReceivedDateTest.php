@@ -186,6 +186,32 @@ final class PaymentReceivedDateTest extends TestCase
     }
 
     /**
+     * The floor is two calendar years, including on the day that has no
+     * two-years-ago.
+     *
+     * PHP's default year arithmetic answers the 1st of March for two years
+     * before the 29th of February, which makes the advertised window a day
+     * shorter on that one day of every fourth year - so a payment dated
+     * exactly two calendar years earlier is refused for being too old.
+     */
+    public function test_the_floor_does_not_overflow_on_a_leap_day(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2028-02-29 12:00:00 UTC'));
+
+        try {
+            [, $workspace, $invoice] = $this->issuedInvoice();
+
+            $payment = app(InvoiceLifecycleService::class)->applyPayment($invoice, [
+                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-02-28',
+            ], $workspace);
+
+            $this->assertSame('2026-02-28', $payment->received_on?->toDateString());
+        } finally {
+            Date::setTestNow();
+        }
+    }
+
+    /**
      * A dated payment is refused across a tenant boundary as a tenant refusal.
      *
      * The date adds no new surface, and the point of asserting it is that the
