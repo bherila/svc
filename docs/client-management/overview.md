@@ -31,12 +31,20 @@ tables and their invariants is [the domain contract](../domain-contract.md).
 
 ### Tenancy
 
-Every business row belongs to a `workspace` and carries both a direct
-`workspace_id` and an immutable UUID `public_id`. Tenant-owned models use
+Every tenant-owned row carries a direct `workspace_id`, even when ownership
+could also be reached through a parent. Most also carry an immutable UUID
+`public_id`, and every row an external surface addresses does — but that half is
+not universal: `client_invoice_line_time_entries`,
+`client_portal_project_access`, `workspace_invoice_counters`,
+`agent_mutation_audits` and the `stripe_payment_method_states` adapter index all
+carry `workspace_id` and no `public_id`, because nothing outside the application
+names them. Tenant-owned models use
 `App\Models\Concerns\BelongsToWorkspace`, which names `workspace_id` in the
 `UPDATE`/`DELETE` statement itself rather than relying on the read that found
 the row. External surfaces address rows by `public_id`; the integer key is
-hidden from serialization. See [tenant foreign keys](tenant-foreign-keys.md) for
+kept out of payloads by an `#[Hidden]` attribute on the model — which the
+audit, import-ledger and invoice-counter models do not carry, no controller
+serializing them. See [tenant foreign keys](tenant-foreign-keys.md) for
 the composite `(workspace_id, parent_id)` keys that make a cross-tenant
 reference unstorable.
 
@@ -109,9 +117,11 @@ membership level — see [Subcontractors](#subcontractors).
 - Controllers: `app/Http/Controllers/` (client directory, portal, companies,
   projects, tasks), plus `Billing/`, `Engagement/`, `Expenses/`, `Files/`, and
   `Api/V1/` for the agent and MCP surface.
-- Frontend: `resources/js/pages/` served through Inertia. There is one Blade
-  template, `resources/views/app.blade.php`; `resources/views/invoices/` holds
-  PDF and email templates only.
+- Frontend: `resources/js/pages/` served through Inertia through the shell
+  template `resources/views/app.blade.php`. `resources/views/invoices/` holds
+  `show` (the PDF), `email` (the mail body), `schedule` (a plain HTML page still
+  served by `BillingScheduleController::show()`), and `index`, which no route
+  references.
 - Tests: `tests/Feature/Billing/`, `tests/Feature/Engagement/`.
 
 ## Database schema
@@ -163,7 +173,7 @@ entity record; see [Stripe billing](stripe-billing.md).
 
 `client_project_memberships` cannot express portal scoping: it carries a
 composite foreign key into `workspace_memberships`, so a row there requires the
-user to be a workspace member, and an external portal user never is.
+user to be a workspace member, which a purely external portal contact is not.
 
 #### `client_projects`
 
@@ -340,8 +350,14 @@ task, time-entry and invoice writes: `POST|PATCH|DELETE
 ## Frontend
 
 Pages are React under `resources/js/pages/`, rendered through Inertia from a
-single Blade shell. There is no per-page Vite entry point and no
-`resources/js/client-management/` tree.
+single Blade shell. There is one Vite entry point, `resources/js/app.tsx`, and
+no `resources/js/client-management/` tree.
+
+Two authenticated routes are not Inertia pages:
+`GET /workspaces/{workspace}/billing-schedules/{schedule}` returns the Blade
+view `invoices/schedule`, and `GET /workspaces/{workspace}/invoices` returns
+JSON or a redirect rather than a screen — the operator invoice list is
+`clients/invoices`, reached through the client.
 
 - `pages/clients/` — the operator surface: `index`, `home`, `invoices`,
   `invoice`, `tasks`, `project`, `agreement`, `proposal`, `expenses`,
@@ -354,22 +370,38 @@ single Blade shell. There is no per-page Vite entry point and no
 
 `WorkspaceShell` (`resources/js/layouts/workspace-shell.tsx`) draws the navbar
 row and the page's `<main>` in one container, and a page inside it supplies
-content only. Every client and portal page uses it, as do `time.tsx` and
-`workspaces/enter.tsx`.
+content only. Thirteen pages use it: `clients/agreement`, `clients/expenses`,
+`clients/home`, `clients/invoice`, `clients/invoices`, `clients/project`,
+`clients/proposal`, `clients/settings`, `clients/tasks`, `portal/invoice`,
+`portal/time`, `time`, and `workspaces/enter`.
 
-**`operations.tsx` is the outstanding exception.** The authenticated
-`/workspaces/{workspace}/operations` route renders it, and it supplies its own
-chrome instead. That is deliberate rather than an oversight: the route sits
-outside the `ResolveWorkspaceNavigation` group precisely so it does not resolve
-a switcher, and the route comment records why — every workflow the page holds is
-moving to the client module that owns it, so it is not gaining a switcher it is
-about to lose. Until that move finishes, the shell rule in `AGENTS.md` has one
-page it does not describe.
+**Two authenticated pages do not, and both are outstanding exceptions** rather
+than a rule with a carve-out:
 
-The layout rules and the checks a page has to pass are in
-[the interface guide](../ui.md). There are no strict/relaxed hydration schema
-pairs — the server sends finished URLs, capabilities and labels rather than
-values for the browser to interpret.
+- `operations.tsx`, rendered by `/workspaces/{workspace}/operations`. The route
+  sits outside the `ResolveWorkspaceNavigation` group deliberately, and its
+  comment records why: every workflow the page holds is moving to the client
+  module that owns it, so it is not gaining a switcher it is about to lose.
+- `clients/index.tsx`, rendered by `ClientDirectoryController::index()` for
+  `/workspaces/{workspace}/clients`. It supplies its own
+  `<main className="mx-auto ... max-w-6xl">`, back-link, command-palette trigger
+  and appearance selector. No comment records a reason for this one.
+
+`welcome.tsx` and `workspaces/index.tsx` also have no shell and are not
+exceptions: the shell is per-workspace chrome, and neither page has a workspace
+— `/` is unauthenticated and `/app` is the selector you reach before choosing
+one.
+
+**Finished URLs are the rule and `clients/index.tsx` is the exception.**
+`ClientDirectoryController::index()` sends workspace and company ids, and the
+page assembles `/workspaces/${workspaceId}/clients/${company.id}` and
+`/workspaces/${workspace.id}/time` in the browser. Everywhere else the server
+sends the destination and the capability, so a module the viewer's route family
+does not serve arrives as `null` and its tab is not rendered.
+
+There are no strict/relaxed hydration schema pairs; stored enums are printed
+through `statusLabel` rather than straight from the column. The layout rules and
+the checks a page has to pass are in [the interface guide](../ui.md).
 
 ## Subcontractors
 
@@ -474,8 +506,13 @@ adapter tables. What follows is only what this page still needs to say.
   as ordinary lines, see [deferred billing](deferred-billing.md).
 - **`client_agreements.billing_cadence`** — `BillingCadence` has four cases:
   `monthly`, `quarterly`, `semi_annual`, `annual`. The column *defaults* to
-  `one_time`, which the enum has no case for, so an agreement created without an
-  explicit cadence generates no cycle invoices at all.
+  `one_time`, which the enum has no case for.
+  `ClientAgreement::billsOnARecurringCadence()` is the guard: a stored cadence
+  that is not a `BillingCadence` case makes `generateAllInvoicesForAgreement()`
+  skip the agreement with `not_recurring_cadence` rather than generate. An agreement
+  whose cadence column is *empty* still bills monthly — that fallback predates
+  the guard and existing data relies on it — so it is a chosen `one_time`, not
+  an absent value, that stops generation.
 
 ### Services
 
@@ -532,8 +569,14 @@ Work can be logged with `is_deferred = true` and billed only once retainer
 capacity exists. It does **not** draw on the pool until the allocator actually
 bills it — counting it up front consumed capacity nothing had taken and produced
 catch-up charges to restore it. Once allocated, the flag stays set and the hours
-still count as billed; `scopeDeferredOnlyOnceAllocated()` is the one place that
-decides this. See [deferred billing](deferred-billing.md).
+still count as billed. `ClientTimeEntry::scopeDeferredOnlyOnceAllocated()` is
+that rule, and it is what the ledger queries ask — four of them had written
+`where('is_deferred', false)` by hand, so once the invoice was issued those
+hours vanished from every later rebuild. Other call sites do still filter
+`is_deferred` directly, in `InvoiceLineComposer`, `ClientInvoicingService`,
+`InterimOverageGenerator`, `DraftInvoiceTimeRegenerator` and
+`InvoiceFromTimeService`; those are choosing what to put on a new draft rather
+than rebuilding a ledger. See [deferred billing](deferred-billing.md).
 
 ### Generating invoices
 
@@ -595,9 +638,16 @@ flag on the row.
 
 ### Payments
 
-Recording a payment is the one write the invoice screen offers, and there is no
-payment-deletion path: a payment is corrected by transitioning its status or its
-refunded amount, so history is preserved rather than rewritten.
+Recording a payment is the one write the invoice screen offers
+(`POST /workspaces/{workspace}/invoices/{clientInvoice}/payments`), and
+`svc:billing:payment` is the console equivalent. There is no payment-deletion
+path anywhere.
+
+Correcting one means transitioning its status or its refunded amount through
+`InvoiceLifecycleService::setPaymentStatus()` / `setRefundedAmount()`, so history
+is preserved rather than rewritten — but note that **`StripeWebhookService` is
+their only caller**. No route, console command or agent tool reaches either, so
+today a hand-entered payment can be recorded and cannot be corrected in place.
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
 sums each `succeeded` payment's amount less its `refunded_amount`, floors each
@@ -623,8 +673,23 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
 
 ## Security
 
-- Every route is behind the `auth` middleware; the agent API is behind OAuth
-  bearer tokens with scoped abilities.
+- Application routes are behind the `auth` middleware. Four other categories
+  are not, and each is guarded by something else:
+  - the **agent API** (`/api/v1/*`) uses `auth:api` (Passport) with a scope
+    check per route and an expected OAuth resource;
+  - the **finance reconciliation API** uses `auth:sanctum` with the
+    `finance.read` / `finance.reconcile` abilities;
+  - **two adapter webhooks** are unauthenticated by design and verify the
+    caller themselves. `POST /api/webhooks/stripe` constructs the event through
+    `StripeGateway::constructWebhookEvent()` with the `Stripe-Signature` header
+    before anything can persist, and returns 400 on a verification failure.
+    `POST /api/webhooks/brevo` has no signature to check — Brevo does not sign —
+    so it compares a configured shared token with `hash_equals` and returns 401
+    when the token is absent, unpresented or wrong, including when none is
+    configured; it is also rate-limited and caps body size and batch length;
+  - **sign-in and OAuth discovery** — `/`, `/login`, `/oauth/redirect`,
+    `/oauth/callback`, `POST /oauth/register` (throttled) and the
+    `/.well-known/oauth-*` documents.
 - Reads require `view` on the workspace. Writes require `manage` for client,
   project, task, invoice, schedule and expense records; the time-entry writes
   ask `ProjectAccess` about the entry's own project instead, so a project
@@ -633,15 +698,24 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
 - The portal requires `viewPortal` and is then narrowed by `PortalAccess` on
   every surface, not only on the project list.
 - Every tenant-owned update and delete names `workspace_id` in its own
-  statement.
+  statement, through `BelongsToWorkspace::setKeysForSaveQuery()` and, for a
+  pivot, `ScopesPivotDeletesToWorkspace`. That is a
+  [domain-contract](../domain-contract.md#cross-cutting-invariants) invariant
+  rather than something this page establishes.
 - Composite `(workspace_id, parent_id)` foreign keys make a cross-tenant
   reference unstorable rather than merely unwritten by the application; see
   [tenant foreign keys](tenant-foreign-keys.md).
-- Pessimistic locks are taken in one recorded order, enforced by a conformance
-  test and a static rule; see [lock order and check-then-act](concurrency.md).
-- CSRF protection covers every browser state change.
-- Attachments are streamed through an authorized controller. Blobs never live
-  under `public/` and object keys carry no client-identifying text.
+- Pessimistic locks are meant to be taken in one recorded order, enforced by a
+  conformance test and a static rule. `concurrency.md` names the paths that do
+  not take it and what a green run does not prove; read it rather than reading
+  the rule as settled.
+- CSRF protection covers browser state changes. The two webhooks above drop
+  `ValidateCsrfToken` and `PreventRequestForgery` explicitly, because the caller
+  is a provider with no session and no token to present.
+- Attachments are streamed through an authorized controller rather than through
+  `Storage` directly. Keeping blobs out of `public/` and client-identifying text
+  out of object keys is the contract in
+  [the private file storage plan](../file-storage-plan.md).
 
 ## Client expenses
 
