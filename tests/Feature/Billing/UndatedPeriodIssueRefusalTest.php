@@ -527,6 +527,88 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     }
 
     /**
+     * A payment transition cannot promote a draft past `issue()`.
+     *
+     * `refreshStatus()` derives `issued` for any non-void invoice with no
+     * succeeded payment, and it was public. `applyPayment()` already refuses to
+     * attach a payment to a draft, so the reachable shape is a payment that
+     * *already* sits on one - an imported or hand-edited pair - moved by
+     * `setPaymentStatus()` or `setRefundedAmount()`. The invoice would land in
+     * a status `InvoiceStatus::collectible()` accepts, and so become emailable,
+     * with a null `issued_at`, no `invoice.issued` activity, and the malformed
+     * period it was refused for.
+     *
+     * Deleting the draft arm of that match must turn this test red by moving
+     * the invoice to `issued`.
+     */
+    public function test_a_payment_transition_cannot_promote_a_draft_past_issue(): void
+    {
+        $invoice = $this->draft('cadence_period', '2026-08-01', null);
+        $payment = $invoice->payments()->create([
+            'workspace_id' => $this->workspace->id,
+            'status' => 'pending',
+            'amount' => 1000,
+            'refunded_amount' => 0,
+            'currency' => 'USD',
+            'method' => 'ach',
+            'received_on' => '2026-08-15',
+        ]);
+        $activitiesBefore = ClientCompanyActivity::query()->count();
+
+        try {
+            app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'failed', $this->workspace);
+            $this->fail('A payment transition must not promote a draft.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('draft invoice', $refusal->getMessage());
+        }
+
+        $fresh = $invoice->refresh();
+        $this->assertSame('draft', $fresh->status);
+        $this->assertNull($fresh->issued_at);
+        $this->assertNull($fresh->issue_date);
+        $this->assertFalse((bool) $fresh->is_visible_to_client);
+        $this->assertSame('pending', $payment->refresh()->status, 'The payment change rolls back');
+        $this->assertSame($activitiesBefore, ClientCompanyActivity::query()->count());
+    }
+
+    /**
+     * An unrecognised invoice status is not normalised by payment reconciliation.
+     *
+     * `InvoiceStatus::isSettledValue()` and `hasChargedValue()` both read an
+     * unknown status as settled and charged, because code that cannot interpret
+     * a state must not act on it. Rewriting it is the strongest action
+     * available, and that is what this used to do: `awaiting_dispute_resolution`
+     * became `issued`, reaching a collectible status from the other side of the
+     * same defect the draft arm covers.
+     *
+     * The refusal is inside the payment transaction, so the insert rolls back.
+     */
+    public function test_a_payment_cannot_normalise_an_unrecognised_invoice_status(): void
+    {
+        $invoice = $this->draft('cadence_period', '2026-08-01', '2026-08-31');
+        $invoice->forceFill(['status' => 'awaiting_dispute_resolution'])->save();
+        $paymentsBefore = $invoice->payments()->count();
+        $activitiesBefore = ClientCompanyActivity::query()->count();
+
+        try {
+            app(InvoiceLifecycleService::class)->applyPayment($invoice->refresh(), [
+                'amount' => 1000,
+                'currency' => 'USD',
+                'method' => 'ach',
+                'status' => 'pending',
+                'received_on' => '2026-08-15',
+            ], $this->workspace);
+            $this->fail('An unrecognised invoice status must not be rewritten by payment reconciliation.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('unrecognised status', $refusal->getMessage());
+        }
+
+        $this->assertSame('awaiting_dispute_resolution', $invoice->refresh()->status);
+        $this->assertSame($paymentsBefore, $invoice->payments()->count(), 'The payment insert rolls back');
+        $this->assertSame($activitiesBefore, ClientCompanyActivity::query()->count());
+    }
+
+    /**
      * An exact draft of an unsupported kind has no false exit, in either
      * direction.
      *

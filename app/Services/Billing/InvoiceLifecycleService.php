@@ -319,10 +319,11 @@ final class InvoiceLifecycleService
      * and end." and {@see self::updateDraft()} accepts currency, totals, due
      * date, notes and lines only - it can set neither boundary nor the kind.
      * The replacement then named an "audited administrative repair path", which
-     * was worse: **nothing** writes `service_period_start` or
-     * `service_period_end` on an existing row. Every write of either is at
-     * creation - here, in `ClientInvoicingService`, and in
-     * `BillingScheduleService::bill()`. There is no repair-in-place at all.
+     * was worse: no such thing exists. Generation does rewrite both boundaries
+     * on a draft it is refreshing - `InterimOverageGenerator` updates them in
+     * place - but there is no **operator-facing** operation that repairs an
+     * existing invoice's period or kind. `updateDraft()` is the one an operator
+     * has, and it touches neither.
      *
      * So the only true instruction is to replace the row, and which replacement
      * is possible depends on the link: `StoreInvoiceRequest` accepts both
@@ -647,32 +648,54 @@ final class InvoiceLifecycleService
     /**
      * Recompute a live invoice's paid and balance amounts from its payments.
      *
-     * **Not a way into `issued`.** The derivation below answers `issued` for
-     * any non-void invoice with no succeeded payment, so handing it a *draft*
-     * promoted that draft straight past {@see self::issue()} - past the period
-     * and kind invariants, and past the issue date, visibility and activity
-     * that make an issued invoice legible. The result was a row that is
-     * `issued` for `InvoiceStatus::collectible()`, and so emailable to a
-     * client, while carrying a null `issued_at`, no `invoice.issued` activity,
-     * and whatever malformed period it was refused for.
+     * **Not a way into `issued`, and not a way to normalise a status.** The
+     * derivation below answers `issued` for any non-void invoice with no
+     * succeeded payment, so it rewrites whatever it is handed. Two shapes must
+     * never reach it.
      *
-     * `recordPayment()` does not stop this: it checks the amount against the
-     * balance and nothing about status, and a draft's balance is its total. A
-     * pending payment recorded against a malformed draft was therefore enough.
-     * Production carries no payment against a draft, so refusing costs nothing.
+     * A **draft** would be promoted straight past {@see self::issue()} - past
+     * the period and kind invariants, and past the issue date, visibility and
+     * activity that make an issued invoice legible - into a status
+     * `InvoiceStatus::collectible()` accepts, so `InvoiceEmailService` would
+     * send a malformed invoice to the client. {@see self::applyPayment()}
+     * refuses to attach a payment to a draft, so this is reached through a
+     * payment that already sits on one, by way of
+     * {@see self::setPaymentStatus()} or {@see self::setRefundedAmount()}.
+     *
+     * An **unrecognised status** would be silently rewritten to one of today's
+     * four outcomes. `InvoiceStatus::isSettledValue()` and `hasChargedValue()`
+     * both read an unknown status as settled and charged, precisely because
+     * code that cannot interpret a state must not act on it - and rewriting it
+     * is the strongest action available. `awaiting_dispute_resolution` becoming
+     * `issued` is the same class of defect as the draft case, arrived at from
+     * the other side.
+     *
+     * Production carries no payment against a draft and no invoice of an
+     * unrecognised status, so both refusals cost nothing to adopt.
      *
      * Private, because every caller is in this class and the transition it
      * guards belongs to `issue()`.
      */
     private function refreshStatus(ClientInvoice $invoice): ClientInvoice
     {
-        if ($invoice->status === 'draft') {
-            throw new DomainException(
-                'A draft invoice cannot have its payment status refreshed: that would move it to issued '
-                .'without the checks issue() performs. Issue the invoice first, or correct the payment '
-                .'recorded against a draft.'
-            );
-        }
+        // Exhaustive, with no `default`. A sixth status added to
+        // `InvoiceStatus` has to answer this question rather than inheriting
+        // whichever of the four outcomes the arithmetic below happens to reach.
+        match (InvoiceStatus::tryFrom((string) $invoice->status)) {
+            InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Void => null,
+            InvoiceStatus::Draft => throw new DomainException(
+                'A payment is attached to a draft invoice, which is an inconsistent state: refreshing its '
+                .'payment status would move it to issued without the checks issue() performs. Neither the '
+                .'invoice nor the payment has been changed. Resolve that pair before continuing.'
+            ),
+            null => throw new DomainException(
+                'Invoice '.(string) $invoice->invoice_number.' carries the unrecognised status "'
+                .(string) $invoice->status.'", so whether it has already charged this client cannot be '
+                .'established and its payment state must not be recomputed - doing so would rewrite that '
+                .'status to one this application does read. Neither the invoice nor the payment has been '
+                .'changed. Classify or correct that status first.'
+            ),
+        };
 
         $paid = (int) $invoice->payments()
             ->where('status', 'succeeded')
