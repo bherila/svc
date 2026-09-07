@@ -23,7 +23,7 @@ places where SVC deliberately diverges.
 | Agreements and recurring items | [billing.md](billing.md) | Implemented — but `billing_cadence` defaults to `one_time` at the database level and one-time agreements generate no cycle invoices, so an agreement created without an explicit cadence bills nothing |
 | Time entries (log, approve, allocate) | [overview.md](overview.md) | Implemented, with one exception — a per-client operator time sheet logs, edits, deletes and approves, and the agent API answers to the same rule: both doors ask `ProjectAccess`, and update, delete and approve run through one service rather than two copies. Editing time a **draft** invoice has claimed is allowed and regenerates that draft in the same transaction; on an issued, paid or void invoice it is refused. The exception is allocation, which has an endpoint but no screen — see *Invoice from selected time* |
 | Invoice lifecycle (draft → issued → paid → void) | [billing.md](billing.md) | Implemented |
-| Invoice from selected time | [overview.md](overview.md#time-entry-splitting--allocation) | Implemented as an endpoint, not a button — `time_entry_ids` become lines and are marked allocated, the same time cannot be billed twice, and the web request, the agent API and the MCP write tool all accept them. No operator screen sends them yet |
+| Invoice from selected time | [overview.md](overview.md#time-entry-splitting-and-allocation) | Implemented as an endpoint, not a button — `time_entry_ids` become lines and are marked allocated, the same time cannot be billed twice, and the web request, the agent API and the MCP write tool all accept them. No operator screen sends them yet |
 | Payments and balances | [payments.md](payments.md) | Implemented |
 | Stripe payment intents and webhooks | [stripe-billing.md](stripe-billing.md) | Implemented |
 | Invoice email delivery | [billing.md](billing.md) | Implemented |
@@ -391,7 +391,7 @@ into a test.
 
 ## Quick links
 
-- **[Overview](overview.md)** — architecture, schema, models, controllers, routes, and workflows.
+- **[Overview](overview.md)** — tenancy, authorization, the schema for companies, portal access, projects, tasks, time entries and activity, the route families, and where each surface lives.
 - **[Setup](setup.md)** — one-time bootstrap: migrations to run, how to mark the first admin, how to test the feature end-to-end.
 - **[Billing](billing.md)** — billing hub: prior-period model, cadence/cycle fields, rollover, minimum-availability (catch-up) rule, line items, balance fields, recurring items, agreement transitions.
 - **[Cadence billing & regeneration](cadence-billing.md)** — invoice period (`period_*` vs `cycle_*`), one-cycle offset, numbering, regeneration rules + legacy `period == cycle` migration, interim overage invoices.
@@ -401,7 +401,7 @@ into a test.
 - **[Stripe billing](stripe-billing.md)** — online invoice payments, saved payment methods, payment cap, and webhook behavior.
 - **[Deferred billing](deferred-billing.md)** — per-entry flag that lets admins complete work now and bill for it only when retainer capacity exists.
 - **[Overpayment credits](overpayment-credits.md)** — any overpaid amount carries forward as a credit on the next invoice(s) and never expires.
-- **[Subcontractors](overview.md#subcontractors)** — project-scoped subcontractors with scoped portal access, self-logged + admin-approved hours, and flat-hourly / retainer / direct billing modes.
+- **[Subcontractors](overview.md#subcontractors)** — the per-time-entry billing-mode snapshot: flat-hourly, retainer, or direct. There is no engagement or assignment table here.
 - **[Tenant foreign keys](tenant-foreign-keys.md)** — the composite `(workspace_id, parent_id)` keys that make a cross-tenant reference unstorable, what every new tenant-owned table has to do, and which columns are exempt and why.
 - **[Lock order and check-then-act](concurrency.md)** — the one order every pessimistic lock is taken in, derived from recorded transactions and enforced by a conformance test and a static rule; the guards that read a condition and then write, with the lock or constraint that makes each sound; and what a green lock-order run does not prove.
 
