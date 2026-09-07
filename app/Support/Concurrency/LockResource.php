@@ -23,7 +23,7 @@ use RuntimeException;
  * has been quietly reshaped to fit whatever the code does cannot answer the
  * next ordering question, which is the only thing it is for. So
  * `LockOrderConformanceTest` refuses any sequence that walks backwards through
- * this list except the two it names, and it fails just as loudly if a named
+ * this list except the one it names, and it fails just as loudly if a named
  * inversion stops happening.
  *
  * What none of this does is prove race freedom. It proves ordering discipline.

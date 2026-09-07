@@ -65,7 +65,7 @@ use Tests\TestCase;
  * two transactions here ever contend; nothing in this file is evidence that a
  * concurrent caller is safe. What it does buy is the thing the one-at-a-time
  * fixes never could: a new lock in the wrong place fails here rather than in
- * production, and the two places where today's code disagrees with itself are
+ * production, and the place where today's code still disagrees with itself is
  * written down instead of rediscovered.
  */
 final class LockOrderConformanceTest extends TestCase
@@ -73,30 +73,29 @@ final class LockOrderConformanceTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * The two places today's code takes a pair in the minority order.
+     * The one place today's code still takes a pair in the minority order.
      *
-     * Both are real, both are reachable, and neither is fixed here: this issue
-     * documents and enforces the order, and changing an acquisition order is a
-     * behavioural change that belongs in its own commit with its own reasoning.
-     * They are pinned as an exact set so they cannot multiply, and so that
-     * fixing one fails this test rather than silently loosening it.
+     * Pinned as an exact set so it cannot multiply, and so that fixing it fails
+     * this test rather than silently loosening it.
      *
-     * - `ClientTimeEntry` before `Workspace`/`WorkspaceInvoiceCounter`:
-     *   `InterimOverageGenerator` selects the time it is about to bill and
-     *   *then* creates the invoice, which allocates a number and so locks the
-     *   workspace and its counter. Every cadence path does the reverse -
-     *   invoice and number first, time second. Two callers running those two
-     *   paths at once can hold what the other is waiting for.
-     * - `ClientTask` before `ClientTimeEntry`: milestone composition claims
-     *   tasks before drawing time on one replay path and after it everywhere
-     *   else.
+     * - `ClientTask` before `ClientTimeEntry`: not a call site anywhere, which
+     *   is the point of it. Each generation claims milestones after it has
+     *   drawn time, and the only time-entry lock a generation takes is inside
+     *   fragment recombination, which locks a lineage group only when one
+     *   exists. A period with no fragments to merge therefore locks a task and
+     *   no entry, so several periods run inside one transaction - the shape
+     *   `svc:billing:replay` produces - hold the first period's tasks when the
+     *   second asks for its entries. #223 carries the decision on it.
+     *
+     * `ClientTimeEntry` before `Workspace`/`WorkspaceInvoiceCounter` was the
+     * other one, and it is fixed rather than listed: the interim overage
+     * generator now takes the numbering rows before the recombination that
+     * locks time, so it walks the registry forwards like every cadence path.
      *
      * @var list<string>
      */
     private const KNOWN_INVERSIONS = [
         'ClientTask before ClientTimeEntry',
-        'ClientTimeEntry before Workspace',
-        'ClientTimeEntry before WorkspaceInvoiceCounter',
     ];
 
     private Workspace $workspace;
@@ -359,12 +358,14 @@ final class LockOrderConformanceTest extends TestCase
 
     /**
      * The interim generator, which recombines fragments before it has an
-     * invoice - and therefore before it allocates a number.
+     * invoice - and so has to reach the number counter before the recombination
+     * rather than at the create.
      *
      * Under a second company, because an agreement may not overlap another
      * active one and this cadence covers the same dates as the one above. The
      * split entry is what makes the recombination take a lock at all: with no
-     * fragments to merge it locks nothing, and this path would look ordered.
+     * fragments to merge it locks nothing, and this path would look ordered
+     * whether or not it is - which is what it looked like before #222.
      */
     private function driveInterimOverageWithFragments(): void
     {

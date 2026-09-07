@@ -18,7 +18,7 @@ enforced rather than aspirational:
   lockable table, in acquisition order.
 - `Tests\Feature\Concurrency\LockOrderConformanceTest` drives the concurrent
   writers with a recorder on and refuses any transaction that walks backwards
-  through that list, except the two inversions it names.
+  through that list, except the one inversion it names.
 
 ## What is *not* claimed here
 
@@ -102,37 +102,74 @@ ClientInvoicePayment, PaymentReconciliation                    reconciliation up
 ClientInvoice, ClientCompany                                   issuing, credit spend
 ClientAgreement, ClientInvoice, Workspace,
     WorkspaceInvoiceCounter, ClientTimeEntry, ClientTask       cadence generation
+ClientAgreement, ClientInvoice, Workspace,
+    WorkspaceInvoiceCounter, ClientTimeEntry                   interim overage
 StripePaymentMethodState, ClientStripeCustomer,
     ClientStripePaymentMethod                                  provider sync
 ```
 
-## The two known inversions
+## The known inversions
 
-Both are real, both are reachable, and neither is fixed here. This work
-documents and enforces the order; changing an acquisition order is a
-behavioural change that belongs in its own commit with its own reasoning and its
-own follow-up. They are pinned as an exact set in
-`LockOrderConformanceTest::KNOWN_INVERSIONS`, so they cannot multiply and fixing
-one fails the test rather than silently loosening it.
+Two were recorded when the registry was written. Both were real and both were
+reachable; the first is fixed and kept here rather than deleted, because the
+next reader's question is "was this ever the other way round, and why", and a
+deleted entry answers it with silence. What remains is pinned as an exact set in
+`LockOrderConformanceTest::KNOWN_INVERSIONS`, so it cannot multiply and fixing it
+fails the test rather than silently loosening it.
 
-**1. `client_time_entries` before `workspaces` / `workspace_invoice_counters`.**
-`InterimOverageGenerator::generateInterimOverageInvoice()` recombines fragments
-— which locks a lineage group of time entries — and *then* creates the invoice,
-which allocates a number and so locks the workspace and its counter. Every
-cadence path does the reverse: invoice and number first, time second. Two
-callers running those two paths against one workspace at the same time can each
-hold what the other is waiting for. This is the inversion with a real deadlock
-story behind it.
+**1. `client_time_entries` before `workspaces` / `workspace_invoice_counters` —
+fixed in #222.** `InterimOverageGenerator::generateInterimOverageInvoice()`
+recombined fragments — which locks a lineage group of time entries — and *then*
+created the invoice, which allocates a number and so locks the workspace and its
+counter. Every cadence path does the reverse: invoice and number first, time
+second. A cadence generation holding the counter and reaching for that client's
+time was holding exactly what an interim run was waiting for, and waiting for
+exactly what it held.
 
-**2. `client_tasks` before `client_time_entries`.** Only inside one long
-transaction covering several periods, which is the shape `svc:billing:replay`
-produces: it wraps its whole run in a transaction it will roll back, so every
-period's locks are held together to the end. The first period claims a milestone
-and finds no fragments to recombine — its own allocation is what creates them —
-and the second recombines what the first left. Each generation is correctly
-ordered on its own; the pair is not. This is the inversion a per-call review
-cannot see, and the reason conformance is checked per transaction rather than
-per call site.
+The recombination could not simply move after the create, because whether an
+invoice is created at all depends on the hours the recombined entries carry: the
+merge has to happen before the decision. So the generator takes the two
+numbering rows first instead, through `InvoiceNumberAllocator::lockNumbering()`,
+and allocates the number at the create as before. The rows are held to commit
+whenever they are acquired, so nothing is held longer than it was; what changed
+is that a run which then finds nothing to bill has serialised numbering for the
+workspace for the rest of its transaction without consuming a number. That is
+the price of one order for everybody. The invoice this path produces is
+unchanged — `CapacityAndScopeGuardsTest`'s interim cases pass untouched — and
+`::test_an_interim_month_with_no_time_of_its_own_allocates_no_invoice_number`
+pins the distinction the fix rests on: the counter is *locked* early and the
+number is still drawn at the create, so a month that turns out to have nothing
+to bill leaves no gap in the client's invoice sequence.
+
+Bending the registry so `client_time_entries` outranked numbering was the
+alternative and it was rejected twice: once when the registry was written and
+again here. It would have made the exception invisible and left the cadence
+paths — the majority, and the request paths — walking backwards instead.
+
+**2. `client_tasks` before `client_time_entries` — open, see #223.** Only inside
+one long transaction covering several periods, which is the shape
+`svc:billing:replay` produces: it wraps its whole run in a transaction it will
+roll back, so every period's locks are held together to the end. The first
+period claims a milestone and finds no fragments to recombine — its own
+allocation is what creates them — and the second recombines what the first left.
+Each generation is correctly ordered on its own; the pair is not. This is the
+inversion a per-call review cannot see, and the reason conformance is checked per
+transaction rather than per call site.
+
+The decision on it is recorded on #223 and neither of the two obvious fixes is
+it. Narrowing the replay transaction so each period releases its locks means
+ending the transaction each period, and both ways of ending it are closed:
+committing writes the deletions and regenerated invoices that command exists to
+never write, and rolling back per period discards the invoices the comparison is
+about. Claiming the milestone after the first period's time-entry work is
+already what the code does — the first period locks no entry because the only
+time-entry lock a generation takes is inside fragment recombination, which locks
+a lineage group only when one exists, and the first period's own allocation is
+what creates them. Making that lock unconditional would widen the locking
+footprint of a request path to buy monotonicity against a race the agreement row
+lock already serialises, and would report a lock that was recorded rather than a
+row that was held. The pair is left listed, and the operational rule is that
+`svc:billing:replay` is not run against a workspace that is generating invoices.
 
 ## Check-then-act inventory
 
@@ -151,7 +188,7 @@ gets a follow-up rather than an inline fix.
 | `InvoiceNumberAllocator::next()` — the next number is not handed out twice | The workspace row lock, then the counter row; and `(workspace_id, invoice_number)` unique behind both |
 | `BillingScheduleService::generateDue()` — a period is not billed twice **by this schedule** | The schedule row lock, plus the application guard in `BillingPeriodCollisionResolver`. `billing_schedule_service_period_unique` **does not** carry this: a unique index does not constrain a null, so it never covered the unlinked case. Since #219/#224 the guard matches the tenant and the *overlapping* period first and reads ownership only to decide whose invoice it is — a null `client_billing_schedule_id` means *unclaimed* rather than no match, narrowed to this agreement and, for unlinked rows only, to the kinds `InvoiceKind::cycleGuardExclusions()` allows to block. Every non-null id is resolved against the invoice's own workspace and client, so lineage that dangles, crosses tenants or contradicts itself is refused rather than read as someone else's; so is a row attributable to nobody when any other agreement or active schedule could own it, one of this schedule's own invoices that states no complete period, and one carrying a status no enum case matches (unknown statuses fail closed, matching `InvoiceStatus::isSettledValue()`). Complete and incomplete periods are fetched by one query and classified by one set of ownership rules — a missing boundary reads as unbounded in that direction, and only candidates that could overlap *this* period are considered at all. A **known** void clears before any of that unless it covers the period exactly, so voiding stays the documented way out. Serialised against itself by the lock; **not** against the other generator — see the gap below. Covered by `BillingWorkflowTest::test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again`, `::test_an_invoice_owned_by_another_schedule_does_not_block_this_one`, `::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule`, `::test_another_agreements_unlinked_invoice_does_not_block_this_schedule`, `::test_an_invoice_naming_a_schedule_that_does_not_exist_is_refused`, `::test_an_invoice_naming_another_clients_schedule_is_refused`, `::test_an_invoice_naming_another_companys_agreement_is_refused`, `::test_an_invoice_whose_schedule_and_agreement_disagree_is_refused`, `::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it`, `::test_an_invoice_containing_the_period_is_refused_rather_than_billed_again` and `::test_an_invoice_of_this_schedule_with_no_period_end_is_refused`, `::test_an_unrecognised_status_refuses_rather_than_clearing`, `::test_a_voided_overlap_clears_even_with_dangling_lineage`, `::test_a_periodless_invoice_that_cannot_reach_this_period_does_not_halt_it` and `::test_consecutive_periods_are_adjacent_for_every_cadence_and_awkward_start` (the adjacency the overlap refusal rests on). `::test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule` (a draft has claimed the period without billing it, so the schedule stops rather than advancing past it). `ScheduleGenerationPreflightTest::assertPredictionMatchesTheRun()` asserts the pre-deployment preflight and this run agree in both directions |
 | `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` — one cadence invoice per period | The agreement row lock, taken first because the invoice rows it guards against may not exist yet |
-| `InterimOverageGenerator::generateInterimOverageInvoice()` — no interim after the cycle is charged, no duplicate interim draft | The agreement row lock, then the candidate invoice rows under it |
+| `InterimOverageGenerator::generateInterimOverageInvoice()` — no interim after the cycle is charged, no duplicate interim draft | The agreement row lock, then the candidate invoice rows under it. On the create path it then takes the numbering rows through `InvoiceNumberAllocator::lockNumbering()` **before** recombining fragments, so this path reaches `client_time_entries` after `workspaces` and `workspace_invoice_counters` like every cadence path (#222) |
 | `InterimOverageGenerator::releaseUnchargedInterimClaims()` — only an unsettled draft is stripped | Locks the drafts, then **re-reads each one and re-checks its status** before rewriting. The cadence path holds the agreement and `issue()` holds the invoice and the company, so nothing else stops an operator issuing a draft between the read and the delete |
 | `AllocationService::recombineUnlinkedFragments()` — only a wholly unbilled group merges | Locks the lineage group, then validates the project chains **after** taking those locks, so a concurrent edit cannot move a fragment between the check and the destructive merge |
 | `TimeEntryMutationService::update()` — an entry on a draft may be edited | Locks the company's agreements, then its invoices, then the entry — then re-verifies that the entry's allocated invoice is among the ids it locked, and refuses if the allocation moved |

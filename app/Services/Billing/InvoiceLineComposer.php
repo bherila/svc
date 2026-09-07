@@ -239,6 +239,12 @@ class InvoiceLineComposer
         Collection $entries,
         int &$sortOrder,
     ): void {
+        // Resolved once, before anything is composed, and refused when it is
+        // not there. `Carbon::parse(null)` returns *now* rather than throwing,
+        // so the two subcontractor readings below would otherwise date the
+        // charge to whenever the termination happened to run - a different
+        // answer on every run, and never the period the client is billed for.
+        $periodEnd = $this->servicePeriodEndOrFail($invoice);
         $ordinary = collect();
         $flatHourly = collect();
 
@@ -269,7 +275,7 @@ class InvoiceLineComposer
             $this->addFlatHourlySubcontractorEntries(
                 $invoice,
                 $flatHourly,
-                Carbon::parse($invoice->service_period_end),
+                $periodEnd,
                 $sortOrder,
             );
 
@@ -308,9 +314,32 @@ class InvoiceLineComposer
         $this->addFlatHourlySubcontractorEntries(
             $invoice,
             $flatHourly,
-            Carbon::parse($invoice->service_period_end),
+            $periodEnd,
             $sortOrder,
         );
+    }
+
+    /**
+     * The invoice's stated period end, or a refusal.
+     *
+     * Nothing here can derive the date a termination charge belongs on: the
+     * period end is the only statement of it, and an invoice that does not make
+     * that statement has to be repaired rather than guessed at. Deferred work
+     * is held for months by agreement, so the difference between the stated end
+     * and the run date is not a rounding error - it can put the charge outside
+     * the agreement's own term.
+     */
+    private function servicePeriodEndOrFail(ClientInvoice $invoice): Carbon
+    {
+        $periodEnd = $invoice->service_period_end;
+        if ($periodEnd === null) {
+            throw new RuntimeException(sprintf(
+                'Invoice %s states no service period end, so deferred termination work has no date to be billed on.',
+                (string) $invoice->invoice_number,
+            ));
+        }
+
+        return Carbon::instance($periodEnd);
     }
 
     /**

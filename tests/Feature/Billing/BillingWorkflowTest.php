@@ -7,11 +7,14 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\OverpaymentCreditService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
@@ -1604,6 +1607,123 @@ class BillingWorkflowTest extends TestCase
     }
 
     /**
+     * A refusal on the third period does not create the first two first.
+     *
+     * Every other refusal case in this suite halts on the *first* due period,
+     * where there is nothing earlier to discard, so none of them exercised what
+     * a multi-period run did. `generateDue()` used to classify a period and act
+     * on it in the same step, so a schedule three periods behind whose third
+     * period could not be attributed created and issued August and September -
+     * invoices, lines, `invoice.generated` and `invoice.issued` activities, and
+     * whatever time entries and credit those touch - and then read October and
+     * threw. The transaction rolled all of it back, so the *state* was right;
+     * the writes were simply guaranteed to be thrown away from the moment
+     * October was read.
+     *
+     * Classification now finishes before creation starts, so the assertion this
+     * case exists for is the pair of `created` counters: no invoice row and no
+     * activity row is written at all, rather than written and rolled back. The
+     * rollback assertions below still stand beside them deliberately -
+     * whole-run atomicity is the contract, not something the reordering
+     * relaxes, and a later revision that started committing the clear periods
+     * would have to break them to do it.
+     *
+     * The recovery half matters as much: the run is repeatable once the named
+     * row is repaired, and it then bills the periods it refused to bill early.
+     */
+    public function test_a_refusal_on_a_later_period_creates_nothing_for_the_earlier_ones(): void
+    {
+        [$workspace, $company, $agreement, $schedule] = $this->scheduledClient('Late Refusal Workspace');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        // Approved work in the two periods the run would otherwise bill, and a
+        // standing overpayment credit. Neither is reachable from a schedule's
+        // line template, which is the point: they are the surrounding money
+        // state that `issue()` moves on other paths, and a refusal must leave
+        // every one of them exactly where it found it.
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic project',
+        ]);
+        $entries = collect(['2026-08-04', '2026-09-04'])->map(fn (string $day): ClientTimeEntry => ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'user_id' => User::factory()->create()->id, 'worked_on' => $day, 'minutes' => 60,
+            'description' => 'Synthetic work', 'is_billable' => true, 'is_deferred' => false,
+            'status' => 'approved', 'currency' => 'USD',
+        ]));
+        $this->overpayment($workspace, $company);
+        $credits = app(OverpaymentCreditService::class);
+        $this->assertSame(50.0, $credits->availableCreditForCompany($company, 'USD'));
+
+        // The third period, and only the third: a cadence draft covering
+        // October exactly whose schedule link resolves to nothing. August and
+        // September are clear, and the periods do not overlap, so this row is
+        // invisible until the run reaches October.
+        $october = $lifecycle->createDraft($workspace, $company, $this->invoiceData() + [
+            'service_period_start' => '2026-10-01',
+            'service_period_end' => '2026-10-31',
+            'client_agreement_id' => $agreement->id,
+            'client_billing_schedule_id' => $schedule->id,
+        ], [$this->line()]);
+        $october->forceFill(['client_billing_schedule_id' => $schedule->id + 1_000])->save();
+
+        $invoicesBefore = ClientInvoice::query()->count();
+        $activitiesBefore = ClientCompanyActivity::query()->count();
+
+        // Model events fire when the row is written, and a rollback does not
+        // take them back - which is exactly why they can tell "never created"
+        // apart from "created and discarded", and a row count cannot.
+        $invoiceWrites = 0;
+        $activityWrites = 0;
+        ClientInvoice::created(function () use (&$invoiceWrites): void {
+            $invoiceWrites++;
+        });
+        ClientCompanyActivity::created(function () use (&$activityWrites): void {
+            $activityWrites++;
+        });
+
+        try {
+            app(BillingScheduleService::class)->generateDue($schedule, CarbonImmutable::parse('2026-10-15'));
+            $this->fail('a period whose lineage does not resolve must not be billed past silently');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $october->invoice_number, $refusal->getMessage());
+        }
+
+        $this->assertSame(0, $invoiceWrites, 'August and September must not be created only to be rolled back');
+        $this->assertSame(0, $activityWrites, 'nor may their generated and issued activities be');
+
+        // The atomicity the reordering preserves rather than relaxes.
+        $this->assertSame($invoicesBefore, ClientInvoice::query()->count());
+        $this->assertSame($activitiesBefore, ClientCompanyActivity::query()->count());
+        $this->assertSame(
+            0,
+            ClientInvoice::query()->where('workspace_id', $workspace->id)
+                ->where('client_billing_schedule_id', $schedule->id)->count(),
+            'the schedule billed none of its periods',
+        );
+        foreach ($entries as $entry) {
+            $this->assertSame('approved', $entry->fresh()?->status);
+            $this->assertSame($entry->lock_version, $entry->fresh()?->lock_version);
+        }
+        $this->assertSame(50.0, $credits->availableCreditForCompany($company, 'USD'));
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+
+        // Repair the row the message named, and the same run goes through:
+        // all-or-nothing is recoverable, which is the argument for keeping it.
+        $october->forceFill(['client_billing_schedule_id' => $schedule->id])->save();
+        $lifecycle->issue($october->refresh(), $workspace);
+
+        $created = app(BillingScheduleService::class)
+            ->generateDue($schedule->fresh(), CarbonImmutable::parse('2026-10-15'));
+
+        $this->assertCount(3, $created, 'August and September are billed, and October is reported as already billed');
+        $this->assertSame(
+            ['2026-08-01', '2026-09-01', '2026-10-01'],
+            collect($created)->map(fn (ClientInvoice $invoice): ?string => $invoice->service_period_start?->toDateString())->all(),
+        );
+        $this->assertSame('2026-11-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
      * A null `client_billing_schedule_id` is what makes a draft ad hoc.
      *
      * `createDraft` classifies on the absence of a schedule, not on who called
@@ -1817,6 +1937,33 @@ class BillingWorkflowTest extends TestCase
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title.' agreement',
             'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
+    }
+
+    /**
+     * 150.00 paid against a 100.00 invoice, leaving 50.00 of company credit.
+     *
+     * Written directly, because `applyPayment()` refuses a payment over the
+     * balance - an overpayment on this system arrives from a processor, not
+     * from the invoice screen. Ad hoc and dated to January so that no cadence
+     * guard reads it: the subject here is the credit pool, not the period.
+     */
+    private function overpayment(Workspace $workspace, ClientCompany $company): ClientInvoice
+    {
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'invoice_number' => 'INV-SYNTH-OVERPAID', 'currency' => 'USD', 'status' => 'paid',
+            'invoice_kind' => InvoiceKind::AdHoc->value,
+            'service_period_start' => '2026-01-01', 'service_period_end' => '2026-01-31',
+        ]);
+        $invoice->forceFill([
+            'subtotal_amount' => 10000, 'total_amount' => 10000, 'paid_amount' => 15000, 'balance_amount' => 0,
+        ])->save();
+        $invoice->payments()->create([
+            'workspace_id' => $workspace->id, 'status' => 'succeeded', 'amount' => 15000,
+            'currency' => 'USD', 'method' => 'ach', 'received_on' => '2026-03-01',
+        ]);
+
+        return $invoice;
     }
 
     /**
