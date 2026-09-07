@@ -236,16 +236,6 @@ So:
   nothing is created, so the run can simply be repeated once someone attributes
   the row.
 
-**An `invoice_kind` the application does not recognise is refused before any of
-that**, as `unsupported_invoice_kind`. Such a row has two incompatible
-identities — `invoiceKindValue()` calls it `cadence_period` while the
-raw-column guards do not — so the resolver cannot say whose period it claims.
-It used to answer `PendingDraft` when it covered the period exactly, whose
-message says to issue the draft or void it: issuing is refused by `issue()`,
-and voiding leaves an exact void the resolver reads as a **deliberate waiver**,
-so the cursor advanced past a period nobody had been charged for. Neither
-instruction was true, so neither is given.
-
 The refusal is deliberately narrow, per #144's lesson that a refusal on a null
 must be checked against the paths that write it. Nothing in this application
 writes this shape: `generateDue()` and `ClientInvoicingService` both set the
@@ -262,6 +252,25 @@ time entries, and a half-applied run leaves `next_run_on` pointing into the
 middle of a batch with some periods billed. All-or-nothing is recoverable by
 re-running; half-applied is not. Classifying every period up front, before
 creating anything, would avoid the wasted work — #252.
+
+**The rules below apply only once a candidate has been established as this
+schedule's claim**, or its agreement's — the `mine()` branch. A row that
+resolves to another schedule or another agreement is *someone else's* and
+clears, and so does a known void that does not cover the period exactly, before
+any of them is consulted. A malformed invoice belonging to nobody in this
+picture does not halt the run.
+
+Inside that branch, two shapes refuse before the period is even compared,
+because neither can be placed at all: a **status** no `InvoiceStatus` case
+matches (`unknown_status`), and an **`invoice_kind`** this application does not
+recognise (`unsupported_invoice_kind`). The kind case has two incompatible
+identities — `invoiceKindValue()` calls it `cadence_period` while the
+raw-column guards do not — so what it has already billed cannot be established.
+It used to fall through to the exact-match rules and answer `PendingDraft`,
+whose message says to issue the draft or void it: issuing is refused by
+`issue()`, and voiding leaves an exact void the branch below reads as a
+**deliberate waiver**, so the cursor advanced past a period nobody had been
+charged for. Neither instruction was true, so neither is given.
 
 **A pending draft neither bills the period nor advances past it.** An invoice
 covering *exactly* the period being billed reports it as already billed — unless
