@@ -19,6 +19,7 @@ final class BillingScheduleService
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly BillingPeriodCollisionResolver $collisions,
+        private readonly ExpenseInvoiceAllocations $expenses,
     ) {}
 
     /**
@@ -164,6 +165,13 @@ final class BillingScheduleService
             ],
             $template,
         );
+
+        // This newly inserted invoice is already transaction-owned. Record an
+        // explicit invoice lock before the later-ranked expense claim locks;
+        // issue() will re-use that same row lock.
+        $draft = ClientInvoice::query()->where('workspace_id', $schedule->workspace_id)->whereKey($draft->id)->tap(Locks::forUpdate())->firstOrFail();
+        $this->expenses->rebuild($draft, $period->end->toDateString());
+        $draft->recalculateTotals();
 
         return $this->invoices->issue($draft, $schedule->workspace);
     }

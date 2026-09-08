@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
@@ -15,6 +16,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -26,13 +28,14 @@ class InvoiceLineComposer
     /**
      * Remove generated lines from a draft invoice before regeneration.
      */
-    public function resetSystemGeneratedLines(ClientInvoice $invoice): void
+    public function resetSystemGeneratedLines(ClientInvoice $invoice, bool $preserveExpenseClaims = false): void
     {
         $invoice->assertLineOwnership();
         $systemLines = ClientInvoiceLine::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
             ->whereIn('type', InvoiceLineType::systemGeneratedValues())
+            ->when($preserveExpenseClaims, fn (Builder $query): Builder => $query->whereNotIn('id', ClientExpense::withTrashed()->where('workspace_id', $invoice->workspace_id)->whereNotNull('client_invoice_line_id')->select('client_invoice_line_id')))
             ->get();
 
         $lineIds = $systemLines->modelKeys();
@@ -71,6 +74,7 @@ class InvoiceLineComposer
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
             ->whereIn('type', InvoiceLineType::systemGeneratedValues())
+            ->when($preserveExpenseClaims, fn (Builder $query): Builder => $query->whereNotIn('id', ClientExpense::withTrashed()->where('workspace_id', $invoice->workspace_id)->whereNotNull('client_invoice_line_id')->select('client_invoice_line_id')))
             ->delete();
 
     }

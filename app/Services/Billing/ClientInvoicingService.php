@@ -60,10 +60,9 @@ use RuntimeException;
  * The arithmetic is the predecessor's, unchanged. What differs here is the
  * schema: money is integer minor units rather than decimal dollars, a time
  * entry's invoice line is a pivot row rather than a column, and every query is
- * workspace-scoped. Reimbursable expenses are not billed here yet: the source had
- * no rows, so `client_expenses` and its approval lifecycle were built rather than
- * ported, and the `approved` -> `invoiced` caller is still the next slice - one
- * call beside the milestone one (#75).
+ * workspace-scoped. Approved expenses are claimed at cost after time and task
+ * composition, before credits and totals. Claim/release is shared with the live
+ * billing-schedule path through ExpenseInvoiceAllocations.
  *
  * @phpstan-type GenerationResults array{
  *     generated: list<array<string, mixed>>,
@@ -130,6 +129,7 @@ final class ClientInvoicingService
         ?InterimOverageGenerator $interimOverageGenerator = null,
         ?ClientActivityRecorder $activities = null,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly ExpenseInvoiceAllocations $expenseAllocations = new ExpenseInvoiceAllocations,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -776,7 +776,7 @@ final class ClientInvoicingService
             $wasCreated = ! $invoice instanceof ClientInvoice;
             if ($invoice instanceof ClientInvoice) {
                 $invoice->update($invoiceData);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice);
+                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
             } else {
                 $invoice = ClientInvoice::query()->create($invoiceData + [
                     'workspace_id' => $company->workspace_id,
@@ -974,6 +974,7 @@ final class ClientInvoicingService
 
             // Credit is applied last so it lands against the final figure rather
             // than against a subtotal that later lines then increase.
+            $this->expenseAllocations->rebuild($invoice, $periodEnd->toDateString());
             $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
 
             $invoice->recalculateTotals();
@@ -1070,7 +1071,7 @@ final class ClientInvoicingService
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'status' => 'draft',
                 ]);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice);
+                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
             } else {
                 $invoice = ClientInvoice::query()->create([
                     'workspace_id' => $company->workspace_id,
@@ -1209,6 +1210,7 @@ final class ClientInvoicingService
                 'hours_billed_at_rate' => $overageHours,
             ]);
 
+            $this->expenseAllocations->rebuild($invoice, $periodEnd->toDateString());
             $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
             $invoice->recalculateTotals();
             $this->recordInvoiceActivity($company, $invoice, $wasCreated);
@@ -1715,6 +1717,13 @@ final class ClientInvoicingService
             return false;
         }
 
+        // Late approval can leave an expense from an already-issued month.
+        // Keep the next eligible cycle alive rather than indexing only its
+        // original spent month, which may never be regenerated.
+        if ($this->expenseAllocations->eligible($company, $agreement, $workCycle->end->toDateString(), $agreement->currency)->exists()) {
+            return false;
+        }
+
         if ($monthsWithUnbilledPostTermination === null) {
             $workMonths = ClientTimeEntry::query()
                 ->where('workspace_id', $company->workspace_id)
@@ -1792,6 +1801,9 @@ final class ClientInvoicingService
         }
 
         $workCycleEndDate = $workCycle->end->toDateString();
+        if ($this->expenseAllocations->eligible($company, $agreement, $workCycleEndDate, $agreement->currency)->exists()) {
+            return false;
+        }
 
         $hasBillableTimeEntry = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)

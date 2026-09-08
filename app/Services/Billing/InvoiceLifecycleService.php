@@ -114,6 +114,7 @@ final class InvoiceLifecycleService
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
             }
+            app(ExpenseInvoiceAllocations::class)->assertReplaceable($locked);
             $currency = MoneyService::currency($attributes['currency'] ?? $locked->currency);
             $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
             $updates = [
@@ -1143,6 +1144,8 @@ final class InvoiceLifecycleService
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->update(['client_invoice_line_id' => null]);
+
+        app(ExpenseInvoiceAllocations::class)->release($invoice);
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice

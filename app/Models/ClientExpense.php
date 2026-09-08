@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * `client_invoices`, both of which keep `status` a string for the same reason.
  *
  * @property int $lock_version
+ * @property int|null $client_invoice_line_id
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
@@ -53,11 +54,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonImmutable|null $approved_at
  */
 #[Fillable([
-    'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id',
+    'workspace_id', 'client_company_id', 'client_project_id', 'client_invoice_line_id', 'created_by_user_id',
     'spent_on', 'amount', 'currency', 'description',
     'status', 'approved_by_user_id', 'approved_at',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_invoice_line_id', 'created_by_user_id', 'approved_by_user_id'])]
 class ClientExpense extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -69,6 +70,12 @@ class ClientExpense extends Model implements WorkspaceOwned
             'amount' => 'integer',
             'approved_at' => 'immutable_datetime',
         ];
+    }
+
+    /** @return BelongsTo<ClientInvoiceLine, $this> */
+    public function invoiceLine(): BelongsTo
+    {
+        return $this->belongsTo(ClientInvoiceLine::class, 'client_invoice_line_id');
     }
 
     /** @return BelongsTo<Workspace, $this> */
