@@ -20,6 +20,7 @@ use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\SelectedTimeInvoiceTerms;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -181,6 +182,9 @@ class TimeSheetController extends Controller
             // Named by the request that enforces it, so the page cannot offer
             // a selection the write will refuse.
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
+            'invoice_draft' => $isManager ? [
+                'url' => route('svc.billing.invoices.store', [$workspace, $clientCompany]),
+            ] : null,
             'filters' => [
                 'company_id' => $selectedCompany?->public_id,
             ],
@@ -770,6 +774,10 @@ class TimeSheetController extends Controller
             && ($entry->user_id === $userId || $isManager)
             && ($permissions[$entry->client_project_id]['log'] ?? false);
 
+        $invoiceTerms = $isManager && $invoice === null
+            ? SelectedTimeInvoiceTerms::forEntry($entry)
+            : null;
+
         return [
             'id' => $entry->public_id,
             'version' => AgentApiVersion::for($entry),
@@ -797,6 +805,11 @@ class TimeSheetController extends Controller
                 'id' => $invoice['id'],
                 'number' => $invoice['number'],
                 'status' => $invoice['status'],
+            ],
+            'invoice_terms' => $invoiceTerms === null ? null : [
+                'currency' => $invoiceTerms->currency,
+                'unit_amount' => $invoiceTerms->unitAmount,
+                'total_amount' => $invoiceTerms->totalAmount,
             ],
             'can_edit' => $editable,
             'can_approve' => $entry->status === 'draft'
