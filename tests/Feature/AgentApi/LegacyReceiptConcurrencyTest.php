@@ -63,7 +63,10 @@ final class LegacyReceiptConcurrencyTest extends TestCase
                 $transaction = DB::selectOne('select trx_state from information_schema.innodb_trx where trx_mysql_thread_id = ?', [(int) $match[1]]);
                 $waiting = $workerState !== null && $workerState->COMMAND !== 'Sleep' && $transaction?->trx_state === 'LOCK WAIT';
                 if (! $waiting) {
-                    usleep(20_000);
+                    // MariaDB's trx0i_s.cc CACHE_MIN_IDLE_TIME_NS requires 100ms
+                    // without a read; faster polling pins the old snapshot forever.
+                    // One second also leaves idle time with four ParaTest workers.
+                    usleep(1_000_000);
                 }
             } while (! $waiting && $second->isRunning() && microtime(true) < $deadline);
             $this->assertTrue($waiting, 'The second writer must actually wait on the first reservation. Exit: '.var_export($second->getExitCode(), true).' State: '.($workerState?->STATE ?? 'missing').' '.$second->getOutput());
