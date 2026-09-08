@@ -189,8 +189,11 @@ and launches Chromium against a temporary PHP server bound to `127.0.0.1` on a
 free port. It does not use your `.env`, existing database, OAuth session or
 production records. The test router is under `scripts/layout/`, outside the
 application routes and public directory. It requires a random per-run header,
-an exact loopback host, and GET requests. The runner probes those refusals before
-opening a page; there is no new application login endpoint. Browser requests to
+an exact loopback host, and GET requests except for the synthetic fixture's
+schedule create/update/generate actions. Those bounded POST/PATCH requests exercise
+real saves and draft generation only in the disposable database. Other writes
+remain refused. The runner probes those refusals before opening a page; there is
+no new application login endpoint. Browser requests to
 other origins are blocked. SSR is disabled for this client-layout check.
 
 The initial coverage is deliberately bounded:

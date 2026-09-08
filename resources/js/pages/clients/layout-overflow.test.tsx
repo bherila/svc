@@ -386,7 +386,7 @@ describe('recurring expense layout', () => {
                     {
                         id: 'synthetic-schedule',
                         description,
-                        amount: 1200,
+                        amount: '1200',
                         currency: 'USD',
                         project_id: 'synthetic-project',
                         starts_on: '2028-01-31',

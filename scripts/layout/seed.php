@@ -116,6 +116,8 @@ app(AttachmentStorageService::class)->store(
 file_put_contents($runtime.'/fixture.json', json_encode([
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,
+    'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),
+    'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),

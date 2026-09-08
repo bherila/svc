@@ -45,7 +45,7 @@ final class ExpenseScheduleController extends Controller
                 $next = (new ExpenseRecurrence($schedule->starts_on, BillingCadence::from($schedule->cadence)))->occurrence($schedule->next_occurrence)->toDateString();
                 $project = $schedule->client_project_id === null ? null : $projects->get($schedule->client_project_id);
 
-                return ['id' => $schedule->public_id, 'description' => $schedule->description, 'amount' => $schedule->amount, 'currency' => $schedule->currency,
+                return ['id' => $schedule->public_id, 'description' => $schedule->description, 'amount' => (string) $schedule->amount, 'currency' => $schedule->currency,
                     'project_id' => $project->public_id ?? '', 'starts_on' => $schedule->starts_on->toDateString(), 'cadence' => $schedule->cadence,
                     'active' => $schedule->is_active, 'status_label' => $schedule->is_active ? 'Active' : 'Paused', 'next_on' => $next,
                     'pending' => $schedule->is_active && $next <= $today,
@@ -60,7 +60,7 @@ final class ExpenseScheduleController extends Controller
         Gate::authorize('manage', $workspace);
         $client = $clientCompany;
         abort_unless($client->workspace_id === $workspace->id, 404);
-        $request->validate(['starts_on' => ['required', 'date_format:Y-m-d', 'before:9999-01-01'], 'cadence' => ['required', Rule::enum(BillingCadence::class)]]);
+        $request->validate(['starts_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:1000-01-01', 'before:9999-01-01'], 'cadence' => ['required', Rule::enum(BillingCadence::class)]]);
         [$facts, $project] = $this->facts($request, (string) $request->input('starts_on'));
         (new WorkspaceExpenseSchedules($workspace))->create($client, $project, $facts, BillingCadence::from((string) $request->input('cadence')));
 
