@@ -304,7 +304,12 @@ final class AgentPaymentsTest extends TestCase
         $grantQueries = array_values(array_filter($statements, fn (string $sql): bool => str_contains($sql, 'from client_portal_project_access')));
         $this->assertNotEmpty($grantQueries);
         foreach ($grantQueries as $sql) {
-            $this->assertMatchesRegularExpression('/from client_projects where workspace_id = \? and client_company_id = \?/', $sql);
+            // The canonical policy now correlates all portal companies in one
+            // invoice query rather than loading each company's grants first.
+            $this->assertStringContainsString('client_projects.workspace_id = client_invoices.workspace_id', $sql);
+            $this->assertStringContainsString('client_projects.client_company_id = client_invoices.client_company_id', $sql);
+            $this->assertStringContainsString('client_portal_project_access.workspace_id = client_invoices.workspace_id', $sql);
+            $this->assertStringContainsString('client_company_memberships.workspace_id = client_invoices.workspace_id', $sql);
         }
         $invoiceQueries = array_values(array_filter($statements, fn (string $sql): bool => str_contains($sql, 'from client_invoice_payments')));
         $this->assertNotEmpty($invoiceQueries);
