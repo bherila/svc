@@ -60,6 +60,13 @@ class AttachmentController extends Controller
         $attachment = $storage->findForWorkspace($workspace, $clientAttachment);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
+        if ($attachment->record_type === 'expense') {
+            Gate::authorize('manage', $workspace);
+            $recordResolver->resolve($workspace, 'expense', $attachment->record_public_id);
+
+            return $storage->download($attachment);
+        }
+
         abort_unless(
             Gate::forUser($user)->allows('view', $workspace)
                 || $recordResolver->portalUserCanView($user, $workspace, $attachment),
@@ -74,10 +81,14 @@ class AttachmentController extends Controller
         string $clientAttachment,
         AttachmentStorageService $storage,
         Request $request,
+        AttachmentRecordResolver $recordResolver,
     ): RedirectResponse|JsonResponse {
         Gate::authorize('manage', $workspace);
 
         $attachment = $storage->findForWorkspace($workspace, $clientAttachment);
+        if ($attachment->record_type === 'expense') {
+            $recordResolver->resolve($workspace, 'expense', $attachment->record_public_id);
+        }
         $storage->requestDeletion($attachment);
 
         if ($request->expectsJson()) {

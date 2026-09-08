@@ -11,6 +11,7 @@ class AttachmentRecordResolverTest extends TestCase
     {
         $this->assertSame([
             'company',
+            'expense',
             'project',
             'task',
             'proposal',

@@ -80,7 +80,7 @@ final class AttachmentStorageService
                 'available_at' => $this->clock->now($workspace),
             ])->save();
 
-            return $attachment->fresh();
+            return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
         } catch (Throwable $exception) {
             $this->deleteQuietly($metadata['object_key']);
 
@@ -142,7 +142,7 @@ final class AttachmentStorageService
             'deleted_at' => $this->clock->now($attachment->workspace),
         ])->save();
 
-        return $attachment->fresh();
+        return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
     }
 
     public function assertAvailableObjectMatches(ClientAttachment $attachment): void
@@ -394,6 +394,7 @@ final class AttachmentStorageService
     {
         return match ($record::class) {
             'App\\Models\\ClientCompany' => 'company',
+            'App\\Models\\ClientExpense' => 'expense',
             'App\\Models\\ClientProject' => 'project',
             'App\\Models\\ClientTask' => 'task',
             'App\\Models\\ClientProposal' => 'proposal',

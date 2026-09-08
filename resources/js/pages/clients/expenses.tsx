@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState } from 'react';
 import { ExpenseDialog } from '@/components/expenses/expense-dialog';
@@ -229,6 +229,19 @@ export default function ClientExpenses({
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end gap-1">
+                                                            {expense.urls
+                                                                .receipts && (
+                                                                <Link
+                                                                    href={
+                                                                        expense
+                                                                            .urls
+                                                                            .receipts
+                                                                    }
+                                                                    className="inline-flex items-center px-2 text-sm underline"
+                                                                >
+                                                                    Receipts
+                                                                </Link>
+                                                            )}
                                                             {expense.can_approve && (
                                                                 <Button
                                                                     size="sm"

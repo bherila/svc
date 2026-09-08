@@ -487,7 +487,7 @@ for how each mode reaches an invoice.
 Attachments live in one table, `client_attachments`, which belongs directly to a
 workspace and identifies its owner by `record_type` plus an immutable
 `record_public_id`. `record_type` is one of `company`, `project`, `task`,
-`proposal`, `agreement`, `invoice`. There is no polymorphic
+`proposal`, `agreement`, `invoice`, `expense`. There is no polymorphic
 `fileable_type`/`fileable_id` pair, and there is no download-history table.
 
 - `object_key` (unique) and `staged_object_key` (unique, nullable) — opaque
@@ -817,8 +817,16 @@ DELETE /workspaces/{workspace}/expenses/{expense}
 ```
 
 **Nothing bills an expense yet.** The `approved` → `invoiced` edge has no
-caller: there is no generator hook, no receipt attachments, and no recurrence.
+caller: there is no generator hook and no recurrence.
 Tracked as #75.
+
+Managers can open a row's Receipts link to upload, download and remove files.
+Expense receipts use the shared attachment lifecycle and private object store;
+ordinary workspace members and portal users cannot download them. A discarded
+expense is not a reachable receipt parent. Removing a receipt hides it immediately
+and leaves final blob cleanup to the existing attachment repair lifecycle.
+The enum expansion migration preserves existing attachment rows and refuses
+rollback while any expense attachment remains, including retained lifecycle rows.
 
 This schema diverges from the predecessor's on purpose. Money is integer minor
 units plus a `currency` rather than `decimal(12,2)`; the date is `spent_on` and

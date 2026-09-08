@@ -244,7 +244,7 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations', 'time']) {
+        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations', 'time', 'receipts']) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
             await expect(page.locator('main')).toBeVisible().catch(async (error) => {
@@ -286,6 +286,13 @@ try {
                 await page.getByRole('button', { name: 'Create draft invoice', exact: true }).scrollIntoViewIfNeeded();
                 await capture(screen, 'invoice-fields', width);
                 // This GET-only harness inspects the form, never submits it.
+                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+            }
+
+            if (screen === 'receipts') {
+                await page.getByRole('button', { name: 'Remove', exact: true }).click();
+                await expect(page.getByRole('alertdialog')).toHaveCSS('opacity', '1');
+                await capture(screen, 'remove-receipt', width);
                 await page.getByRole('button', { name: 'Cancel', exact: true }).click();
             }
 
