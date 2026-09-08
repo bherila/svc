@@ -79,12 +79,12 @@ export default function ClientProposalDetail({
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        className="min-w-0 text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
                     >
                         ← {company.name}
                     </Link>
                     <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="text-2xl font-semibold tracking-tight">
+                        <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                             {proposal.title}
                         </h1>
                         <Badge variant="outline">
@@ -94,7 +94,7 @@ export default function ClientProposalDetail({
                 </header>
 
                 {proposal.summary !== null && (
-                    <p className="text-sm whitespace-pre-line">
+                    <p className="text-sm wrap-anywhere whitespace-pre-line">
                         {proposal.summary}
                     </p>
                 )}
@@ -160,7 +160,7 @@ export default function ClientProposalDetail({
                         <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                             Terms
                         </h2>
-                        <p className="mt-3 text-sm whitespace-pre-line">
+                        <p className="mt-3 text-sm wrap-anywhere whitespace-pre-line">
                             {proposal.terms}
                         </p>
                     </section>
@@ -170,7 +170,7 @@ export default function ClientProposalDetail({
                     <section className="rounded-lg border border-border p-4">
                         <h2 className="font-medium">Accept this proposal</h2>
                         <form
-                            className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+                            className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
                                 form.post(acceptHref);

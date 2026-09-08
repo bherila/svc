@@ -8,7 +8,7 @@
         "node": ">=24.15.0 <25.0.0"
     },
     "scripts": {
-    "postinstall": "node scripts/spotlight-noindex.mjs",
+        "postinstall": "node scripts/spotlight-noindex.mjs",
         "blobs": "bash scripts/blobs.sh",
         "db-snapshot": "bash scripts/db-snapshot.sh",
         "build": "vite build",
@@ -24,13 +24,15 @@
         "scan-sensitive:test": "node scripts/test-sensitive-scan.mjs",
         "test": "vitest run",
         "test:watch": "vitest",
-        "types:check": "tsc --noEmit"
+        "types:check": "tsc --noEmit",
+        "test:layout": "node scripts/check-layout.mjs"
     },
     "devDependencies": {
         "@babel/core": "^8.0.1",
         "@eslint/js": "^9.39.5",
         "@laravel/vite-plugin-wayfinder": "^0.1.10",
         "@modelcontextprotocol/sdk": "1.30.0",
+        "@playwright/test": "^1.63.0",
         "@rolldown/plugin-babel": "^0.2.3",
         "@stylistic/eslint-plugin": "^5.10.0",
         "@testing-library/jest-dom": "^7.0.1",
