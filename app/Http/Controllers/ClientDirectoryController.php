@@ -259,6 +259,13 @@ class ClientDirectoryController extends Controller
             ],
             'invoices_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
             'pdf_href' => $base.'/pdf',
+            // The calendar the record-payment form dates a payment on. The
+            // browser's calendar is not the workspace's, and neither is UTC's:
+            // defaulting from `toISOString()` gives UTC's day, which the
+            // service - bounded by the workspace's own window - refuses for the
+            // hours the two disagree. The timezone travels rather than a date,
+            // because an invoice screen can sit open past its own midnight.
+            'timezone' => $workspace->timezone,
             'actions' => [
                 'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
                 'send' => $manages && in_array($status, InvoiceStatus::collectible(), true)
@@ -309,6 +316,14 @@ class ClientDirectoryController extends Controller
                 'method' => $payment->method,
                 'reference' => $payment->reference,
                 'received_on' => $payment->received_on?->toDateString(),
+                // A finished URL, and null for a viewer who cannot manage the
+                // workspace - the browser assembles nothing and interprets no
+                // boolean. It corrects the date and only the date; what a
+                // payment is worth is still corrected through its status or its
+                // refunded amount.
+                'correct_date_href' => $manages
+                    ? $base.'/payments/'.$payment->public_id.'/received-on'
+                    : null,
                 'amount' => (int) $payment->amount,
                 'refunded_amount' => (int) $payment->refunded_amount,
                 'currency' => $payment->currency,
