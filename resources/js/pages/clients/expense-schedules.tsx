@@ -21,7 +21,7 @@ type Schedule = {
     next_on: string;
     pending: boolean;
     update_url: string;
-    generate_url: string;
+    generate_url: string | null;
 };
 type Props = {
     pagination: { next: string | null; previous: string | null };
@@ -271,10 +271,15 @@ export default function ExpenseSchedules(page: Props) {
                                 >
                                     Edit schedule
                                 </Button>
-                                {schedule.pending && (
+                                {schedule.generate_url && (
                                     <Button
                                         onClick={() => {
                                             setFailure(null);
+
+                                            if (!schedule.generate_url) {
+                                                return;
+                                            }
+
                                             router.post(
                                                 schedule.generate_url,
                                                 {},

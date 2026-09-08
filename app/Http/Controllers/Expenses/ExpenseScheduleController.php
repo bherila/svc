@@ -50,7 +50,7 @@ final class ExpenseScheduleController extends Controller
                     'active' => $schedule->is_active, 'status_label' => $schedule->is_active ? 'Active' : 'Paused', 'next_on' => $next,
                     'pending' => $schedule->is_active && $next <= $today,
                     'update_url' => route('svc.expense-schedules.update', [$workspace, $schedule->public_id], false),
-                    'generate_url' => route('svc.expense-schedules.generate', [$workspace, $schedule->public_id], false)];
+                    'generate_url' => $schedule->is_active && $next <= $today ? route('svc.expense-schedules.generate', [$workspace, $schedule->public_id], false) : null];
             }),
         ]);
     }
