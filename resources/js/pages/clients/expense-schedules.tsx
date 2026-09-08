@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { formatScheduleAmount } from '@/lib/expense-schedule-amount';
 import { SHELL_CONTAINER } from '@/lib/layout';
-import { formatMoney } from '@/lib/money';
 
 type Option = { value: string; label: string };
 type Schedule = {
     id: string;
     description: string;
-    amount: number;
+    amount: string;
     currency: string;
     project_id: string;
     starts_on: string;
@@ -45,7 +45,7 @@ function ScheduleForm({
 }) {
     const form = useForm({
         description: schedule?.description ?? '',
-        amount: String(schedule?.amount ?? ''),
+        amount: schedule?.amount ?? '',
         currency: schedule?.currency ?? page.currency,
         project_id: schedule?.project_id ?? '',
         active: schedule?.active ?? true,
@@ -55,13 +55,14 @@ function ScheduleForm({
     const field = (
         name: 'description' | 'amount' | 'currency',
         label: string,
-        type = 'text',
     ) => (
         <div className="min-w-0">
             <Label htmlFor={`${schedule?.id ?? 'new'}-${name}`}>{label}</Label>
             <Input
                 id={`${schedule?.id ?? 'new'}-${name}`}
-                type={type}
+                type="text"
+                inputMode={name === 'amount' ? 'numeric' : undefined}
+                pattern={name === 'amount' ? '[0-9]+' : undefined}
                 value={form.data[name]}
                 onChange={(event) => form.setData(name, event.target.value)}
                 required
@@ -103,7 +104,7 @@ function ScheduleForm({
         >
             {field('description', 'Description')}
             <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-                {field('amount', 'Amount in minor units', 'number')}
+                {field('amount', 'Amount in minor units')}
                 {field('currency', 'Currency')}
             </div>
             <label className="grid min-w-0 grid-cols-1 gap-1">
@@ -183,7 +184,9 @@ function ScheduleForm({
                 </p>
             ))}
             <div className="flex flex-wrap gap-2">
-                <Button disabled={form.processing}>Save schedule</Button>
+                <Button type="submit" disabled={form.processing}>
+                    Save schedule
+                </Button>
                 <Button type="button" variant="outline" onClick={onDone}>
                     Cancel
                 </Button>
@@ -237,7 +240,7 @@ export default function ExpenseSchedules(page: Props) {
                                 {schedule.description}
                             </h2>
                             <p>
-                                {formatMoney(
+                                {formatScheduleAmount(
                                     schedule.amount,
                                     schedule.currency,
                                 )}{' '}

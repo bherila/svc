@@ -163,6 +163,26 @@ try {
     expect(
         (await fetch(`${origin}/up`, { method: 'POST', headers })).status,
     ).toBe(403);
+
+    for (const method of ['PATCH', 'DELETE']) {
+        expect(
+            (
+                await fetch(origin + fixture.expense_schedule_store, {
+                    method,
+                    headers,
+                })
+            ).status,
+        ).toBe(403);
+    }
+
+    expect(
+        (
+            await fetch(
+                `${origin}/workspaces/00000000-0000-0000-0000-000000000000/expense-schedules/00000000-0000-0000-0000-000000000000/generate`,
+                { method: 'POST', headers },
+            )
+        ).status,
+    ).toBe(403);
     // fetch normalizes Host back to the URL, so use a raw HTTP request here.
     const wrongHostStatus = await new Promise((resolve, reject) => {
         request(
@@ -379,7 +399,7 @@ try {
                     })
                     .scrollIntoViewIfNeeded();
                 await capture(screen, 'invoice-fields', width);
-                // This GET-only harness inspects the form, never submits it.
+                // This invoice form is inspected without submitting it.
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
@@ -421,6 +441,66 @@ try {
             }
         }
     }
+
+    // Exercise real saves against the isolated database after layout capture,
+    // so the additional schedule cannot change the fixtures used at each width.
+    await page.goto(origin + fixture.expense_schedules);
+    await page
+        .getByRole('button', { name: 'New schedule', exact: true })
+        .click();
+    await page
+        .getByLabel('Description', { exact: true })
+        .fill('Synthetic precision journey');
+    await page.getByLabel('Amount in minor units').fill('9007199254740993');
+    await page.getByLabel('First occurrence').fill(fixture.date);
+    await page
+        .getByRole('button', { name: 'Save schedule', exact: true })
+        .click();
+    let card = page.locator('section').filter({
+        has: page.getByRole('heading', {
+            name: 'Synthetic precision journey',
+            exact: true,
+        }),
+    });
+    await expect(card).toBeVisible();
+    await card
+        .getByRole('button', { name: 'Edit schedule', exact: true })
+        .click();
+    await expect(page.getByLabel('Amount in minor units')).toHaveValue(
+        '9007199254740993',
+    );
+    await page
+        .getByLabel('Description', { exact: true })
+        .fill('Synthetic precision journey edited');
+    await page
+        .getByRole('button', { name: 'Save schedule', exact: true })
+        .click();
+    card = page.locator('section').filter({
+        has: page.getByRole('heading', {
+            name: 'Synthetic precision journey edited',
+            exact: true,
+        }),
+    });
+    await expect(card).toContainText('90,071,992,547,409.93');
+    await card
+        .getByRole('button', { name: 'Edit schedule', exact: true })
+        .click();
+    await expect(page.getByLabel('Amount in minor units')).toHaveValue(
+        '9007199254740993',
+    );
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await card
+        .getByRole('button', { name: 'Generate due drafts', exact: true })
+        .click();
+    await expect(
+        card.getByRole('button', { name: 'Generate due drafts', exact: true }),
+    ).toHaveCount(0);
+    await page.goto(origin + fixture.expenses);
+    const expense = page
+        .getByRole('row')
+        .filter({ hasText: 'Synthetic precision journey edited' });
+    await expect(expense).toHaveCount(1);
+    await expect(expense).toContainText('Draft');
 } catch (error) {
     failures.push(error.stack ?? String(error));
 } finally {

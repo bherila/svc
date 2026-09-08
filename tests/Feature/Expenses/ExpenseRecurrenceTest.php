@@ -148,6 +148,39 @@ final class ExpenseRecurrenceTest extends TestCase
         $this->assertSame(0, ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->count());
     }
 
+    public function test_first_occurrence_rejects_dates_below_the_database_range(): void
+    {
+        $workspace = $this->syntheticWorkspace('Date floor');
+        $company = $this->syntheticCompany($workspace, 'Date floor');
+        $manager = $this->syntheticMember($workspace, 'Date floor manager');
+        foreach (['0001-01-01', '0999-12-31'] as $date) {
+            $this->actingAs($manager)->postJson(route('svc.expense-schedules.store', [$workspace, $company]),
+                $this->facts() + ['starts_on' => $date, 'cadence' => 'monthly'])
+                ->assertUnprocessable()->assertJsonValidationErrors('starts_on');
+        }
+        $this->assertSame(0, ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->count());
+        $this->post(route('svc.expense-schedules.store', [$workspace, $company]),
+            $this->facts() + ['starts_on' => '1000-01-01', 'cadence' => 'monthly'])->assertRedirect();
+        $this->assertSame('1000-01-01', ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->sole()->starts_on->toDateString());
+    }
+
+    public function test_description_only_edit_preserves_an_amount_above_javascript_integer_precision(): void
+    {
+        $workspace = $this->syntheticWorkspace('Exact amount');
+        $company = $this->syntheticCompany($workspace, 'Exact amount');
+        $manager = $this->syntheticMember($workspace, 'Exact amount manager');
+        $amount = '9007199254740993';
+        $this->actingAs($manager)->post(route('svc.expense-schedules.store', [$workspace, $company]),
+            array_replace($this->facts(), ['amount' => $amount, 'starts_on' => '2028-01-01', 'cadence' => 'monthly']))->assertRedirect();
+        $schedule = ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->sole();
+        $this->get(route('clients.expense-schedules', [$workspace, $company]))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('schedules.0.amount', $amount));
+        $this->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]),
+            array_replace($this->facts(), ['amount' => $amount, 'description' => 'Synthetic edited description', 'active' => true]))->assertRedirect();
+        $this->assertSame(9007199254740993, $schedule->refresh()->amount);
+        $this->assertSame('Synthetic edited description', $schedule->description);
+    }
+
     private function facts(int $amount = 1200): array
     {
         return ['amount' => $amount, 'currency' => 'USD', 'description' => 'Synthetic recurring cost'];
