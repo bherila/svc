@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import ClientHome from '@/pages/clients/home';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
 import ClientInvoices from '@/pages/clients/invoices';
+import ClientProposalDetail from '@/pages/clients/proposal';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
@@ -89,6 +90,39 @@ const LONG_REPOSITORY =
 const company = { id: 'company-1', name: LONG_NAME };
 
 describe('client screens under data that does not fit', () => {
+    it('keeps a proposal and its acceptance form inside the window', () => {
+        const { container } = render(
+            <ClientProposalDetail
+                company={company}
+                home_href="/synthetic-client"
+                proposal={{
+                    id: 'synthetic-proposal',
+                    title: 'SyntheticProposal'.repeat(12),
+                    summary: 'SyntheticSummary'.repeat(20),
+                    terms: 'SyntheticTerms'.repeat(20),
+                    status: 'sent',
+                    currency: 'USD',
+                    valid_until: null,
+                    sent_at: null,
+                    accepted_at: null,
+                    total_amount: 10000,
+                }}
+                items={[
+                    {
+                        id: 'synthetic-item',
+                        description: 'Synthetic item description '.repeat(16),
+                        quantity: '2',
+                        unit_amount: 5000,
+                        cadence: 'one_time',
+                    },
+                ]}
+                accept_href="/synthetic-accept"
+            />,
+        );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
     it('keeps client home inside the window', () => {
         const { container } = render(
             <ClientHome
