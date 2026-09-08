@@ -1,289 +1,178 @@
-# Client Management - Billing & Invoicing System
+# Client Management — Billing and Invoicing
 
-This is the billing hub: the prior-period model, cadence/cycle fields, rollover, the minimum-availability rule, line items, balance fields, recurring items, and agreement transitions. Cadence dating & regeneration, milestone billing, and payments live in focused docs.
+This page introduces the billing model and points to its implementations and
+focused references. It does not define a second inventory of routes, enums or
+screen controls. See [setup](setup.md) for workspace access.
 
 ## Related billing topics
 
-- **[Cadence billing & regeneration](cadence-billing.md)** — invoice period (`period_*` vs `cycle_*`), the one-cycle offset, numbering, regeneration rules (including the legacy `period == cycle` caveat and the migration command), and interim overage invoices.
-- **[Milestone billing](milestone-billing.md)** — flat-fee deliverable billing via `milestone_price`.
-- **[Payments](payments.md)** — payment methods, validation, status transitions, and the payments UI.
-
-## See also
-
-- **[Deferred billing](deferred-billing.md)** — per-entry flag that lets admins complete work now and bill for it only when retainer capacity exists. Deferred entries are never split and are force-billed at the hourly rate on the termination invoice.
-- **[Overpayment credits](overpayment-credits.md)** — any overpaid amount carries forward as a credit applied automatically to the next draft invoice(s); credits never expire.
-- **[Stripe billing](stripe-billing.md)** — online invoice payments for issued invoices up to the configured cap, saved payment methods, and webhook-driven payment state.
-
-## Overview
-The billing and invoicing system handles automatic invoice generation with prior-period billing, retainer-based pricing, rollover hours, recurring fixed-fee items, reimbursable expense tracking, and agreement billing cadences. Agreements can bill on monthly, quarterly, semiannual, or annual cadence cycles. Cadence-period invoices reconcile the prior work cycle while billing the next retainer cycle in advance; non-monthly agreements may optionally generate interim overage invoices at completed month boundaries inside a work cycle.
+- [Cadence billing and regeneration](cadence-billing.md): period placement,
+  cycle reconciliation, regeneration and interim overage.
+- [Milestone billing](milestone-billing.md): fixed-price task charges.
+- [Payments](payments.md) and [Stripe billing](stripe-billing.md): payment records
+  and the processor integration.
+- [Deferred billing](deferred-billing.md): allocation of deferred work.
+- [Overpayment credits](overpayment-credits.md): carrying excess payments forward.
+- [Billing CLI](cli.md): inspection, generation rehearsal and audits.
+- [Concurrency](concurrency.md): transaction and lock-order constraints.
 
 ## Core Concepts
 
 ### Prior-Period Billing Model
-When a monthly invoice is generated for month M (e.g., February 2024):
-- **Work Period (M-1)**: The invoice `period_start` and `period_end` represent the month work was performed (e.g., Jan 1 - Jan 31).
-- **Time entries from month M-1** are included and generally dated as the last day of M-1. These are covered by the available pool (retainer + rollover).
-- **Retainer fee for month M** is included and dated as the first day of M.
-- **Reimbursable expenses** up to the invoice generation date are included with their original dates.
 
-This model ensures work is billed after completion, while the retainer fee provides availability for the upcoming month.
+A cadence-period invoice reconciles work from a service period and can charge
+for the following retainer cycle. For example, a monthly February retainer
+invoice can reconcile January work. The stored invoice columns are
+`service_period_start` / `service_period_end` for work and `cycle_start` /
+`cycle_end` for the cycle. These dates are different from `issue_date` and
+`due_date`; see [Invoice Period](cadence-billing.md#invoice-period).
 
-For non-monthly agreements, the same monthly ledger remains the source of truth for rollover and overage calculations. The cadence-period invoice summarizes the prior work cycle and bills the next retainer cycle (`cycle_start` through `cycle_end`) in advance, with the retainer fee and included hours scaled by the number of covered months, including any first-cycle proration.
+[ClientInvoicingService](../../app/Services/Billing/ClientInvoicingService.php)
+composes the agreement invoice and its allocation plan.
+[BillingScheduleService](../../app/Services/Billing/BillingScheduleService.php)
+provides the due-schedule generation path. The existence of an engine method
+such as `generateAllInvoices()` does not imply a corresponding browser action;
+consult [the billing routes](../../routes/billing.php) for request entry points.
 
 ### Billing Cadence and Cycle Fields
-Agreement cadence is stored on `client_agreements.billing_cadence`:
-- **`monthly`**: One invoice per calendar month.
-- **`quarterly`**: One invoice per three-month cycle, anchored to the agreement active date.
-- **`semi_annual`**: One invoice per six-month cycle, anchored to the agreement active date.
-- **`annual`**: One invoice per twelve-month cycle, anchored to the agreement active date.
 
-Invoices include cadence metadata:
-- **`invoice_kind = cadence_period`**: The primary monthly, quarterly, semiannual, or annual cycle invoice.
-- **`invoice_kind = interim_overage`**: A non-monthly overage invoice emitted before the full cycle invoice.
-- **`invoice_kind = terminal`**: Reserved for terminal/final invoice handling.
-- **`cycle_start` / `cycle_end`**: The retainer cycle billed in advance on cadence-period invoices. Interim overage invoices keep a narrower monthly `period_start` / `period_end` while pointing at the full work cycle they belong to.
+[BillingCadence](../../app/Support/Billing/BillingCadence.php) owns cadence values,
+month counts and calendar boundaries.
+[BillingCycleResolver](../../app/Services/Billing/BillingCycleResolver.php)
+places an agreement within those cycles, including its start, end and first-cycle
+proration. Do not infer cycle anchoring from a cadence label alone.
 
-First-cycle behavior is controlled by `first_cycle_proration`:
-- **`prorate_hours`**: Retainer hours and fee are prorated to the covered fraction of the cycle.
-- **`full_period`**: The first cycle bills the full retainer even if it starts mid-cycle.
-- **`align_next_cycle`**: The initial partial period is treated as an alignment stub, then full cadence cycles begin at the next boundary.
+[InvoiceKind](../../app/Support/Billing/InvoiceKind.php) owns invoice kinds.
+[ServicePeriodRequirement](../../app/Support/Billing/ServicePeriodRequirement.php)
+combines kind and schedule ownership to decide whether issuance requires a
+complete service period. This includes handling legacy null and unsupported
+kind values; it is not just a list of enum cases.
 
 ### Rollover Hours
-Unused retainer hours can roll over to future months (configurable via `rollover_months` in agreements). The calculation uses a chronological balance pool:
-- **`rollover_months = 0`**: No rollover. Unused hours are lost at the end of
-  the month they were earned.
-- **`rollover_months = N`**: Unused hours survive for N months *after* the month
-  they were earned. `1` keeps January's remainder spendable through February and
-  expires it at the end of it; `2` carries it through March.
 
-> This section previously said `1` meant hours were usable only in the month
-> they were earned, which is off by one against `RolloverCalculator` and against
-> `RolloverExpiryTest`, where February spends January's remainder at `1`. The
-> code is the contract and the documentation was wrong. It mattered more than an
-> off-by-one usually does: every rollover-bearing agreement in the migrated data
-> carries exactly `1`, so the two readings disagreed about all of them, and no
-> rollover divergence in the replay could be adjudicated while both statements
-> stood.
+[RolloverCalculator](../../app/Services/Billing/RolloverCalculator.php) maintains
+chronological monthly balances. `rollover_months = 0` expires unused capacity at
+the end of its earning month. A value of `1` lets January capacity be spent in
+February; `2` also allows March. Expiry uses elapsed calendar months, including
+months with no remaining balance.
 
-Expiry is by elapsed calendar months, not by walking stored balances. The
-predecessor aged rollover by stepping through months that held a non-zero
-balance, so a month which used its entire retainer left nothing to step through
-and became invisible, and older hours stayed spendable past their window. A
-balance is reported as expired in the first month it falls outside the window
-and dropped at the end of that month, so it is not reported as expiring again.
-- **Negative Balance**: If hours worked exceed available pool, the difference is carried forward as a negative balance rather than billed immediately, UNLESS the Minimum Availability Rule is triggered.
-
-For non-monthly agreements, rollover is still calculated month-by-month. The cadence-period invoice summarizes the cycle, but it does not replace the monthly ledger used by `RolloverCalculator`.
+Cadence grouping does not replace this monthly calculation.
+[InvoiceLedgerBuilder](../../app/Services/Billing/InvoiceLedgerBuilder.php)
+builds the ledger, while
+[BilledOverageLedger](../../app/Services/Billing/BilledOverageLedger.php) places
+already-charged overage in the month it settled. A charged nonzero overage with
+no service-period end cannot be placed and refuses chronological pricing,
+rather than disappearing from the calculation.
 
 #### Opening Rollover
 
-`initial_rollover_minutes` is the unused capacity an agreement brought with it —
-the balance the predecessor had already accrued as of the day the agreement
-starts here. It exists because an agreement migrated mid-life did not begin its
-life with an empty pool, and nothing else in the schema can say so.
-
-It is granted as a **carrier month**: one month of retainer with no work in it,
-placed immediately before the agreement's recorded start, which
-`RolloverCalculator` then carries forward like any other unused remainder.
-
-Three consequences follow from that definition, and each is a decision rather
-than an accident:
-
-- **It expires on the agreement's own `rollover_months` policy.** An agreement
-  that carries nothing forward carries this forward neither, so an opening
-  rollover on a `rollover_months = 0` agreement is granted and lost in the same
-  month and no invoice ever sees it. Adding the hours to the start month
-  directly would be simpler and was rejected for this reason: the remainder
-  would outlive every other unused hour on the same agreement.
-- **It reaches the monthly ledger only.** An agreement with period retainer
-  terms (`period_retainer_minutes`) is built by
-  `buildPeriodRetainerLedgerThrough`, which returns before the grant is applied.
-  Such an agreement never receives an opening rollover however large the column.
-- **It anchors to the recorded start, not the ledger's.** When a replay history
-  basis has moved the ledger's opening back a period, the carry-in still belongs
-  where the predecessor recorded it. The grant lands against the recorded start
-  rather than a period earlier — which would grant capacity before the history
-  the basis exists to reproduce — and where the basis already occupies the
-  carrier month, the hours join that month rather than duplicating it.
-
-No agreement in the migrated source carries a non-zero opening rollover: nine
-agreements, all zero, with the source and the imported destination agreeing. The
-tests are the only exercise this has ever had, and the anchoring rule above is
-settled by what the column means rather than by any history it can be checked
-against. `svc:billing:audit-opening-rollover` recounts that population on
-demand; see [CLI › Audit Opening Rollover](cli.md#audit-opening-rollover).
-
-> Until #134 this was documented nowhere and implemented incorrectly.
-> `InvoiceLedgerBuilder` read `initial_rollover_hours` where the column is
-> `initial_rollover_minutes`, and with no accessor bridging them the read
-> returned null on every agreement — coerced to a plausible `0.0`, so the
-> carrier month was never built and no test failed. A missing month of zero
-> worked hours leaves every total unchanged, which is why the assertion that
-> now guards it is that the month is *present* rather than that some sum is
-> right.
+`client_agreements.initial_rollover_minutes` stores opening capacity;
+[ClientAgreement](../../app/Models/ClientAgreement.php) exposes it to the engine
+in hours. `InvoiceLedgerBuilder::withOpeningRollover()` grants it in the month
+before the recorded agreement start, subject to the agreement's ordinary
+rollover expiry. The period-retainer ledger path returns before that grant.
+See [Audit Opening Rollover](cli.md#audit-opening-rollover) for the read-only
+population check; historical audit counts do not describe a current database.
 
 ### Minimum Availability Rule (Catch-up Billing)
-To ensure the client always has capacity for new work, the system enforces a minimum availability of **1 hour** at the start of a billing period.
 
-**Logic:**
-1. Calculate Net Availability: `(Retainer Hours for Month M) - (Negative Balance Carried from M-1)`
-2. If Net Availability < 1 hour:
-   - Calculate deficit: `1 - Net Availability`
-   - Generate an invoice line item (`additional_hours`) for this catch-up amount.
-   - Bill at the hourly rate.
-   - Reduce the carried-forward negative balance by the catch-up amount (effectively "paying off" the debt).
-   - Set the starting "Unused Hours" balance to 1 hour.
+The threshold is configurable through
+`client_agreements.catch_up_threshold_minutes`; it is not always one hour.
+`ClientAgreement::getCatchUpThresholdHoursAttribute()` defaults an unset value
+to one hour capped at the period retainer's hours. Generation stops maintaining
+a future availability buffer after termination.
 
-**Example:**
-- Jan: Retainer 2h, Worked 10h. Result: -8h balance carried to Feb.
-- Feb: Retainer 2h.
-  - Net Availability = 2h - 8h = -6h.
-  - Rule: Must have 1h available.
-  - Catch-up needed: 1h - (-6h) = 7h.
-  - Invoice triggers 7h billing @ hourly rate.
-  - Final Feb Status: Starts with 1h available.
-
-### Hourly Rate Determination
-While most hours are covered by the pool at $0 additional cost, any manual line items or eventual overage billing uses the hourly rate from the **active agreement for the invoice month (M)**.
+The monthly catch-up path in `ClientInvoicingService` combines the allocation
+plan's uncovered work with the buffer needed for the remaining capacity. For a
+synthetic example with a one-hour threshold, an opening net capacity of minus
+six hours needs seven catch-up hours to reach that threshold. The agreement's
+actual terms and the charged-overage ledger determine the real calculation.
 
 ## Invoice Line Items
-Generated invoices contain the following line item types (in order):
 
-1. **Prior-Month Work** (`prior_month_retainer`): Time entries from M-1. In the "give and take" model, these are generally included at $0, dated last day of M-1. Shows total hours in the description and links to time entries with their original dates. Quantity is blank/empty (hours are documented in the description).
-   - Split Logic: If prior month work exceeds what was covered by M-1 retainer and M retainer, it is split into multiple line items (Covered by M-1, Covered by M, Carried Forward).
+The persisted column is `client_invoice_lines.type`.
+[InvoiceLineType](../../app/Support/Billing/InvoiceLineType.php) defines its known
+values and the subsets used for regeneration and work-period dating. These
+subsets differ: for example, a recurring charge billed in advance should not
+extend the period of work being reconciled.
 
-2. **Retainer Fee** (`retainer`): Retainer fee for the invoice cycle. Monthly agreements bill one monthly fee; non-monthly agreements scale the fee by the covered months/proration. Quantity is "1".
-
-3. **Catch-up / Additional Hours** (`additional_hours`): Used for "Catch-up Billing" (Minimum Availability Rule) or manual overage. Billed at hourly rate.
-
-4. **Balance Update** (`credit`): Informational $0 line showing rollover hours used or negative balance carried forward.
-
-5. **Expenses** (`expense`): Reimbursable expenses incurred up to the invoice date. Each expense line uses its original expense date. Quantity is "1".
-
-6. **Milestone Tasks** (`milestone`): Completed billable tasks with a non-zero `milestone_price`. Each task generates a separate line item dated with its completion date. See [Milestone Billing](#milestone-billing) below.
-
-7. **Recurring Items** (`recurring_item`): Fixed-fee agreement charges generated from `client_agreement_recurring_items`. Each incidence links back to the recurring item that produced it.
-
-8. **Subcontractor** (`subcontractor`): One line per flat-hourly subcontractor (grouped by subcontractor, project, and snapshot rate) for the period, billed at the contractor's own rate. These hours are independent of the retainer pool. See [Subcontractor billing](#subcontractor-billing) below.
+[InvoiceLineComposer](../../app/Services/Billing/InvoiceLineComposer.php) and
+[ClientInvoicingService](../../app/Services/Billing/ClientInvoicingService.php)
+compose lines; [AllocationService](../../app/Services/Billing/AllocationService.php)
+records the time-entry allocation. Invoice lines may summarize hours, so an
+invoice's total hours alone is not evidence that a particular entry is linked.
 
 ### Subcontractor billing
 
-Subcontractor work (see [Subcontractors](overview.md#subcontractors)) is billed by the `subcontractor_billing_mode` snapshotted onto each time entry at log time. There is no assignment table in this schema; the mode on the entry is the whole record:
-
-- **`flat_hourly`** — excluded from the retainer ledger; billed on its own `subcontractor` line at the per-contractor rate (additive, never consumes retainer hours).
-- **`retainer`** — flows through the normal retainer allocation exactly like consultant hours (same rate, carry-forward/back overage).
-- **`direct`** — excluded from all invoicing (the subcontractor bills the client directly) but still tracked and visible to client users.
-
-Only **approved** entries are billed; pending/rejected subcontractor self-logs are excluded everywhere the invoicing pipeline reads entries (`retainerBillable` / `flatHourlySubcontractor` scopes on `ClientTimeEntry`).
-
-## Invoice Period
-
-Moved to **[Cadence billing & regeneration › Invoice Period](cadence-billing.md#invoice-period)**.
-
-### Regenerating Cadence Invoices
-
-Moved to **[Cadence billing & regeneration › Regenerating Cadence Invoices](cadence-billing.md#regenerating-cadence-invoices)** (status-based skip rules, the legacy `period == cycle` caveat, and the `client-management:migrate-legacy-cadence-invoices` command).
+Time entries identify the person through `user_id` and the billed client through
+`client_company_id`. Subcontractor billing uses `subcontractor_billing_mode` and
+the `subcontractor_cost_amount`, `subcontractor_cost_currency` and
+`subcontractor_cost_metadata` snapshots. There is no
+`client_subcontractors` table. Inspect the scopes on
+[ClientTimeEntry](../../app/Models/ClientTimeEntry.php) and the allocation/composer
+paths for the distinction between retainer, flat-hourly and direct billing.
+See [the overview](overview.md) for the surrounding access model.
 
 ## Invoice Balance Fields
-The invoice tracks several balance fields that reflect the state at different points in time:
 
-### Server serialization & portal hydration
-- The server now exposes a **single canonical serializer** for detailed invoices (`ClientInvoice::toDetailedArray()`), used by the admin API and the portal Blade hydration.
-- Blade-embedded JSON omits explicit `null` values (keys may be absent on the client). The client treats missing keys as `undefined` and performs tolerant validation + normalization.
-- Monetary totals and payment amounts may be emitted as numbers by the server; the client accepts numeric/string unions and normalizes them to the expected string formats for runtime validation and display.
-- Hydration includes `hours_billed_at_rate` ("Catch-up Hours Billed") and `unused_hours_balance` (remaining retainer pool) so the portal's Hourly Summary can render these tiles immediately (0:00 is shown when values are zero).
+Monetary invoice fields such as `total_amount`, `paid_amount` and
+`balance_amount` are integer minor-unit amounts. Retainer balances such as
+`unused_hours_balance`, `negative_hours_balance`, `starting_unused_hours` and
+`starting_negative_hours` are hour quantities. The generation paths write these
+snapshots; they are not interchangeable with a payment balance.
 
+### Server serialization and invoice pages
 
-### Work Period Balances (End of Month M-1)
-These fields reflect the state **after** processing all work performed in the work period (M-1) but **before** the retainer for Month M is applied. These are primarily used for historical reporting and test validation.
+The operator invoice page is rendered by
+[ClientDirectoryController](../../app/Http/Controllers/ClientDirectoryController.php)
+as `clients/invoice`; the portal invoice page is rendered by
+[ClientPortalController](../../app/Http/Controllers/ClientPortalController.php)
+as `portal/invoice`. Both use Inertia props with page-specific payloads.
+The portal payload is narrower than the operator's and should not be inferred
+from it. The controllers construct the props for their respective React pages.
 
-- **`unused_hours_balance`**: Unused hours remaining from the Month M-1 pool after processing all work in that month.
-- **`negative_hours_balance`**: Negative hours (debt) carried forward from the Month M-1 work period.
-- **`rollover_hours_used`**: Hours from previous months' rollover that were used during the work period (M-1).
-- **`hours_billed_at_rate`**: Additional hours billed at the hourly rate (catch-up billing or manual overages).
+[InvoiceLineDetail](../../app/Support/Billing/InvoiceLineDetail.php) supplies the
+line itemization with operator and client visibility modes. Inspect those
+payloads and their React pages when changing invoice display fields.
 
-### Starting Balances (Start of Month M)
-These fields reflect the "Starting Pool" for the upcoming month (M), providing the client with a clear picture of their available capacity after accounting for the current invoice's retainer and catch-up billing.
+## Billing Validation and Automation
 
-- **`starting_unused_hours`**: Net availability at the start of Month M. This includes the retainer for Month M, minus any remaining debt from M-1, plus any buffer added by the Minimum Availability Rule (catch-up).
-- **`starting_negative_hours`**: Any remaining negative hours (debt) that could not be cleared by the retainer for Month M or by catch-up billing.
+[InvoiceLifecycleService](../../app/Services/Billing/InvoiceLifecycleService.php)
+controls draft issuance, voiding and payment-related state. Its issuance guard
+refuses a required but incomplete service period before turning a draft into a
+charge. Generating a correctly dated interim beside an incomplete draft remains
+allowed: the incomplete draft has charged nobody, but it must not later issue
+as a second charge.
 
-These balances are calculated to ensure the client has a predictable starting point for the next billing cycle.
-
-## Billing Validation & Automation
-
-### Time Entry Validation
-To maintain the integrity of financial records, the system enforces the following rules in the Client Portal:
-- **Block Edits/Deletes on Issued Invoices**: Users cannot edit or delete time entries linked to invoices with **Issued** or **Paid** status.
-- **Allow Edits/Deletes on Draft Invoices**: Time entries linked to **Draft** (upcoming) invoices CAN be edited or deleted. The entry is automatically unlinked and the draft invoice is regenerated.
-- **Block New Entries in Issued Periods**: Users cannot create new time entries for a date within an **Issued** or **Paid** invoice period.
-
-### Automatic Draft Invoice Regeneration
-
-Moved to **[Cadence billing & regeneration › Automatic Draft Invoice Regeneration](cadence-billing.md#automatic-draft-invoice-regeneration)** (drafts auto-regenerate on time-entry create/update/delete).
-
-## Draft Invoice Regeneration
-
-Moved to **[Cadence billing & regeneration › Draft Invoice Regeneration](cadence-billing.md#draft-invoice-regeneration)** (line-item rebuild rules; preserved manual adjustments).
+[TimeEntryMutationService](../../app/Services/AgentApi/TimeEntryMutationService.php)
+handles updates and deletion, delegating draft rebuilding to
+[DraftInvoiceTimeRegenerator](../../app/Services/Billing/DraftInvoiceTimeRegenerator.php).
+The mutation guards distinguish the linked invoice from other invoices covering
+the proposed work date. See
+[Draft Invoice Regeneration](cadence-billing.md#draft-invoice-regeneration) for
+the related billing workflow; do not reduce the guards to a two-status UI list.
 
 ## Recurring Items
 
-Recurring items are fixed-fee charges attached to an agreement. Admins manage them through the agreement workspace and the API at:
-
-```
-GET    /api/client/mgmt/companies/{company}/agreements/{agreement}/recurring-items
-POST   /api/client/mgmt/companies/{company}/agreements/{agreement}/recurring-items
-PUT    /api/client/mgmt/companies/{company}/agreements/{agreement}/recurring-items/{recurringItem}
-DELETE /api/client/mgmt/companies/{company}/agreements/{agreement}/recurring-items/{recurringItem}
-```
-
-Each item stores a description, amount, charge cadence, start/end dates, optional anchor month/day, taxable flag, summarized flag, and notes. Supported charge cadences are `monthly`, `quarterly`, `semi_annual`, `annual`, and `one_time`.
-
-`RecurringItemBiller` computes incidences that fall inside the invoice's retainer cycle. For example, a monthly item on a quarterly invoice produces three invoice lines, one per month in the retainer cycle. Quarterly, semiannual, and annual items use their anchor month/day; one-time items bill once on `start_date`.
-
-## Interim Overage Invoices
-
-Moved to **[Cadence billing & regeneration › Interim Overage Invoices](cadence-billing.md#interim-overage-invoices)**.
+Recurring charges are stored in `client_agreement_recurring_items` and billed by
+[RecurringItemBiller](../../app/Services/Billing/RecurringItemBiller.php). Consult
+that service for incidence dates. There are no dedicated recurring-item CRUD
+routes in the current route files; the predecessor's `/api/client/mgmt/...`
+endpoints are not the SVC route contract.
 
 ## Agreement Transitions
 
-Agreement cadence changes use `AgreementTransitionService` instead of mutating the existing agreement in place. A transition:
-- Sets the outgoing agreement's `termination_date` to the day before the effective date.
-- Creates a successor agreement with the new terms.
-- Optionally carries forward positive rollover hours into `initial_rollover_hours`.
-- Handles active recurring items by cloning, migrating, dropping, or skipping them.
-- Records an `agreement.transitioned` row in `client_company_activity`.
-
-Transition endpoints:
-
-```
-POST /api/client/mgmt/companies/{company}/agreements/{agreement}/transition/preview
-POST /api/client/mgmt/companies/{company}/agreements/{agreement}/transition
-```
-
-### Outgoing Agreement Catch-up After Transition
-
-When an agreement has been terminated and a successor agreement exists for the same company **and the same project scope**, monthly catch-up generation for the outgoing agreement is bounded to the month immediately before the successor's `active_date`. Two retainers for different projects run concurrently and never succeed one another; company-wide agreements succeed only company-wide agreements. Gap-month work between the termination date and the successor's first work period is still billed by the outgoing agreement; work on or after the successor's first work period is billed by the successor. A lone terminated agreement with no same-scope successor preserves the legacy unbounded post-termination catch-up.
-
-## Milestone Billing
-
-Moved to **[Milestone billing](milestone-billing.md)** — flat-fee deliverable billing via `milestone_price`, the task generation workflow, carry-forward, and the milestone badge.
-
-## Time Entry Detail Display
-The invoice page includes a "Show Detail" toggle switch in the top-right corner (default: ON). When enabled, it displays the underlying time entry descriptions for each line item as an indented bullet list, showing the description, hours, and original date_worked for each entry.
-
-## Time Entry Badge Display
-On the **Time Records** page, each billable entry linked to an invoice shows a badge:
-- **Upcoming** (blue): Entry is on a **draft** invoice — clickable link to the draft invoice
-- **Invoiced** (green): Entry is on an **issued** or **paid** invoice — clickable link to the issued invoice
-- **BILLABLE** / **NON-BILLABLE**: Entry is not yet linked to any invoice
-- **Deferable** (amber, admin-only): Entry is flagged `is_deferred_billing = true` — shown alongside the billing status badge
-
-Entries on draft invoices remain fully editable (edit button visible, row clickable). Only entries on issued/paid invoices are locked.
-
-## Page Title
-The invoice page title includes the invoice number for easy identification (e.g., "Invoice ABC-202402-001 - Company Name").
+There is no `AgreementTransitionService` or matching transition endpoint in the
+current application. Agreement actions are declared in
+[routes/engagement.php](../../routes/engagement.php); the engine's treatment of
+terminated and successor agreements is implemented in
+[ClientInvoicingService](../../app/Services/Billing/ClientInvoicingService.php).
+A rule used during calculation does not by itself expose a workflow for changing
+an existing agreement's terms.
 
 ## Payment Handling
 
-Moved to **[Payments](payments.md)** — payment methods, validation, invoice status transitions, the partially-paid badge, and the payments UI/workflow.
+See [Payments](payments.md), [Stripe billing](stripe-billing.md), and
+[Overpayment credits](overpayment-credits.md). The current request entry points
+are in [routes/billing.php](../../routes/billing.php), with agent invoice writes
+separately controlled as documented in [MCP](../mcp.md).
