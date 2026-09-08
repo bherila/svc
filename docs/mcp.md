@@ -123,7 +123,7 @@ so the two groups no longer turn on together.
 With all read scopes, discovery exposes these read-only tools, in this order:
 
 `context.get`, `operations.summary`, `projects.list`, `projects.get`,
-`tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`, and
+`tasks.list`, `tasks.get`, `time_entries.list`, `expenses.list`, `invoices.list`, and
 `invoices.get`, `agreements.list`, `agreements.get`,
 `billing_schedules.list`, `billing_schedules.get`, `capacity_ledger.get`,
 `billing.audit_unplaceable_invoices`,

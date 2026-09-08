@@ -3,7 +3,7 @@
   "info": {
     "title": "SVC Agent API",
     "version": "1.0.0",
-    "description": "Versioned OAuth API for role-filtered project, task, time, and invoice operations. Payments, project mutations, and file uploads are outside v1."
+    "description": "Versioned OAuth API for role-filtered project, task, time, expense, and invoice operations. Payments, project mutations, and file uploads are outside v1."
   },
   "servers": [{"url": "https://svc.bherila.net/api/v1"}],
   "paths": {
