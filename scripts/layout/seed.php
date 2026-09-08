@@ -7,9 +7,11 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
+use App\Support\Billing\BillingCadence;
 use App\Support\Expenses\NewExpense;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -82,6 +84,9 @@ foreach ([
     ]);
 }
 
+(new WorkspaceExpenseSchedules($workspace))->create($company, $project->public_id,
+    new NewExpense(CarbonImmutable::parse($date)->subMonthsNoOverflow(2), 1200, 'USD', $description),
+    BillingCadence::Monthly);
 $expenseBoundary = new WorkspaceExpenses($workspace);
 foreach (['USD', 'EUR'] as $currency) {
     $expense = $expenseBoundary->record($company, $project, new NewExpense(
@@ -111,6 +116,7 @@ app(AttachmentStorageService::class)->store(
 file_put_contents($runtime.'/fixture.json', json_encode([
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,
+    'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
