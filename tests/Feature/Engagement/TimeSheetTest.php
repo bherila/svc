@@ -1594,11 +1594,7 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.total_minutes', 150));
     }
 
-    /**
-     * The route binding does not scope the entry, so the lock added to
-     * serialize writes against invoice allocation was being taken on another
-     * tenant's row and released by the refusal a moment later.
-     */
+    /** The HTTP binding must refuse the foreign row before locking it. */
     public function test_a_write_never_locks_another_workspaces_row(): void
     {
         $foreign = $this->foreignWorkspace();
@@ -1633,24 +1629,14 @@ class TimeSheetTest extends TestCase
 
         $this->assertSame(60, (int) $foreignEntry->fresh()?->minutes);
 
-        // The refusal alone proves nothing: `assertDraftEditable()` returns
-        // 404 either way. What the workspace predicate changes is which row
-        // the lock is taken on, and on one connection that is visible only in
-        // the query. Any read of this table by primary key has to name the
-        // workspace it is reading for.
-        // Unquoted, because the grammars disagree: SQLite writes `"id"` and
-        // MariaDB writes `` `id` ``, and matching one of them makes the test
-        // vacuous on the other engine - which is how this assertion first
-        // reached CI green locally and red on MariaDB.
-        $byPrimaryKey = array_filter(
+        // Binding now refuses before the primary-key lock. Require a real
+        // table read, and scope every read including the public-ID binding.
+        $entryReads = array_filter(
             array_map(self::unquote(...), $captured),
-            fn (string $sql): bool => str_contains($sql, 'from client_time_entries')
-                && preg_match('/\bid = \?/', $sql) === 1,
+            fn (string $sql): bool => str_contains($sql, 'from client_time_entries'),
         );
-
-        $this->assertNotEmpty($byPrimaryKey, 'The write never read the row, so this asserted nothing.');
-
-        foreach ($byPrimaryKey as $sql) {
+        $this->assertNotEmpty($entryReads, 'The request never queried the entry table.');
+        foreach ($entryReads as $sql) {
             $this->assertStringContainsString('workspace_id', $sql, "Unscoped read of another tenant's row: {$sql}");
         }
     }

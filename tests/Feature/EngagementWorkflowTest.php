@@ -300,7 +300,7 @@ class EngagementWorkflowTest extends TestCase
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
         $this->actingAs($member)->postJson($acceptPath, [
             'signer_name' => 'Forged Signer',
-        ])->assertForbidden();
+        ])->assertNotFound();
         $this->assertSame('sent', $proposal->fresh()->status);
         $this->assertSame(0, ClientAgreement::query()->count());
 

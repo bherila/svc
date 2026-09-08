@@ -90,7 +90,7 @@ final class PortalProjectScopingTest extends TestCase
 
         $this->actingAs($stranger)
             ->get("/portal/{$this->company->public_id}")
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_client_visible_time_is_shown_without_rates(): void
