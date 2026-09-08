@@ -104,8 +104,10 @@ invoice's total hours alone is not evidence that a particular entry is linked.
 
 ### Subcontractor billing
 
-Time entries store the billing-mode and rate snapshots used for subcontractor
-billing. `subcontractor_id` refers to a client-company row; there is no
+Time entries identify the person through `user_id` and the billed client through
+`client_company_id`. Subcontractor billing uses `subcontractor_billing_mode` and
+the `subcontractor_cost_amount`, `subcontractor_cost_currency` and
+`subcontractor_cost_metadata` snapshots. There is no
 `client_subcontractors` table. Inspect the scopes on
 [ClientTimeEntry](../../app/Models/ClientTimeEntry.php) and the allocation/composer
 paths for the distinction between retainer, flat-hourly and direct billing.
