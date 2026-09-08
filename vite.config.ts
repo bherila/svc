@@ -8,6 +8,10 @@ import { bunny } from 'laravel-vite-plugin/fonts';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+    // The browser harness has an empty, disposable env directory. In normal
+    // builds Vite keeps its usual project-local environment loading.
+    envDir: process.env.SVC_LAYOUT_RUNTIME,
+
     plugins: [
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],

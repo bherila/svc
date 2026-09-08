@@ -174,3 +174,56 @@ navbar row is still one row high. Then look at the screenshots: overlap,
 clipping and dead space are visible and are not assertable. Seed the fixtures
 the same way — a sixty-character client name, paragraph-length descriptions, a
 partially paid invoice.
+
+### Run the synthetic browser harness
+
+```bash
+pnpm exec playwright install chromium   # once per Playwright browser version
+pnpm run test:layout
+```
+
+Run from a checkout without an active Vite dev server. The command refuses an
+existing `public/hot` marker and leaves it untouched. It builds current assets,
+creates a fresh synthetic SQLite database,
+and launches Chromium against a temporary PHP server bound to `127.0.0.1` on a
+free port. It does not use your `.env`, existing database, OAuth session or
+production records. The test router is under `scripts/layout/`, outside the
+application routes and public directory. It requires a random per-run header,
+an exact loopback host, and GET requests. The runner probes those refusals before
+opening a page; there is no new application login endpoint. Browser requests to
+other origins are blocked. SSR is disabled for this client-layout check.
+
+The initial coverage is deliberately bounded:
+
+- **Asserted:** the operator invoice detail page initially, with Record payment
+  open, and with the payment-date correction control open; the operator proposal
+  detail page and the eligible sent proposal in the client portal with its
+  acceptance form visibly present. Fixtures include unbroken company names, invoice numbers and
+  proposal titles, lengthy descriptions, and a partially paid invoice.
+- **Measured only:** the legacy operations screen. Its existing narrow-screen
+  overflow/header wrapping is reported but does not fail the invoice/proposal
+  gate. A green exit does not certify operations or any unlisted page.
+- **Additional static coverage:** the proposal acceptance form and unbroken
+  summary/terms text have hostile-fixture coverage in `layout-overflow.test.tsx`.
+
+At each of 390, 820, 1440 and 1920 pixels, asserted pages must have no horizontal
+**document** overflow and a 48-pixel navbar row whose visible direct children
+share a vertical center. A horizontally scrolling table or tab strip inside its
+own container remains allowed. Browser exceptions fail the run. The command
+exits nonzero on failed assertions and writes measurements, screenshots and a
+Markdown report beneath ignored `test-results/layout/`; its database and session
+files are removed when the run finishes.
+
+**Read every screenshot in the report before declaring the layout complete.**
+The generated report explicitly leaves visual review as a manual step; numeric
+checks cannot establish absence of overlapping or clipped content. Keep the
+report with the PR's local verification evidence. It contains synthetic data,
+but is generated output and should not be committed.
+
+To extend coverage, add synthetic rows and named URLs in
+`scripts/layout/seed.php`, then add the page and its relevant expanded states in
+`scripts/check-layout.mjs`. Use real application routes, wait for visible controls
+before capturing, and add the matching hostile-fixture case where practical.
+Only an explicitly listed pre-existing screen should use measurement-only mode;
+a new page under test must assert the invariants. Never add an application auth
+bypass or point this harness at an existing database or remote URL.

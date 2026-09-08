@@ -30,3 +30,6 @@ yarn-error.log
 
 # Agent worktrees created by Claude Code; never part of the tree.
 /.claude/worktrees/
+
+# Synthetic browser layout screenshots and reports.
+/test-results/
