@@ -26,4 +26,15 @@ final class AgentMutationContextFactory
             $key,
         );
     }
+
+    /** New surfaces opt in; legacy receipt namespaces remain stable until migrated. */
+    public function fromAuthenticatedClient(Request $request): AgentMutationContext
+    {
+        $context = $this->from($request);
+        $token = $request->user('api')?->token();
+        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : null;
+        abort_unless(is_string($clientId) && $clientId !== '', 401);
+
+        return new AgentMutationContext($context->user, $clientId, $context->idempotencyKey);
+    }
 }
