@@ -648,7 +648,7 @@ final class InvoiceLifecycleService
                 $this->recordMarkedPaid($locked, $previousInvoiceStatus, $payment->public_id);
             }
 
-            return $payment->fresh();
+            return ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->firstOrFail();
         });
     }
 
@@ -705,12 +705,16 @@ final class InvoiceLifecycleService
         $next = $this->paymentStatus($status);
 
         return DB::transaction(function () use ($payment, $next, $workspace): ClientInvoicePayment {
-            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
+            $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
             $lockedPayment = $query->firstOrFail();
-            $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
+            $invoice = ClientInvoice::query()
+                ->where('workspace_id', $lockedPayment->workspace_id)
+                ->whereKey($lockedPayment->client_invoice_id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
             if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
@@ -723,6 +727,7 @@ final class InvoiceLifecycleService
                 // total. `refreshStatus()` below is the backstop: it refuses to
                 // total a set containing one and rolls this transaction back.
                 $otherPaid = (int) $invoice->payments()
+                    ->where('workspace_id', $invoice->workspace_id)
                     ->where('id', '!=', $lockedPayment->id)
                     ->where('status', InvoicePaymentStatus::Succeeded->value)
                     ->get(['amount', 'refunded_amount'])
@@ -766,7 +771,7 @@ final class InvoiceLifecycleService
                 $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
             }
 
-            return $lockedPayment->fresh();
+            return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
         });
     }
 
@@ -866,7 +871,7 @@ final class InvoiceLifecycleService
     public function setRefundedAmount(ClientInvoicePayment $payment, int $amount, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return DB::transaction(function () use ($payment, $amount, $workspace): ClientInvoicePayment {
-            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
+            $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
@@ -891,7 +896,11 @@ final class InvoiceLifecycleService
             }
             $this->assertReconciliationCapacity($lockedPayment, $amount);
 
-            $invoice = $this->lockInvoice($lockedPayment->invoice, $workspace);
+            $invoice = ClientInvoice::query()
+                ->where('workspace_id', $lockedPayment->workspace_id)
+                ->whereKey($lockedPayment->client_invoice_id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
             $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
@@ -908,7 +917,7 @@ final class InvoiceLifecycleService
                 ['previous_refunded_amount' => $previousAmount],
             );
 
-            return $lockedPayment->fresh();
+            return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
         });
     }
 
@@ -985,7 +994,7 @@ final class InvoiceLifecycleService
         // through applyPayment().
         $paid = 0;
 
-        foreach ($invoice->payments()->get(['public_id', 'status', 'amount', 'refunded_amount']) as $payment) {
+        foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount']) as $payment) {
             $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
 
             if ($paymentStatus === null) {
@@ -1016,7 +1025,7 @@ final class InvoiceLifecycleService
             'status' => $status,
         ])->save();
 
-        return $invoice->fresh();
+        return ClientInvoice::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->id)->firstOrFail();
     }
 
     public function assertTenant(Workspace $workspace, ClientInvoice $invoice): void
@@ -1139,7 +1148,7 @@ final class InvoiceLifecycleService
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice
     {
-        $query = ClientInvoice::query()->whereKey($invoice->id)->tap(Locks::forUpdate());
+        $query = ClientInvoice::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->id)->tap(Locks::forUpdate());
         if ($workspace !== null) {
             $query->where('workspace_id', $workspace->id);
         }
@@ -1159,7 +1168,7 @@ final class InvoiceLifecycleService
 
         $this->activities->record(
             $invoice->workspace,
-            $invoice->clientCompany,
+            ClientCompany::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->client_company_id)->firstOrFail(),
             $action,
             $payment,
             [
@@ -1189,7 +1198,7 @@ final class InvoiceLifecycleService
 
         $this->activities->record(
             $invoice->workspace,
-            $invoice->clientCompany,
+            ClientCompany::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->client_company_id)->firstOrFail(),
             'invoice.marked_paid',
             $invoice,
             ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
@@ -1260,6 +1269,7 @@ final class InvoiceLifecycleService
     private function assertReconciliationCapacity(ClientInvoicePayment $payment, int $refundedAmount): void
     {
         $activeAllocated = (int) $payment->reconciliations()
+            ->where('workspace_id', $payment->workspace_id)
             ->where('is_active', true)
             ->sum('allocated_amount');
         $netAmount = max(0, $payment->amount - $refundedAmount);

@@ -182,27 +182,9 @@ parameters:
 			path: app/Services/Billing/InvoiceLifecycleService.php
 
 		-
-			message: '#^Anonymous function should return App\\Models\\ClientInvoicePayment but returns App\\Models\\ClientInvoicePayment\|null\.$#'
-			identifier: return.type
-			count: 3
-			path: app/Services/Billing/InvoiceLifecycleService.php
-
-		-
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
 			count: 1
-			path: app/Services/Billing/InvoiceLifecycleService.php
-
-		-
-			message: '#^Method App\\Services\\Billing\\InvoiceLifecycleService\:\:refreshStatus\(\) should return App\\Models\\ClientInvoice but returns App\\Models\\ClientInvoice\|null\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Services/Billing/InvoiceLifecycleService.php
-
-		-
-			message: '#^Parameter \#1 \$invoice of method App\\Services\\Billing\\InvoiceLifecycleService\:\:lockInvoice\(\) expects App\\Models\\ClientInvoice, App\\Models\\ClientInvoice\|null given\.$#'
-			identifier: argument.type
-			count: 2
 			path: app/Services/Billing/InvoiceLifecycleService.php
 
 		-
@@ -214,7 +196,7 @@ parameters:
 		-
 			message: '#^Parameter \#2 \$company of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
 			identifier: argument.type
-			count: 6
+			count: 4
 			path: app/Services/Billing/InvoiceLifecycleService.php
 
 		-
