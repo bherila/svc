@@ -62,14 +62,10 @@ describe('expense receipts', () => {
     it('does not remove on cancel, and submits only after confirmation', async () => {
         const user = userEvent.setup();
         render(<ExpenseReceipts {...props} />);
-        await user.click(
-            screen.getByRole('button', { name: 'Remove' }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Remove' }));
         await user.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(inertia.delete).not.toHaveBeenCalled();
-        await user.click(
-            screen.getByRole('button', { name: 'Remove' }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Remove' }));
         await user.click(
             screen.getByRole('button', { name: 'Remove receipt' }),
         );
