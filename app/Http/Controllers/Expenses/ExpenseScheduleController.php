@@ -90,7 +90,7 @@ final class ExpenseScheduleController extends Controller
     /** @return array{NewExpense, ?string} */
     private function facts(Request $request, string $date): array
     {
-        $data = $request->validate(['amount' => ['required', 'integer', 'min:1'], 'currency' => ['required', 'string', 'size:3', 'alpha'],
+        $data = $request->validate(['amount' => ['required', 'integer', 'min:1'], 'currency' => ['required', 'string', 'size:3', 'alpha:ascii'],
             'description' => ['required', 'string', 'max:2000'], 'project_id' => ['nullable', 'uuid']]);
 
         return [new NewExpense(CarbonImmutable::parse($date), (int) $data['amount'], (string) $data['currency'], (string) $data['description']), $data['project_id'] ?? null];

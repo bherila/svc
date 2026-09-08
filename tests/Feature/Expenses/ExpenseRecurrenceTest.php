@@ -137,6 +137,17 @@ final class ExpenseRecurrenceTest extends TestCase
         $expense->forceFill(['client_expense_schedule_id' => $schedule->id, 'occurrence_on' => '2028-01-01'])->save();
     }
 
+    public function test_currency_validation_refuses_non_ascii_letters_with_a_field_error(): void
+    {
+        $workspace = $this->syntheticWorkspace('Currency validation');
+        $company = $this->syntheticCompany($workspace, 'Currency validation');
+        $manager = $this->syntheticMember($workspace, 'Currency manager');
+        $this->actingAs($manager)->postJson(route('svc.expense-schedules.store', [$workspace, $company]),
+            array_replace($this->facts(), ['starts_on' => '2028-01-01', 'cadence' => 'monthly', 'currency' => 'αβγ']))
+            ->assertUnprocessable()->assertJsonValidationErrors('currency');
+        $this->assertSame(0, ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->count());
+    }
+
     private function facts(int $amount = 1200): array
     {
         return ['amount' => $amount, 'currency' => 'USD', 'description' => 'Synthetic recurring cost'];
