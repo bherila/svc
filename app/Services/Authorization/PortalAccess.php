@@ -73,6 +73,7 @@ final class PortalAccess
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_membership_id', $membership->id)
             ->whereIn('client_project_id', ClientProject::query()
+                ->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)
                 ->select('id'))
             ->pluck('client_project_id')

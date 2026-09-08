@@ -302,3 +302,34 @@ The equivalent OAuth REST endpoints are GET/POST
 identifiers, status labels, current versions, and edit/delete eligibility; they
 contain no internal database identifiers. This slice adds no approval tools,
 receipt upload, recurrence or invoice claim/release integration.
+
+## Received-payment bookkeeping
+
+`payments.list` requires `payments:read` and an explicit `invoice_id` or
+`company_id`. It follows invoice visibility, defaults to 25 rows and caps pages
+at 100 using an opaque cursor. Portal readers see only payments on their visible
+issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld. References are withheld from portal readers.
+Private notes, processor identifiers and finance reconciliation records are never
+part of this response.
+
+`payments.record` records money already received; it does not collect money,
+create a Stripe intent, issue a refund, or change an existing payment's status.
+It requires an owner/admin, the `payments:record` scope, and both
+`AGENT_API_WRITES_ENABLED=true` and `AGENT_API_PAYMENT_WRITES_ENABLED=true`.
+The payment flag defaults to false and the outer flag remains the emergency stop.
+The MCP catalog, REST route and capability inventory use the same cutover.
+
+Provide the invoice ID, positive integer amount in minor units, matching uppercase
+currency, actual `received_on` payment date (`Y-m-d`) and method explicitly; never
+infer an amount or substitute the invoice date. Reference is optional (for example,
+cash need not have one). A mandatory idempotency key protects retries; reusing a
+key with another payload is refused. The existing service refuses overpayment and
+draft/void invoices, accepts dates within its workspace-calendar two-year window,
+and records a succeeded payment. An identical retry remains safe after full
+settlement and when the original date ages below the creation window.
+
+REST uses GET/POST `/api/v1/workspaces/{workspace}/payments`, with the same scopes
+and roles; POST takes the key in `Idempotency-Key`. The separate finance API
+`/invoice-payments` lists reconciliation data and is not this recording endpoint.
+The CLI `svc:billing:payment` already records payments through the same lifecycle
+service. Browser URLs remain the route for initiating a customer payment.

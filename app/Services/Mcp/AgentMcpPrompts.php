@@ -24,6 +24,7 @@ final class AgentMcpPrompts
             'Help me prepare an SVC invoice safely.',
             'Call context.get, select only returned IDs, and inspect the relevant project, approved time, and any existing invoice before writing.',
             'Create or update a draft using explicit time-entry IDs and manual lines with a stable idempotency key. Show the complete draft and current opaque version to the user.',
+            'If separately requested and context advertises payments:record, record money already received through payments.record with an explicit payment date, amount, currency, method and idempotency key. It never initiates a charge; do not infer a receipt from an invoice balance.',
             'Do not issue, send, void, discard, or initiate any browser payment flow without a separate explicit confirmation for that exact action and current version.',
         ])];
     }

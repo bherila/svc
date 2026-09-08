@@ -32,8 +32,9 @@ final class AgentMcpToolCatalog
             $this->tool('tasks.get', 'Get task', 'Get one authorized task.', $tools, 'task'),
             $this->tool('time_entries.list', 'List time entries', 'List authorized time entries with bounded cursor pagination.', $tools, 'timeEntries'),
             $this->tool('expenses.list', 'List expenses', 'List authorized expenses with bounded cursor pagination. Unattributed expenses are visible only to workspace managers.', $tools, 'expensesList'),
+            $this->tool('payments.list', 'List received payments', 'List payments for an explicit invoice or client company, following invoice visibility with bounded pagination. No private reconciliation or processor identifiers are returned.', $tools, 'paymentsList'),
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
-            $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL; payment is not an MCP operation.', $tools, 'invoice'),
+            $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL for paying. MCP can record money already received but cannot initiate a charge.', $tools, 'invoice'),
         ];
         if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
             $definitions = [...$definitions,
@@ -65,6 +66,10 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('invoices.send', 'Send invoice', 'Queue delivery to explicit recipients only after confirmation.', [$writes, 'invoicesSend'], 'invoices.send', false, false, true),
                 new ToolDefinition('invoices.void', 'Void invoice', 'Void an invoice only after explicit confirmation and reason.', [$writes, 'invoicesVoid'], 'invoices.void', false, true, true),
             ];
+        }
+
+        if ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled')) {
+            $definitions[] = new ToolDefinition('payments.record', 'Record received payment', 'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.', [$writes, 'paymentsRecord'], 'payments.record', false, false, true);
         }
 
         return $definitions;
