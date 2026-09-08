@@ -67,6 +67,12 @@ final class ConcurrencyLockRegistryTest extends TestCase
         );
     }
 
+    public function test_agent_receipts_are_ranked_before_the_domain_callback_locks(): void
+    {
+        $this->assertSame(LockResource::AgentMutationReceipt, LockResource::forTable('agent_mutation_receipts'));
+        $this->assertLessThan(LockResource::ClientProposal->rank(), LockResource::AgentMutationReceipt->rank());
+    }
+
     /** Every case is reachable by the table it names. */
     public function test_every_registered_table_resolves_to_its_own_resource(): void
     {

@@ -6,11 +6,11 @@ use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -41,17 +41,32 @@ final class AgentMutationExecutor
         $digest = hash('sha256', json_encode($this->canonicalize($payload), JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback): array {
-                $receipt = AgentMutationReceipt::query()->create([
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard): array {
+                app(LegacyAgentReceiptNamespace::class)->reserve($user, $workspace, $clientId, $operation, $key);
+                // Keep the compatibility reservation when replaying an existing receipt.
+                // createOrFirst isolates a duplicate insert in a savepoint, not this transaction.
+                $receipt = AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->tap(Locks::forUpdate())->createOrFirst([
                     'user_id' => $user->id,
                     'workspace_id' => $workspace->id,
                     'oauth_client_id' => $clientId,
                     'operation' => $operation,
                     'idempotency_key' => $key,
+                ], [
                     'request_digest' => $digest,
                     'status' => 'pending',
                     'result_public_ids' => [],
                 ]);
+                if (! $receipt->wasRecentlyCreated) {
+                    abort_unless(hash_equals($receipt->request_digest, $digest), 409, 'The idempotency key was already used with a different request.');
+                    abort_unless($receipt->status === 'completed', 409, 'The original mutation is still being processed.');
+                    $ids = $this->ids($receipt);
+                    if ($replayGuard !== null) {
+                        $replayGuard($ids);
+                    }
+                    $this->audit($user, $workspace, $clientId, $operation, $ids, 'replay');
+
+                    return $ids;
+                }
                 $ids = $callback();
                 $receipt->forceFill([
                     'status' => 'completed',
@@ -62,35 +77,6 @@ final class AgentMutationExecutor
 
                 return $ids;
             });
-        } catch (UniqueConstraintViolationException $collision) {
-            $winner = AgentMutationReceipt::query()->where([
-                'user_id' => $user->id,
-                'workspace_id' => $workspace->id,
-                'oauth_client_id' => $clientId,
-                'operation' => $operation,
-                'idempotency_key' => $key,
-            ])->first();
-            if ($winner === null) {
-                $this->auditFailure($user, $workspace, $clientId, $operation, $collision);
-
-                throw $collision;
-            }
-
-            try {
-                abort_unless(hash_equals($winner->request_digest, $digest), 409, 'The idempotency key was already used with a different request.');
-                abort_unless($winner->status === 'completed', 409, 'The original mutation is still being processed.');
-                $ids = $this->ids($winner);
-                if ($replayGuard !== null) {
-                    $replayGuard($ids);
-                }
-                $this->audit($user, $workspace, $clientId, $operation, $ids, 'replay');
-
-                return $ids;
-            } catch (Throwable $exception) {
-                $this->auditFailure($user, $workspace, $clientId, $operation, $exception);
-
-                throw $exception;
-            }
         } catch (Throwable $exception) {
             $this->auditFailure($user, $workspace, $clientId, $operation, $exception);
 

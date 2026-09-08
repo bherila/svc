@@ -89,7 +89,7 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
         $this->assertDatabaseCount('client_expenses', 0);
     }
 
-    public function test_authenticated_context_opt_in_preserves_the_legacy_receipt_namespace(): void
+    public function test_both_context_entrypoints_use_the_authenticated_client(): void
     {
         [, , $owner] = $this->fixture();
         $principal = $this->actingAsMcp($owner, ['expenses:write']);
@@ -99,7 +99,7 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
         $factory = app(AgentMutationContextFactory::class);
         $legacy = $factory->from($request);
         $authenticated = $factory->fromAuthenticatedClient($request);
-        $this->assertSame('testing-client', $legacy->oauthClientId);
+        $this->assertSame('mcp-test-client', $legacy->oauthClientId);
         $this->assertSame('mcp-test-client', $authenticated->oauthClientId);
         $this->assertSame($legacy->user->id, $authenticated->user->id);
         $this->assertSame($legacy->idempotencyKey, $authenticated->idempotencyKey);
