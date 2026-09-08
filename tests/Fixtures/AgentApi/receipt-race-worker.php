@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Connection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -34,9 +35,17 @@ $callback = function () use (&$called, $input): array {
 
     return ['synthetic-'.$input['client']];
 };
-$connectionId = DB::selectOne('select connection_id() as id')->id;
-echo "connection:{$connectionId}\nstarted\n";
-flush();
+DB::connection()->beforeStartingTransaction(function (Connection $connection): void {
+    $connectionId = $connection->getPdo()->query('select connection_id()')->fetchColumn();
+    echo "connection:{$connectionId}\nstarted\n";
+    flush();
+});
+DB::connection()->beforeExecuting(function (string $query): void {
+    if (str_contains($query, 'agent_mutation_receipts')) {
+        echo "attempting-receipt\n";
+        flush();
+    }
+});
 try {
     if ($input['writer'] === 'new') {
         $ids = app(AgentMutationExecutor::class)->run($user, $workspace, $input['client'], 'tasks.create', 'synthetic-race-key', [], $callback);

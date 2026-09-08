@@ -52,17 +52,21 @@ final class LegacyReceiptConcurrencyTest extends TestCase
             $second = $this->worker($secondInput);
             $processes[] = $second;
             $second->start();
-            $this->assertTrue($second->waitUntil(fn (string $type, string $output): bool => str_contains($second->getOutput(), "started\n")), $second->getOutput());
+            // Process startup is too early: wait until the worker reaches receipt SQL.
+            $this->assertTrue($second->waitUntil(fn (string $type, string $output): bool => str_contains($second->getOutput(), "attempting-receipt\n")), $second->getOutput());
             $this->assertSame(1, preg_match('/connection:(\d+)/', $second->getOutput(), $match));
             $waiting = false;
             $deadline = microtime(true) + 10;
             do {
-                $waiting = DB::selectOne("select count(*) as total from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = 'LOCK WAIT'", [(int) $match[1]])->total > 0;
+                // Correlate the active server session with its InnoDB transaction.
+                $workerState = DB::selectOne('select COMMAND, STATE from information_schema.PROCESSLIST where ID = ?', [(int) $match[1]]);
+                $transaction = DB::selectOne('select trx_state from information_schema.innodb_trx where trx_mysql_thread_id = ?', [(int) $match[1]]);
+                $waiting = $workerState !== null && $workerState->COMMAND !== 'Sleep' && $transaction?->trx_state === 'LOCK WAIT';
                 if (! $waiting) {
                     usleep(20_000);
                 }
             } while (! $waiting && $second->isRunning() && microtime(true) < $deadline);
-            $this->assertTrue($waiting, 'The second writer must actually wait on the first reservation. '.$second->getOutput());
+            $this->assertTrue($waiting, 'The second writer must actually wait on the first reservation. Exit: '.var_export($second->getExitCode(), true).' State: '.($workerState?->STATE ?? 'missing').' '.$second->getOutput());
             $firstInput->write("release\n");
             $firstInput->close();
             $first->wait();
