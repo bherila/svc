@@ -83,6 +83,10 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_stripe_customers', 'client_company_id', 'client_companies', 'csc_ws_company_fk'),
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_company_id', 'client_companies', 'cspm_ws_company_fk'),
 
+            TenantReference::enforcedBy('client_expense_schedules', 'client_company_id', 'client_companies', 'ces_ws_company_fk'),
+            TenantReference::enforcedBy('client_expense_schedules', 'client_project_id', 'client_projects', 'ces_ws_project_fk'),
+            TenantReference::enforcedBy('client_expenses', 'client_expense_schedule_id', 'client_expense_schedules', 'cex_ws_schedule_fk'),
+
             // Projects.
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_project_id', 'client_projects', 'cte_ws_project_fk'),

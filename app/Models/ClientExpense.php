@@ -57,7 +57,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'spent_on', 'amount', 'currency', 'description',
     'status', 'approved_by_user_id', 'approved_at',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id', 'client_expense_schedule_id', 'occurrence_on'])]
 class ClientExpense extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
