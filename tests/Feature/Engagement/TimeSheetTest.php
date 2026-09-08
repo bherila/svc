@@ -61,6 +61,38 @@ class TimeSheetTest extends TestCase
         ]);
     }
 
+    public function test_manager_can_draft_only_eligible_unallocated_time_from_the_sheet(): void
+    {
+        $this->travelTo('2026-07-20');
+        $eligible = $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => 12345, 'currency' => 'USD', 'minutes' => 1]);
+        $allocated = $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $this->attachToInvoice($allocated, 'draft');
+        $this->entry(['status' => 'approved', 'is_billable' => true, 'is_deferred' => true, 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $this->entry(['status' => 'draft', 'is_billable' => true, 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => null]);
+        $this->actingAs($this->manager)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('invoice_draft.url', route('svc.billing.invoices.store', [$this->workspace, $this->company]))
+            ->where('months.0.entries', function ($rows) use ($eligible): bool {
+                $quoted = collect($rows)->filter(fn ($row) => $row['invoice_terms'] !== null)->values();
+
+                return $quoted->count() === 1 && $quoted[0]['id'] === $eligible->public_id
+                    && $quoted[0]['invoice_terms'] === ['currency' => 'USD', 'unit_amount' => 12345, 'total_amount' => 206];
+            }));
+    }
+
+    public function test_nonmanager_gets_neither_invoice_action_nor_pricing_terms(): void
+    {
+        $this->travelTo('2026-07-20');
+        $this->workspace->memberships()->where('user_id', $this->manager->id)->update(['role' => 'member']);
+        $this->project->members()->attach($this->manager->id, ['workspace_id' => $this->workspace->id, 'role' => 'manager']);
+        $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => 12345, 'currency' => 'USD']);
+        $this->actingAs($this->manager)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('invoice_draft', null)
+            ->where('months.0.entries.0.invoice_terms', null));
+    }
+
     public function test_the_sheet_groups_entries_by_month_and_totals_them(): void
     {
         $this->entry(['worked_on' => '2026-07-04', 'minutes' => 90]);

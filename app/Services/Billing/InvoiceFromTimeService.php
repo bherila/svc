@@ -10,8 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
-use App\Support\Billing\InvoiceLineType;
-use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Billing\SelectedTimeInvoiceTerms;
 use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -275,33 +274,10 @@ final class InvoiceFromTimeService
      */
     private function selectedTimeTerms(ClientTimeEntry $entry, string $currency): ?array
     {
-        if ($entry->status !== 'approved' || ! $entry->is_billable || $entry->is_deferred) {
-            return null;
-        }
+        $terms = SelectedTimeInvoiceTerms::forEntry($entry);
 
-        $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
-        $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
-        if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
-            return null;
-        }
-
-        if ($mode === SubcontractorBillingMode::Direct) {
-            return null;
-        }
-
-        if ($mode === SubcontractorBillingMode::FlatHourly) {
-            return $entry->subcontractor_cost_amount !== null
-                && $entry->subcontractor_cost_currency === $currency
-                    ? ['type' => InvoiceLineType::Subcontractor->value, 'unit_amount' => $entry->subcontractor_cost_amount]
-                    : null;
-        }
-
-        if ($mode === null && $entry->subcontractor_cost_amount !== null) {
-            return null;
-        }
-
-        return $entry->billing_rate_amount !== null && $entry->currency === $currency
-            ? ['type' => 'time', 'unit_amount' => $entry->billing_rate_amount]
+        return $terms !== null && $terms->currency === $currency
+            ? ['type' => $terms->type, 'unit_amount' => $terms->unitAmount]
             : null;
     }
 

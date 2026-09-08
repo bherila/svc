@@ -38,6 +38,11 @@ export type TimeEntry = {
     task: { id: string; title: string } | null;
     worker: string | null;
     invoice: InvoiceLink | null;
+    invoice_terms: {
+        currency: string;
+        unit_amount: number;
+        total_amount: number;
+    } | null;
     can_edit: boolean;
     can_approve: boolean;
 };
@@ -139,6 +144,7 @@ export type TimeSheetProps = {
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;
+    invoice_draft: { url: string } | null;
     /**
      * Which company the sheet actually read.
      *
