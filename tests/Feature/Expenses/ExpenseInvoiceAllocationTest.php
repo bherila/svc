@@ -7,6 +7,7 @@ use App\Exceptions\ExpenseTransitionRefused;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
@@ -50,6 +51,11 @@ final class ExpenseInvoiceAllocationTest extends TestCase
         $this->assertCount(1, $invoices);
         $this->assertSame(12600, $invoices[0]->total_amount);
         $this->assertSame('issued', $invoices[0]->status);
+        $activities = ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('subject_public_id', $invoices[0]->public_id)->whereIn('action', ['invoice.generated', 'invoice.issued'])->get();
+        $this->assertCount(2, $activities);
+        foreach ($activities as $activity) {
+            $this->assertSame(12600, $activity->payload['total_amount']);
+        }
         $expense->refresh();
         $this->assertSame('invoiced', $expense->status);
         $this->assertNotNull($expense->client_invoice_line_id);
@@ -304,6 +310,39 @@ final class ExpenseInvoiceAllocationTest extends TestCase
             'status' => 'active', 'starts_on' => '2026-07-01', 'currency' => 'USD', 'billing_cadence' => $cadence,
             'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000, 'rollover_months' => 0,
         ]);
+    }
+
+    public function test_carried_expense_preserves_cadence_window_and_regenerates_without_overlap(): void
+    {
+        [$workspace, $company, $expense] = $this->approved();
+        $agreement = $this->agreement($workspace, $company, 'monthly');
+        $prior = $this->draft($workspace, $company, 'SYN-PRIOR-ISSUED');
+        $prior->forceFill(['client_agreement_id' => $agreement->id])->save();
+        app(InvoiceLifecycleService::class)->issue($prior, $workspace);
+        $service = app(ClientInvoicingService::class);
+        $invoice = $service->generateInvoice($company, Carbon::parse('2026-09-01'), Carbon::parse('2026-09-30'), $agreement);
+        $this->assertSame('2026-09-01', $invoice->service_period_start->toDateString());
+        $this->assertSame('2026-09-30', $invoice->service_period_end->toDateString());
+        $line = ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->whereKey($expense->refresh()->client_invoice_line_id)->firstOrFail();
+        $this->assertSame('2026-08-15', $line->line_date->toDateString());
+        $regenerated = $service->generateInvoice($company, Carbon::parse('2026-09-01'), Carbon::parse('2026-09-30'), $agreement);
+        $this->assertSame($invoice->id, $regenerated->id);
+        $this->assertSame('2026-09-01', $regenerated->service_period_start->toDateString());
+        $this->assertSame(12500, $regenerated->total_amount);
+        $this->assertSame('2026-08-31', $prior->refresh()->service_period_end->toDateString());
+    }
+
+    public function test_legacy_generation_activity_includes_expenses_after_overpayment_credits(): void
+    {
+        [$workspace, $company] = $this->approved();
+        $agreement = $this->agreement($workspace, $company, 'monthly');
+        $creditSource = $this->draft($workspace, $company, 'SYN-CREDIT-SOURCE');
+        $creditSource->forceFill(['invoice_kind' => 'ad_hoc', 'status' => 'paid', 'paid_amount' => 1100])->save();
+        $creditSource->payments()->create(['workspace_id' => $workspace->id, 'status' => 'succeeded', 'amount' => 1100, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-08-01']);
+        $invoice = app(ClientInvoicingService::class)->generateInvoice($company, Carbon::parse('2026-09-01'), Carbon::parse('2026-09-30'), $agreement);
+        $this->assertSame(11500, $invoice->total_amount);
+        $activity = ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('subject_public_id', $invoice->public_id)->where('action', 'invoice.generated')->sole();
+        $this->assertSame(11500, $activity->payload['total_amount']);
     }
 
     /** @return array{Workspace, ClientCompany, ClientExpense} */

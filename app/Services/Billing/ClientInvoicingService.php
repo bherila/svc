@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
@@ -1909,8 +1910,14 @@ final class ClientInvoicingService
         // the service period into the next month and the overlap guard then
         // refused to generate that month at all.
         $lines = $invoice->lines()
+            ->where('workspace_id', $invoice->workspace_id)
             ->whereNotNull('line_date')
             ->whereIn('type', InvoiceLineType::definingTheWorkPeriod())
+            // A claimed expense retains its spent date for provenance, but can
+            // carry forward from an already-issued cycle. It does not move the
+            // cadence window that the overlap guard has already approved.
+            ->whereNotIn('id', ClientExpense::withTrashed()->where('workspace_id', $invoice->workspace_id)
+                ->whereNotNull('client_invoice_line_id')->select('client_invoice_line_id'))
             ->get();
 
         if ($lines->isEmpty()) {
