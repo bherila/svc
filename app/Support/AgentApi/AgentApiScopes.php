@@ -40,7 +40,7 @@ final class AgentApiScopes
             self::TASKS_WRITE => 'Create and update authorized tasks',
             self::TIME_READ => 'Read authorized time entries',
             self::TIME_WRITE => 'Log and manage authorized draft time',
-            self::TIME_APPROVE => 'Approve authorized project time',
+            self::TIME_APPROVE => 'Set billing rates and approve authorized project time',
             self::BILLING_READ => 'Read authorized invoices',
             self::BILLING_WRITE => 'Create and update authorized invoice drafts',
             self::BILLING_DELIVER => 'Issue, send, and void authorized invoices',

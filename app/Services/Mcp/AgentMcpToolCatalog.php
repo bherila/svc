@@ -44,7 +44,7 @@ final class AgentMcpToolCatalog
         }
         if ($this->timeEntryWritesEnabled()) {
             $definitions = [...$definitions,
-                new ToolDefinition('time_entries.log', 'Log time', 'Idempotently log up to 20 completed time entries.', [$writes, 'timeEntriesLog'], 'time_entries.log', false, false, true),
+                new ToolDefinition('time_entries.log', 'Log time', 'Idempotently log up to 20 completed time entries. Explicit billing rates require time:approve and a project approver role.', [$writes, 'timeEntriesLog'], 'time_entries.log', false, false, true),
                 new ToolDefinition('time_entries.update', 'Update editable time', 'Update authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesUpdate'], 'time_entries.update', false, false, true),
                 new ToolDefinition('time_entries.delete', 'Delete editable time', 'Soft-delete authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
             ];

@@ -11,7 +11,9 @@ use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\AgentApi\UpdateTimeEntryAction;
+use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Authorization\ProjectAccess;
+use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,6 +26,7 @@ final class AgentTimeEntryMutationController extends Controller
         LogTimeEntriesAction $logTime,
         AgentTimeEntryPresenter $presenter,
         AgentMutationContextFactory $contexts,
+        AgentTokenScopes $scopes,
     ): JsonResponse {
         $context = $contexts->from($request);
         $ids = $logTime->run(
@@ -32,6 +35,7 @@ final class AgentTimeEntryMutationController extends Controller
             $context->oauthClientId,
             $context->idempotencyKey,
             $request->all(),
+            $scopes->allows($request, AgentApiScopes::TIME_APPROVE),
         );
         $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
