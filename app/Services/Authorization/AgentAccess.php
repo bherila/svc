@@ -14,7 +14,10 @@ use App\Support\AgentApi\ProjectRole;
 
 final class AgentAccess
 {
-    public function __construct(private readonly ProjectAccess $projects) {}
+    public function __construct(
+        private readonly ProjectAccess $projects,
+        private readonly PortalInvoiceQuery $portalInvoices,
+    ) {}
 
     /**
      * The client companies this user is a portal member of *in this workspace*.
@@ -93,13 +96,13 @@ final class AgentAccess
 
     public function canViewInvoice(User|AgentPrincipal $user, ClientInvoice $invoice): bool
     {
-        if ($this->isWorkspaceManager($user, $invoice->workspace)) {
+        $workspace = Workspace::query()->whereKey($invoice->workspace_id)->firstOrFail();
+        if ($this->isWorkspaceManager($user, $workspace)) {
             return true;
         }
 
-        return $invoice->is_visible_to_client
-            && in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)
-            && $this->isCompanyMember($user, $invoice->clientCompany);
+        return $this->portalInvoices->visibleInWorkspace($workspace, $user)
+            ->whereKey($invoice->id)->exists();
     }
 
     public function isWorkspaceClient(User|AgentPrincipal $user, Workspace $workspace): bool
