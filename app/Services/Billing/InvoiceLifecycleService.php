@@ -15,10 +15,13 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\PaymentDateBounds;
 use App\Support\Billing\ServicePeriodRequirement;
+use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -535,9 +538,30 @@ final class InvoiceLifecycleService
             // service and svc:billing:payment did not.
             $status = $this->paymentStatus($data['status'] ?? null);
 
-            if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
-                throw new DomainException('Payment cannot exceed the invoice balance.');
-            }
+            // Bounded here rather than only at the HTTP door, for the same
+            // reason the status is: `svc:billing:payment`, an import and a
+            // hand-repair never cross that door. Omitted still means today on
+            // this workspace's calendar, which is what every caller relied on.
+            //
+            // Shape now, window later. Whether this is a calendar date is a
+            // fact about the string and has to be settled before it can be
+            // compared with anything; whether it may be *recorded* is a fact
+            // about the clock, and asking it here would make an idempotent
+            // retry expire. A payment dated on the floor is below the floor
+            // tomorrow, so the same key with the same payload would be refused
+            // as too old before the row it matches was ever looked for - a
+            // lost-response retry that stops being safe because the workspace
+            // date advanced. {@see PaymentDateBounds::assertWithin()} is
+            // therefore asked once, below, where a new payment is created.
+            //
+            // Whether the caller *said* a date is kept too, because it is a
+            // different question from what the date is, and only the
+            // idempotency check needs to tell them apart.
+            $bounds = PaymentDateBounds::asOf($this->clock->today($locked->workspace));
+            $claimsDate = ($data['received_on'] ?? null) !== null;
+            $receivedOn = $claimsDate
+                ? PaymentDateBounds::calendarDate($data['received_on'])
+                : $bounds->latest();
 
             $key = isset($data['idempotency_key']) ? (string) $data['idempotency_key'] : null;
             if ($key !== null && $key !== '') {
@@ -546,16 +570,59 @@ final class InvoiceLifecycleService
                     ->where('idempotency_key', $key)
                     ->first();
                 if ($existing !== null) {
+                    // The date is one of the fields that define this payment,
+                    // so a key reused with a different one is a different
+                    // payment and is refused like any other mismatch. The
+                    // sequence that makes this matter is the one this field
+                    // creates: a response is lost, the operator notices the
+                    // date was wrong, corrects it and retries with the same
+                    // key - and without this they are told it succeeded while
+                    // the original reconciliation date stands.
+                    //
+                    // Only when the caller named a date, though. `received_on`
+                    // is optional and defaults to today on the workspace's
+                    // calendar, so a caller who omits it is making no claim
+                    // about the date at all - the value in the row is this
+                    // service's own earlier choice. Comparing the fallback
+                    // would make the guard fire on the clock rather than on
+                    // anything the caller varied: an identical retry that
+                    // crosses the workspace's midnight, or a replay run the
+                    // next day, computes a later today and would be refused as
+                    // "a different payment" when nothing about the request
+                    // differs. Compared against the parsed value rather than
+                    // the raw field, so a date that only differs in its
+                    // spelling is still the same date.
                     if ($existing->client_invoice_id !== $locked->id
                         || $existing->amount !== $amount
                         || $existing->currency !== $currency
                         || $existing->method !== ($data['method'] ?? null)
-                        || $existing->status !== $status->value) {
+                        || $existing->status !== $status->value
+                        || ($claimsDate && $existing->received_on?->toDateString() !== $receivedOn)) {
                         throw new DomainException('The idempotency key is already bound to a different payment.');
                     }
 
                     return $existing;
                 }
+            }
+
+            // Nothing above this line has written anything, and everything
+            // below creates a payment - which is exactly the boundary the two
+            // state-dependent refusals belong on. A date the caller never named
+            // is today by construction and passes trivially; one they did is
+            // measured against the window as it stands at the moment the row is
+            // made.
+            $bounds->assertWithin($receivedOn);
+
+            // And the balance, for the same reason and more sharply. This is
+            // measured against a figure the first execution of *this same
+            // request* moves: a payment for the whole balance leaves nothing
+            // owed, so retrying it with its own key was refused outright with
+            // "Payment cannot exceed the invoice balance" before the row it
+            // matches was ever looked for. The larger the payment the less
+            // idempotent it was, and a payment settling an invoice in full is
+            // the ordinary case rather than an edge one.
+            if ($status === InvoicePaymentStatus::Succeeded && $amount > $locked->balance_amount) {
+                throw new DomainException('Payment cannot exceed the invoice balance.');
             }
 
             $payment = $locked->payments()->create([
@@ -564,7 +631,7 @@ final class InvoiceLifecycleService
                 'amount' => $amount,
                 'refunded_amount' => 0,
                 'currency' => $currency,
-                'received_on' => $data['received_on'] ?? $this->clock->today($locked->workspace)->toDateString(),
+                'received_on' => $receivedOn,
                 'method' => $this->requiredString($data['method'] ?? null, 'method'),
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
@@ -609,6 +676,28 @@ final class InvoiceLifecycleService
         }
 
         return $status;
+    }
+
+    /**
+     * The day a payment arrived, bounded by the workspace's own calendar.
+     *
+     * Omitted means today, which is the default every caller relied on when
+     * this was `$data['received_on'] ?? $this->clock->today(...)`. Supplied, it
+     * must be a real `Y-m-d` date inside the window
+     * {@see PaymentDateBounds} draws - and a date before the invoice's
+     * `issue_date` is deliberately *not* refused here: a deposit or an advance
+     * retainer applied to an invoice issued afterwards is a real arrangement,
+     * so the screens warn about one and the write succeeds.
+     */
+    private function receivedOn(mixed $raw, Workspace|string|null $workspace): string
+    {
+        $bounds = PaymentDateBounds::asOf($this->clock->today($workspace));
+
+        // Both halves together, unlike {@see self::applyPayment()}: a
+        // correction neither creates a row nor matches an existing one, so
+        // there is no moment between the two questions for the clock to move
+        // through.
+        return $raw === null ? $bounds->latest() : $bounds->parse($raw);
     }
 
     public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
@@ -678,6 +767,99 @@ final class InvoiceLifecycleService
             }
 
             return $lockedPayment->fresh();
+        });
+    }
+
+    /**
+     * Correct the date on an existing payment, and nothing else.
+     *
+     * There is deliberately no payment-edit path in this application: a payment
+     * is corrected by transitioning its status or its refunded amount, so the
+     * history is preserved rather than rewritten. This does not weaken that,
+     * because a mistyped date is not a money correction. It moves no amount,
+     * changes no status, and cannot move an invoice's balance -
+     * {@see self::refreshStatus()} never reads this column. The only remedy for
+     * one today is to cancel the payment and record it again, which invents a
+     * cancellation that never happened and leaves it in the client's history.
+     *
+     * So the operation is constrained to the one column. Amount, currency,
+     * method, status and refunded amount are untouchable through here, the
+     * bound is the same one {@see self::applyPayment()} applies on the way in,
+     * and the write is scoped to the workspace like every other.
+     *
+     * The shape follows {@see self::setPaymentStatus()} and
+     * {@see self::setRefundedAmount()}, which are the comparable corrections:
+     * the payment row is locked first and the invoice through it, in the order
+     * {@see LockResource} declares, and the change
+     * is recorded as a `ClientCompanyActivity` carrying the date it replaced,
+     * with a fresh occurrence so each correction is its own event rather than a
+     * deduplicated repeat of the last one. Where the two left a choice, the
+     * conservative reading was taken: this column does not need the invoice
+     * lock, and it is taken anyway, so a correction cannot interleave with an
+     * operation already rewriting that invoice's payments.
+     *
+     * `refreshStatus()` is deliberately not called. It is not an input to this
+     * column, and it refuses to recompute an invoice carrying any payment of an
+     * unreadable status - so calling it here would make correcting a date fail
+     * because of an unrelated row, which is the one thing a repair must not do.
+     */
+    public function setPaymentReceivedOn(ClientInvoicePayment $payment, string $receivedOn, ?Workspace $workspace = null): ClientInvoicePayment
+    {
+        return DB::transaction(function () use ($payment, $receivedOn, $workspace): ClientInvoicePayment {
+            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
+            if ($workspace !== null) {
+                $query->where('workspace_id', $workspace->id);
+            }
+            $lockedPayment = $query->firstOrFail();
+            // Resolved and locked in one scoped query, rather than read through
+            // `$lockedPayment->invoice` and then locked. The relation is a
+            // `belongsTo` on `client_invoice_id` alone, so the read that finds
+            // the invoice is bounded by a child key and nothing else - and a
+            // row migrated in from before #113's composite tenant keys can name
+            // an invoice in another workspace. Locking it afterwards makes the
+            // *lock* scoped and leaves the read that produced the model
+            // unscoped, which is a tenant-owned query without a tenant in it.
+            //
+            // Bounded by the payment's own workspace rather than the caller's:
+            // that is the stronger of the two, because the payment was already
+            // constrained to the caller's workspace above where one was given,
+            // and it is the only bound available where one was not - the
+            // console command passes none.
+            //
+            // `firstOrFail()` rather than a message: an invoice that is not
+            // this payment's tenant's is not found, which is the answer a
+            // cross-tenant reach should get, and it is what the sibling
+            // corrections' `lockInvoice()` already answers.
+            $invoice = ClientInvoice::query()
+                ->whereKey($lockedPayment->client_invoice_id)
+                ->where('workspace_id', $lockedPayment->workspace_id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
+            // The invoice's own workspace, not the caller's: the bound is a
+            // statement about which day it is where this money was received.
+            $next = $this->receivedOn($receivedOn, $invoice->workspace);
+            $previous = $lockedPayment->received_on?->toDateString();
+            if ($previous === $next) {
+                return $lockedPayment;
+            }
+
+            $lockedPayment->forceFill(['received_on' => $next])->save();
+            $this->recordPaymentActivity(
+                $invoice,
+                $lockedPayment,
+                'invoice.payment_date_corrected',
+                (string) Str::uuid(),
+                ['previous_received_on' => $previous, 'received_on' => $next],
+            );
+
+            // The row this transaction locked, wrote and still holds, rather
+            // than `refresh()`. That re-reads by primary key alone, which is a
+            // tenant-owned query with no tenant in it - harmless in itself,
+            // since a primary key cannot reach another workspace's row, but it
+            // is a shape the query-shape guard would have to carve an exception
+            // for and the next reader would copy. There is also nothing to
+            // re-read: the save above is the only write to this row.
+            return $lockedPayment;
         });
     }
 
@@ -973,6 +1155,8 @@ final class InvoiceLifecycleService
         ?string $occurrence = null,
         array $extra = [],
     ): void {
+        $this->loadOwningCompany($invoice);
+
         $this->activities->record(
             $invoice->workspace,
             $invoice->clientCompany,
@@ -996,6 +1180,13 @@ final class InvoiceLifecycleService
             return;
         }
 
+        // Here as well as in `recordPaymentActivity()`. Every path that reaches
+        // this one happens to record a payment activity first, so the relation
+        // is already loaded and scoped by the time it is read here - which is a
+        // guarantee about call order rather than about this method, and the
+        // wrong kind to depend on.
+        $this->loadOwningCompany($invoice);
+
         $this->activities->record(
             $invoice->workspace,
             $invoice->clientCompany,
@@ -1004,6 +1195,40 @@ final class InvoiceLifecycleService
             ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
             occurrence: $occurrence,
         );
+    }
+
+    /**
+     * Load an invoice's company with its workspace as well as its key.
+     *
+     * `$invoice->clientCompany` is a `belongsTo` on `client_company_id` alone,
+     * so reading it lazily selects a company by a child key and nothing else -
+     * and an invoice migrated in from before #113's composite tenant keys can
+     * name one in another workspace. `ClientActivityRecorder` refuses the
+     * mismatch, but only once the foreign tenant's row has been read and
+     * materialised, which is the same shape as an unscoped invoice read one
+     * relation earlier. Constrained the way `InvoiceController::index()`
+     * already constrains this relation, and for the same reason.
+     *
+     * Called from {@see self::recordPaymentActivity()} rather than from the
+     * correction that surfaced it, because all four payment paths record
+     * through there and all four read this relation the same way.
+     *
+     * A named guard rather than three lines inline, for the same reason
+     * {@see self::assertCompanyTenant()} is one: it is the check every caller
+     * needs and none of them should be restating.
+     */
+    private function loadOwningCompany(ClientInvoice $invoice): void
+    {
+        $invoice->load([
+            'clientCompany' => fn (Relation $relation) => $relation->where('workspace_id', $invoice->workspace_id),
+        ]);
+
+        if ($invoice->clientCompany === null) {
+            throw new DomainException(
+                'This invoice names a client company in another workspace, so nothing about its '
+                .'payments can be recorded against a client. Nothing has been changed.'
+            );
+        }
     }
 
     private function assertCompanyTenant(Workspace $workspace, ClientCompany $company): void

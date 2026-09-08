@@ -208,6 +208,12 @@ class WorkspaceOperationsController extends Controller
                         'paid_amount' => $invoice->paid_amount,
                         'balance_amount' => $invoice->balance_amount,
                         'currency' => $invoice->currency,
+                        // What the record-payment form measures a payment date
+                        // against: a payment dated before the invoice existed
+                        // is legitimate and is warned about rather than
+                        // refused, and the screen cannot warn about a date it
+                        // was never told.
+                        'issue_date' => $invoice->issue_date?->toDateString(),
                         'due_date' => $invoice->due_date?->toDateString(),
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
                     ])

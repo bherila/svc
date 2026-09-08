@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { formatTimestamp } from '@/lib/datetime';
+import { formatDay, formatTimestamp } from '@/lib/datetime';
 
 export type CompanyActivity = {
     id: string;
@@ -36,6 +36,7 @@ const actionTitles: Record<string, string> = {
     'invoice.payment_canceled': 'Payment canceled',
     'invoice.payment_disputed': 'Payment disputed',
     'invoice.payment_refunded': 'Payment refunded',
+    'invoice.payment_date_corrected': 'Payment date corrected',
     'payment_method.added': 'Payment method added',
     'payment_method.removed': 'Payment method removed',
     'payment_method.default_changed': 'Default payment method changed',
@@ -55,6 +56,10 @@ const meaningfulActions = new Set([
     'invoice.payment_canceled',
     'invoice.payment_disputed',
     'invoice.payment_refunded',
+    // A correction, not noise. The whole reason a date-only edit is allowed at
+    // all is that the change is recorded, and an audit record hidden behind
+    // "show system activity" is not one.
+    'invoice.payment_date_corrected',
     'payment_method.added',
     'payment_method.removed',
     'payment_method.default_changed',
@@ -93,7 +98,10 @@ function titleFor(action: string): string {
     );
 }
 
-function subtitleFor(payload: Record<string, unknown>): string | undefined {
+function subtitleFor(
+    payload: Record<string, unknown>,
+    action: string,
+): string | undefined {
     const imported = payload.external_payload;
     const displayPayload =
         imported && typeof imported === 'object' && !Array.isArray(imported)
@@ -132,6 +140,23 @@ function subtitleFor(payload: Record<string, unknown>): string | undefined {
         }
     }
 
+    // A date correction's whole content is the two dates. Read off the action
+    // rather than off the presence of the keys, because an imported
+    // `external_payload` can carry a `received_on` of its own and that is a
+    // payment's date rather than a change to one. `previous_received_on` is
+    // nullable - an imported payment can carry no date at all - so the before
+    // is allowed to be absent while the after is not.
+    if (
+        action === 'invoice.payment_date_corrected' &&
+        typeof displayPayload.received_on === 'string'
+    ) {
+        const previous = displayPayload.previous_received_on;
+
+        return `Received ${
+            typeof previous === 'string' ? formatDay(previous) : 'not recorded'
+        } → ${formatDay(displayPayload.received_on)}`;
+    }
+
     return typeof displayPayload.invoice_kind === 'string' &&
         displayPayload.invoice_kind
         ? displayPayload.invoice_kind.replaceAll('_', ' ')
@@ -152,7 +177,7 @@ function formatActivity(activity: CompanyActivity): FormattedActivity {
     return {
         ...activity,
         title: titleFor(activity.action),
-        subtitle: subtitleFor(activity.payload),
+        subtitle: subtitleFor(activity.payload, activity.action),
         tone,
         isSystemNoise: !meaningfulActions.has(activity.action),
     };
