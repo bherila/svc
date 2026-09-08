@@ -791,19 +791,19 @@ company, optionally attributed to one of that company's projects.
 - `approved_by_user_id`, `approved_at`
 - timestamps and `deleted_at`
 
-The lifecycle edges are `draft` → `approved`, `approved` → `draft`, and
-`approved` → `invoiced`. Nothing leaves `invoiced`, no status moves to itself,
-and a status the vocabulary does not recognise refuses every move. Only a
-draft's facts may be rewritten. Withdrawal of an approval clears the approver
-and the timestamp rather than keeping them as history.
+Manager approval moves `draft` → `approved`; withdrawing approval moves
+`approved` → `draft` and clears the approver and timestamp. Invoice allocation
+moves `approved` → `invoiced`. Releasing an invoice claim returns the expense
+to `approved` and clears its invoice-line link. Only a draft's facts may be
+rewritten; these paths refuse unrecognised statuses.
 
-Reads and writes go through `App\Queries\Expenses\WorkspaceExpenses`, which the
-model's own docblock names as the only place that resolves a company or project
-for a workspace, so a caller cannot assemble an expense out of ids it did not
-check. Each transition locks the row and re-reads its status under that lock;
-that requirement is stated in
-[the domain contract](../domain-contract.md#engagement-tables) and the ordering
-in [concurrency.md](concurrency.md).
+`App\Queries\Expenses\WorkspaceExpenses` handles ordinary expense operations.
+`App\Services\Billing\ExpenseInvoiceAllocations` owns invoice claims and
+release; `App\Queries\Expenses\WorkspaceExpenseSchedules` owns recurring
+templates and occurrence generation. These boundaries resolve tenant-owned
+references within the workspace and serialize their mutations with row locks.
+See [the domain contract](../domain-contract.md#engagement-tables) and
+[concurrency.md](concurrency.md) for the ownership and locking rules.
 
 Routes:
 
@@ -819,7 +819,13 @@ DELETE /workspaces/{workspace}/expenses/{expense}
 Approved expenses can be claimed at their recorded cost by eligible cadence
 invoices, through `ExpenseInvoiceAllocations`. A claim marks the expense
 `invoiced` and links its invoice line; regeneration, discard and void handle
-release through that shared boundary. Recurrence remains a separate #75 slice.
+release through that shared boundary.
+
+Managers can create recurring templates and generate due expense drafts on
+demand, up to 24 occurrences per request through today in the workspace timezone.
+Every generated draft needs separate approval before billing. Generation does
+not depend on a daemon or queue worker; pausing retains the backlog for catch-up.
+See [recurring expenses](expense-recurrence.md) for calendar and editing rules.
 
 Managers can open a row's Receipts link to upload, download and remove files.
 Expense receipts use the shared attachment lifecycle and private object store;
