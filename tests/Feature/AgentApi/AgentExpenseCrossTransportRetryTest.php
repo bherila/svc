@@ -9,10 +9,12 @@ use App\Models\ClientExpense;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Expenses\NewExpense;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Laravel\Passport\AccessToken;
 use Laravel\Passport\Token;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -85,6 +87,22 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
         $this->withHeader('Idempotency-Key', 'missing-authenticated-client')->postJson('/api/v1/workspaces/'.$workspace->public_id.'/expenses', ['entries' => [['company_id' => $company->public_id, 'spent_on' => '2026-09-07', 'amount' => 500, 'currency' => 'USD', 'description' => 'Synthetic expense']]])->assertUnauthorized();
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
         $this->assertDatabaseCount('client_expenses', 0);
+    }
+
+    public function test_authenticated_context_opt_in_preserves_the_legacy_receipt_namespace(): void
+    {
+        [, , $owner] = $this->fixture();
+        $principal = $this->actingAsMcp($owner, ['expenses:write']);
+        $request = Request::create('/synthetic-context');
+        $request->headers->set('Idempotency-Key', 'synthetic-context-key');
+        $request->setUserResolver(fn () => $principal);
+        $factory = app(AgentMutationContextFactory::class);
+        $legacy = $factory->from($request);
+        $authenticated = $factory->fromAuthenticatedClient($request);
+        $this->assertSame('testing-client', $legacy->oauthClientId);
+        $this->assertSame('mcp-test-client', $authenticated->oauthClientId);
+        $this->assertSame($legacy->user->id, $authenticated->user->id);
+        $this->assertSame($legacy->idempotencyKey, $authenticated->idempotencyKey);
     }
 
     private function switchClient(AgentPrincipal $principal, string $clientId): void

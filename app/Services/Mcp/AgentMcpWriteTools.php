@@ -7,9 +7,11 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentExpenseMutationAction;
 use App\Services\AgentApi\AgentExpenseReadService;
+use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
+use App\Services\AgentApi\RecordPaymentAction;
 use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -35,6 +37,30 @@ final class AgentMcpWriteTools
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
+
+    /** @return array<string, mixed> */
+    public function paymentsRecord(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minimum: 1)] int $amount,
+        #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        #[Schema(format: 'date')] string $received_on,
+        #[Schema(minLength: 1, maxLength: 64)] string $method,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(maxLength: 255)] ?string $reference = null,
+    ): array {
+        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
+        $workspace = $context->workspace;
+        if (! $workspace instanceof Workspace) {
+            throw new \LogicException('MCP payment recording requires a workspace context.');
+        }
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
+            $context->principal->clientId, $idempotency_key,
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference'));
+
+        return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
+    }
 
     public function forContext(McpRequestContext $context): self
     {

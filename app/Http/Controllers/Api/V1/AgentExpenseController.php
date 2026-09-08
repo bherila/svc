@@ -11,7 +11,6 @@ use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\Authorization\AgentTokenScopes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Laravel\Passport\AccessToken;
 
 final class AgentExpenseController extends Controller
 {
@@ -32,36 +31,25 @@ final class AgentExpenseController extends Controller
 
     public function store(Request $request, Workspace $workspace): JsonResponse
     {
-        $context = $this->contexts->from($request);
-        $ids = $this->writes->log($context->user, $workspace, $this->oauthClientId($request), $context->idempotencyKey, $request->all());
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $ids = $this->writes->log($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
 
         return response()->json(['data' => $this->reads->results($context->user, $workspace, $ids)], 201);
     }
 
     public function update(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
-        $context = $this->contexts->from($request);
-        $ids = $this->writes->update($context->user, $workspace, $this->oauthClientId($request), $context->idempotencyKey, $expense, $request->all());
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $ids = $this->writes->update($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $expense, $request->all());
 
         return response()->json(['data' => $this->reads->results($context->user, $workspace, $ids)[0]]);
     }
 
     public function destroy(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
-        $context = $this->contexts->from($request);
-        $id = $this->writes->delete($context->user, $workspace, $this->oauthClientId($request), $context->idempotencyKey, $expense, $request->all());
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $id = $this->writes->delete($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $expense, $request->all());
 
         return response()->json(['data' => ['deleted_id' => $id]]);
-    }
-
-    private function oauthClientId(Request $request): string
-    {
-        // New expense receipts use the authenticated Passport client, matching
-        // MCP. The shared factory's legacy namespace needs a separate migration.
-        $token = $request->user('api')?->token();
-        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : null;
-        abort_unless(is_string($clientId) && $clientId !== '', 401);
-
-        return $clientId;
     }
 }
