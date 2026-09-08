@@ -25,7 +25,7 @@ final class LogTimeEntriesAction
      * @param  array<string, mixed>  $payload
      * @return list<string>
      */
-    public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload): array
+    public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload, bool $allowsApprovalScope): array
     {
         return $this->mutations->run(
             $user,
@@ -34,7 +34,7 @@ final class LogTimeEntriesAction
             'time_entries.log',
             $idempotencyKey,
             $payload,
-            function () use ($workspace, $user, $payload): array {
+            function () use ($workspace, $user, $payload, $allowsApprovalScope): array {
                 $data = Validator::make($payload, [
                     'entries' => ['required', 'array', 'min:1', 'max:20'],
                     'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,billing_rate_amount,currency'],
@@ -50,6 +50,7 @@ final class LogTimeEntriesAction
                     'entries.*.billing_rate_amount' => ['nullable', 'integer', 'min:0'],
                     'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
                 ])->validate();
+                $this->assertRateScope($data, $allowsApprovalScope);
                 $ids = [];
                 foreach ($data['entries'] as $entry) {
                     $project = ClientProject::query()
@@ -61,7 +62,23 @@ final class LogTimeEntriesAction
 
                 return $ids;
             },
-            fn (array $ids) => $this->replayGuard->assertAllowed($workspace, $user, $ids),
+            function (array $ids) use ($workspace, $user, $payload, $allowsApprovalScope): void {
+                $this->assertRateScope($payload, $allowsApprovalScope);
+                $this->replayGuard->assertAllowed($workspace, $user, $ids);
+            },
         );
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function assertRateScope(array $payload, bool $allowsApprovalScope): void
+    {
+        // A manager's role is not authority delegated to every one of their
+        // tokens. Pricing time requires the approval scope in addition to the
+        // project-role check in the shared creator; null/omitted rates do not.
+        foreach ($payload['entries'] ?? [] as $entry) {
+            if (isset($entry['billing_rate_amount'])) {
+                abort_unless($allowsApprovalScope, 403, 'Setting a billing rate requires the time:approve scope.');
+            }
+        }
     }
 }

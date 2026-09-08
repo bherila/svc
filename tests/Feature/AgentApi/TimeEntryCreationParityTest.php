@@ -64,6 +64,60 @@ final class TimeEntryCreationParityTest extends TestCase
         $this->assertDatabaseCount('client_time_entries', 3);
     }
 
+    public static function delegatedRates(): iterable
+    {
+        foreach ([false, true] as $approvalScope) {
+            foreach ([null, 0, 12500] as $rate) {
+                yield ($approvalScope ? 'approval' : 'write only').' '.($rate ?? 'null') => [$approvalScope, $rate, false];
+            }
+            yield ($approvalScope ? 'approval' : 'write only').' omitted' => [$approvalScope, null, true];
+        }
+    }
+
+    #[DataProvider('delegatedRates')]
+    public function test_rate_setting_respects_delegated_scopes_even_for_a_manager(bool $approvalScope, ?int $rate, bool $omit): void
+    {
+        [$user, $workspace, $project, $task] = $this->fixture('manager');
+        $payload = $this->payload($project, $task);
+        if (! $omit) {
+            $payload['billing_rate_amount'] = $rate;
+        }
+        $expected = ! $approvalScope && $rate !== null ? 403 : 201;
+        foreach (['rest', 'mcp'] as $transport) {
+            $this->submit($transport, $user, $workspace, $project, $payload, $expected, 'forbidden', $approvalScope);
+        }
+        $this->assertDatabaseCount('client_time_entries', $expected === 201 ? 2 : 0);
+        if ($expected === 201) {
+            foreach (ClientTimeEntry::query()->where('workspace_id', $workspace->id)->get() as $entry) {
+                $this->assertSame($rate, $entry->billing_rate_amount);
+                $this->assertSame($rate === null ? null : 'explicit', $entry->billing_rate_source);
+            }
+        }
+    }
+
+    public static function agentTransports(): iterable
+    {
+        yield 'REST' => ['rest'];
+        yield 'MCP' => ['mcp'];
+    }
+
+    #[DataProvider('agentTransports')]
+    public function test_an_attenuated_token_cannot_replay_a_priced_creation(string $transport): void
+    {
+        [$user, $workspace, $project, $task] = $this->fixture('manager');
+        $payload = $this->payload($project, $task) + ['billing_rate_amount' => 0];
+        $key = 'synthetic-rate-replay';
+        $this->submit($transport, $user, $workspace, $project, $payload, 201, 'forbidden', true, $key);
+        $this->submit($transport, $user, $workspace, $project, $payload, 403, 'forbidden', false, $key);
+        $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail();
+        $this->assertSame('failed', $audit->outcome);
+        $this->assertSame('forbidden', $audit->error_category);
+        $this->submit($transport, $user, $workspace, $project, $payload, 201, 'forbidden', true, $key);
+        $this->assertDatabaseCount('client_time_entries', 1);
+        $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->sole()->billing_rate_amount);
+        $this->assertSame('replay', AgentMutationAudit::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail()->outcome);
+    }
+
     public static function deniedRates(): iterable
     {
         yield 'positive' => [99999, true];
@@ -151,16 +205,16 @@ final class TimeEntryCreationParityTest extends TestCase
     }
 
     /** @param array<string, mixed> $payload */
-    private function submit(string $transport, User $user, Workspace $workspace, ClientProject $project, array $payload, int $expected = 201, string $expectedCategory = 'validation'): void
+    private function submit(string $transport, User $user, Workspace $workspace, ClientProject $project, array $payload, int $expected = 201, string $expectedCategory = 'validation', bool $approvalScope = true, ?string $idempotencyKey = null): void
     {
         if ($transport === 'web') {
             $this->actingAs($user, 'web')->postJson("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/time-entries", $payload)->assertStatus($expected);
 
             return;
         }
-        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE]);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE, ...($approvalScope ? [AgentApiScopes::TIME_APPROVE] : [])]);
         if ($transport === 'rest') {
-            $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$payload]])->assertStatus($expected);
+            $this->withHeader('Idempotency-Key', $idempotencyKey ?? 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$payload]])->assertStatus($expected);
 
             return;
         }
@@ -171,7 +225,7 @@ final class TimeEntryCreationParityTest extends TestCase
         $headers['Mcp-Session-Id'] = $init->headers->get('Mcp-Session-Id');
         $result = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call',
             'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id,
-                'idempotency_key' => 'synthetic-'.str()->uuid(), 'entries' => [$payload]]],
+                'idempotency_key' => $idempotencyKey ?? 'synthetic-'.str()->uuid(), 'entries' => [$payload]]],
         ], $headers)->assertOk()->json();
         if ($expected !== 201) {
             $this->assertSame(-32603, $result['error']['code'] ?? null, json_encode($result, JSON_THROW_ON_ERROR));

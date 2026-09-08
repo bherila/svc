@@ -67,6 +67,7 @@ final class AgentMcpWriteTools
             $context->principal->clientId,
             $idempotency_key,
             ['entries' => $entries],
+            $context->principal->hasScope('time:approve'),
         );
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
