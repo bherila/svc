@@ -22,7 +22,7 @@ final class PaymentTenantScopingTest extends TestCase
 
     public static function paymentPaths(): iterable
     {
-        foreach (['apply', 'status', 'refund'] as $path) {
+        foreach (['apply', 'status', 'refund', 'date'] as $path) {
             yield $path.' with workspace' => [$path, true];
             yield $path.' without workspace' => [$path, false];
         }
@@ -68,7 +68,7 @@ final class PaymentTenantScopingTest extends TestCase
         ]));
         $this->runPath($path, $invoice, $payment, $withWorkspace ? $workspace : null);
         $expected = match ($path) {
-            'apply', 'status' => 2000, 'refund' => 500
+            'apply', 'status' => 2000, 'refund' => 500, 'date' => 1000
         };
         $this->assertSame($expected, $invoice->fresh()->paid_amount);
         $this->assertSame(10000 - $expected, $invoice->fresh()->balance_amount);
@@ -78,6 +78,7 @@ final class PaymentTenantScopingTest extends TestCase
     {
         yield 'status' => ['status'];
         yield 'refund' => ['refund'];
+        yield 'date' => ['date'];
     }
 
     #[DataProvider('siblingPaths')]
@@ -137,6 +138,8 @@ final class PaymentTenantScopingTest extends TestCase
             $service->setPaymentStatus($payment, 'failed', $workspace);
             $service->setPaymentStatus($payment, 'succeeded', $workspace);
             $service->applyPayment(ClientInvoice::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->id)->firstOrFail(), ['amount' => 1000, 'currency' => 'USD', 'method' => 'wire'], $workspace);
+        } elseif ($path === 'date') {
+            $service->setPaymentReceivedOn($payment, '2026-08-18', $workspace);
         } elseif ($path === 'refund') {
             $service->setRefundedAmount($payment, 500, $workspace);
         } else {

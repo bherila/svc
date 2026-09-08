@@ -21,7 +21,6 @@ use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -811,7 +810,7 @@ final class InvoiceLifecycleService
     public function setPaymentReceivedOn(ClientInvoicePayment $payment, string $receivedOn, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return DB::transaction(function () use ($payment, $receivedOn, $workspace): ClientInvoicePayment {
-            $query = ClientInvoicePayment::query()->whereKey($payment->id)->tap(Locks::forUpdate());
+            $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
@@ -1164,11 +1163,11 @@ final class InvoiceLifecycleService
         ?string $occurrence = null,
         array $extra = [],
     ): void {
-        $this->loadOwningCompany($invoice);
+        $company = $this->loadOwningCompany($invoice);
 
         $this->activities->record(
             $invoice->workspace,
-            ClientCompany::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->client_company_id)->firstOrFail(),
+            $company,
             $action,
             $payment,
             [
@@ -1189,16 +1188,12 @@ final class InvoiceLifecycleService
             return;
         }
 
-        // Here as well as in `recordPaymentActivity()`. Every path that reaches
-        // this one happens to record a payment activity first, so the relation
-        // is already loaded and scoped by the time it is read here - which is a
-        // guarantee about call order rather than about this method, and the
-        // wrong kind to depend on.
-        $this->loadOwningCompany($invoice);
+        // Resolve ownership here too, independently of the preceding activity.
+        $company = $this->loadOwningCompany($invoice);
 
         $this->activities->record(
             $invoice->workspace,
-            ClientCompany::query()->where('workspace_id', $invoice->workspace_id)->whereKey($invoice->client_company_id)->firstOrFail(),
+            $company,
             'invoice.marked_paid',
             $invoice,
             ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
@@ -1226,18 +1221,21 @@ final class InvoiceLifecycleService
      * {@see self::assertCompanyTenant()} is one: it is the check every caller
      * needs and none of them should be restating.
      */
-    private function loadOwningCompany(ClientInvoice $invoice): void
+    private function loadOwningCompany(ClientInvoice $invoice): ClientCompany
     {
-        $invoice->load([
-            'clientCompany' => fn (Relation $relation) => $relation->where('workspace_id', $invoice->workspace_id),
-        ]);
+        $company = ClientCompany::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_company_id)
+            ->first();
 
-        if ($invoice->clientCompany === null) {
+        if ($company === null) {
             throw new DomainException(
                 'This invoice names a client company in another workspace, so nothing about its '
                 .'payments can be recorded against a client. Nothing has been changed.'
             );
         }
+
+        return $company;
     }
 
     private function assertCompanyTenant(Workspace $workspace, ClientCompany $company): void
