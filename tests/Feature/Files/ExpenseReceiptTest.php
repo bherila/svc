@@ -3,7 +3,9 @@
 namespace Tests\Feature\Files;
 
 use App\Models\ClientAttachment;
+use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Files\AttachmentStorageService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -47,6 +49,44 @@ class ExpenseReceiptTest extends TestCase
         $this->get($url)->assertInertia(fn (Assert $page) => $page->has('files', 0));
         $this->assertSame('draft', $expense->fresh()->status);
         $this->assertSame(12500, $expense->fresh()->amount);
+    }
+
+    public function test_stale_parent_refusal_compensates_staged_bytes(): void
+    {
+        $workspace = $this->syntheticWorkspace('stale receipt parent');
+        $manager = $this->syntheticMember($workspace, 'manager');
+        $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'stale'));
+        (new WorkspaceExpenses($workspace))->discard($expense);
+        try {
+            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('stale.txt', 'Synthetic stale receipt'), $manager);
+            $this->fail('A stale expense instance must not publish a receipt.');
+        } catch (ModelNotFoundException) {
+            $this->assertSame(0, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            $this->assertSame([], Storage::disk('svc_files')->allFiles());
+        }
+    }
+
+    public function test_failed_publication_rolls_back_the_row_and_compensates_promoted_bytes(): void
+    {
+        $workspace = $this->syntheticWorkspace('failed receipt publication');
+        $manager = $this->syntheticMember($workspace, 'manager');
+        $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'failure'));
+        $failed = false;
+        DB::listen(function (QueryExecuted $event) use (&$failed): void {
+            if (! $failed && str_starts_with(strtolower($event->sql), 'update') && str_contains($event->sql, 'client_attachments') && in_array('available', $event->bindings, true)) {
+                $failed = true;
+                throw new \RuntimeException('Synthetic publication failure');
+            }
+        });
+        try {
+            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('failed.txt', 'Synthetic failed receipt'), $manager);
+            $this->fail('The publication failure must propagate.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Synthetic publication failure', $exception->getMessage());
+            $this->assertTrue($failed);
+            $this->assertSame(0, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            $this->assertSame([], Storage::disk('svc_files')->allFiles());
+        }
     }
 
     public function test_complete_upload_download_and_delete_requests_scope_every_tenant_query(): void

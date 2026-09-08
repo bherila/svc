@@ -823,7 +823,11 @@ Tracked as #75.
 Managers can open a row's Receipts link to upload, download and remove files.
 Expense receipts use the shared attachment lifecycle and private object store;
 ordinary workspace members and portal users cannot download them. A discarded
-expense is not a reachable receipt parent. Removing a receipt hides it immediately
+expense is not a reachable receipt parent. Upload stages bytes first, then takes
+the same expense row lock as discard while revalidating and publishing. If discard
+wins, upload refuses and removes its staged bytes. If upload wins, a later discard
+still retains the attachment under the existing retention policy; serialization
+does not prevent that intentional ordering. Removing a receipt hides it immediately
 and leaves final blob cleanup to the existing attachment repair lifecycle.
 The enum expansion migration preserves existing attachment rows and refuses
 rollback while any expense attachment remains, including retained lifecycle rows.
