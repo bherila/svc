@@ -54,7 +54,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id',
-    'spent_on', 'amount', 'currency', 'description',
+    'spent_on', 'amount', 'currency', 'description', 'client_expense_schedule_id', 'occurrence_on',
     'status', 'approved_by_user_id', 'approved_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id', 'client_expense_schedule_id', 'occurrence_on'])]
