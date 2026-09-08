@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AgentConnectionController;
+use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentReadController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
 use App\Http\Middleware\EnforceAgentMcpOrigin;
+use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
@@ -82,6 +84,15 @@ Route::prefix('v1')
             ->whereUuid('invoice')
             ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
             ->name('invoices.show');
+
+        Route::get('/workspaces/{workspace}/expenses', [AgentExpenseController::class, 'index'])
+            ->middleware(CheckToken::using(AgentApiScopes::EXPENSES_READ))->name('expenses.index');
+        Route::post('/workspaces/{workspace}/expenses', [AgentExpenseController::class, 'store'])
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])->name('expenses.store');
+        Route::patch('/workspaces/{workspace}/expenses/{expense}', [AgentExpenseController::class, 'update'])
+            ->whereUuid('expense')->middleware([CheckToken::using(AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])->name('expenses.update');
+        Route::delete('/workspaces/{workspace}/expenses/{expense}', [AgentExpenseController::class, 'destroy'])
+            ->whereUuid('expense')->middleware([CheckToken::using(AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])->name('expenses.destroy');
 
         Route::post('/workspaces/{workspace}/projects/{project}/tasks', [AgentTaskMutationController::class, 'store'])
             ->whereUuid('project')->middleware([CheckToken::using(AgentApiScopes::TASKS_WRITE), EnsureAgentWritesEnabled::class])->name('tasks.store');

@@ -14,7 +14,7 @@ final class AgentCapabilities
 {
     private const array ORDER = [
         'projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
-        'time:approve', 'billing:read', 'billing:write', 'billing:deliver',
+        'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write',
     ];
 
     public function __construct(
@@ -75,6 +75,9 @@ final class AgentCapabilities
         if ($allowsScope(AgentApiScopes::PROJECTS_READ)) {
             $capabilities[] = 'projects:read';
         }
+        if ($allowsScope(AgentApiScopes::EXPENSES_READ) && $role !== null) {
+            $capabilities[] = 'expenses:read';
+        }
         if ($allowsScope(AgentApiScopes::TASKS_READ)) {
             $capabilities[] = 'tasks:read';
         }
@@ -106,7 +109,11 @@ final class AgentCapabilities
             AgentApiScopes::TASKS_READ => 'tasks:read',
             AgentApiScopes::TIME_READ => 'time:read',
             AgentApiScopes::BILLING_READ => 'billing:read',
+            AgentApiScopes::EXPENSES_READ => 'expenses:read',
         ];
+        if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
+            $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';
+        }
         if ($this->timeEntryWritesEnabled()) {
             $mapping[AgentApiScopes::TIME_WRITE] = 'time:write';
         }

@@ -5,6 +5,8 @@ namespace App\Services\Mcp;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentExpenseMutationAction;
+use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
@@ -48,6 +50,54 @@ final class AgentMcpWriteTools
             $this->accounts,
             $context,
         );
+    }
+
+    /** @param list<array<string,mixed>> $entries
+     * @return array<string,mixed> */
+    public function expensesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        $context = $this->workspaceContext($workspace_id, 'expenses:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $ids = app(AgentExpenseMutationAction::class)->log($actor, $workspace, $context->principal->clientId, $idempotency_key, compact('entries'));
+
+        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)];
+    }
+
+    /** @return array<string,mixed> */
+    public function expensesUpdate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $expense_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(format: 'date')] string $spent_on,
+        #[Schema(minimum: 1)] int $amount,
+        #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        #[Schema(minLength: 1, maxLength: 2000)] string $description,
+        RequestContext $request,
+        #[Schema(format: 'uuid')] ?string $project_id = null,
+    ): array {
+        $body = compact('expected_version', 'spent_on', 'amount', 'currency', 'description');
+        if ($this->requestArguments->has($request, 'project_id')) {
+            $body['project_id'] = $project_id;
+        }
+        $context = $this->workspaceContext($workspace_id, 'expenses:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $ids = app(AgentExpenseMutationAction::class)->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, $body);
+
+        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)[0]];
+    }
+
+    /** @return array<string,mixed> */
+    public function expensesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        $context = $this->workspaceContext($workspace_id, 'expenses:write');
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $id = app(AgentExpenseMutationAction::class)->delete($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, compact('expected_version'));
+
+        return ['data' => ['deleted_id' => $id]];
     }
 
     /** @param list<array<string, mixed>> $entries

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Support\Expenses\ExpenseStatus;
 use Carbon\CarbonImmutable;
@@ -36,6 +37,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * readers over the stored string, matching `client_time_entries` and
  * `client_invoices`, both of which keep `status` a string for the same reason.
  *
+ * @property int $lock_version
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
@@ -58,7 +60,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'approved_by_user_id'])]
 class ClientExpense extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId, SoftDeletes;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
 
     protected function casts(): array
     {

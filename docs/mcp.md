@@ -271,3 +271,34 @@ require explicit authorization.
 selector work and has no MCP contract dependency. [#175](https://github.com/bherila/svc/pull/175) tightened null-tolerant billing-cycle attribution and
 refusal behavior. Any future ledger or audit capability must preserve those
 application-service semantics rather than reconstruct them in MCP.
+
+### Expense recording
+
+`expenses.list` requires `expenses:read` and follows the browser expense list's
+project visibility. Workspace owners/admins can read company-level expenses;
+other workspace members can read expenses attributed to their assigned projects.
+The cursor is bounded to 100 rows (default 25) and tied to workspace and filters.
+
+`expenses.log`, `expenses.update` and `expenses.delete` require `expenses:write`
+and workspace owner/admin permission. They are available only when both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_EXPENSE_WRITES_ENABLED` are true; the
+expense flag defaults to false. The same cutover applies to MCP discovery/calls,
+REST writes and advertised capabilities. Nothing enables this flag at deployment.
+
+Recording accepts an atomic batch of at most 20 draft expenses, dates in exact
+`YYYY-MM-DD` form, uppercase currency codes and positive integer minor units.
+All writes use the existing actor/workspace/OAuth-client/operation-scoped
+idempotency contract. Retrying a key with a different request is a conflict.
+Updates replace the facts using `expected_version`; omitting `project_id` leaves
+attribution intact, while explicit null clears it. Browser edits and approval
+transitions advance the same revision. Agent updates and deletes refuse approved,
+invoiced and unknown statuses. The browser's existing ability to discard an
+approved expense is unchanged. A delete retry checks current manager permission
+without needing to reload its deleted row.
+
+The equivalent OAuth REST endpoints are GET/POST
+`/api/v1/workspaces/{workspace}/expenses` and PATCH/DELETE
+`/api/v1/workspaces/{workspace}/expenses/{expense}`. Responses include public
+identifiers, status labels, current versions, and edit/delete eligibility; they
+contain no internal database identifiers. This slice adds no approval tools,
+receipt upload, recurrence or invoice claim/release integration.
