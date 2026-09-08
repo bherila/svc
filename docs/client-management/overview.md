@@ -824,8 +824,10 @@ release through that shared boundary. Recurrence remains a separate #75 slice.
 Managers can open a row's Receipts link to upload, download and remove files.
 Expense receipts use the shared attachment lifecycle and private object store;
 ordinary workspace members and portal users cannot download them. A discarded
-expense is not a reachable receipt parent. Upload stages bytes first, then takes
-the same expense row lock as discard while revalidating and publishing. If discard
+expense is not a reachable receipt parent. Upload stages bytes and commits a
+recovery row before taking the same expense row lock as discard while revalidating
+and publishing. The recovery row retains both file keys if the uploader is killed
+after promotion, so the attachment repair command can remove the abandoned blob. If discard
 wins, upload refuses and removes its staged bytes. If upload wins, a later discard
 still retains the attachment under the existing retention policy; serialization
 does not prevent that intentional ordering. Removing a receipt hides it immediately

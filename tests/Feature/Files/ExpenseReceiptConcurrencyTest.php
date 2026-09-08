@@ -8,6 +8,7 @@ use App\Models\ClientExpense;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Services\Files\AttachmentStorageService;
 use App\Support\Expenses\NewExpense;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\Artisan;
@@ -89,7 +90,10 @@ final class ExpenseReceiptConcurrencyTest extends TestCase
             $this->assertStringContainsString($firstWriter === 'discard' ? 'outcome:404' : 'outcome:success', $second->getOutput());
             $this->assertSame(0, ClientExpense::query()->where('workspace_id', $workspace->id)->count());
             $this->assertSame(1, ClientExpense::withTrashed()->where('workspace_id', $workspace->id)->count());
-            $this->assertSame($firstWriter === 'upload' ? 1 : 0, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            $this->assertSame(1, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            if ($firstWriter === 'discard') {
+                $this->assertSame('staged', ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->lifecycle_state);
+            }
             $this->assertCount($firstWriter === 'upload' ? 1 : 0, File::allFiles($storage));
             if ($firstWriter === 'upload') {
                 $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
@@ -101,6 +105,47 @@ final class ExpenseReceiptConcurrencyTest extends TestCase
             foreach ($processes as $process) {
                 $process->stop(0);
             }
+            config(['database.default' => $original]);
+            File::deleteDirectory($storage);
+        }
+    }
+
+    public function test_killed_uploader_leaves_a_durable_row_so_repair_cleans_the_promoted_blob(): void
+    {
+        $this->bootProbeDatabase('expense_receipt_crash_probe');
+        $original = config('database.default');
+        Artisan::call('migrate', ['--database' => 'expense_receipt_crash_probe', '--force' => true]);
+        config(['database.default' => 'expense_receipt_crash_probe']);
+        $storage = sys_get_temp_dir().'/svc-receipt-probe-'.bin2hex(random_bytes(8));
+        File::makeDirectory($storage);
+        config(['svc.filesystem_disk' => 'receipt_crash', 'filesystems.disks.receipt_crash' => ['driver' => 'local', 'root' => $storage]]);
+        $process = null;
+        try {
+            $user = User::factory()->create();
+            $workspace = Workspace::query()->create(['name' => 'Synthetic receipt crash', 'slug' => 'synthetic-receipt-crash']);
+            $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic receipt crash', 'slug' => 'synthetic-receipt-crash']);
+            $expense = (new WorkspaceExpenses($workspace))->record($company, null, new NewExpense(app(WorkspaceClock::class)->today($workspace), 1200, 'USD', 'Synthetic receipt crash'));
+            $input = new InputStream;
+            $input->write(json_encode(['connection' => config('database.connections.expense_receipt_crash_probe'), 'workspace' => $workspace->id, 'user' => $user->id, 'expense' => $expense->id,
+                'storage' => $storage, 'operation' => 'upload', 'hold' => false, 'crash' => true], JSON_THROW_ON_ERROR)."\n");
+            $process = $this->worker($input);
+            $process->start();
+            $this->assertTrue($process->waitUntil(fn (string $type, string $output): bool => str_contains($process->getOutput(), "promoted\n")), $process->getOutput());
+            // Kill rather than throw: PHP catch/finally compensation must not run.
+            $process->signal(9);
+            $process->wait();
+            $this->assertFalse($process->isSuccessful());
+            $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
+            $this->assertSame(ClientAttachment::STATE_STAGED, $attachment->lifecycle_state);
+            $this->assertNotNull($attachment->staged_object_key);
+            $this->assertFileExists($storage.'/'.$attachment->object_key);
+            $this->assertFileDoesNotExist($storage.'/'.$attachment->staged_object_key);
+            $counts = app(AttachmentStorageService::class)->repair(true, stagedAgeMinutes: 0);
+            $this->assertSame(1, $counts['staged_rows']);
+            $this->assertSame(ClientAttachment::STATE_DELETED, ClientAttachment::query()->where('workspace_id', $workspace->id)->whereKey($attachment->id)->sole()->lifecycle_state);
+            $this->assertSame([], File::allFiles($storage));
+        } finally {
+            $process?->stop(0);
             config(['database.default' => $original]);
             File::deleteDirectory($storage);
         }

@@ -14,7 +14,7 @@ require dirname(__DIR__, 3).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 3).'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 $input = json_decode(fgets(STDIN), true, flags: JSON_THROW_ON_ERROR);
-if (! $app->environment('testing') || ! str_starts_with($input['connection']['database'], 'svc_probe_')
+if (! $app->environment('testing') || ! (str_starts_with($input['connection']['database'], 'svc_probe_') || (($input['connection']['driver'] ?? '') === 'sqlite' && str_starts_with(basename($input['connection']['database']), 'svc-probe-')))
     || ! str_starts_with(basename($input['storage']), 'svc-receipt-probe-')) {
     exit(2);
 }
@@ -25,9 +25,19 @@ $user = User::query()->findOrFail($input['user']);
 // Resolve before contending, just as the HTTP controller does. The losing
 // uploader must not trust this live but subsequently stale parent instance.
 $expense = ClientExpense::query()->where('workspace_id', $workspace->id)->whereKey($input['expense'])->firstOrFail();
-$connectionId = DB::connection()->getPdo()->query('select connection_id()')->fetchColumn();
-echo "connection:{$connectionId}\n";
-DB::connection()->beforeExecuting(function (string $sql): void {
+if (DB::connection()->getDriverName() !== 'sqlite') {
+    $connectionId = DB::connection()->getPdo()->query('select connection_id()')->fetchColumn();
+    echo "connection:{$connectionId}\n";
+}
+DB::connection()->beforeExecuting(function (string $sql) use ($input): void {
+    if (($input['crash'] ?? false) && str_starts_with(strtolower($sql), 'update') && str_contains($sql, 'client_attachments')) {
+        // Promotion has moved and verified the final blob; the available-state
+        // write has not run. The parent kills this process without unwinding PHP.
+        echo "promoted\n";
+        flush();
+        fgets(STDIN);
+        throw new RuntimeException('Synthetic crash probe must be killed.');
+    }
     if (str_contains($sql, 'client_expenses') && str_contains(strtolower($sql), 'for update')) {
         echo "attempting-lock\n";
         flush();

@@ -61,12 +61,12 @@ class ExpenseReceiptTest extends TestCase
             app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('stale.txt', 'Synthetic stale receipt'), $manager);
             $this->fail('A stale expense instance must not publish a receipt.');
         } catch (ModelNotFoundException) {
-            $this->assertSame(0, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            $this->assertSame(ClientAttachment::STATE_STAGED, ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->lifecycle_state);
             $this->assertSame([], Storage::disk('svc_files')->allFiles());
         }
     }
 
-    public function test_failed_publication_rolls_back_the_row_and_compensates_promoted_bytes(): void
+    public function test_failed_publication_retains_recovery_row_and_compensates_promoted_bytes(): void
     {
         $workspace = $this->syntheticWorkspace('failed receipt publication');
         $manager = $this->syntheticMember($workspace, 'manager');
@@ -84,7 +84,7 @@ class ExpenseReceiptTest extends TestCase
         } catch (\RuntimeException $exception) {
             $this->assertSame('Synthetic publication failure', $exception->getMessage());
             $this->assertTrue($failed);
-            $this->assertSame(0, ClientAttachment::query()->where('workspace_id', $workspace->id)->count());
+            $this->assertSame(ClientAttachment::STATE_STAGED, ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->lifecycle_state);
             $this->assertSame([], Storage::disk('svc_files')->allFiles());
         }
     }
