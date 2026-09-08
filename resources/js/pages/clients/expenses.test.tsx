@@ -41,6 +41,7 @@ function expense(overrides: Partial<ClientExpenseRow> = {}): ClientExpenseRow {
         currency: 'USD',
         description: 'Courier for the signed contract',
         status: 'draft',
+        billing: null,
         project: { id: 'project-1', name: 'Main project' },
         approved_by: null,
         approved_at: null,
@@ -81,6 +82,40 @@ function actionsIn(row: HTMLElement): string[] {
 }
 
 describe('the expense list', () => {
+    it('shows the server-provided invoice association and pending reason', () => {
+        render(
+            <ClientExpenses
+                {...props({
+                    expenses: [
+                        expense({
+                            id: 'claimed',
+                            billing: {
+                                invoice: {
+                                    url: '/synthetic/invoice',
+                                    number: 'SYN-EXP-001',
+                                },
+                                reason: null,
+                            },
+                        }),
+                        expense({
+                            id: 'pending',
+                            billing: {
+                                invoice: null,
+                                reason: 'Awaiting an eligible EUR invoice covering 2026-03-14 or later.',
+                            },
+                        }),
+                    ],
+                })}
+            />,
+        );
+        expect(
+            screen.getByRole('link', { name: 'Invoice SYN-EXP-001' }),
+        ).toHaveAttribute('href', '/synthetic/invoice');
+        expect(
+            screen.getByText(/Awaiting an eligible EUR invoice/),
+        ).toBeInTheDocument();
+    });
+
     it('shows the money in the row’s own currency', () => {
         render(<ClientExpenses {...props()} />);
 

@@ -38,14 +38,15 @@ final class InvoiceLifecycleService
      * @param  array<string, mixed>  $attributes
      * @param  list<array<string, mixed>>  $lines
      * @param  array<int, int>  $subtotalOverrides
+     * @param  (callable(ClientInvoice): void)|null  $beforeGenerationRecorded  final composition inside the draft transaction
      */
-    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines, array $subtotalOverrides = []): ClientInvoice
+    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines, array $subtotalOverrides = [], ?callable $beforeGenerationRecorded = null): ClientInvoice
     {
         $this->assertCompanyTenant($workspace, $company);
         $currency = MoneyService::currency($attributes['currency'] ?? null);
         $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
 
-        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals): ClientInvoice {
+        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals, $beforeGenerationRecorded): ClientInvoice {
             $invoice = ClientInvoice::query()->create([
                 'workspace_id' => $workspace->id,
                 'client_company_id' => $company->id,
@@ -91,6 +92,9 @@ final class InvoiceLifecycleService
             ]);
 
             $this->createLines($invoice, $workspace, $lines, $subtotalOverrides);
+            if ($beforeGenerationRecorded !== null) {
+                $beforeGenerationRecorded($invoice);
+            }
             $this->activities->record($workspace, $company, 'invoice.generated', $invoice, [
                 'invoice_kind' => $invoice->invoiceKindValue(),
                 'status' => 'draft',
@@ -114,6 +118,7 @@ final class InvoiceLifecycleService
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
             }
+            app(ExpenseInvoiceAllocations::class)->assertReplaceable($locked);
             $currency = MoneyService::currency($attributes['currency'] ?? $locked->currency);
             $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
             $updates = [
@@ -1143,6 +1148,8 @@ final class InvoiceLifecycleService
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->update(['client_invoice_line_id' => null]);
+
+        app(ExpenseInvoiceAllocations::class)->release($invoice);
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice

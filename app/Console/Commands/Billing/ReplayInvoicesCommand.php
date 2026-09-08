@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
@@ -1025,6 +1026,11 @@ final class ReplayInvoicesCommand extends Command
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->update(['client_invoice_line_id' => null]);
+        // Replay remains rollback-only, but line deletion still must release
+        // expense claims explicitly rather than discard their invoice linkage.
+        foreach (ClientInvoice::query()->where('workspace_id', $workspaceId)->whereKey($invoiceIds)->orderBy('id')->get() as $invoice) {
+            app(ExpenseInvoiceAllocations::class)->release($invoice);
+        }
         DB::table('client_invoice_lines')
             ->where('workspace_id', $workspaceId)
             ->whereIn('id', $lineIds)

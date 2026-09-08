@@ -11,6 +11,10 @@ export type ClientExpenseRow = {
     currency: string;
     description: string;
     status: string;
+    billing: {
+        invoice: { url: string; number: string } | null;
+        reason: string | null;
+    } | null;
     project: ExpenseProject | null;
     approved_by: string | null;
     approved_at: string | null;

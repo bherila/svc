@@ -80,6 +80,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_invoices', 'client_company_id', 'client_companies', 'ci_ws_company_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_company_id', 'client_companies', 'cte_ws_company_fk'),
             TenantReference::enforcedBy('client_expenses', 'client_company_id', 'client_companies', 'cex_ws_company_fk'),
+            TenantReference::enforcedBy('client_expenses', 'client_invoice_line_id', 'client_invoice_lines', 'cex_ws_line_fk'),
             TenantReference::enforcedBy('client_stripe_customers', 'client_company_id', 'client_companies', 'csc_ws_company_fk'),
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_company_id', 'client_companies', 'cspm_ws_company_fk'),
 

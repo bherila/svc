@@ -19,6 +19,7 @@ final class BillingScheduleService
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly BillingPeriodCollisionResolver $collisions,
+        private readonly ExpenseInvoiceAllocations $expenses,
     ) {}
 
     /**
@@ -163,6 +164,13 @@ final class BillingScheduleService
                 'client_billing_schedule_id' => $schedule->id,
             ],
             $template,
+            beforeGenerationRecorded: function (ClientInvoice $draft) use ($schedule, $period): void {
+                // The new row is transaction-owned. Record its lock before
+                // expense locks; issue() later reuses that acquisition.
+                ClientInvoice::query()->where('workspace_id', $schedule->workspace_id)->whereKey($draft->id)->tap(Locks::forUpdate())->firstOrFail();
+                $this->expenses->rebuild($draft, $period->end->toDateString());
+                $draft->recalculateTotals();
+            },
         );
 
         return $this->invoices->issue($draft, $schedule->workspace);
