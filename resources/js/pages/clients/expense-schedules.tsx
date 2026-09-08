@@ -28,7 +28,7 @@ type Props = {
     company: { name: string };
     today: string;
     currency: string;
-    urls: { store: string; expenses: string };
+    urls: { store: string };
     projects: Option[];
     cadences: Option[];
     schedules: Schedule[];
@@ -218,12 +218,6 @@ export default function ExpenseSchedules(page: Props) {
                     <Button onClick={() => setEditing('new')}>
                         New schedule
                     </Button>
-                    <a
-                        className="self-center underline"
-                        href={page.urls.expenses}
-                    >
-                        View expense drafts
-                    </a>
                 </div>
                 {failure && (
                     <p role="alert" className="wrap-anywhere text-destructive">

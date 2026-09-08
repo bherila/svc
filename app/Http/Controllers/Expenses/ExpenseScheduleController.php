@@ -36,7 +36,7 @@ final class ExpenseScheduleController extends Controller
             'company' => ['name' => $client->name],
             'pagination' => ['next' => $schedules->nextPageUrl(), 'previous' => $schedules->previousPageUrl()],
             'today' => $today, 'currency' => $workspace->default_currency,
-            'urls' => ['store' => route('svc.expense-schedules.store', [$workspace, $client], false), 'expenses' => route('clients.expenses', [$workspace, $client], false)],
+            'urls' => ['store' => route('svc.expense-schedules.store', [$workspace, $client], false)],
             'projects' => $projects->values()->map(fn (ClientProject $project): array => ['value' => $project->public_id, 'label' => $project->name]),
             'cadences' => array_map(fn (BillingCadence $cadence): array => ['value' => $cadence->value, 'label' => match ($cadence) {
                 BillingCadence::Monthly => 'Monthly', BillingCadence::Quarterly => 'Quarterly', BillingCadence::SemiAnnual => 'Every six months', BillingCadence::Annual => 'Annually',
