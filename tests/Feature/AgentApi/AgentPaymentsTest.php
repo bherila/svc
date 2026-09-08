@@ -4,8 +4,10 @@ namespace Tests\Feature\AgentApi;
 
 use App\Models\AgentMutationAudit;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentCapabilities;
@@ -16,6 +18,8 @@ use App\Services\Mcp\AgentMcpWriteTools;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Passport\AccessToken;
+use Laravel\Passport\Passport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -50,14 +54,36 @@ final class AgentPaymentsTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'outcome' => 'replay']);
     }
 
-    public function test_retry_can_switch_transports_when_optional_reference_was_omitted(): void
+    #[DataProvider('transports')]
+    public function test_retry_can_switch_transports_when_optional_reference_was_omitted(string $firstTransport): void
     {
         [$user, $workspace, $invoice] = $this->fixture();
         $payload = $this->payload($invoice);
-        $rest = $this->record('rest', $user, $workspace, $payload, 'synthetic-cross-door');
-        $mcp = $this->record('mcp', $user, $workspace, $payload, 'synthetic-cross-door');
+        $rest = $this->record($firstTransport, $user, $workspace, $payload, 'synthetic-cross-door');
+        $mcp = $this->record($firstTransport === 'rest' ? 'mcp' : 'rest', $user, $workspace, $payload, 'synthetic-cross-door');
         $this->assertSame($rest, $mcp);
         $this->assertDatabaseCount('client_invoice_payments', 1);
+    }
+
+    public function test_authenticated_oauth_clients_have_separate_receipts(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $payload = [...$this->payload($invoice), 'amount' => 1000];
+        $ids = [];
+        foreach (['synthetic-client-a', 'synthetic-client-b'] as $clientId) {
+            $principal = $this->actingAsMcp($user, ['payments:record']);
+            $claims = $principal->token();
+            $token = Passport::token()->newQuery()->findOrFail($claims->oauth_access_token_id);
+            $token->update(['client_id' => $clientId]);
+            $principal->withAccessToken(new AccessToken([
+                'oauth_access_token_id' => $token->id, 'oauth_client_id' => $clientId,
+                'oauth_scopes' => ['payments:record'],
+            ]));
+            $ids[] = $this->withHeader('Idempotency-Key', 'synthetic-same-key')->postJson($this->url($workspace), $payload)->assertCreated()->json('data.0.id');
+            $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'oauth_client_id' => $clientId]);
+        }
+        $this->assertNotSame($ids[0], $ids[1]);
+        $this->assertDatabaseCount('client_invoice_payments', 2);
     }
 
     public static function invalidPayloads(): iterable
@@ -234,6 +260,74 @@ final class AgentPaymentsTest extends TestCase
         $rest = $this->getJson($this->url($workspace).'?invoice_id='.$invoice->public_id)->assertOk()->json();
         $this->assertSame($rest, $result);
         $this->assertCount(1, $result['data']);
+    }
+
+    #[DataProvider('transports')]
+    public function test_project_scoped_portal_payments_use_whole_invoice_grants(string $transport): void
+    {
+        [, $workspace, $none, $company] = $this->fixture();
+        $granted = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic granted project']);
+        $ungranted = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic other project']);
+        $portal = User::factory()->create(['email' => 'synthetic-project-portal@example.test']);
+        $membership = ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'user_id' => $portal->id, 'role' => 'client', 'access_scope' => 'projects']);
+        $membership->scopedProjects()->attach($granted->id, ['workspace_id' => $workspace->id]);
+        $service = app(InvoiceLifecycleService::class);
+        $invoices = ['none' => $none];
+        foreach (['granted' => [$granted], 'ungranted' => [$ungranted], 'mixed' => [$granted, $ungranted]] as $kind => $projects) {
+            $lines = array_map(fn (ClientProject $project): array => ['type' => 'adjustment', 'description' => 'Synthetic project work',
+                'quantity' => 1, 'unit_amount' => 1000, 'client_project_id' => $project->id], $projects);
+            $invoices[$kind] = $service->issue($service->createDraft($workspace, $company,
+                ['currency' => 'USD', 'invoice_number' => 'SYNTHETIC-'.str()->uuid()], $lines), $workspace);
+        }
+        foreach ($invoices as $invoice) {
+            $invoice->update(['is_visible_to_client' => true]);
+            $service->applyPayment($invoice, ['amount' => 100, 'currency' => 'USD', 'method' => 'cash'], $workspace);
+        }
+        $this->actingAsMcp($portal, ['mcp:use', 'payments:read']);
+        $statements = [];
+        DB::listen(function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = str_replace(['"', '`'], '', strtolower($query->sql));
+        });
+        $read = function (array $filters) use ($transport, $workspace): array {
+            if ($transport === 'rest') {
+                return $this->getJson($this->url($workspace).'?'.http_build_query($filters))->assertOk()->json('data');
+            }
+
+            return $this->mcpList($workspace, $filters)['data'];
+        };
+        $rows = $read(['company_id' => $company->public_id]);
+        $this->assertSame([$invoices['granted']->public_id], array_column($rows, 'invoice_id'));
+        foreach ($invoices as $kind => $invoice) {
+            $this->assertCount($kind === 'granted' ? 1 : 0, $read(['invoice_id' => $invoice->public_id]), $kind);
+        }
+        $grantQueries = array_values(array_filter($statements, fn (string $sql): bool => str_contains($sql, 'from client_portal_project_access')));
+        $this->assertNotEmpty($grantQueries);
+        foreach ($grantQueries as $sql) {
+            $this->assertMatchesRegularExpression('/from client_projects where workspace_id = \? and client_company_id = \?/', $sql);
+        }
+        $invoiceQueries = array_values(array_filter($statements, fn (string $sql): bool => str_contains($sql, 'from client_invoice_payments')));
+        $this->assertNotEmpty($invoiceQueries);
+        foreach ($invoiceQueries as $sql) {
+            $this->assertStringContainsString('where workspace_id = ?', $sql);
+            $this->assertStringContainsString('client_invoice_lines.workspace_id = client_invoices.workspace_id', $sql);
+            $this->assertStringContainsString('not exists', $sql);
+        }
+    }
+
+    private function mcpList(Workspace $workspace, array $filters): array
+    {
+        $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
+        $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic grant test', 'version' => '1']],
+        ], $headers)->assertOk();
+        $headers['Mcp-Session-Id'] = $init->headers->get('Mcp-Session-Id');
+        $response = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call',
+            'params' => ['name' => 'payments.list', 'arguments' => ['workspace_id' => $workspace->public_id, ...$filters]],
+        ], $headers)->assertOk();
+        $this->assertNull($response->json('error'));
+
+        return $response->json('result.structuredContent');
     }
 
     public function test_missing_and_blank_idempotency_keys_are_refused(): void

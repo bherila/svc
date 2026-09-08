@@ -308,7 +308,7 @@ receipt upload, recurrence or invoice claim/release integration.
 `payments.list` requires `payments:read` and an explicit `invoice_id` or
 `company_id`. It follows invoice visibility, defaults to 25 rows and caps pages
 at 100 using an opaque cursor. Portal readers see only payments on their visible
-issued, partially paid or paid invoices; references are withheld from them.
+issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld. References are withheld from portal readers.
 Private notes, processor identifiers and finance reconciliation records are never
 part of this response.
 

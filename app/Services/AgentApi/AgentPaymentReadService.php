@@ -3,18 +3,20 @@
 namespace App\Services\AgentApi;
 
 use App\Models\AgentPrincipal;
+use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Support\AgentApi\AgentApiCursor;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
 final class AgentPaymentReadService
 {
-    public function __construct(private readonly AgentAccess $access) {}
+    public function __construct(private readonly AgentAccess $access, private readonly PortalInvoiceQuery $portalInvoices) {}
 
     /** @return array<string, mixed> */
     public function listing(User|AgentPrincipal $user, Workspace $workspace, ?string $invoiceId, ?string $companyId, int $limit = 25, ?string $cursor = null): array
@@ -27,17 +29,30 @@ final class AgentPaymentReadService
         ])->validate();
         $queryKey = 'payments:'.json_encode([$invoiceId, $companyId], JSON_THROW_ON_ERROR);
         $after = AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey);
-        $query = $this->query($user, $workspace);
-        $query->whereHas('invoice', function (Builder $invoices) use ($workspace, $invoiceId, $companyId): void {
-            $invoices->where('workspace_id', $workspace->id);
-            if ($invoiceId !== null) {
-                $invoices->where('public_id', $invoiceId);
-            }
-            if ($companyId !== null) {
-                $invoices->whereHas('clientCompany', fn (Builder $companies) => $companies
-                    ->where('workspace_id', $workspace->id)->where('public_id', $companyId));
-            }
-        });
+        abort_unless($this->access->canViewWorkspace($user, $workspace), 403);
+        $manager = $this->access->isWorkspaceManager($user, $workspace);
+        // At least one explicit filter is required, so resolve at most one
+        // company; never iterate every company a portal identity can access.
+        $companies = ClientCompany::query()->where('workspace_id', $workspace->id);
+        if ($companyId !== null) {
+            $companies->where('public_id', $companyId);
+        }
+        if ($invoiceId !== null) {
+            $companies->whereIn('id', ClientInvoice::query()->where('workspace_id', $workspace->id)
+                ->where('public_id', $invoiceId)->select('client_company_id'));
+        }
+        $company = $companies->first();
+        if ($company === null) {
+            return ['data' => [], 'next_cursor' => null];
+        }
+        $company->setRelation('workspace', $workspace);
+        $invoices = $manager
+            ? ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
+            : $this->portalInvoices->visibleTo($company, $user instanceof User ? $user : User::query()->findOrFail($user->id));
+        if ($invoiceId !== null) {
+            $invoices->where('public_id', $invoiceId);
+        }
+        $query = $this->query($workspace)->whereIn('client_invoice_id', $invoices->select('client_invoices.id'));
         if ($after !== null) {
             $query->where('id', '>', $after);
         }
@@ -59,7 +74,9 @@ final class AgentPaymentReadService
      * @return array<string, mixed> */
     public function result(User|AgentPrincipal $user, Workspace $workspace, array $ids): array
     {
-        $payments = $this->query($user, $workspace)->whereIn('public_id', $ids)->get();
+        // Mutation readback is manager-only, just like the action itself.
+        abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
+        $payments = $this->query($workspace)->whereIn('public_id', $ids)->get();
         abort_unless($payments->count() === count($ids), 404);
         $manager = $this->access->isWorkspaceManager($user, $workspace);
 
@@ -67,20 +84,10 @@ final class AgentPaymentReadService
     }
 
     /** @return Builder<ClientInvoicePayment> */
-    private function query(User|AgentPrincipal $user, Workspace $workspace): Builder
+    private function query(Workspace $workspace): Builder
     {
-        abort_unless($this->access->canViewWorkspace($user, $workspace), 403);
-        $manager = $this->access->isWorkspaceManager($user, $workspace);
-        $companies = $manager ? [] : $this->access->portalCompanyIdsIn($user, $workspace);
-
         return ClientInvoicePayment::query()->select(['id', 'public_id', 'workspace_id', 'client_invoice_id', 'amount', 'refunded_amount', 'currency', 'received_on', 'method', 'reference', 'status'])->where('workspace_id', $workspace->id)
-            ->whereHas('invoice', function (Builder $invoices) use ($workspace, $manager, $companies): void {
-                $invoices->where('workspace_id', $workspace->id);
-                if (! $manager) {
-                    $invoices->where('is_visible_to_client', true)->whereIn('status', ['issued', 'partially_paid', 'paid'])
-                        ->whereIn('client_company_id', $companies);
-                }
-            })
+            ->whereHas('invoice', fn (Builder $invoices) => $invoices->where('workspace_id', $workspace->id))
             ->with(['invoice' => fn ($invoices) => $invoices->where('workspace_id', $workspace->id)
                 ->select(['id', 'workspace_id', 'public_id'])]);
     }
