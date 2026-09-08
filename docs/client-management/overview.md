@@ -801,7 +801,7 @@ rewritten; these paths refuse unrecognised statuses.
 `App\Services\Billing\ExpenseInvoiceAllocations` owns invoice claims and
 release; `App\Queries\Expenses\WorkspaceExpenseSchedules` owns recurring
 templates and occurrence generation. These boundaries resolve tenant-owned
-references within the workspace and serialize their mutations with row locks.
+references within the workspace; updates to existing records use scoped row locks.
 See [the domain contract](../domain-contract.md#engagement-tables) and
 [concurrency.md](concurrency.md) for the ownership and locking rules.
 
