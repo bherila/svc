@@ -3,10 +3,12 @@
   "info": {
     "title": "SVC Agent API",
     "version": "1.0.0",
-    "description": "Versioned OAuth API for role-filtered project, task, time, and invoice operations. Payments, project mutations, and file uploads are outside v1."
+    "description": "Versioned OAuth API for role-filtered project, task, time, expense, and invoice operations. Payments, project mutations, and file uploads are outside v1."
   },
   "servers": [{"url": "https://svc.bherila.net/api/v1"}],
   "paths": {
+    "/workspaces/{workspace_id}/expenses": {"get": {"operationId": "expenses.list","security": [{"oauth2": ["expenses:read"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"name": "company_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "project_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "status","in": "query","schema": {"type": "string","enum": ["draft","approved","invoiced"]}},{"$ref": "#/components/parameters/Limit"},{"$ref": "#/components/parameters/Cursor"}],"responses": {"200": {"description": "Authorized expenses","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseListResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"post": {"operationId": "expenses.log","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseLogRequest"}}}},"responses": {"201": {"description": "Draft expenses recorded or replayed","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseBatchResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Workspace managers only. Atomic batch of at most 20 expenses; amounts are minor units. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_EXPENSE_WRITES_ENABLED. No approval or receipt attachment."}},
+    "/workspaces/{workspace_id}/expenses/{expense_id}": {"patch": {"operationId": "expenses.update","description": "Replace all draft expense facts using its current version. Omitted project_id preserves attribution; explicit null clears it. Workspace managers only; both expense and workflow write flags required.","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseUpdateRequest"}}}},"responses": {"200": {"description": "Draft expense updated","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"delete": {"operationId": "expenses.delete","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},"responses": {"200": {"description": "Draft expense soft-deleted","content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Soft-delete draft expenses only, using the current version. Approved, invoiced and unknown statuses are refused. Workspace managers only; both write flags required."}},
     "/context": {"get": {
       "operationId": "context.get", "description": "Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read.", "security": [{"oauth2": ["identity:read"]}],
       "responses": {"200": {"description": "Authorized context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContextResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
@@ -163,7 +165,7 @@
       "flows": {"authorizationCode": {
         "authorizationUrl": "https://svc.bherila.net/oauth/authorize", "tokenUrl": "https://svc.bherila.net/oauth/token",
         "scopes": {
-          "mcp:use": "Connect through MCP", "identity:read": "Read identity and workspaces", "projects:read": "Read projects",
+          "expenses:read": "Read authorized expenses", "expenses:write": "Record, edit and delete draft expenses as a workspace manager", "mcp:use": "Connect through MCP", "identity:read": "Read identity and workspaces", "projects:read": "Read projects",
           "tasks:read": "Read tasks", "tasks:write": "Create and update tasks", "time:read": "Read time",
           "time:write": "Log and manage draft time", "time:approve": "Set billing rates and approve project time", "billing:read": "Read invoices",
           "billing:write": "Create invoice drafts", "billing:deliver": "Issue, send, and void invoices"
@@ -171,6 +173,7 @@
       }}
     }},
     "parameters": {
+      "ExpenseId": {"name": "expense_id","in": "path","required": true,"schema": {"type": "string","format": "uuid"}},
       "WorkspaceId": {"name": "workspace_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
       "ProjectId": {"name": "project_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
       "TaskId": {"name": "task_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
@@ -183,6 +186,13 @@
     },
     "responses": {"Error": {"description": "OAuth, authorization, tenant, conflict, validation, or rate-limit error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}},
     "schemas": {
+      "Expense": {"type": "object","additionalProperties": false,"required": ["id","company_id","project_id","spent_on","amount","currency","description","status","status_label","version","can_edit","can_delete"],"properties": {"id": {"type": "string","format": "uuid"},"company_id": {"type": "string","format": "uuid"},"project_id": {"type": ["string","null"],"format": "uuid"},"spent_on": {"type": "string","format": "date"},"amount": {"type": "integer","minimum": 1},"currency": {"type": "string","pattern": "^[A-Z]{3}$"},"description": {"type": "string","minLength": 1,"maxLength": 2000},"status": {"type": "string"},"status_label": {"type": "string"},"version": {"$ref": "#/components/schemas/Version"},"can_edit": {"type": "boolean"},"can_delete": {"type": "boolean"}}},
+      "ExpenseListResponse": {"type": "object","additionalProperties": false,"required": ["data","meta"],"properties": {"data": {"type": "array","items": {"$ref": "#/components/schemas/Expense"}},"meta": {"$ref": "#/components/schemas/PaginationMeta"}}},
+      "ExpenseResponse": {"type": "object","additionalProperties": false,"required": ["data"],"properties": {"data": {"$ref": "#/components/schemas/Expense"}}},
+      "ExpenseBatchResponse": {"type": "object","additionalProperties": false,"required": ["data"],"properties": {"data": {"type": "array","items": {"$ref": "#/components/schemas/Expense"}}}},
+      "ExpenseLogItem": {"type": "object","additionalProperties": false,"required": ["company_id","spent_on","amount","currency","description"],"properties": {"company_id": {"type": "string","format": "uuid"},"spent_on": {"type": "string","format": "date"},"amount": {"type": "integer","minimum": 1},"currency": {"type": "string","pattern": "^[A-Z]{3}$"},"description": {"type": "string","minLength": 1,"maxLength": 2000},"project_id": {"type": ["string","null"],"format": "uuid"}}},
+      "ExpenseLogRequest": {"type": "object","additionalProperties": false,"required": ["entries"],"properties": {"entries": {"type": "array","minItems": 1,"maxItems": 20,"items": {"$ref": "#/components/schemas/ExpenseLogItem"}}}},
+      "ExpenseUpdateRequest": {"type": "object","additionalProperties": false,"required": ["expected_version","spent_on","amount","currency","description"],"properties": {"expected_version": {"$ref": "#/components/schemas/Version"},"spent_on": {"type": "string","format": "date"},"amount": {"type": "integer","minimum": 1},"currency": {"type": "string","pattern": "^[A-Z]{3}$"},"description": {"type": "string","minLength": 1,"maxLength": 2000},"project_id": {"type": ["string","null"],"format": "uuid"}}},
       "Error": {"type": "object", "additionalProperties": false, "required": ["message"], "properties": {"message": {"type": "string"}, "errors": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}}}},
       "Uuid": {"type": "string", "format": "uuid"},
       "Version": {"type": "string", "pattern": "^[a-f0-9]{64}$"},

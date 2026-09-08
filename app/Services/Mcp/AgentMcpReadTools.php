@@ -3,6 +3,7 @@
 namespace App\Services\Mcp;
 
 use App\Exceptions\InvalidAgentApiCursor;
+use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -24,6 +25,23 @@ final class AgentMcpReadTools
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
+
+    /** @return array<string, mixed> */
+    public function expensesList(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] ?string $company_id = null,
+        #[Schema(format: 'uuid')] ?string $project_id = null,
+        #[Schema(enum: ['draft', 'approved', 'invoiced'])] ?string $status = null,
+        #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+    ): array {
+        $context = $this->workspace($workspace_id, 'expenses:read');
+        try {
+            return app(AgentExpenseReadService::class)->list($context->principal->subject, $context->workspace, $company_id, $project_id, $status, $limit, $cursor, $context->principal->hasScope('expenses:write'));
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
+    }
 
     /** @return array<string, mixed> */
     public function context(): array

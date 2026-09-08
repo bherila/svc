@@ -11,6 +11,8 @@ return [
     // recoverable bookkeeping, while issuing allocates time irreversibly and
     // sending puts a document in front of a paying client (#242).
     'invoice_writes_enabled' => (bool) env('AGENT_API_INVOICE_WRITES_ENABLED', false),
+    // Expense recording/editing requires this switch and the outer workflow switch.
+    'expense_writes_enabled' => (bool) env('AGENT_API_EXPENSE_WRITES_ENABLED', false),
     // Global MCP emergency stop and optional reviewed capability kill switches.
     'mcp_enabled' => (bool) env('AGENT_API_MCP_ENABLED', true),
     'mcp_feature_flags' => [],

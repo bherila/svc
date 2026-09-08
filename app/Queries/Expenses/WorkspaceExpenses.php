@@ -9,6 +9,7 @@ use App\Models\ClientExpense;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use App\Support\Expenses\ExpenseStatus;
 use App\Support\Expenses\NewExpense;
@@ -161,6 +162,7 @@ final class WorkspaceExpenses
         NewExpense $facts,
         ?ClientProject $project = null,
         bool $reattribute = false,
+        ?string $expectedVersion = null,
     ): ClientExpense {
         // The project is checked here rather than folded into the facts, for
         // the same reason {@see record()} checks it: it is a tenant reference
@@ -196,7 +198,7 @@ final class WorkspaceExpenses
             $locked->forceFill($attributes)->save();
 
             return $locked;
-        });
+        }, $expectedVersion);
     }
 
     /**
@@ -260,19 +262,19 @@ final class WorkspaceExpenses
      * human, and the cost of allowing one is a line on an issued invoice
      * pointing at a row that is gone.
      */
-    public function discard(ClientExpense $expense): void
+    public function discard(ClientExpense $expense, ?string $expectedVersion = null, bool $draftOnly = false): void
     {
-        $this->mutate($expense, static function (ClientExpense $locked): ClientExpense {
+        $this->mutate($expense, static function (ClientExpense $locked) use ($draftOnly): ClientExpense {
             $status = $locked->getAttribute('status');
 
-            if (ExpenseStatus::hasBeenInvoicedValue($status)) {
+            if (ExpenseStatus::hasBeenInvoicedValue($status) || ($draftOnly && ! ExpenseStatus::isEditableValue($status))) {
                 throw ExpenseTransitionRefused::discard($status);
             }
 
             $locked->delete();
 
             return $locked;
-        });
+        }, $expectedVersion);
     }
 
     /**
@@ -323,17 +325,21 @@ final class WorkspaceExpenses
      *
      * @param  Closure(ClientExpense): ClientExpense  $write
      */
-    private function mutate(ClientExpense $expense, Closure $write): ClientExpense
+    private function mutate(ClientExpense $expense, Closure $write, ?string $expectedVersion = null): ClientExpense
     {
         if ($expense->workspace_id !== $this->workspace->id) {
             throw new CrossTenantReference('That expense belongs to another workspace.');
         }
 
-        return DB::transaction(function () use ($expense, $write): ClientExpense {
+        return DB::transaction(function () use ($expense, $write, $expectedVersion): ClientExpense {
             $locked = $this->query()->whereKey($expense->id)->tap(Locks::forUpdate())->first();
 
             if (! $locked instanceof ClientExpense) {
                 throw (new ModelNotFoundException)->setModel(ClientExpense::class);
+            }
+
+            if ($expectedVersion !== null) {
+                abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The expense has changed; read it and retry.');
             }
 
             return $write($locked);

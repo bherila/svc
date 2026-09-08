@@ -7,11 +7,11 @@ use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 /**
  * A deliberately fixed allow-list for the Agent MCP release.
  *
- * Three gates, because the blast radii differ and one flag cannot express
- * that. Time writes have their own authoritative emergency cutoff;
+ * Separate cutovers follow the blast radius of each write surface. Time writes have their own authoritative emergency cutoff;
  * `AGENT_API_WRITES_ENABLED` is the workflow cutover; and the invoice tools
  * sit behind a second flag inside it, so agent-assisted time approval no
- * longer arrives with agent-initiated invoice delivery attached (#242).
+ * longer arrives with agent-initiated invoice delivery attached (#242). Expense
+ * writes also require their own nested cutover; listing expenses remains read-only.
  *
  * A tool withheld here is withheld everywhere it matters: the MCP surface
  * never lists or dispatches it, `AgentMcpServerFactory` drops any prompt whose
@@ -31,9 +31,17 @@ final class AgentMcpToolCatalog
             $this->tool('tasks.list', 'List tasks', 'List authorized tasks with bounded cursor pagination.', $tools, 'tasks'),
             $this->tool('tasks.get', 'Get task', 'Get one authorized task.', $tools, 'task'),
             $this->tool('time_entries.list', 'List time entries', 'List authorized time entries with bounded cursor pagination.', $tools, 'timeEntries'),
+            $this->tool('expenses.list', 'List expenses', 'List authorized expenses with bounded cursor pagination. Unattributed expenses are visible only to workspace managers.', $tools, 'expensesList'),
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
             $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL; payment is not an MCP operation.', $tools, 'invoice'),
         ];
+        if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
+            $definitions = [...$definitions,
+                new ToolDefinition('expenses.log', 'Record expenses', 'Idempotently record up to 20 draft expenses as a workspace manager. Amounts use minor units; no receipt attachment or approval.', [$writes, 'expensesLog'], 'expenses.log', false, false, true),
+                new ToolDefinition('expenses.update', 'Update draft expense', 'Replace draft expense facts using the current version. Only workspace managers may write.', [$writes, 'expensesUpdate'], 'expenses.update', false, false, true),
+                new ToolDefinition('expenses.delete', 'Delete draft expense', 'Soft-delete a draft expense using its current version. Approved, invoiced and unknown statuses are refused.', [$writes, 'expensesDelete'], 'expenses.delete', false, true, true),
+            ];
+        }
         if ($this->timeEntryWritesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('time_entries.log', 'Log time', 'Idempotently log up to 20 completed time entries. Explicit billing rates require time:approve and a project approver role.', [$writes, 'timeEntriesLog'], 'time_entries.log', false, false, true),
