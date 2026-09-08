@@ -38,7 +38,13 @@ import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
-import { PAYMENT_METHOD_OTHER, PAYMENT_METHODS } from '@/lib/payments';
+import {
+    PAYMENT_METHOD_OTHER,
+    PAYMENT_METHODS,
+    predatesInvoiceIssue,
+    predatesInvoiceIssueWarning,
+} from '@/lib/payments';
+import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
 import type {
@@ -63,6 +69,12 @@ type InvoicePayment = {
     method: string | null;
     reference: string | null;
     received_on: string | null;
+    /**
+     * Where a corrected date is sent, or null for a viewer who may not correct
+     * one. A finished URL rather than an id and a boolean, like every other
+     * capability on this page.
+     */
+    correct_date_href: string | null;
     amount: number;
     refunded_amount: number;
     currency: string | null;
@@ -112,10 +124,13 @@ export default function ClientInvoiceDetail({
     lines,
     line_detail: lineDetail,
     payments,
+    timezone,
 }: {
     company: { id: string; name: string };
     invoices_href: string;
     pdf_href: string;
+    /** The workspace's calendar, which a payment's date is read on. */
+    timezone: string;
     actions: InvoiceActions;
     /** Null for a viewer who cannot send, alongside a `send` action of null. */
     email: InvoiceEmailContext | null;
@@ -137,6 +152,13 @@ export default function ClientInvoiceDetail({
     // answer nowhere.
     const [otherMethod, setOtherMethod] = useState('');
     const [reference, setReference] = useState('');
+    // Set when the dialog opens rather than at mount, so a screen left open
+    // overnight offers today rather than the day it was loaded.
+    const [receivedOn, setReceivedOn] = useState('');
+    // Which payment's date is being corrected, and to what. One at a time,
+    // because a correction is a repair rather than an editing mode.
+    const [correcting, setCorrecting] = useState<string | null>(null);
+    const [correctedDate, setCorrectedDate] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
 
@@ -155,6 +177,7 @@ export default function ClientInvoiceDetail({
                 setNotice(null);
                 setPaying(false);
                 setVoiding(false);
+                setCorrecting(null);
             },
             onError: (errors) =>
                 setNotice(
@@ -166,6 +189,9 @@ export default function ClientInvoiceDetail({
     };
 
     const backHref = invoicesHref;
+    const predatingPayments = payments.filter((payment) =>
+        predatesInvoiceIssue(payment.received_on, invoice.issue_date),
+    ).length;
 
     return (
         <WorkspaceShell activeModule="invoices">
@@ -176,12 +202,12 @@ export default function ClientInvoiceDetail({
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={backHref}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        className="text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
                     >
                         ← {company.name} invoices
                     </Link>
                     <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="text-2xl font-semibold">
+                        <h1 className="text-2xl font-semibold wrap-anywhere">
                             {invoice.invoice_number ?? 'Unnumbered invoice'}
                         </h1>
                         <Badge variant="outline">
@@ -235,6 +261,17 @@ export default function ClientInvoiceDetail({
                                             2,
                                         ),
                                     );
+                                    setReceivedOn(todayIn(timezone));
+                                    // Cleared rather than carried. The
+                                    // dialog's state outlives one submission,
+                                    // and a reference identifies one payment:
+                                    // the second cheque recorded in a sitting
+                                    // would otherwise arrive under the first
+                                    // one's number. The method is deliberately
+                                    // kept - nothing downstream reads it, and
+                                    // an operator who always takes cheques
+                                    // should not re-pick it every time.
+                                    setReference('');
                                     setPaying(true);
                                 }}
                             >
@@ -263,7 +300,7 @@ export default function ClientInvoiceDetail({
 
                     {paying && (
                         <form
-                            className="mt-3 grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
+                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
 
@@ -297,6 +334,12 @@ export default function ClientInvoiceDetail({
                                     method: chosenMethod,
                                     reference:
                                         reference === '' ? null : reference,
+                                    // The day the money arrived, which is not
+                                    // the day it was typed in. Sent as the
+                                    // same `YYYY-MM-DD` the operations screen
+                                    // sends, so both doors write the column
+                                    // the same shape.
+                                    received_on: receivedOn,
                                 });
                             }}
                         >
@@ -360,6 +403,41 @@ export default function ClientInvoiceDetail({
                                 )}
                             </div>
                             <div className="grid grid-cols-1 gap-2">
+                                <Label htmlFor="payment-received-on">
+                                    Received
+                                </Label>
+                                <Input
+                                    id="payment-received-on"
+                                    type="date"
+                                    // Today on the workspace's calendar, not
+                                    // the browser's. No floor here: how far
+                                    // back this workspace records payments is
+                                    // the service's policy, and it names the
+                                    // earliest acceptable date when it
+                                    // refuses one - a bound restated in the
+                                    // browser is a second copy of that policy
+                                    // that can disagree with it.
+                                    max={todayIn(timezone)}
+                                    value={receivedOn}
+                                    onChange={(event) =>
+                                        setReceivedOn(event.target.value)
+                                    }
+                                />
+                                {predatesInvoiceIssue(
+                                    receivedOn,
+                                    invoice.issue_date,
+                                ) && (
+                                    <p
+                                        role="status"
+                                        className="text-xs wrap-anywhere text-amber-700 dark:text-amber-500"
+                                    >
+                                        {predatesInvoiceIssueWarning(
+                                            invoice.issue_date ?? '',
+                                        )}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-reference">
                                     Reference
                                 </Label>
@@ -383,7 +461,7 @@ export default function ClientInvoiceDetail({
                         <CardTitle>Totals</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <dl className="grid gap-2 text-sm sm:grid-cols-3">
+                        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                             <div className="flex gap-2">
                                 <dt className="text-muted-foreground">Total</dt>
                                 <dd className="tabular-nums">
@@ -518,8 +596,93 @@ export default function ClientInvoiceDetail({
                                         {payments.map((payment) => (
                                             <TableRow key={payment.id}>
                                                 <TableCell>
-                                                    {formatDay(
-                                                        payment.received_on,
+                                                    {correcting ===
+                                                    payment.id ? (
+                                                        <span className="flex flex-wrap items-center gap-2">
+                                                            <Input
+                                                                aria-label={`Corrected date for the ${formatMoney(payment.amount, payment.currency)} payment`}
+                                                                type="date"
+                                                                className="w-40"
+                                                                max={todayIn(
+                                                                    timezone,
+                                                                )}
+                                                                value={
+                                                                    correctedDate
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setCorrectedDate(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <Button
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                onClick={() =>
+                                                                    post(
+                                                                        payment.correct_date_href ??
+                                                                            '',
+                                                                        {
+                                                                            received_on:
+                                                                                correctedDate,
+                                                                        },
+                                                                    )
+                                                                }
+                                                            >
+                                                                Save
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() =>
+                                                                    setCorrecting(
+                                                                        null,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Cancel
+                                                            </Button>
+                                                        </span>
+                                                    ) : (
+                                                        <>
+                                                            {formatDay(
+                                                                payment.received_on,
+                                                            )}
+                                                            {predatesInvoiceIssue(
+                                                                payment.received_on,
+                                                                invoice.issue_date,
+                                                            ) && (
+                                                                <span className="ml-2 text-xs text-amber-700 dark:text-amber-500">
+                                                                    predates
+                                                                    issue
+                                                                </span>
+                                                            )}
+                                                            {payment.correct_date_href !==
+                                                                null && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="ml-2"
+                                                                    onClick={() => {
+                                                                        setCorrectedDate(
+                                                                            payment.received_on ??
+                                                                                todayIn(
+                                                                                    timezone,
+                                                                                ),
+                                                                        );
+                                                                        setCorrecting(
+                                                                            payment.id,
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    Correct date
+                                                                </Button>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
@@ -555,6 +718,32 @@ export default function ClientInvoiceDetail({
                                 </Table>
                             </div>
                         )}
+                        {/*
+                         * Said once, in full, rather than in every marked row:
+                         * a `TableCell` does not wrap, so a sentence in the
+                         * date column would push every column right of it off
+                         * the screen. The rows say which payments; this says
+                         * what it means and which date they are measured
+                         * against.
+                         */}
+                        {predatingPayments > 0 &&
+                            invoice.issue_date !== null && (
+                                <p
+                                    role="status"
+                                    className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm wrap-anywhere text-amber-800 dark:text-amber-300"
+                                >
+                                    {predatingPayments === 1
+                                        ? 'One payment above is'
+                                        : `${predatingPayments} payments above are`}{' '}
+                                    dated before this invoice was issued on{' '}
+                                    {formatDay(invoice.issue_date)}. That is
+                                    allowed — a deposit or an advance retainer
+                                    can arrive before the invoice that applies
+                                    it — but a payment reconciles into the
+                                    period its date names, so check the dates
+                                    are the ones you meant.
+                                </p>
+                            )}
                     </CardContent>
                 </Card>
                 {email !== null && (
