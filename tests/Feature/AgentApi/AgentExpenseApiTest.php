@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientProject;
@@ -20,7 +19,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Laravel\Passport\Passport;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -271,7 +269,7 @@ final class AgentExpenseApiTest extends TestCase
     /** @param list<string> $scopes */
     private function agent(User $user, array $scopes = ['expenses:read', 'expenses:write']): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes, 'api');
+        $this->actingAsMcp($user, $scopes);
     }
 
     private function url(Workspace $workspace): string
