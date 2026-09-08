@@ -10,7 +10,6 @@ use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\RecordPaymentAction;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Laravel\Passport\AccessToken;
 
 final class AgentPaymentController extends Controller
 {
@@ -29,14 +28,8 @@ final class AgentPaymentController extends Controller
 
     public function store(Request $request, Workspace $workspace, AgentMutationContextFactory $contexts, RecordPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
     {
-        $context = $contexts->from($request);
-        // This new surface has no legacy receipt namespace to preserve.
-        // Passport authenticates oauth_client_id, not client_id. Existing
-        // callers of the context factory need a migration-aware transition.
-        $token = $request->user('api')?->token();
-        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : null;
-        abort_unless(is_string($clientId) && $clientId !== '', 401);
-        $ids = $action->run($context->user, $workspace, $clientId, $context->idempotencyKey, $request->all());
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
 
         return response()->json($reads->result($context->user, $workspace, $ids), 201);
     }
