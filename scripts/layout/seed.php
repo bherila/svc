@@ -59,4 +59,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
+// Wayfinder runs Artisan from the repository during the asset build. Give it
+// this already-sanitized configuration so it skips the repository's .env too.
+file_put_contents($runtime.'/config.php', '<?php return '.var_export(config()->all(), true).';');
 echo "Synthetic layout fixtures created.\n";
