@@ -204,7 +204,7 @@ final class ExpenseInvoiceAllocationTest extends TestCase
         }
     }
 
-    public function test_replay_clear_releases_expenses_and_outer_rollback_restores_the_original_invoice(): void
+    public function test_replay_clear_preserves_expense_claims_and_outer_rollback_restores_the_original_invoice(): void
     {
         [$workspace, $company, $expense] = $this->approved();
         $invoice = $this->draft($workspace, $company);
@@ -215,9 +215,9 @@ final class ExpenseInvoiceAllocationTest extends TestCase
         DB::beginTransaction();
         try {
             $clear->invoke($command, $workspace, collect([$company]));
-            $this->assertSame('approved', $expense->refresh()->status);
-            $this->assertNull($expense->client_invoice_line_id);
-            $this->assertSame(0, ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->where('client_invoice_id', $invoice->id)->count());
+            $this->assertSame('invoiced', $expense->refresh()->status);
+            $this->assertSame($originalLine, $expense->client_invoice_line_id);
+            $this->assertSame(1, ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->where('client_invoice_id', $invoice->id)->count());
         } finally {
             DB::rollBack();
         }
