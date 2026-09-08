@@ -118,6 +118,8 @@ final class AgentInvoiceProjectGrantTest extends TestCase
         $visible = app(PortalInvoiceQuery::class)->visibleInWorkspace($workspace, AgentPrincipal::query()->findOrFail($viewer->id));
         $queries = [];
         $numbers = $visible->orderBy('invoice_number')->pluck('invoice_number')->all();
+        // Visibility is independent of the database's collation.
+        sort($numbers, SORT_STRING);
         $this->assertSame(['SYN-OTHER-1', 'SYN-OTHER-2', 'SYN-granted'], $numbers);
         $this->assertCount(1, $queries);
         $queries = [];
