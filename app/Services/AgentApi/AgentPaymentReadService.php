@@ -12,6 +12,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Support\AgentApi\AgentApiCursor;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
 
 final class AgentPaymentReadService
@@ -21,6 +22,7 @@ final class AgentPaymentReadService
     /** @return array<string, mixed> */
     public function listing(User|AgentPrincipal $user, Workspace $workspace, ?string $invoiceId, ?string $companyId, int $limit = 25, ?string $cursor = null): array
     {
+        $this->requireWorkspace($user, $workspace);
         Validator::make(['invoice_id' => $invoiceId, 'company_id' => $companyId, 'limit' => $limit, 'cursor' => $cursor], [
             'invoice_id' => ['nullable', 'required_without:company_id', 'uuid'],
             'company_id' => ['nullable', 'required_without:invoice_id', 'uuid'],
@@ -29,7 +31,6 @@ final class AgentPaymentReadService
         ])->validate();
         $queryKey = 'payments:'.json_encode([$invoiceId, $companyId], JSON_THROW_ON_ERROR);
         $after = AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey);
-        abort_unless($this->access->canViewWorkspace($user, $workspace), 403);
         $manager = $this->access->isWorkspaceManager($user, $workspace);
         // At least one explicit filter is required, so resolve at most one
         // company; never iterate every company a portal identity can access.
@@ -68,6 +69,14 @@ final class AgentPaymentReadService
             'data' => $payments->map(fn (ClientInvoicePayment $payment): array => $this->present($payment, $manager))->values()->all(),
             'next_cursor' => $hasMore && $last !== null ? AgentApiCursor::encode($last->id, $workspace->public_id, $queryKey) : null,
         ];
+    }
+
+    /** Conceal inaccessible selectors before validating any query-specific input. */
+    public function requireWorkspace(User|AgentPrincipal $user, Workspace $workspace): void
+    {
+        if (! $this->access->canViewWorkspace($user, $workspace)) {
+            throw (new ModelNotFoundException)->setModel(Workspace::class);
+        }
     }
 
     /** @param list<string> $ids

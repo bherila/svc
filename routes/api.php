@@ -17,8 +17,10 @@ use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
+use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
@@ -80,6 +82,9 @@ Route::prefix('v1')
             ->middleware(CheckToken::using(AgentApiScopes::TIME_READ))
             ->name('time-entries.index');
         Route::get('/workspaces/{workspace}/payments', [AgentPaymentController::class, 'index'])
+            // Binding failures bypass NoStoreAgentResponse; conceal them just
+            // like an inaccessible workspace found by the payment read service.
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
             ->middleware(CheckToken::using(AgentApiScopes::PAYMENTS_READ))->name('payments.index');
         Route::post('/workspaces/{workspace}/payments', [AgentPaymentController::class, 'store'])
             ->middleware([CheckToken::using(AgentApiScopes::PAYMENTS_RECORD), EnsureAgentWritesEnabled::class, EnsureAgentPaymentWritesEnabled::class])->name('payments.store');

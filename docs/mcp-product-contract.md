@@ -9,12 +9,13 @@ approval are complete.
 
 ## Scope and exclusions
 
-The operations v1 release lets authorized users view projects, tasks, time, and
-invoices. Its feature-gated write catalog manages tasks, draft time, time approval,
-invoice draft creation/update/discard, and invoice issue/send/void workflows. Project
-creation, archival, and deletion remain website actions. Attachment metadata/download
+The operations v1 release lets authorized users view projects, tasks, time,
+invoices, and received payments. Its feature-gated write catalog manages tasks,
+draft time, time approval, invoice draft creation/update/discard, invoice
+issue/send/void workflows, and recording money already received. Project creation,
+archival, and deletion remain website actions. Attachment metadata/download
 access and file uploads are deferred from the currently shipped catalog. Payment
-collection, initiation, recording, refunds, card data, and provider identifiers are out
+collection, initiation, refunds, card data, and provider identifiers are out
 of scope. Invoice responses contain a role-authorized browser URL so a user can
 continue a payment flow in the website.
 
@@ -29,16 +30,20 @@ and see only records that existing client-visibility rules permit.
 
 ## Agent operations
 
-The read catalog is `context.get`, `operations.summary`, `projects.list`,
-`projects.get`, `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`, and
-`invoices.get`. When the explicit write cutover flag is enabled, the additional tools
+The core read catalog includes `context.get`, `operations.summary`, `projects.list`,
+`projects.get`, `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`,
+`invoices.get`, and `payments.list`. When the explicit write cutover flag is
+enabled, the additional tools
 are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
 `time_entries.delete`, and `time_entries.approve`. The six invoice write tools —
 `invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
 `invoices.issue`, `invoices.send`, and `invoices.void` — additionally require
 `AGENT_API_INVOICE_WRITES_ENABLED`, a second cutover nested inside the first, so
 that agent-assisted time approval does not arrive with agent-initiated invoice
-delivery attached. There is no generic CRUD tool.
+delivery attached. `payments.record` requires `payments:record`, workspace owner/admin
+permission, and both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PAYMENT_WRITES_ENABLED`; the payment flag defaults to false. It records
+money already received and cannot initiate a charge. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
 Every mutable representation contains an opaque `version`; updates and lifecycle
@@ -85,7 +90,8 @@ access. SVC validates a token's resource audience, scopes, current account statu
 current workspace/project/company permissions for every request. Initial scopes are
 `mcp:use`, `identity:read`, `projects:read`, `tasks:read`, `tasks:write`, `time:read`,
 `time:write`, `time:approve`, `billing:read`, and `billing:write`; invoice lifecycle
-delivery actions additionally require `billing:deliver`.
+delivery actions additionally require `billing:deliver`. Received-payment reads
+require `payments:read`; recording requires the separate `payments:record` grant.
 Project detail embeds tasks only when the connection also has `tasks:read`.
 
 OAuth public clients use authorization code plus rotating refresh tokens, `code`

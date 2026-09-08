@@ -161,6 +161,27 @@ final class AgentPaymentsTest extends TestCase
         $this->getJson($this->url($workspace).'?invoice_id='.$invoice->public_id)->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_rest_cannot_distinguish_foreign_and_unknown_workspaces(): void
+    {
+        config(['app.debug' => false]);
+        [$user, , $invoice] = $this->fixture();
+        [, $foreign] = $this->fixture();
+        $unknownId = (string) str()->uuid();
+        $this->actingAsMcp($user, ['payments:read']);
+        foreach ([['invoice_id' => $invoice->public_id], ['limit' => 'invalid'], ['invoice_id' => $invoice->public_id, 'cursor' => 'invalid']] as $filters) {
+            $bodies = [];
+            foreach ([$foreign->public_id, $unknownId] as $workspaceId) {
+                $response = $this->getJson('/api/v1/workspaces/'.$workspaceId.'/payments?'.http_build_query($filters))->assertNotFound();
+                $bodies[] = [
+                    $response->getContent(),
+                    $response->headers->get('Content-Type'),
+                    $response->headers->get('Cache-Control'),
+                ];
+            }
+            $this->assertSame($bodies[0], $bodies[1]);
+        }
+    }
+
     public function test_read_scope_does_not_authorize_record_and_record_scope_does_not_list(): void
     {
         [$user, $workspace, $invoice] = $this->fixture();
