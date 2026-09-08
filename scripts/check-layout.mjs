@@ -21,7 +21,9 @@ import { chromium, expect } from '@playwright/test';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 if (existsSync(path.join(root, 'public', 'hot'))) {
-    throw new Error('Stop the Vite dev server and remove its stale public/hot marker before running the layout harness.');
+    throw new Error(
+        'Stop the Vite dev server and remove its stale public/hot marker before running the layout harness.',
+    );
 }
 
 const runtime = mkdtempSync(path.join(tmpdir(), 'svc-layout-'));
@@ -244,56 +246,139 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations', 'time', 'receipts']) {
+        for (const screen of [
+            'invoice',
+            'proposal',
+            'proposal_acceptance',
+            'operations',
+            'time',
+            'expenses',
+            'receipts',
+        ]) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
-            await expect(page.locator('main')).toBeVisible().catch(async (error) => {
-                writeFileSync(path.join(artifacts, `${screen}-failure.html`), await page.content());
-                await page.screenshot({ path: path.join(artifacts, `${screen}-failure.png`), fullPage: true });
+            await expect(page.locator('main'))
+                .toBeVisible()
+                .catch(async (error) => {
+                    writeFileSync(
+                        path.join(artifacts, `${screen}-failure.html`),
+                        await page.content(),
+                    );
+                    await page.screenshot({
+                        path: path.join(artifacts, `${screen}-failure.png`),
+                        fullPage: true,
+                    });
 
-                throw error;
-            });
+                    throw error;
+                });
 
             if (screen === 'proposal_acceptance') {
                 await expect(page.locator('#signer-name')).toBeVisible();
                 await expect(page.locator('#signer-title')).toBeVisible();
-                await expect(page.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
-                await page.locator('#signer-name').fill('SyntheticLayoutSigner'.repeat(8));
-                await page.locator('#signer-title').fill('SyntheticLayoutTitle'.repeat(8));
+                await expect(
+                    page.getByRole('button', { name: 'Accept', exact: true }),
+                ).toBeVisible();
+                await page
+                    .locator('#signer-name')
+                    .fill('SyntheticLayoutSigner'.repeat(8));
+                await page
+                    .locator('#signer-title')
+                    .fill('SyntheticLayoutTitle'.repeat(8));
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
 
+            if (screen === 'expenses') {
+                await expect(
+                    page
+                        .getByRole('link', { name: 'Receipts', exact: true })
+                        .first(),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('link', { name: /^Invoice EXP-SYNTHETIC-/ }),
+                ).toBeVisible();
+                await expect(
+                    page.getByText(/Awaiting an eligible EUR invoice/),
+                ).toBeVisible();
+                await expect(
+                    page
+                        .getByText(
+                            'Approval is required before this expense can be invoiced.',
+                        )
+                        .first(),
+                ).toBeVisible();
+            }
+
             if (screen === 'time') {
-                await page.getByRole('button', { name: 'Select time to invoice', exact: true }).click();
-                const checkboxes = page.getByRole('checkbox', { name: / for invoice$/ });
+                await page
+                    .getByRole('button', {
+                        name: 'Select time to invoice',
+                        exact: true,
+                    })
+                    .click();
+                const checkboxes = page.getByRole('checkbox', {
+                    name: / for invoice$/,
+                });
                 await expect(checkboxes).toHaveCount(2);
                 await checkboxes.nth(0).check();
                 await checkboxes.nth(1).check();
                 await capture(screen, 'selection', width);
-                await page.getByRole('button', { name: 'Review draft invoice', exact: true }).click();
+                await page
+                    .getByRole('button', {
+                        name: 'Review draft invoice',
+                        exact: true,
+                    })
+                    .click();
                 const dialog = page.getByRole('dialog');
                 await expect(dialog).toBeVisible();
                 await expect(dialog).toHaveCSS('opacity', '1');
-                await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => {}))));
-                await expect(dialog.getByText('Draft total: $280.75', { exact: true })).toBeVisible();
+                await dialog.evaluate((element) =>
+                    Promise.all(
+                        element
+                            .getAnimations()
+                            .map((animation) =>
+                                animation.finished.catch(() => {}),
+                            ),
+                    ),
+                );
+                await expect(
+                    dialog.getByText('Draft total: $280.75', { exact: true }),
+                ).toBeVisible();
                 await dialog.evaluate((element) => {
- element.scrollTop = 0;
-});
+                    element.scrollTop = 0;
+                });
                 await capture(screen, 'invoice-preview', width);
-                await page.getByLabel('Invoice number', { exact: true }).fill('SYN-SELECTED-'.repeat(6));
-                await page.getByLabel('Notes (optional)', { exact: true }).fill('Synthetic review notes '.repeat(12));
-                await page.getByRole('button', { name: 'Create draft invoice', exact: true }).scrollIntoViewIfNeeded();
+                await page
+                    .getByLabel('Invoice number', { exact: true })
+                    .fill('SYN-SELECTED-'.repeat(6));
+                await page
+                    .getByLabel('Notes (optional)', { exact: true })
+                    .fill('Synthetic review notes '.repeat(12));
+                await page
+                    .getByRole('button', {
+                        name: 'Create draft invoice',
+                        exact: true,
+                    })
+                    .scrollIntoViewIfNeeded();
                 await capture(screen, 'invoice-fields', width);
                 // This GET-only harness inspects the form, never submits it.
-                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'receipts') {
-                await page.getByRole('button', { name: 'Remove', exact: true }).click();
-                await expect(page.getByRole('alertdialog')).toHaveCSS('opacity', '1');
+                await page
+                    .getByRole('button', { name: 'Remove', exact: true })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toHaveCSS(
+                    'opacity',
+                    '1',
+                );
                 await capture(screen, 'remove-receipt', width);
-                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'invoice') {
@@ -338,7 +423,7 @@ try {
         [
             '# Browser layout evidence',
             '',
-            'Synthetic local fixtures only. Invoice/proposal/time are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            'Synthetic local fixtures only. Invoice/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

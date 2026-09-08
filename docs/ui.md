@@ -203,7 +203,10 @@ The initial coverage is deliberately bounded:
   also asserted initially, with approved time selected, and with the invoice review
   dialog showing both its priced lines and its entry fields. Its fixtures include
   unbroken descriptions/project names, flat-hourly cost pricing, and ineligible
-  draft/deferred rows that must not become invoice checkboxes.
+  draft/deferred rows that must not become invoice checkboxes. The manager expense
+  list includes a claimed invoice link, an approved expense awaiting a matching
+  currency invoice, a draft awaiting approval, and oversized project/description
+  text.
 - **Measured only:** the legacy operations screen. Its existing narrow-screen
   overflow/header wrapping is reported but does not fail the invoice/proposal
   gate. A green exit does not certify operations or any unlisted page.

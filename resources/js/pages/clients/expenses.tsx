@@ -158,7 +158,9 @@ export default function ClientExpenses({
                                             <TableHead className="min-w-64">
                                                 Description
                                             </TableHead>
-                                            <TableHead>Project</TableHead>
+                                            <TableHead className="min-w-32">
+                                                Project
+                                            </TableHead>
                                             <TableHead className="text-right">
                                                 Amount
                                             </TableHead>
@@ -190,6 +192,36 @@ export default function ClientExpenses({
                                                      */}
                                                     <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                                         {expense.description}
+                                                        {expense.billing
+                                                            ?.invoice && (
+                                                            <a
+                                                                className="block text-xs wrap-anywhere underline"
+                                                                href={
+                                                                    expense
+                                                                        .billing
+                                                                        .invoice
+                                                                        .url
+                                                                }
+                                                            >
+                                                                Invoice{' '}
+                                                                {
+                                                                    expense
+                                                                        .billing
+                                                                        .invoice
+                                                                        .number
+                                                                }
+                                                            </a>
+                                                        )}
+                                                        {expense.billing
+                                                            ?.reason && (
+                                                            <span className="block text-xs text-muted-foreground">
+                                                                {
+                                                                    expense
+                                                                        .billing
+                                                                        .reason
+                                                                }
+                                                            </span>
+                                                        )}
                                                         {expense.approved_by !==
                                                             null && (
                                                             <span className="block text-xs text-muted-foreground">
@@ -203,7 +235,7 @@ export default function ClientExpenses({
                                                             </span>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="text-muted-foreground">
+                                                    <TableCell className="max-w-48 wrap-anywhere whitespace-normal text-muted-foreground">
                                                         {expense.project
                                                             ?.name ?? '—'}
                                                     </TableCell>

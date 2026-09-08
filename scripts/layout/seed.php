@@ -7,6 +7,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\Expenses\NewExpense;
@@ -14,6 +15,7 @@ use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 if (PHP_SAPI !== 'cli') {
     throw new RuntimeException('Browser fixtures can only be created from the CLI.');
@@ -80,22 +82,39 @@ foreach ([
     ]);
 }
 
-$expense = app(WorkspaceExpenses::class, ['workspace' => $workspace])->record(
+$expenseBoundary = new WorkspaceExpenses($workspace);
+foreach (['USD', 'EUR'] as $currency) {
+    $expense = $expenseBoundary->record($company, $project, new NewExpense(
+        CarbonImmutable::parse($date), 12500, $currency, str_repeat('SyntheticExpenseDescription', 15),
+    ), $owner);
+    $expenseBoundary->approve($expense, $owner);
+}
+$expenseBoundary->record($company, $project, new NewExpense(
+    CarbonImmutable::parse($date), 2500, 'USD', $description,
+), $owner);
+$expenseInvoice = $service->createDraft($workspace, $company, [
+    'invoice_number' => 'EXP-SYNTHETIC-'.str_repeat('X', 50), 'currency' => 'USD',
+    'invoice_kind' => 'cadence_period', 'service_period_start' => $date, 'service_period_end' => $date,
+], [['type' => 'adjustment', 'description' => 'Synthetic expense allocation fixture', 'quantity' => '1', 'unit_amount' => 100]]);
+DB::transaction(fn () => app(ExpenseInvoiceAllocations::class)->rebuild($expenseInvoice, $date));
+
+$receiptExpense = app(WorkspaceExpenses::class, ['workspace' => $workspace])->record(
     $company, null, new NewExpense(
         CarbonImmutable::parse($date), 12500, 'USD', str_repeat('SyntheticReceiptDescription', 15),
     ), $owner,
 );
 app(AttachmentStorageService::class)->store(
-    $workspace, $expense,
+    $workspace, $receiptExpense,
     UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
 );
 
 file_put_contents($runtime.'/fixture.json', json_encode([
-    'receipts' => route('svc.expenses.receipts', [$workspace, $company, $expense->public_id], absolute: false),
+    'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
+    'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
