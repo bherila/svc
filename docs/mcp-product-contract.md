@@ -122,3 +122,12 @@ The MCP initialize response front-loads the operational rules a harness needs fo
 time and invoice work. Clients that implement MCP prompts can also expose the guided
 `log-time-across-projects` and `prepare-invoice-safely` workflows. Tool descriptions,
 schemas, and annotations remain the authority for each individual call.
+
+
+Received-payment bookkeeping uses separate `payments:read` and `payments:record`
+grants. Recording is owner/admin-only, default-disabled behind the payment and
+outer workflow flags, and requires an explicit invoice, amount, currency, payment
+date, method and idempotency key. This records an already completed receipt of
+money; it never starts a charge, refunds funds or edits a payment's status.
+Reference remains optional. Read responses follow invoice visibility and omit
+private finance reconciliation and processor identifiers.

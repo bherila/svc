@@ -10,6 +10,8 @@ return [
     // writes require both. The boundary follows blast radius - a task is
     // recoverable bookkeeping, while issuing allocates time irreversibly and
     // sending puts a document in front of a paying client (#242).
+    'payment_writes_enabled' => (bool) env('AGENT_API_PAYMENT_WRITES_ENABLED', false),
+
     'invoice_writes_enabled' => (bool) env('AGENT_API_INVOICE_WRITES_ENABLED', false),
     // Expense recording/editing requires this switch and the outer workflow switch.
     'expense_writes_enabled' => (bool) env('AGENT_API_EXPENSE_WRITES_ENABLED', false),

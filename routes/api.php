@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
+use App\Http\Controllers\Api\V1\AgentPaymentController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V1\PaymentReconciliationController;
 use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
+use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
@@ -77,6 +79,10 @@ Route::prefix('v1')
         Route::get('/workspaces/{workspace}/time-entries', [AgentReadController::class, 'timeEntries'])
             ->middleware(CheckToken::using(AgentApiScopes::TIME_READ))
             ->name('time-entries.index');
+        Route::get('/workspaces/{workspace}/payments', [AgentPaymentController::class, 'index'])
+            ->middleware(CheckToken::using(AgentApiScopes::PAYMENTS_READ))->name('payments.index');
+        Route::post('/workspaces/{workspace}/payments', [AgentPaymentController::class, 'store'])
+            ->middleware([CheckToken::using(AgentApiScopes::PAYMENTS_RECORD), EnsureAgentWritesEnabled::class, EnsureAgentPaymentWritesEnabled::class])->name('payments.store');
         Route::get('/workspaces/{workspace}/invoices', [AgentReadController::class, 'invoices'])
             ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
             ->name('invoices.index');

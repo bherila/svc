@@ -75,6 +75,8 @@ final class AgentMcpCapabilityRegistryFactory
             str_starts_with($name, 'projects.') => 'AgentAccess::canViewProject',
             str_starts_with($name, 'tasks.') => 'AgentAccess::canViewTask',
             str_starts_with($name, 'time_entries.') => 'AgentAccess::canViewTime',
+            $name === 'payments.record' => 'AgentAccess::isWorkspaceManager',
+            $name === 'payments.list' => 'AgentAccess::canViewInvoice',
             str_starts_with($name, 'invoices.') => 'AgentAccess::canViewInvoice',
             default => 'Agent API workflow policy',
         };

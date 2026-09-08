@@ -14,7 +14,7 @@ final class AgentCapabilities
 {
     private const array ORDER = [
         'projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
-        'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write',
+        'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
     ];
 
     public function __construct(
@@ -57,6 +57,11 @@ final class AgentCapabilities
         if ($allowsScope(AgentApiScopes::BILLING_READ)
             && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
             $workspaceCapabilities[] = 'billing:read';
+        }
+
+        if ($allowsScope(AgentApiScopes::PAYMENTS_READ)
+            && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
+            $workspaceCapabilities[] = 'payments:read';
         }
 
         return [
@@ -132,6 +137,10 @@ final class AgentCapabilities
                 AgentApiScopes::BILLING_WRITE => 'billing:write',
                 AgentApiScopes::BILLING_DELIVER => 'billing:deliver',
             ];
+        }
+
+        if ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled')) {
+            $mapping[AgentApiScopes::PAYMENTS_RECORD] = 'payments:record';
         }
 
         $capabilities = [];
