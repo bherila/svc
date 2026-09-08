@@ -244,7 +244,7 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations', 'time']) {
+        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations', 'time', 'expense_schedules']) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
             await expect(page.locator('main')).toBeVisible().catch(async (error) => {
@@ -263,6 +263,15 @@ try {
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
+
+            if (screen === 'expense_schedules') {
+                await page.getByRole('button', { name: 'Edit schedule', exact: true }).click();
+                await capture(screen, 'edit', width);
+                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+                await page.getByRole('button', { name: 'New schedule', exact: true }).click();
+                await page.getByLabel('Description', { exact: true }).fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
+                await capture(screen, 'create', width);
+            }
 
             if (screen === 'time') {
                 await page.getByRole('button', { name: 'Select time to invoice', exact: true }).click();

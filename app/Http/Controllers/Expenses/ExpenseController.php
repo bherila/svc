@@ -113,6 +113,7 @@ class ExpenseController extends Controller
             // a page building these itself would need the workspace id as
             // well - one more thing to pass and one more chance to pass the
             // wrong one.
+            'schedule_url' => $isManager ? route('clients.expense-schedules', [$workspace, $clientCompany], absolute: false) : null,
             'urls' => [
                 'store' => route('svc.expenses.store', [$workspace, $clientCompany], absolute: false),
             ],

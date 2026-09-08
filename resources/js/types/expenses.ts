@@ -42,6 +42,7 @@ export type ClientExpenseRow = {
 };
 
 export type ExpensesPageProps = {
+    schedule_url?: string | null;
     company: { id: string; name: string };
     permissions: { record: boolean; approve: boolean };
     urls: { store: string };

@@ -6,8 +6,12 @@ use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\Billing\BillingCadence;
+use App\Support\Expenses\NewExpense;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 
 if (PHP_SAPI !== 'cli') {
@@ -75,8 +79,13 @@ foreach ([
     ]);
 }
 
+(new WorkspaceExpenseSchedules($workspace))->create($company, $project->public_id,
+    new NewExpense(CarbonImmutable::parse($date)->subMonthsNoOverflow(2), 1200, 'USD', $description),
+    BillingCadence::Monthly);
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     'user_id' => $owner->id, 'date' => $date,
+    'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
