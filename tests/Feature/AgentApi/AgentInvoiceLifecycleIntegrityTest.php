@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -14,7 +13,6 @@ use App\Models\WorkspaceInvoiceCounter;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Laravel\Passport\Passport;
 use Tests\Concerns\CapturesTenantOwnedWrites;
 use Tests\TestCase;
 
@@ -293,6 +291,6 @@ final class AgentInvoiceLifecycleIntegrityTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 }

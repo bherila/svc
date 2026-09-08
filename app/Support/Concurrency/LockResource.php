@@ -34,6 +34,9 @@ use RuntimeException;
  */
 enum LockResource: string
 {
+    // Agent receipt reservations precede domain callbacks and every business lock.
+    case AgentMutationReceipt = 'agent_mutation_receipts';
+
     // Engagement, which is upstream of everything it produces.
     case ClientProposal = 'client_proposals';
     case ClientBillingSchedule = 'client_billing_schedules';

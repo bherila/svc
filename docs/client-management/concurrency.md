@@ -25,8 +25,10 @@ enforced rather than aspirational:
 Ordering discipline, and only that.
 
 The fast lane runs on SQLite, which cannot exercise a genuine multi-connection
-race, and the MariaDB lane runs the same single-connection tests. Nothing in the
-suite makes two transactions contend, so a green conformance run is not evidence
+race, and the conformance test is also single-connection in the MariaDB lane.
+A separate `LegacyReceiptConcurrencyTest` uses two processes and a disposable
+MariaDB schema to observe actual lock waits for the receipt-namespace cutover.
+That focused probe does not cover the other business locks: a green conformance run is not evidence
 that concurrent callers are safe — it says the code takes its locks in one
 consistent order, which is the precondition for safety and not the thing itself.
 
@@ -48,6 +50,7 @@ the majority order won and the minority is named as an inversion below.
 
 | # | Resource | Why it sits here |
 | --- | --- | --- |
+| 0 | `agent_mutation_receipts` | Agent compatibility guards and authenticated receipt reservations precede the domain callback and its business locks |
 | 1 | `client_proposals` | Acceptance starts from the proposal and reaches the company through it |
 | 2 | `client_billing_schedules` | A schedule run starts from the schedule row and produces invoices |
 | 3 | `client_agreements` | Generation serialises on the agreement, because the invoice rows it guards against may not exist yet |
