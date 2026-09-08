@@ -6,21 +6,18 @@ use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Http\Requests\Engagement\StoreTimeEntryRequest;
 use App\Http\Requests\Engagement\UpdateTimeEntryRequest;
 use App\Models\ClientProject;
-use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Engagement\EngagementException;
-use App\Services\Engagement\TimeEntryWorkflow;
 use App\Services\WorkspaceAuthorization;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class TimeEntryController extends EngagementController
@@ -49,7 +46,7 @@ class TimeEntryController extends EngagementController
         Workspace $workspace,
         ClientProject $clientProject,
         WorkspaceAuthorization $workspaceAuthorization,
-        TimeEntryWorkflow $workflow,
+        TimeEntryMutationService $entries,
         ProjectAccess $access,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
@@ -60,40 +57,8 @@ class TimeEntryController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientProject);
         abort_unless($access->canLogTime($user, $clientProject), 403);
 
-        $validated = $request->validated();
-        $taskId = $validated['task_id'] ?? null;
-        unset($validated['task_id']);
-
-        // Logging work and pricing it are different decisions. A contributor
-        // may record what they did; naming the rate it bills at is a
-        // commercial term, and an explicit rate here is recorded as
-        // `billing_rate_source => 'explicit'`, which outranks the rate the
-        // agreement would have resolved. Restricted to whoever could approve
-        // the entry afterwards, since that is the same judgement made earlier.
-        //
-        // A field error rather than a 403: the request is a legitimate one from
-        // someone entitled to make it, with one field they may not set, and a
-        // bare refusal would read as "you cannot log time here" - the very
-        // confusion this endpoint just stopped causing.
-        if (array_key_exists('billing_rate_amount', $validated)
-            && $validated['billing_rate_amount'] !== null
-            && ! $access->canApproveTime($user, $clientProject)) {
-            throw ValidationException::withMessages([
-                'billing_rate_amount' => 'Only a project manager can set the rate time bills at. Log the time and leave the rate to be resolved from the agreement.',
-            ]);
-        }
-
-        // The workflow has always accepted a task; nothing on the web could
-        // reach it, so every entry logged from a browser was unattributed.
-        $task = is_string($taskId) && $taskId !== ''
-            ? ClientTask::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('public_id', $taskId)
-                ->firstOrFail()
-            : null;
-
         try {
-            $entry = $workflow->create($workspace, $clientProject, $user, $validated, $task);
+            $entry = $entries->create($workspace, $clientProject, $user, $request->validated());
 
             return $this->respond(
                 $request,
@@ -102,8 +67,8 @@ class TimeEntryController extends EngagementController
                 'Time entry logged.',
                 201,
             );
-        } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+        } catch (DomainException $exception) {
+            return $this->reportFailure($request, new EngagementException($exception->getMessage()));
         }
     }
 
