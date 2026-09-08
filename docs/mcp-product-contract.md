@@ -111,7 +111,7 @@ supported.
 
 ## Safety and observability
 
-Mutation retries are keyed by OAuth client, user, operation, and idempotency key. An
+Mutation retries are keyed by workspace, authenticated OAuth client, user, operation, and idempotency key. An
 identical retry returns its original result; key reuse with another request body is a
 409 conflict. Receipt reservation, business writes, receipt completion, and success
 audit commit atomically. Failed mutations roll back the receipt and business writes,
@@ -119,6 +119,22 @@ then record a metadata-only failure audit. Audit events record actor, OAuth clie
 workspace, operation, affected public IDs, outcome/error category, request ID, and
 timestamp only. Request/response bodies, free text, tokens, filenames, blob data,
 payment data, and provider identifiers are never logged.
+
+Historical REST time, task, and invoice receipts stored an ambiguous `testing-client`
+namespace. Those keys now fail closed with 409, even for an identical retry: neither
+receipts nor audits identify the original authenticated client. No historical result
+is disclosed, reassigned, or executed again. A receipt lacking workspace provenance
+also blocks that actor/operation/key; a receipt in another known workspace does not.
+An operator must reconcile the original outcome before intentionally issuing a new
+mutation with a fresh key. Changing keys automatically would bypass this safeguard.
+
+New requests use the authenticated client and atomically reserve a non-completed
+compatibility guard in the legacy namespace before reserving their own receipt.
+This prevents old in-flight REST code from executing the same key during rollout.
+Guards contain no result IDs, can serve distinct authenticated clients independently,
+and are retained permanently with the receipts. Do not prune or backfill them, or
+roll back to the old writer as a way to clear conflicts. See
+[the rollout details](mcp.md#legacy-rest-receipt-cutover).
 
 The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output schemas
 are packaged from each tool's declared REST success component and enforced at runtime;

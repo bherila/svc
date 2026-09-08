@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
@@ -13,7 +12,6 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 final class AgentTimeEntryMutationTest extends TestCase
@@ -358,6 +356,6 @@ final class AgentTimeEntryMutationTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 }
