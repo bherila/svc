@@ -50,6 +50,16 @@ final class AgentPaymentsTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'outcome' => 'replay']);
     }
 
+    public function test_retry_can_switch_transports_when_optional_reference_was_omitted(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $payload = $this->payload($invoice);
+        $rest = $this->record('rest', $user, $workspace, $payload, 'synthetic-cross-door');
+        $mcp = $this->record('mcp', $user, $workspace, $payload, 'synthetic-cross-door');
+        $this->assertSame($rest, $mcp);
+        $this->assertDatabaseCount('client_invoice_payments', 1);
+    }
+
     public static function invalidPayloads(): iterable
     {
         yield 'zero' => [['amount' => 0], 422];

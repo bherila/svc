@@ -25,6 +25,10 @@ final class RecordPaymentAction
     {
         abort_unless(trim($key) !== '' && strlen($key) <= 255, 422, 'An idempotency key is required.');
 
+        // Both transports mean no reference when it is omitted or null.
+        // Canonicalize before hashing so a retry may switch REST/MCP safely.
+        $payload += ['reference' => null];
+
         return $this->mutations->run($user, $workspace, $clientId, 'payments.record', $key, $payload,
             function () use ($user, $workspace, $clientId, $key, $payload): array {
                 $this->authorize($user, $workspace);
