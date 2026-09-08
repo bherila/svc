@@ -78,6 +78,7 @@ class ExpenseController extends Controller
         // expense is exactly that, so it is a manager's to read. Null means
         // the viewer is unscoped and everything is theirs.
         $viewable = $access->viewableProjectIds($user, $workspace);
+        $isManager = Gate::allows('manage', $workspace);
 
         $expenses = $this->expenses($workspace)
             ->query()
@@ -89,12 +90,15 @@ class ExpenseController extends Controller
             ->with([
                 'project' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 'approvedBy',
+                ...($isManager ? [
+                    'invoiceLine' => fn ($query) => $query->where('workspace_id', $workspace->id)->with([
+                        'invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id),
+                    ]),
+                ] : []),
             ])
             ->orderByDesc('spent_on')
             ->orderByDesc('id')
             ->get();
-
-        $isManager = Gate::allows('manage', $workspace);
 
         return Inertia::render('clients/expenses', [
             'company' => [
@@ -149,6 +153,7 @@ class ExpenseController extends Controller
                 'currency' => (string) $expense->currency,
                 'description' => (string) $expense->description,
                 'status' => (string) $expense->status,
+                'billing' => $isManager ? $this->billingState($workspace, $expense) : null,
                 'project' => $expense->project === null ? null : [
                     'id' => $expense->project->public_id,
                     'name' => $expense->project->name,
@@ -176,6 +181,28 @@ class ExpenseController extends Controller
                 ],
             ])->values(),
         ]);
+    }
+
+    /** @return array{invoice: array{url: string, number: string}|null, reason: string|null} */
+    private function billingState(Workspace $workspace, ClientExpense $expense): array
+    {
+        if ($expense->client_invoice_line_id !== null) {
+            $invoice = $expense->invoiceLine?->invoice;
+
+            return [
+                'invoice' => $invoice === null ? null : [
+                    'url' => route('svc.billing.invoices.show', [$workspace, $invoice], absolute: false),
+                    'number' => $invoice->invoice_number,
+                ],
+                'reason' => $invoice === null ? 'The invoice allocation needs review.' : null,
+            ];
+        }
+
+        return ['invoice' => null, 'reason' => match ($expense->status) {
+            'draft' => 'Approval is required before this expense can be invoiced.',
+            'approved' => 'Awaiting an eligible '.$expense->currency.' invoice covering '.$expense->spent_on->toDateString().' or later.',
+            default => 'The expense allocation needs review.',
+        }];
     }
 
     public function store(
