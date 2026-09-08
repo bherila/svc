@@ -249,6 +249,8 @@ final class AgentExpenseApiTest extends TestCase
         $list = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'expenses.list', 'arguments' => ['workspace_id' => $workspace->public_id]]], $headers)->assertOk()->json('result.structuredContent');
         $this->assertSame($this->getJson($this->url($workspace))->assertOk()->json(), $list);
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($list, AgentApiResponseSchemaCatalog::forOperation('expenses.list')));
+        $updated = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'expenses.update', 'arguments' => $this->facts() + ['workspace_id' => $workspace->public_id, 'expense_id' => $id, 'expected_version' => $created->json('result.structuredContent.data.0.version'), 'idempotency_key' => 'mcp-expense-update', 'project_id' => $project->public_id]]], $headers)->assertOk()->assertJsonPath('result.structuredContent.data.project_id', $project->public_id);
+        $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/call', 'params' => ['name' => 'expenses.delete', 'arguments' => ['workspace_id' => $workspace->public_id, 'expense_id' => $id, 'expected_version' => $updated->json('result.structuredContent.data.version'), 'idempotency_key' => 'mcp-expense-delete']]], $headers)->assertOk()->assertJsonPath('result.structuredContent.data.deleted_id', $id);
         config(['agent_api.writes_enabled' => false]);
         $this->postJson('/api/v1/mcp', $message, $headers)->assertOk()->assertJsonPath('error.code', -32601);
         $this->assertDatabaseCount('client_expenses', 1);
