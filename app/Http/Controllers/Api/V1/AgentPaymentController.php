@@ -17,6 +17,7 @@ final class AgentPaymentController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof AgentPrincipal, 401);
+        $reads->requireWorkspace($user, $workspace);
         $data = $request->validate([
             'invoice_id' => ['nullable', 'uuid'], 'company_id' => ['nullable', 'uuid'],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048'],
