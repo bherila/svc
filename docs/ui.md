@@ -182,7 +182,9 @@ pnpm exec playwright install chromium   # once per Playwright browser version
 pnpm run test:layout
 ```
 
-The command builds current assets, creates a fresh synthetic SQLite database,
+Run from a checkout without an active Vite dev server. The command refuses an
+existing `public/hot` marker and leaves it untouched. It builds current assets,
+creates a fresh synthetic SQLite database,
 and launches Chromium against a temporary PHP server bound to `127.0.0.1` on a
 free port. It does not use your `.env`, existing database, OAuth session or
 production records. The test router is under `scripts/layout/`, outside the

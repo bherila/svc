@@ -4,6 +4,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
+    existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -18,6 +19,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+if (existsSync(path.join(root, 'public', 'hot'))) {
+    throw new Error('Stop the Vite dev server and remove its stale public/hot marker before running the layout harness.');
+}
+
 const runtime = mkdtempSync(path.join(tmpdir(), 'svc-layout-'));
 const artifacts = path.join(
     root,
