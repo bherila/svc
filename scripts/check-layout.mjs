@@ -244,10 +244,19 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of ['invoice', 'proposal', 'operations']) {
+        for (const screen of ['invoice', 'proposal', 'proposal_acceptance', 'operations']) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
             await expect(page.locator('main')).toBeVisible();
+
+            if (screen === 'proposal_acceptance') {
+                await expect(page.locator('#signer-name')).toBeVisible();
+                await expect(page.locator('#signer-title')).toBeVisible();
+                await expect(page.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
+                await page.locator('#signer-name').fill('SyntheticLayoutSigner'.repeat(8));
+                await page.locator('#signer-title').fill('SyntheticLayoutTitle'.repeat(8));
+            }
+
             await capture(screen, 'initial', width, screen === 'operations');
 
             if (screen === 'invoice') {

@@ -197,14 +197,14 @@ The initial coverage is deliberately bounded:
 
 - **Asserted:** the operator invoice detail page initially, with Record payment
   open, and with the payment-date correction control open; the operator proposal
-  detail page. Fixtures include unbroken company names, invoice numbers and
+  detail page and the eligible sent proposal in the client portal with its
+  acceptance form visibly present. Fixtures include unbroken company names, invoice numbers and
   proposal titles, lengthy descriptions, and a partially paid invoice.
 - **Measured only:** the legacy operations screen. Its existing narrow-screen
   overflow/header wrapping is reported but does not fail the invoice/proposal
   gate. A green exit does not certify operations or any unlisted page.
-- **Static coverage only:** the proposal acceptance form and unbroken summary/
-  terms text also have hostile-fixture coverage in `layout-overflow.test.tsx`.
-  The initial browser proposal is an operator view without acceptance controls.
+- **Additional static coverage:** the proposal acceptance form and unbroken
+  summary/terms text have hostile-fixture coverage in `layout-overflow.test.tsx`.
 
 At each of 390, 820, 1440 and 1920 pixels, asserted pages must have no horizontal
 **document** overflow and a 48-pixel navbar row whose visible direct children

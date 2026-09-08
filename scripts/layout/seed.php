@@ -46,7 +46,8 @@ $service->applyPayment($invoice, [
 $proposal = ClientProposal::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'title' => str_repeat('SyntheticProposal', 12), 'summary' => $description,
-    'terms' => $description, 'currency' => 'USD', 'status' => 'draft',
+    'terms' => $description, 'currency' => 'USD', 'status' => 'sent',
+    'is_visible_to_client' => true, 'sent_at' => app(WorkspaceClock::class)->now($workspace),
 ]);
 $proposal->items()->create([
     'workspace_id' => $workspace->id, 'description' => $description,
@@ -57,6 +58,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'user_id' => $owner->id, 'date' => $date,
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
+    'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
 // Wayfinder runs Artisan from the repository during the asset build. Give it
