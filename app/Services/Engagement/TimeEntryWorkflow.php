@@ -2,6 +2,7 @@
 
 namespace App\Services\Engagement;
 
+use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
@@ -21,10 +22,12 @@ class TimeEntryWorkflow
         array $attributes,
         ?ClientTask $task = null,
     ): ClientTimeEntry {
-        $company = $project->clientCompany;
+        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $project)) {
+            throw new EngagementException('The client project does not belong to this workspace.');
+        }
 
-        if (! $this->workspaceAuthorization->isOwnedBy($workspace, $project)
-            || ! $this->workspaceAuthorization->isOwnedBy($workspace, $company)) {
+        $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($project->client_company_id)->first();
+        if ($company === null) {
             throw new EngagementException('The client project does not belong to this workspace.');
         }
 
@@ -32,7 +35,7 @@ class TimeEntryWorkflow
             throw new EngagementException('The client task does not belong to this project and workspace.');
         }
 
-        if (! $workspace->memberships()->where('user_id', $worker->id)->exists()) {
+        if (! $workspace->memberships()->where('workspace_id', $workspace->id)->where('user_id', $worker->id)->exists()) {
             throw new EngagementException('The worker is not a member of this workspace.');
         }
 
