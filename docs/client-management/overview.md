@@ -487,7 +487,7 @@ for how each mode reaches an invoice.
 Attachments live in one table, `client_attachments`, which belongs directly to a
 workspace and identifies its owner by `record_type` plus an immutable
 `record_public_id`. `record_type` is one of `company`, `project`, `task`,
-`proposal`, `agreement`, `invoice`. There is no polymorphic
+`proposal`, `agreement`, `invoice`, `expense`. There is no polymorphic
 `fileable_type`/`fileable_id` pair, and there is no download-history table.
 
 - `object_key` (unique) and `staged_object_key` (unique, nullable) — opaque
@@ -816,18 +816,33 @@ POST   /workspaces/{workspace}/expenses/{expense}/unapprove
 DELETE /workspaces/{workspace}/expenses/{expense}
 ```
 
-**Nothing bills an expense yet.** The `approved` → `invoiced` edge has no
-caller: there is no generator hook, no receipt attachments, and no recurrence.
-Tracked as #75.
+Approved expenses can be claimed at their recorded cost by eligible cadence
+invoices, through `ExpenseInvoiceAllocations`. A claim marks the expense
+`invoiced` and links its invoice line; regeneration, discard and void handle
+release through that shared boundary. Recurrence remains a separate #75 slice.
+
+Managers can open a row's Receipts link to upload, download and remove files.
+Expense receipts use the shared attachment lifecycle and private object store;
+ordinary workspace members and portal users cannot download them. A discarded
+expense is not a reachable receipt parent. Upload stages bytes and commits a
+recovery row before taking the same expense row lock as discard while revalidating
+and publishing. The recovery row retains both file keys if the uploader is killed
+after promotion, so the attachment repair command can remove the abandoned blob. If discard
+wins, upload refuses and removes its staged bytes. If upload wins, a later discard
+still retains the attachment under the existing retention policy; serialization
+does not prevent that intentional ordering. Removing a receipt hides it immediately
+and leaves final blob cleanup to the existing attachment repair lifecycle.
+The enum expansion migration preserves existing attachment rows and refuses
+rollback while any expense attachment remains, including retained lifecycle rows.
 
 This schema diverges from the predecessor's on purpose. Money is integer minor
 units plus a `currency` rather than `decimal(12,2)`; the date is `spent_on` and
 the project link `client_project_id`, matching every sibling table; and manager
 approval replaces `is_reimbursable` / `is_reimbursed` / `reimbursed_date`,
 because an expense reaching an invoice is the decision those flags stood in for.
-There is no `category`, no `notes`, no `client_invoice_line_id`, and no
-`external_finance_transaction_uuid` column. A reimbursable expense will reach an
-invoice at cost: there is no markup column and no generator applies one.
+There is no `category`, no `notes`, and no `external_finance_transaction_uuid`
+column. `client_invoice_line_id` records the nullable allocation link. Expense
+allocation uses the stored amount and currency without markup or conversion.
 
 ## External finance reconciliation
 

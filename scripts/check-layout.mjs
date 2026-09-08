@@ -253,6 +253,7 @@ try {
             'operations',
             'time',
             'expenses',
+            'receipts',
             'expense_schedules',
         ]) {
             const response = await page.goto(origin + fixture[screen]);
@@ -289,15 +290,28 @@ try {
             await capture(screen, 'initial', width, screen === 'operations');
 
             if (screen === 'expense_schedules') {
-                await page.getByRole('button', { name: 'Edit schedule', exact: true }).click();
+                await page
+                    .getByRole('button', { name: 'Edit schedule', exact: true })
+                    .click();
                 await capture(screen, 'edit', width);
-                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-                await page.getByRole('button', { name: 'New schedule', exact: true }).click();
-                await page.getByLabel('Description', { exact: true }).fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'New schedule', exact: true })
+                    .click();
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
                 await capture(screen, 'create', width);
             }
 
             if (screen === 'expenses') {
+                await expect(
+                    page
+                        .getByRole('link', { name: 'Receipts', exact: true })
+                        .first(),
+                ).toBeVisible();
                 await expect(
                     page.getByRole('link', { name: /^Invoice EXP-SYNTHETIC-/ }),
                 ).toBeVisible();
@@ -305,7 +319,11 @@ try {
                     page.getByText(/Awaiting an eligible EUR invoice/),
                 ).toBeVisible();
                 await expect(
-                    page.getByText('Approval is required before this expense can be invoiced.'),
+                    page
+                        .getByText(
+                            'Approval is required before this expense can be invoiced.',
+                        )
+                        .first(),
                 ).toBeVisible();
             }
 
@@ -362,6 +380,20 @@ try {
                     .scrollIntoViewIfNeeded();
                 await capture(screen, 'invoice-fields', width);
                 // This GET-only harness inspects the form, never submits it.
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
+
+            if (screen === 'receipts') {
+                await page
+                    .getByRole('button', { name: 'Remove', exact: true })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toHaveCSS(
+                    'opacity',
+                    '1',
+                );
+                await capture(screen, 'remove-receipt', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();

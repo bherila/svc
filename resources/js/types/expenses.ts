@@ -38,6 +38,7 @@ export type ClientExpenseRow = {
      * cannot build a URL for a client it is not on.
      */
     urls: {
+        receipts: string | null;
         update: string;
         approve: string;
         unapprove: string;

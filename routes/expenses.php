@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Expenses\ExpenseController;
+use App\Http\Controllers\Expenses\ExpenseReceiptController;
 use App\Http\Controllers\Expenses\ExpenseScheduleController;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,10 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/clients/{clientCompany}/expenses', [ExpenseController::class, 'index'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('clients.expenses');
+
+    Route::get('/workspaces/{workspace}/clients/{clientCompany}/expenses/{expense}/receipts', ExpenseReceiptController::class)
+        ->whereUuid('expense')->middleware(ResolveWorkspaceNavigation::class)
+        ->name('svc.expenses.receipts');
 
     // The writes are keyed by the expense rather than by the company, because
     // an expense's company is already fixed on the row - re-stating it in the

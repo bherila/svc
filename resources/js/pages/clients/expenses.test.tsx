@@ -54,6 +54,8 @@ function expense(overrides: Partial<ClientExpenseRow> = {}): ClientExpenseRow {
             approve: '/workspaces/w/expenses/expense-1/approve',
             unapprove: '/workspaces/w/expenses/expense-1/unapprove',
             discard: '/workspaces/w/expenses/expense-1',
+            receipts:
+                '/workspaces/w/clients/company-1/expenses/expense-1/receipts',
         },
         ...overrides,
     };

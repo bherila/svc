@@ -10,10 +10,12 @@ use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Files\AttachmentStorageService;
 use App\Support\Billing\BillingCadence;
 use App\Support\Expenses\NewExpense;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
@@ -101,7 +103,18 @@ $expenseInvoice = $service->createDraft($workspace, $company, [
 ], [['type' => 'adjustment', 'description' => 'Synthetic expense allocation fixture', 'quantity' => '1', 'unit_amount' => 100]]);
 DB::transaction(fn () => app(ExpenseInvoiceAllocations::class)->rebuild($expenseInvoice, $date));
 
+$receiptExpense = app(WorkspaceExpenses::class, ['workspace' => $workspace])->record(
+    $company, null, new NewExpense(
+        CarbonImmutable::parse($date), 12500, 'USD', str_repeat('SyntheticReceiptDescription', 15),
+    ), $owner,
+);
+app(AttachmentStorageService::class)->store(
+    $workspace, $receiptExpense,
+    UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
+);
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),

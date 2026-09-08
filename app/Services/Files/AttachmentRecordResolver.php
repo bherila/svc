@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
@@ -23,6 +24,7 @@ final class AttachmentRecordResolver
     /** @var array<string, class-string<Model>> */
     private const RECORD_CLASSES = [
         'company' => ClientCompany::class,
+        'expense' => ClientExpense::class,
         'project' => ClientProject::class,
         'task' => ClientTask::class,
         'proposal' => 'App\\Models\\ClientProposal',
@@ -44,10 +46,17 @@ final class AttachmentRecordResolver
             throw (new ModelNotFoundException)->setModel($recordClass ?? Model::class, [$recordPublicId]);
         }
 
-        return $recordClass::query()
+        $record = $recordClass::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', $recordPublicId)
             ->firstOrFail();
+
+        if ($record instanceof ClientExpense) {
+            ClientCompany::query()->where('workspace_id', $workspace->id)
+                ->whereKey($record->client_company_id)->firstOrFail();
+        }
+
+        return $record;
     }
 
     public function portalUserCanView(User $user, Workspace $workspace, ClientAttachment $attachment): bool

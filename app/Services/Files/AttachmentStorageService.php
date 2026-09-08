@@ -4,9 +4,12 @@ namespace App\Services\Files;
 
 use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAttachment;
+use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -41,8 +44,41 @@ final class AttachmentStorageService
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
         $metadata = $this->stage($workspace, $record, $file, $publicId);
 
+        // Keep a recovery row outside the parent-locked publication transaction.
+        // A killed uploader can leave either key on disk; repair must know both.
+        $attachment = $this->recordStaged($workspace, $metadata, $uploader);
+
+        if (! $record instanceof ClientExpense) {
+            return $this->publish($workspace, $metadata, $attachment);
+        }
+
+        // Staging does not hold a database lock. Publication and discard do:
+        // whichever takes the live expense lock first defines their order.
         try {
-            $attachment = DB::transaction(fn (): ClientAttachment => ClientAttachment::query()->create([
+            return DB::transaction(function () use ($workspace, $record, $metadata, $attachment): ClientAttachment {
+                $locked = ClientExpense::query()->where('workspace_id', $workspace->id)
+                    ->whereKey($record->id)->where('public_id', $record->public_id)
+                    ->tap(Locks::forUpdate())->firstOrFail();
+                ClientCompany::query()->where('workspace_id', $workspace->id)
+                    ->whereKey($locked->client_company_id)->firstOrFail();
+
+                return $this->publish($workspace, $metadata, $attachment);
+            });
+        } catch (Throwable $exception) {
+            // Retain the durable staged row even after compensation: if the
+            // disk operation itself fails, repair still owns both object keys.
+            $this->deleteQuietly($metadata['staged_object_key']);
+            $this->deleteQuietly($metadata['object_key']);
+
+            throw $exception;
+        }
+    }
+
+    /** @param array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} $metadata */
+    private function recordStaged(Workspace $workspace, array $metadata, User $uploader): ClientAttachment
+    {
+        try {
+            return DB::transaction(fn (): ClientAttachment => ClientAttachment::query()->create([
                 'public_id' => $metadata['public_id'],
                 'workspace_id' => $workspace->id,
                 'record_type' => $metadata['record_type'],
@@ -62,6 +98,11 @@ final class AttachmentStorageService
             throw $exception;
         }
 
+    }
+
+    /** @param array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} $metadata */
+    private function publish(Workspace $workspace, array $metadata, ClientAttachment $attachment): ClientAttachment
+    {
         try {
             $disk = $this->disk();
             if (! $disk->move($metadata['staged_object_key'], $metadata['object_key'])) {
@@ -80,7 +121,7 @@ final class AttachmentStorageService
                 'available_at' => $this->clock->now($workspace),
             ])->save();
 
-            return $attachment->fresh();
+            return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
         } catch (Throwable $exception) {
             $this->deleteQuietly($metadata['object_key']);
 
@@ -142,7 +183,7 @@ final class AttachmentStorageService
             'deleted_at' => $this->clock->now($attachment->workspace),
         ])->save();
 
-        return $attachment->fresh();
+        return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
     }
 
     public function assertAvailableObjectMatches(ClientAttachment $attachment): void
@@ -394,6 +435,7 @@ final class AttachmentStorageService
     {
         return match ($record::class) {
             'App\\Models\\ClientCompany' => 'company',
+            'App\\Models\\ClientExpense' => 'expense',
             'App\\Models\\ClientProject' => 'project',
             'App\\Models\\ClientTask' => 'task',
             'App\\Models\\ClientProposal' => 'proposal',

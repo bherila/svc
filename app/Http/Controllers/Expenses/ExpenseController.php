@@ -174,6 +174,7 @@ class ExpenseController extends Controller
                 'can_unapprove' => $isManager && ExpenseStatus::mayTransitionValue($expense->status, ExpenseStatus::Draft),
                 'can_discard' => $isManager && ! ExpenseStatus::hasBeenInvoicedValue($expense->status),
                 'urls' => [
+                    'receipts' => $isManager ? route('svc.expenses.receipts', [$workspace, $clientCompany, $expense->public_id], absolute: false) : null,
                     'update' => route('svc.expenses.update', [$workspace, $expense->public_id], absolute: false),
                     'approve' => route('svc.expenses.approve', [$workspace, $expense->public_id], absolute: false),
                     'unapprove' => route('svc.expenses.unapprove', [$workspace, $expense->public_id], absolute: false),
