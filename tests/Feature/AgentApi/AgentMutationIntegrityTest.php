@@ -3,7 +3,6 @@
 namespace Tests\Feature\AgentApi;
 
 use App\Models\AgentMutationReceipt;
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
@@ -20,7 +19,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Laravel\Passport\Passport;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -149,7 +147,8 @@ final class AgentMutationIntegrityTest extends TestCase
         $this->assertSame([$firstId], $first);
         $this->assertSame([$secondId], $second);
         $this->assertSame(2, $calls);
-        $this->assertDatabaseCount('agent_mutation_receipts', 2);
+        $this->assertDatabaseCount('agent_mutation_receipts', 4);
+        $this->assertSame(2, AgentMutationReceipt::query()->whereIn('workspace_id', [$firstWorkspace->id, $secondWorkspace->id])->where('status', 'completed')->count());
         $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $firstWorkspace->id, 'idempotency_key' => 'shared-key']);
         $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $secondWorkspace->id, 'idempotency_key' => 'shared-key']);
     }
@@ -330,6 +329,6 @@ final class AgentMutationIntegrityTest extends TestCase
     /** @param list<string> $scopes */
     private function actingAsAgent(User $user, array $scopes): void
     {
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($user->id), $scopes);
+        $this->actingAsMcp($user, $scopes);
     }
 }

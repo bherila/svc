@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
@@ -17,7 +16,6 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
-use Laravel\Passport\Passport;
 use Tests\TestCase;
 
 class ProjectAccessTest extends TestCase
@@ -130,7 +128,7 @@ class ProjectAccessTest extends TestCase
             ->where('user_id', $manager->id)
             ->delete();
 
-        Passport::actingAs(AgentPrincipal::query()->findOrFail($manager->id), [
+        $this->actingAsMcp($manager, [
             AgentApiScopes::PROJECTS_READ,
             AgentApiScopes::TASKS_WRITE,
             AgentApiScopes::TIME_WRITE,

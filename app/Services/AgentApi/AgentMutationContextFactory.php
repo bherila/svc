@@ -17,24 +17,19 @@ final class AgentMutationContextFactory
         $key = $request->header('Idempotency-Key');
         abort_unless(is_string($key) && trim($key) !== '' && strlen($key) <= 255, 422, 'An Idempotency-Key header is required.');
         $token = $request->user('api')?->token();
-        $attributes = $token instanceof AccessToken ? $token->toArray() : [];
-        $clientId = $attributes['client_id'] ?? null;
+        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : null;
+        abort_unless(is_string($clientId) && $clientId !== '' && $clientId !== LegacyAgentReceiptNamespace::CLIENT_ID, 401);
 
         return new AgentMutationContext(
             User::query()->findOrFail($principal->id),
-            is_string($clientId) && $clientId !== '' ? $clientId : 'testing-client',
+            $clientId,
             $key,
         );
     }
 
-    /** New surfaces opt in; legacy receipt namespaces remain stable until migrated. */
+    /** Retained for callers introduced before the legacy namespace cutover. */
     public function fromAuthenticatedClient(Request $request): AgentMutationContext
     {
-        $context = $this->from($request);
-        $token = $request->user('api')?->token();
-        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : null;
-        abort_unless(is_string($clientId) && $clientId !== '', 401);
-
-        return new AgentMutationContext($context->user, $clientId, $context->idempotencyKey);
+        return $this->from($request);
     }
 }

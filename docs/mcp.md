@@ -333,3 +333,40 @@ and roles; POST takes the key in `Idempotency-Key`. The separate finance API
 `/invoice-payments` lists reconciliation data and is not this recording endpoint.
 The CLI `svc:billing:payment` already records payments through the same lifecycle
 service. Browser URLs remain the route for initiating a customer payment.
+
+
+## Legacy REST receipt cutover
+
+REST time-entry, task, and invoice writes now derive their idempotency namespace
+from the authenticated `oauth_client_id`, matching MCP. Earlier REST receipts used
+`testing-client`; neither those receipts nor their mutation audits retained the
+real client identity. The migration therefore performs no attribution or backfill.
+Expense and received-payment writes already used authenticated namespaces.
+
+An existing legacy receipt for the actor, workspace, operation, and key returns
+409 without disclosing its result or invoking the mutation, regardless of payload
+or receipt status. Older receipts with a null workspace also refuse that actor's
+operation/key because their tenant provenance is unknown. Receipts in another
+known workspace or for another actor do not interfere. Operators must establish
+whether the original action succeeded before intentionally submitting a new action
+with a fresh key; callers must not automatically replace conflicting keys.
+
+For fresh keys, the executor first inserts a `namespace_guard` receipt under the
+old namespace, then reserves the real client's receipt, executes the mutation,
+and completes the real receipt. All of this commits or rolls back together. A
+guard has a fixed protocol digest, no result IDs, and no completion timestamp;
+all fields are verified before treating an existing row as a guard. Distinct
+clients can share a guard while retaining independent authenticated receipts.
+
+The old and new writers contend on the same unique index. If an old writer wins,
+the new writer refuses its ambiguous receipt. If the new writer wins, the old
+writer encounters a non-completed guard and cannot run its callback or replay a
+result. Duplicate authenticated inserts are isolated in a savepoint, so replaying
+an existing MCP receipt also commits its new compatibility guard. Failed new
+mutations roll back new guards; no effect was committed to protect in that case.
+
+Retain guards and receipts: pruning either requires a separately reviewed retention
+and rollout protocol. This cutover supports coexistence with the immediately prior
+workspace-scoped writer; it does not authorize deploying older code that creates
+null-workspace receipts. No production data or environment flags are changed by
+this migration.
