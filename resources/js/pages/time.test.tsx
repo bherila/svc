@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +60,7 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
         task: null,
         worker: 'Synthetic Manager',
         invoice: null,
+        invoice_terms: null,
         can_edit: true,
         can_approve: true,
         ...overrides,
@@ -174,6 +175,7 @@ function props({
             timezone: 'America/Los_Angeles',
         },
         approval_limit: 50,
+        invoice_draft: null,
         filters: { company_id: 'company-1' },
         companies: [company(canLogTime)],
         months: months ?? [
@@ -698,5 +700,212 @@ describe('the capacity breakdown under hostile data', () => {
         );
 
         expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+});
+
+describe('drafting an invoice from selected time', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    function invoiceProps(): TimeSheetProps {
+        return {
+            ...props({
+                timeEntry: entry({
+                    status: 'approved',
+                    can_approve: false,
+                    can_edit: false,
+                    invoice_terms: {
+                        currency: 'USD',
+                        unit_amount: 12345,
+                        total_amount: 206,
+                    },
+                    minutes: 1,
+                }),
+            }),
+            invoice_draft: { url: '/synthetic/authorized-invoice-draft' },
+        };
+    }
+
+    async function review() {
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole('button', { name: 'Select time to invoice' }),
+        );
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: 'Select Review implementation for invoice',
+            }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Review draft invoice' }),
+        );
+
+        return user;
+    }
+
+    it('does not offer invoice creation without the server action', () => {
+        render(<TimeSheet {...props()} />);
+        expect(
+            screen.queryByRole('button', { name: 'Select time to invoice' }),
+        ).not.toBeInTheDocument();
+    });
+
+    it('previews server-priced approved time and posts only selected IDs to the supplied URL', async () => {
+        const data = invoiceProps();
+        data.months[0].entries.push(
+            entry({ id: 'draft-entry', description: 'Unapproved work' }),
+        );
+        render(<TimeSheet {...data} />);
+        const user = await review();
+        expect(
+            screen.queryByRole('checkbox', {
+                name: 'Select Unapproved work for invoice',
+            }),
+        ).not.toBeInTheDocument();
+        const dialog = screen.getByRole('dialog');
+        expect(
+            within(dialog).getByText('Draft total: $2.06'),
+        ).toBeInTheDocument();
+        await user.type(
+            within(dialog).getByLabelText('Invoice number'),
+            'SYN-SELECTED-1',
+        );
+        await user.click(
+            within(dialog).getByRole('button', {
+                name: 'Create draft invoice',
+            }),
+        );
+        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/synthetic/authorized-invoice-draft',
+            expect.objectContaining({
+                invoice_number: 'SYN-SELECTED-1',
+                currency: 'USD',
+                time_entry_ids: ['entry-1'],
+            }),
+            expect.any(Object),
+        );
+        expect(inertia.post.mock.calls[0][1]).not.toHaveProperty('lines');
+        expect(
+            within(dialog).getByRole('button', { name: 'Creating draft…' }),
+        ).toBeDisabled();
+        await user.click(
+            within(dialog).getByRole('button', { name: 'Creating draft…' }),
+        );
+        expect(inertia.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the review and selection after an allocation race is refused', async () => {
+        render(<TimeSheet {...invoiceProps()} />);
+        const user = await review();
+        await user.type(screen.getByLabelText('Invoice number'), 'SYN-RETRY');
+        await user.click(
+            screen.getByRole('button', { name: 'Create draft invoice' }),
+        );
+        await act(async () => {
+            const options = inertia.post.mock.calls[0][2];
+            options.onError({
+                billing:
+                    'Selected time has already been allocated to an invoice.',
+            });
+            options.onFinish();
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'already been allocated',
+        );
+        expect(screen.getByLabelText('Invoice number')).toHaveValue(
+            'SYN-RETRY',
+        );
+        await user.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(
+            screen.getByRole('checkbox', {
+                name: 'Select Review implementation for invoice',
+            }),
+        ).toBeChecked();
+    });
+
+    it('clears selection and form state only after successful creation', async () => {
+        render(<TimeSheet {...invoiceProps()} />);
+        const user = await review();
+        await user.type(screen.getByLabelText('Invoice number'), 'SYN-FIRST');
+        await user.type(
+            screen.getByLabelText('Notes (optional)'),
+            'First draft notes',
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Create draft invoice' }),
+        );
+        await act(async () => {
+            const options = inertia.post.mock.calls[0][2];
+            options.onSuccess();
+            options.onFinish();
+        });
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await review();
+        expect(screen.getByLabelText('Invoice number')).toHaveValue('');
+        expect(screen.getByLabelText('Notes (optional)')).toHaveValue('');
+    });
+
+    it('refuses mixed currencies without silently converting the preview', async () => {
+        const data = invoiceProps();
+        data.months[0].entries.push(
+            entry({
+                id: 'eur-entry',
+                description: 'Euro work',
+                status: 'approved',
+                can_approve: false,
+                invoice_terms: {
+                    currency: 'EUR',
+                    unit_amount: 10000,
+                    total_amount: 10000,
+                },
+            }),
+        );
+        render(<TimeSheet {...data} />);
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole('button', { name: 'Select time to invoice' }),
+        );
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: 'Select Review implementation for invoice',
+            }),
+        );
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: 'Select Euro work for invoice',
+            }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Review draft invoice' }),
+        );
+        expect(screen.getByRole('alert')).toHaveTextContent('one currency');
+        expect(
+            screen.getByRole('button', { name: 'Create draft invoice' }),
+        ).toBeDisabled();
+        expect(inertia.post).not.toHaveBeenCalled();
+    });
+
+    it('contains oversized descriptions and project names in the review', async () => {
+        const data = invoiceProps();
+        const long = 'SyntheticLongDescription'.repeat(40);
+        data.months[0].entries[0].description = long;
+        data.months[0].entries[0].project.name = 'SyntheticProject'.repeat(40);
+        render(<TimeSheet {...data} />);
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole('button', { name: 'Select time to invoice' }),
+        );
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: `Select ${long} for invoice`,
+            }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Review draft invoice' }),
+        );
+        expect(horizontalOverflowRisks(screen.getByRole('dialog'))).toEqual([]);
+        expect(
+            within(screen.getByRole('dialog')).getByText(long),
+        ).not.toHaveClass('truncate');
     });
 });

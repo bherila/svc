@@ -1,6 +1,7 @@
 import { Head, router } from '@inertiajs/react';
 import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { InvoiceSelectionDialog } from '@/components/time/invoice-selection-dialog';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
 import {
     AlertDialog,
@@ -371,11 +372,16 @@ export default function TimeSheet({
     companies,
     months,
     approval_limit: approvalLimit,
+    invoice_draft: invoiceDraft,
 }: TimeSheetProps) {
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
+    const [selectionMode, setSelectionMode] = useState<'approve' | 'invoice'>(
+        'approve',
+    );
+    const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
     // Approval can fail for a reason the row cannot show - most often a
     // billable entry with no agreement rate to stamp. Without this the row
     // simply stays a draft and the click looks like it did nothing.
@@ -403,7 +409,13 @@ export default function TimeSheet({
         [months],
     );
 
-    const selectedEntries = approvable.filter((entry) =>
+    const selectable =
+        selectionMode === 'invoice' && invoiceDraft !== null
+            ? months
+                  .flatMap((month) => month.entries)
+                  .filter((entry) => entry.invoice_terms !== null)
+            : approvable;
+    const selectedEntries = selectable.filter((entry) =>
         selected.includes(entry.id),
     );
 
@@ -473,64 +485,109 @@ export default function TimeSheet({
     return (
         <WorkspaceShell activeModule="time">
             <Head title="Time" />
+            {invoiceDialogOpen && invoiceDraft !== null && (
+                <InvoiceSelectionDialog
+                    entries={selectedEntries}
+                    url={invoiceDraft.url}
+                    timezone={workspace.timezone}
+                    onClose={() => setInvoiceDialogOpen(false)}
+                    onSuccess={() => {
+                        setInvoiceDialogOpen(false);
+                        setSelected([]);
+                        setSelectionMode('approve');
+                        setNotice(null);
+                    }}
+                />
+            )}
 
-            <div>
-                <div className={cn(SHELL_CONTAINER, 'py-8')}>
-                    <header className="flex flex-wrap items-end justify-between gap-4">
-                        <h1 className="text-3xl font-semibold tracking-tight">
-                            Time
-                        </h1>
+            <main className={cn(SHELL_CONTAINER, 'py-8')}>
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                    <h1 className="text-3xl font-semibold tracking-tight">
+                        Time
+                    </h1>
 
-                        <div className="flex items-center gap-2">
-                            {company?.projects.some(
-                                (project) => project.can_log_time,
-                            ) && (
-                                <Button onClick={() => openDialog(null)}>
-                                    <PlusIcon />
-                                    Log time
-                                </Button>
-                            )}
-                        </div>
-                    </header>
-
-                    {notice !== null && (
-                        <div
-                            role="alert"
-                            className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-                        >
-                            <p>{notice}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {invoiceDraft !== null && (
                             <Button
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => setNotice(null)}
+                                variant="outline"
+                                onClick={() => {
+                                    setSelectionMode((current) =>
+                                        current === 'approve'
+                                            ? 'invoice'
+                                            : 'approve',
+                                    );
+                                    setSelected([]);
+                                }}
                             >
-                                Dismiss
+                                {selectionMode === 'invoice'
+                                    ? 'Done selecting invoice time'
+                                    : 'Select time to invoice'}
                             </Button>
-                        </div>
-                    )}
+                        )}
+                        {company?.projects.some(
+                            (project) => project.can_log_time,
+                        ) && (
+                            <Button onClick={() => openDialog(null)}>
+                                <PlusIcon />
+                                Log time
+                            </Button>
+                        )}
+                    </div>
+                </header>
 
-                    {selectedEntries.length > 0 && (
-                        <div className="mt-6 flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
-                            <p className="text-sm">
-                                {selectedEntries.length} selected ·{' '}
-                                <span className="tabular-nums">
-                                    {formatHours(
-                                        selectedEntries.reduce(
-                                            (total, entry) =>
-                                                total + entry.minutes,
-                                            0,
-                                        ),
-                                    )}
-                                </span>
-                            </p>
-                            <div className="flex gap-2">
+                {notice !== null && (
+                    <div
+                        role="alert"
+                        className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                    >
+                        <p>{notice}</p>
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => setNotice(null)}
+                        >
+                            Dismiss
+                        </Button>
+                    </div>
+                )}
+
+                {selectionMode === 'invoice' && (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                        Select approved, unallocated time to draft an invoice.
+                        Deferred, unpriced and direct-billed time cannot be
+                        selected. Each invoice uses one currency.
+                    </p>
+                )}
+
+                {selectedEntries.length > 0 && (
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+                        <p className="text-sm">
+                            {selectedEntries.length} selected ·{' '}
+                            <span className="tabular-nums">
+                                {formatHours(
+                                    selectedEntries.reduce(
+                                        (total, entry) => total + entry.minutes,
+                                        0,
+                                    ),
+                                )}
+                            </span>
+                        </p>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelected([])}
+                            >
+                                Clear
+                            </Button>
+                            {selectionMode === 'invoice' ? (
                                 <Button
-                                    variant="outline"
                                     size="sm"
-                                    onClick={() => setSelected([])}
+                                    onClick={() => setInvoiceDialogOpen(true)}
                                 >
-                                    Clear
+                                    Review draft invoice
                                 </Button>
+                            ) : (
                                 <Button
                                     size="sm"
                                     disabled={approving}
@@ -548,49 +605,50 @@ export default function TimeSheet({
                                         ? `Approve ${approvalLimit} of ${selectedEntries.length}`
                                         : 'Approve'}
                                 </Button>
-                            </div>
+                            )}
                         </div>
-                    )}
-
-                    {company !== undefined && months.length === 0 && (
-                        <p className="mt-10 text-muted-foreground">
-                            No time logged for {company.name} in the last twelve
-                            months.
-                        </p>
-                    )}
-
-                    <div className="mt-8 grid grid-cols-1 gap-8">
-                        {groupMonths(months).map((group) =>
-                            group.kind === 'quiet' ? (
-                                <QuietMonths
-                                    key={group.key}
-                                    months={group.months}
-                                />
-                            ) : (
-                                <MonthCard
-                                    key={group.month.key}
-                                    month={group.month}
-                                    workspaceId={workspace.id}
-                                    selected={selected}
-                                    onToggle={(id) =>
-                                        setSelected((current) =>
-                                            current.includes(id)
-                                                ? current.filter(
-                                                      (value) => value !== id,
-                                                  )
-                                                : [...current, id],
-                                        )
-                                    }
-                                    onEdit={openDialog}
-                                    onDelete={setPendingDelete}
-                                    onApprove={(entry) => approve([entry])}
-                                    approving={approving}
-                                />
-                            ),
-                        )}
                     </div>
+                )}
+
+                {company !== undefined && months.length === 0 && (
+                    <p className="mt-10 text-muted-foreground">
+                        No time logged for {company.name} in the last twelve
+                        months.
+                    </p>
+                )}
+
+                <div className="mt-8 grid grid-cols-1 gap-8">
+                    {groupMonths(months).map((group) =>
+                        group.kind === 'quiet' ? (
+                            <QuietMonths
+                                key={group.key}
+                                months={group.months}
+                            />
+                        ) : (
+                            <MonthCard
+                                key={group.month.key}
+                                month={group.month}
+                                workspaceId={workspace.id}
+                                selected={selected}
+                                selectionMode={selectionMode}
+                                onToggle={(id) =>
+                                    setSelected((current) =>
+                                        current.includes(id)
+                                            ? current.filter(
+                                                  (value) => value !== id,
+                                              )
+                                            : [...current, id],
+                                    )
+                                }
+                                onEdit={openDialog}
+                                onDelete={setPendingDelete}
+                                onApprove={(entry) => approve([entry])}
+                                approving={approving}
+                            />
+                        ),
+                    )}
                 </div>
-            </div>
+            </main>
 
             {company !== undefined && dialogOpen && (
                 <TimeEntryDialog
@@ -733,6 +791,7 @@ function MonthCard({
     month,
     workspaceId,
     selected,
+    selectionMode,
     onToggle,
     onEdit,
     onDelete,
@@ -742,6 +801,7 @@ function MonthCard({
     month: Month;
     workspaceId: string;
     selected: string[];
+    selectionMode: 'approve' | 'invoice';
     onToggle: (id: string) => void;
     onEdit: (entry: TimeEntry) => void;
     onDelete: (entry: TimeEntry) => void;
@@ -791,7 +851,9 @@ function MonthCard({
                                 return (
                                     <TableRow key={entry.id}>
                                         <TableCell>
-                                            {entry.can_approve && (
+                                            {(selectionMode === 'invoice'
+                                                ? entry.invoice_terms !== null
+                                                : entry.can_approve) && (
                                                 <input
                                                     type="checkbox"
                                                     className="size-4 accent-primary"
@@ -801,7 +863,7 @@ function MonthCard({
                                                     onChange={() =>
                                                         onToggle(entry.id)
                                                     }
-                                                    aria-label={`Select ${entry.description}`}
+                                                    aria-label={`Select ${entry.description}${selectionMode === 'invoice' ? ' for invoice' : ''}`}
                                                 />
                                             )}
                                         </TableCell>
@@ -817,7 +879,7 @@ function MonthCard({
                                          * pushed Hours, State and Actions off
                                          * the screen entirely.
                                          */}
-                                        <TableCell className="max-w-0 whitespace-normal">
+                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                             <p className="font-medium wrap-anywhere">
                                                 {entry.description}
                                             </p>

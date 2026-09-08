@@ -199,7 +199,11 @@ The initial coverage is deliberately bounded:
   open, and with the payment-date correction control open; the operator proposal
   detail page and the eligible sent proposal in the client portal with its
   acceptance form visibly present. Fixtures include unbroken company names, invoice numbers and
-  proposal titles, lengthy descriptions, and a partially paid invoice.
+  proposal titles, lengthy descriptions, and a partially paid invoice. The time sheet is
+  also asserted initially, with approved time selected, and with the invoice review
+  dialog showing both its priced lines and its entry fields. Its fixtures include
+  unbroken descriptions/project names, flat-hourly cost pricing, and ineligible
+  draft/deferred rows that must not become invoice checkboxes.
 - **Measured only:** the legacy operations screen. Its existing narrow-screen
   overflow/header wrapping is reported but does not fail the invoice/proposal
   gate. A green exit does not certify operations or any unlisted page.

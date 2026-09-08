@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
@@ -54,11 +56,31 @@ $proposal->items()->create([
     'quantity' => 2, 'unit_amount' => 5000, 'cadence' => 'one_time', 'sort_order' => 0,
 ]);
 
+$project = ClientProject::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
+]);
+foreach ([
+    ['description' => str_repeat('SyntheticUnbrokenWork', 12), 'status' => 'approved', 'minutes' => 100],
+    ['description' => $description, 'status' => 'approved', 'minutes' => 60,
+        'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 7500, 'subcontractor_cost_currency' => 'USD'],
+    ['description' => 'Synthetic unapproved work', 'status' => 'draft', 'minutes' => 30],
+    ['description' => 'Synthetic deferred work', 'status' => 'approved', 'minutes' => 30, 'is_deferred' => true],
+] as $attributes) {
+    ClientTimeEntry::query()->create($attributes + [
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'client_project_id' => $project->id, 'user_id' => $owner->id,
+        'worked_on' => $date, 'is_billable' => true, 'is_deferred' => false,
+        'billing_rate_amount' => 12345, 'currency' => 'USD',
+    ]);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     'user_id' => $owner->id, 'date' => $date,
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
+    'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
 // Wayfinder runs Artisan from the repository during the asset build. Give it

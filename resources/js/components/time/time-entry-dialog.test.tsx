@@ -45,6 +45,7 @@ const timeEntry: TimeEntry = {
     task: { id: 'task-1', title: 'Existing task' },
     worker: 'Synthetic Manager',
     invoice: null,
+    invoice_terms: null,
     can_edit: true,
     can_approve: true,
 };
