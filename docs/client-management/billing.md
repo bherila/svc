@@ -168,7 +168,7 @@ Generated invoices contain the following line item types (in order):
 
 ### Subcontractor billing
 
-Subcontractors assigned to a project (see [Subcontractors](overview.md#subcontractors)) are billed per their `client_subcontractors.billing_mode`, snapshotted onto each time entry at log time:
+Subcontractor work (see [Subcontractors](overview.md#subcontractors)) is billed by the `subcontractor_billing_mode` snapshotted onto each time entry at log time. There is no assignment table in this schema; the mode on the entry is the whole record:
 
 - **`flat_hourly`** — excluded from the retainer ledger; billed on its own `subcontractor` line at the per-contractor rate (additive, never consumes retainer hours).
 - **`retainer`** — flows through the normal retainer allocation exactly like consultant hours (same rate, carry-forward/back overage).
