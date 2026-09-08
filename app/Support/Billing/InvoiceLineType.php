@@ -5,10 +5,8 @@ namespace App\Support\Billing;
 /**
  * All invoice line types currently produced by the billing system.
  *
- * `ClientInvoiceLine::line_type` is still stored as a string column so
- * third-party integrations don't break; this enum provides a compile-time
- * checked mirror for new code paths (deferred billing, overpayment credits,
- * etc.).
+ * `ClientInvoiceLine::type` is stored as a string column. This enum names
+ * known values and the subsets used by billing calculations.
  */
 enum InvoiceLineType: string
 {
