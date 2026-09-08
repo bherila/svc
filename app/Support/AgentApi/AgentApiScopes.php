@@ -27,6 +27,7 @@ final class AgentApiScopes
     public const string EXPENSES_READ = 'expenses:read';
 
     public const string EXPENSES_WRITE = 'expenses:write';
+
     public const string PAYMENTS_READ = 'payments:read';
 
     public const string PAYMENTS_RECORD = 'payments:record';
