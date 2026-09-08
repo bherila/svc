@@ -140,7 +140,7 @@ final class PortalInvoiceDetailTest extends TestCase
 
         $this->actingAs(User::factory()->create())
             ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     /**
@@ -221,11 +221,11 @@ final class PortalInvoiceDetailTest extends TestCase
 
         $this->actingAs($member)
             ->get("/portal/{$this->company->public_id}")
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->actingAs($member)
             ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
-            ->assertForbidden();
+            ->assertNotFound();
 
         $admin = User::factory()->create();
         $this->workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
@@ -316,7 +316,7 @@ final class PortalInvoiceDetailTest extends TestCase
                 "/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/stripe-payment-intent",
                 ['idempotency_key' => 'synthetic-outsider'],
             )
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     /**

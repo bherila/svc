@@ -140,7 +140,7 @@ class ClientPortalOperationsTest extends TestCase
                 ->has('tasks', 1));
 
         $this->actingAs($admin)->get("/portal/{$company->public_id}")->assertOk();
-        $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertForbidden();
+        $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertNotFound();
     }
 
     public function test_visible_sent_proposal_acceptance_is_idempotent_for_a_client_user(): void
