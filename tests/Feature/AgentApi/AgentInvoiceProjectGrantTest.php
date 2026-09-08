@@ -3,6 +3,7 @@
 namespace Tests\Feature\AgentApi;
 
 use App\Models\AgentPrincipal;
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -122,6 +123,60 @@ final class AgentInvoiceProjectGrantTest extends TestCase
         $queries = [];
         $this->assertCount(1, app(PortalInvoiceQuery::class)->visibleTo($company, $viewer)->get());
         $this->assertCount(1, $queries);
+    }
+
+    public function test_agreement_and_line_projects_both_determine_whole_invoice_visibility(): void
+    {
+        [$workspace, $company, $viewer, , $grantedProject, $fixtures] = $this->fixtures();
+        $ungrantedProject = ClientProject::query()->where('workspace_id', $workspace->id)->whereKeyNot($grantedProject->id)->firstOrFail();
+        $agreements = [];
+        foreach (['granted' => $grantedProject, 'ungranted' => $ungrantedProject] as $name => $project) {
+            $agreements[$name] = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'title' => 'Synthetic '.$name.' agreement', 'starts_on' => '2026-01-01', 'status' => 'active', 'currency' => 'USD']);
+        }
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic wrong company', 'slug' => 'synthetic-wrong-company']);
+        $agreements['wrong-company'] = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $otherCompany->id, 'title' => 'Synthetic malformed attribution', 'starts_on' => '2026-01-01', 'currency' => 'USD']);
+        $cases = [
+            'agreement-only' => ['granted', null, true],
+            'both-granted' => ['granted', $grantedProject, true],
+            'ungranted-agreement' => ['ungranted', $grantedProject, false],
+            'ungranted-line' => ['granted', $ungrantedProject, false],
+            'wrong-company-agreement' => ['wrong-company', $grantedProject, false],
+        ];
+        Passport::actingAs(AgentPrincipal::query()->findOrFail($viewer->id), ['billing:read']);
+        $base = '/api/v1/workspaces/'.$workspace->public_id.'/invoices';
+        $expectedIds = [$fixtures['granted']->public_id];
+        $created = [];
+        foreach ($cases as $name => [$agreement, $lineProject, $allowed]) {
+            $invoice = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreements[$agreement]->id, 'invoice_number' => 'SYN-'.$name, 'status' => 'issued', 'currency' => 'USD', 'subtotal_amount' => 10000, 'tax_amount' => 0, 'total_amount' => 10000, 'balance_amount' => 10000, 'is_visible_to_client' => true]);
+            // Cadence retainer lines commonly carry their project only through
+            // the parent agreement, so even the agreement-only case has a line.
+            ClientInvoiceLine::query()->create(['workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'client_project_id' => $lineProject?->id, 'type' => 'retainer', 'description' => 'Synthetic '.$name.' retainer', 'quantity' => '1', 'unit_amount' => 10000, 'total_amount' => 10000, 'tax_amount' => 0, 'sort_order' => 0]);
+            $created[] = [$invoice, $allowed];
+            $this->assertSame($allowed, app(PortalInvoiceQuery::class)->visibleTo($company, $viewer)->whereKey($invoice->id)->exists(), $name);
+            $this->assertSame($allowed, app(AgentAccess::class)->canViewInvoice($viewer, $invoice), $name);
+            $this->getJson($base.'/'.$invoice->public_id)->assertStatus($allowed ? 200 : 404);
+            if ($allowed) {
+                $expectedIds[] = $invoice->public_id;
+            }
+        }
+        $this->assertSame($expectedIds, array_column($this->getJson($base)->assertOk()->json('data'), 'id'));
+        $this->assertSame(30000, app(AgentReadService::class)->summary($viewer, $workspace, fn (string $scope): bool => $scope === 'billing:read')['invoices']['collectible_balances'][0]['amount']);
+        $this->actingAsMcp($viewer, ['mcp:use', 'billing:read', 'identity:read']);
+        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic agreement audit', 'version' => '1']]])->assertOk();
+        $headers = ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $initialized->headers->get('Mcp-Session-Id')];
+        $call = fn (string $name, array $arguments) => $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $arguments]], $headers)->assertOk();
+        $this->assertSame($expectedIds, array_column($call('invoices.list', ['workspace_id' => $workspace->public_id])->json('result.structuredContent.data'), 'id'));
+        foreach ($created as [$invoice, $allowed]) {
+            $response = $call('invoices.get', ['workspace_id' => $workspace->public_id, 'invoice_id' => $invoice->public_id]);
+            if ($allowed) {
+                $response->assertJsonPath('result.structuredContent.data.id', $invoice->public_id);
+            } else {
+                $this->assertNotNull($response->json('error'));
+                $this->assertNull($response->json('result.structuredContent'));
+            }
+        }
+        $call('operations.summary', ['workspace_id' => $workspace->public_id])->assertJsonPath('result.structuredContent.data.invoices.collectible_balances.0.amount', 30000);
+
     }
 
     /** @return array{Workspace, ClientCompany, User, ClientCompanyMembership, ClientProject, array<string, ClientInvoice>} */

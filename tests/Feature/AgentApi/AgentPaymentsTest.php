@@ -310,6 +310,8 @@ final class AgentPaymentsTest extends TestCase
             $this->assertStringContainsString('client_projects.client_company_id = client_invoices.client_company_id', $sql);
             $this->assertStringContainsString('client_portal_project_access.workspace_id = client_invoices.workspace_id', $sql);
             $this->assertStringContainsString('client_company_memberships.workspace_id = client_invoices.workspace_id', $sql);
+            $this->assertStringContainsString('client_agreements.workspace_id = client_invoices.workspace_id', $sql);
+            $this->assertStringContainsString('client_agreements.client_company_id = client_invoices.client_company_id', $sql);
         }
         $invoiceQueries = array_values(array_filter($statements, fn (string $sql): bool => str_contains($sql, 'from client_invoice_payments')));
         $this->assertNotEmpty($invoiceQueries);

@@ -62,12 +62,37 @@ final class PortalInvoiceQuery
                     // explicit projects scope narrows a company membership.
                     ->where('client_company_memberships.access_scope', '!=', ClientCompanyMembership::SCOPE_PROJECTS)
                     ->orWhereNull('client_company_memberships.access_scope')
-                    ->orWhere(fn (QueryBuilder $projects): QueryBuilder => $projects
-                        ->where('client_company_memberships.access_scope', ClientCompanyMembership::SCOPE_PROJECTS)
-                        ->whereExists(fn (QueryBuilder $line): QueryBuilder => $this->projectLines($line)
-                            ->whereExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant)))
-                        ->whereNotExists(fn (QueryBuilder $line): QueryBuilder => $this->projectLines($line)
-                            ->whereNotExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant)))))));
+                    ->orWhere(fn (QueryBuilder $projects): QueryBuilder => $this->projectMembership($projects)))));
+    }
+
+    /** Agreement and line attribution form one indivisible invoice. */
+    private function projectMembership(QueryBuilder $projects): QueryBuilder
+    {
+        return $projects->where('client_company_memberships.access_scope', ClientCompanyMembership::SCOPE_PROJECTS)
+            // A missing or foreign agreement is not an agreement with no
+            // project: its attribution cannot be established, so refuse it.
+            ->where(fn (QueryBuilder $reference): QueryBuilder => $reference
+                ->whereNull('client_invoices.client_agreement_id')
+                ->orWhereExists(fn (QueryBuilder $agreement): QueryBuilder => $this->agreement($agreement)))
+            ->where(fn (QueryBuilder $attributed): QueryBuilder => $attributed
+                ->whereExists(fn (QueryBuilder $line): QueryBuilder => $this->projectLines($line)
+                    ->whereExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant, 'client_invoice_lines.client_project_id')))
+                ->orWhereExists(fn (QueryBuilder $agreement): QueryBuilder => $this->agreement($agreement)
+                    ->whereNotNull('client_agreements.client_project_id')
+                    ->whereExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant, 'client_agreements.client_project_id'))))
+            ->whereNotExists(fn (QueryBuilder $line): QueryBuilder => $this->projectLines($line)
+                ->whereNotExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant, 'client_invoice_lines.client_project_id')))
+            ->whereNotExists(fn (QueryBuilder $agreement): QueryBuilder => $this->agreement($agreement)
+                ->whereNotNull('client_agreements.client_project_id')
+                ->whereNotExists(fn (QueryBuilder $grant): QueryBuilder => $this->projectGrant($grant, 'client_agreements.client_project_id')));
+    }
+
+    private function agreement(QueryBuilder $agreement): QueryBuilder
+    {
+        return $agreement->select(DB::raw('1'))->from('client_agreements')
+            ->whereColumn('client_agreements.id', 'client_invoices.client_agreement_id')
+            ->whereColumn('client_agreements.workspace_id', 'client_invoices.workspace_id')
+            ->whereColumn('client_agreements.client_company_id', 'client_invoices.client_company_id');
     }
 
     /** An invoice needs lineage, and every named project must be granted. */
@@ -79,12 +104,12 @@ final class PortalInvoiceQuery
             ->whereNotNull('client_invoice_lines.client_project_id');
     }
 
-    private function projectGrant(QueryBuilder $grant): QueryBuilder
+    private function projectGrant(QueryBuilder $grant, string $projectColumn): QueryBuilder
     {
         return $grant->select(DB::raw('1'))->from('client_portal_project_access')
             ->whereColumn('client_portal_project_access.workspace_id', 'client_invoices.workspace_id')
             ->whereColumn('client_portal_project_access.client_company_membership_id', 'client_company_memberships.id')
-            ->whereColumn('client_portal_project_access.client_project_id', 'client_invoice_lines.client_project_id')
+            ->whereColumn('client_portal_project_access.client_project_id', $projectColumn)
             ->whereExists(fn (QueryBuilder $project): QueryBuilder => $project
                 ->select(DB::raw('1'))->from('client_projects')
                 ->whereColumn('client_projects.id', 'client_portal_project_access.client_project_id')
