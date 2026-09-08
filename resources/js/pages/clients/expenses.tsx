@@ -66,6 +66,7 @@ function badgeOf(status: string): {
  * again and which the row records.
  */
 export default function ClientExpenses({
+    schedule_url,
     company,
     permissions,
     urls,
@@ -128,6 +129,11 @@ export default function ClientExpenses({
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle>Expenses</CardTitle>
+                            {schedule_url && (
+                                <a className="underline" href={schedule_url}>
+                                    Recurring expenses
+                                </a>
+                            )}
                             {permissions.record && (
                                 <Button size="sm" onClick={() => open(null)}>
                                     <PlusIcon className="size-4" />

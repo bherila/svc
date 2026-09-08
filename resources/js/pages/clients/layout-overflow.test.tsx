@@ -1,6 +1,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import ExpenseSchedules from '@/pages/clients/expense-schedules';
 import ClientHome from '@/pages/clients/home';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
 import ClientInvoices from '@/pages/clients/invoices';
@@ -365,5 +366,54 @@ describe('client screens under data that does not fit', () => {
         expect(navbar).not.toBeNull();
         expect(navbar?.textContent).toContain(LONG_NAME);
         expect(horizontalOverflowRisks(navbar as HTMLElement)).toEqual([]);
+    });
+});
+
+describe('recurring expense layout', () => {
+    it('contains hostile company, project and description fixtures in list, edit and create states', () => {
+        const description = 'SyntheticRecurringExpenseDescription'.repeat(8);
+        const project = 'SyntheticProjectWithoutBreaks'.repeat(8);
+        const { container, getByRole, getByLabelText } = render(
+            <ExpenseSchedules
+                company={{ name: LONG_NAME.repeat(4) }}
+                today="2028-03-31"
+                currency="USD"
+                urls={{ store: '/synthetic/schedules' }}
+                pagination={{ next: null, previous: null }}
+                projects={[{ value: 'synthetic-project', label: project }]}
+                cadences={[{ value: 'monthly', label: 'Monthly' }]}
+                schedules={[
+                    {
+                        id: 'synthetic-schedule',
+                        description,
+                        amount: 1200,
+                        currency: 'USD',
+                        project_id: 'synthetic-project',
+                        starts_on: '2028-01-31',
+                        cadence: 'monthly',
+                        active: true,
+                        status_label: 'Active',
+                        next_on: '2028-03-31',
+                        pending: true,
+                        update_url: '/synthetic/schedules/update',
+                        generate_url: '/synthetic/schedules/generate',
+                    },
+                ]}
+            />,
+        );
+        expect(getByRole('heading', { name: description })).toBeVisible();
+        expect(getByRole('main').querySelectorAll('a')).toHaveLength(0);
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+
+        fireEvent.click(getByRole('button', { name: 'Edit schedule' }));
+        expect(getByLabelText('Description')).toHaveValue(description);
+        expect(getByRole('option', { name: project })).toBeInTheDocument();
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+
+        fireEvent.click(getByRole('button', { name: 'Cancel' }));
+        fireEvent.click(getByRole('button', { name: 'New schedule' }));
+        expect(getByRole('option', { name: project })).toBeInTheDocument();
+        expect(getByLabelText('First occurrence')).toBeVisible();
+        expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 });

@@ -253,6 +253,7 @@ try {
             'operations',
             'time',
             'expenses',
+            'expense_schedules',
         ]) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
@@ -286,6 +287,15 @@ try {
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
+
+            if (screen === 'expense_schedules') {
+                await page.getByRole('button', { name: 'Edit schedule', exact: true }).click();
+                await capture(screen, 'edit', width);
+                await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+                await page.getByRole('button', { name: 'New schedule', exact: true }).click();
+                await page.getByLabel('Description', { exact: true }).fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
+                await capture(screen, 'create', width);
+            }
 
             if (screen === 'expenses') {
                 await expect(
