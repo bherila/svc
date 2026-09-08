@@ -13,6 +13,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\PortalAccess;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -40,6 +41,7 @@ final class AgentReadService
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
         private readonly PortalAccess $portalAccess,
+        private readonly PortalInvoiceQuery $portalInvoices,
         private readonly AgentTimeEntryQuery $timeQueries,
         private readonly AgentCapabilities $capabilities,
         private readonly AgentProjectPresenter $projectPresenter,
@@ -324,9 +326,7 @@ final class AgentReadService
             return $query;
         }
 
-        return $query->where('is_visible_to_client', true)
-            ->whereIn('status', ['issued', 'partially_paid', 'paid'])
-            ->whereHas('clientCompany.portalUsers', fn (Builder $members) => $members->whereKey($user->id));
+        return $this->portalInvoices->visibleInWorkspace($workspace, $user);
     }
 
     /**
