@@ -13,6 +13,8 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementBillingRateResolver;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
+use App\Services\Engagement\EngagementException;
+use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
@@ -21,6 +23,7 @@ use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class TimeEntryMutationService
 {
@@ -28,31 +31,44 @@ final class TimeEntryMutationService
         private readonly ProjectAccess $access,
         private readonly AgreementBillingRateResolver $rates,
         private readonly DraftInvoiceTimeRegenerator $draftInvoices,
+        private readonly TimeEntryWorkflow $creation,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
     /** @param array<string, mixed> $data */
     public function create(Workspace $workspace, ClientProject $project, User $actor, array $data): ClientTimeEntry
     {
+        abort_unless($project->workspace_id === $workspace->id, 404);
         abort_unless($this->access->canView($actor, $project), 404);
         abort_unless($this->access->canLogTime($actor, $project), 403);
-        $this->assertClientDescription($data['is_visible_to_client'] ?? false, $data['client_visible_description'] ?? null);
+        // Logging work and pricing it are different decisions. A contributor
+        // may record what they did; naming the rate it bills at is a
+        // commercial term, and an explicit rate here is recorded as
+        // `billing_rate_source => 'explicit'`, which outranks the rate the
+        // agreement would have resolved. Restricted to whoever could approve
+        // the entry afterwards, since that is the same judgement made earlier.
+        //
+        // A field error rather than a 403: the request is a legitimate one from
+        // someone entitled to make it, with one field they may not set, and a
+        // bare refusal would read as "you cannot log time here" - the very
+        // confusion this endpoint just stopped causing.
+        if (array_key_exists('billing_rate_amount', $data)
+            && $data['billing_rate_amount'] !== null
+            && ! $this->access->canApproveTime($actor, $project)) {
+            throw ValidationException::withMessages([
+                'billing_rate_amount' => 'Only a project manager can set the rate time bills at. Log the time and leave the rate to be resolved from the agreement.',
+            ]);
+        }
         $task = null;
         if (is_string($data['task_id'] ?? null)) {
             $task = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $data['task_id'])->firstOrFail();
-            abort_unless($task->client_project_id === $project->id, 422, 'The task must belong to the selected project.');
         }
 
-        return ClientTimeEntry::query()->create([
-            'workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id,
-            'client_project_id' => $project->id, 'client_task_id' => $task?->id, 'user_id' => $actor->id,
-            'worked_on' => $data['worked_on'], 'minutes' => $data['minutes'], 'description' => $data['description'],
-            'client_visible_description' => $data['client_visible_description'] ?? null,
-            'is_visible_to_client' => $data['is_visible_to_client'] ?? false,
-            'is_billable' => $data['is_billable'] ?? true, 'is_deferred' => $data['is_deferred'] ?? false,
-            'currency' => isset($data['currency']) ? strtoupper((string) $data['currency']) : $workspace->default_currency,
-            'status' => 'draft',
-        ]);
+        try {
+            return $this->creation->create($workspace, $project, $actor, $data, $task);
+        } catch (EngagementException $exception) {
+            throw new DomainException($exception->getMessage(), previous: $exception);
+        }
     }
 
     /** @param array<string, mixed> $data */

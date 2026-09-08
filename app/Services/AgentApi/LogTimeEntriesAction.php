@@ -37,7 +37,7 @@ final class LogTimeEntriesAction
             function () use ($workspace, $user, $payload): array {
                 $data = Validator::make($payload, [
                     'entries' => ['required', 'array', 'min:1', 'max:20'],
-                    'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,currency'],
+                    'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,billing_rate_amount,currency'],
                     'entries.*.project_id' => ['required', 'uuid'],
                     'entries.*.task_id' => ['nullable', 'uuid'],
                     'entries.*.worked_on' => ['required', 'date_format:Y-m-d'],
@@ -47,6 +47,7 @@ final class LogTimeEntriesAction
                     'entries.*.is_deferred' => ['sometimes', 'boolean'],
                     'entries.*.is_visible_to_client' => ['sometimes', 'boolean'],
                     'entries.*.client_visible_description' => ['nullable', 'string', 'max:10000'],
+                    'entries.*.billing_rate_amount' => ['nullable', 'integer', 'min:0'],
                     'entries.*.currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
                 ])->validate();
                 $ids = [];
