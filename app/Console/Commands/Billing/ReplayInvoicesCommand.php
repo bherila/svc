@@ -4,6 +4,7 @@ namespace App\Console\Commands\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
@@ -11,7 +12,6 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
-use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
 use App\Services\Billing\ReplayHistoryBasis;
@@ -955,7 +955,7 @@ final class ReplayInvoicesCommand extends Command
     }
 
     /**
-     * Strip every invoice back to an empty draft and release its time.
+     * Reset invoices to drafts and release time, retaining observed expense claims.
      *
      * Deliberately not a delete. Deleting cascades to
      * `client_invoice_payments`, and those payments are what
@@ -1003,6 +1003,26 @@ final class ReplayInvoicesCommand extends Command
             ->whereIn('client_invoice_id', $invoiceIds)
             ->pluck('id');
 
+        // Observed expense claims encode historical placement. Releasing them
+        // all now lets current approval state move a carried expense into an
+        // earlier invoice. Keep each claim until its own draft regenerates.
+        $claims = ClientExpense::withTrashed()->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->with(['invoiceLine' => fn ($query) => $query->where('workspace_id', $workspaceId)
+                ->with(['invoice' => fn ($invoices) => $invoices->where('workspace_id', $workspaceId)])])->get();
+        foreach ($claims as $claim) {
+            $line = $claim->invoiceLine;
+            $invoice = $line?->invoice;
+            if ($claim->status !== 'invoiced' || $claim->trashed() || $line?->type !== InvoiceLineType::Expense->value
+                || ! $invoice instanceof ClientInvoice || $invoice->client_company_id !== $claim->client_company_id) {
+                throw new RuntimeException('An expense has an inconsistent historical invoice claim; replay cannot infer its placement.');
+            }
+            if (in_array($invoice->id, $this->supersededIds, true)) {
+                throw new RuntimeException('A superseded invoice carries an expense claim; reconcile its historical placement before replay.');
+            }
+        }
+        $retainedExpenseLineIds = $claims->pluck('client_invoice_line_id');
+
         $entryIds = DB::table('client_invoice_line_time_entries')
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
@@ -1026,14 +1046,10 @@ final class ReplayInvoicesCommand extends Command
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->update(['client_invoice_line_id' => null]);
-        // Replay remains rollback-only, but line deletion still must release
-        // expense claims explicitly rather than discard their invoice linkage.
-        foreach (ClientInvoice::query()->where('workspace_id', $workspaceId)->whereKey($invoiceIds)->orderBy('id')->get() as $invoice) {
-            app(ExpenseInvoiceAllocations::class)->release($invoice);
-        }
         DB::table('client_invoice_lines')
             ->where('workspace_id', $workspaceId)
             ->whereIn('id', $lineIds)
+            ->whereNotIn('id', $retainedExpenseLineIds)
             ->delete();
 
         // Superseded attempts go entirely, not just blank. Leaving them meant a
