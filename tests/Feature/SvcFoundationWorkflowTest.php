@@ -159,7 +159,7 @@ class SvcFoundationWorkflowTest extends TestCase
                 ->has('tasks', 1)
                 ->where('tasks.0.title', 'Visible Task'));
 
-        $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertForbidden();
+        $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertNotFound();
     }
 
     private function workspaceOwnedBy(User $owner, string $name = 'Synthetic Workspace'): Workspace
