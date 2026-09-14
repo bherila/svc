@@ -28,6 +28,8 @@ Route::middleware(['web', 'auth'])->group(function (): void {
         ->name('svc.engagement.time-entries.destroy');
     Route::post('/workspaces/{workspace}/time-entries/approve', [TimeEntryController::class, 'approve'])
         ->name('svc.engagement.time-entries.approve');
+    Route::post('/workspaces/{workspace}/time-entries/{timeEntry}/unapprove', [TimeEntryController::class, 'unapprove'])
+        ->name('svc.engagement.time-entries.unapprove');
 
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/proposals', [ProposalController::class, 'store'])
         ->name('svc.engagement.proposals.store');

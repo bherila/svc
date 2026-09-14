@@ -401,6 +401,191 @@ class TimeSheetTest extends TestCase
         $this->assertSame('agreement', $first->fresh()?->billing_rate_source);
     }
 
+    public function test_an_admin_can_return_approved_time_to_draft(): void
+    {
+        $entry = $this->entry([
+            'status' => 'approved',
+            'approved_by_user_id' => $this->manager->id,
+            'approved_at' => '2026-07-05 12:00:00',
+            'billing_rate_amount' => 15000,
+            'billing_rate_source' => 'agreement',
+            'currency' => 'USD',
+        ]);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $fresh = $entry->fresh();
+        $this->assertSame('draft', $fresh?->status);
+        $this->assertNull($fresh?->approved_by_user_id);
+        $this->assertNull($fresh?->approved_at);
+        // Resolved at approval, so resolved again at the next one; a draft
+        // carrying it would look priced when nothing has priced it.
+        $this->assertNull($fresh?->billing_rate_amount);
+        $this->assertNull($fresh?->billing_rate_source);
+        $this->assertSame('USD', $fresh?->currency);
+    }
+
+    public function test_withdrawing_an_approval_keeps_a_rate_the_operator_stated(): void
+    {
+        $entry = $this->entry([
+            'status' => 'approved',
+            'billing_rate_amount' => 9900,
+            'billing_rate_source' => 'explicit',
+            'currency' => 'USD',
+        ]);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertSame(9900, $entry->fresh()?->billing_rate_amount);
+        $this->assertSame('explicit', $entry->fresh()?->billing_rate_source);
+    }
+
+    /**
+     * A project manager approves their team's time; taking an approval back is
+     * the workspace's call. Neither the control nor the endpoint is theirs.
+     */
+    public function test_only_a_workspace_owner_or_admin_may_withdraw_an_approval(): void
+    {
+        $projectManager = $this->memberWithProjectRole(ProjectRole::Manager);
+        $entry = $this->entry(['status' => 'approved', 'user_id' => $projectManager->id]);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($projectManager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.entries.0.status', 'approved')
+                ->where('months.0.entries.0.unapprove_url', null));
+
+        $this->actingAs($projectManager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+    }
+
+    public function test_the_sheet_offers_withdrawal_only_where_nothing_has_been_charged(): void
+    {
+        $unbilled = $this->entry(['worked_on' => '2026-07-06', 'status' => 'approved']);
+        $onDraft = $this->entry(['worked_on' => '2026-07-05', 'status' => 'approved']);
+        $onIssued = $this->entry(['worked_on' => '2026-07-04', 'status' => 'invoiced']);
+        $this->entry(['worked_on' => '2026-07-03']);
+        $this->attachToInvoice($onDraft, 'draft');
+        $this->attachToInvoice($onIssued, 'issued');
+
+        $this->travelTo('2026-07-20');
+
+        $base = "/workspaces/{$this->workspace->public_id}/time-entries";
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.entries.0.unapprove_url', "{$base}/{$unbilled->public_id}/unapprove")
+                ->where('months.0.entries.1.unapprove_url', "{$base}/{$onDraft->public_id}/unapprove")
+                ->where('months.0.entries.2.unapprove_url', null)
+                ->where('months.0.entries.3.status', 'draft')
+                ->where('months.0.entries.3.unapprove_url', null));
+    }
+
+    /**
+     * A legacy link to another client's draft invoice passes every status
+     * check, but the mutation service refuses the company mismatch first. The
+     * sheet must not offer an edit or a withdrawal that can only fail.
+     */
+    public function test_a_draft_invoice_of_another_client_offers_neither_edit_nor_withdrawal(): void
+    {
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Second Client',
+            'slug' => 'second-client',
+        ]);
+        $entry = $this->entry(['status' => 'approved']);
+        $this->attachToInvoice($entry, 'draft', $otherCompany);
+
+        $this->travelTo('2026-07-20');
+
+        $this->actingAs($this->manager)
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('months.0.entries.0.id', $entry->public_id)
+                ->where('months.0.entries.0.can_edit', false)
+                ->where('months.0.entries.0.unapprove_url', null));
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertSessionHasErrors(['engagement' => 'The time entry invoice allocation has an inconsistent client company.']);
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+    }
+
+    public function test_billed_time_cannot_be_returned_to_draft(): void
+    {
+        $entry = $this->entry(['status' => 'invoiced', 'billing_rate_amount' => 15000, 'billing_rate_source' => 'agreement']);
+        $this->attachToInvoice($entry, 'paid');
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertSessionHasErrors(['engagement' => 'This time has been billed. Void its invoice to change the approval.']);
+
+        $this->assertSame('invoiced', $entry->fresh()?->status);
+        $this->assertSame(15000, $entry->fresh()?->billing_rate_amount);
+    }
+
+    public function test_a_stale_version_does_not_withdraw_an_approval(): void
+    {
+        $entry = $this->entry(['status' => 'approved']);
+        $stale = AgentApiVersion::for($entry);
+        $entry->forceFill(['description' => 'Edited since', 'lock_version' => $entry->lock_version + 1])->save();
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => $stale,
+            ])
+            ->assertSessionHasErrors('engagement');
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+    }
+
+    /** The approval test's cross-tenant chain, asked of the reverse move. */
+    public function test_withdrawal_cannot_borrow_a_role_from_another_workspaces_project(): void
+    {
+        $foreign = $this->foreignWorkspace();
+        $outsider = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $outsider->id, 'role' => 'member']);
+        $foreign['workspace']->memberships()->create(['user_id' => $outsider->id, 'role' => 'admin']);
+
+        $entry = $this->writingLegacyCrossTenantRows(
+            fn () => $this->entry(['client_project_id' => $foreign['project']->id, 'status' => 'approved']),
+        );
+
+        $this->actingAs($outsider)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+                'expected_version' => AgentApiVersion::for($entry),
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+    }
+
     /**
      * A rate override is two halves of one statement. Accepting the amount
      * without the currency would bill a number in whatever currency happened to
@@ -3109,11 +3294,11 @@ class TimeSheetTest extends TestCase
         ]);
     }
 
-    private function attachToInvoice(ClientTimeEntry $entry, string $status): ClientInvoice
+    private function attachToInvoice(ClientTimeEntry $entry, string $status, ?ClientCompany $company = null): ClientInvoice
     {
         $invoice = ClientInvoice::query()->create([
             'workspace_id' => $this->workspace->id,
-            'client_company_id' => $this->company->id,
+            'client_company_id' => ($company ?? $this->company)->id,
             'invoice_number' => 'SYN-'.$status.'-'.$entry->id,
             'status' => $status,
             'invoice_kind' => 'ad_hoc',
