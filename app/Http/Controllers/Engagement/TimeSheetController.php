@@ -316,7 +316,7 @@ class TimeSheetController extends Controller
      * the row can still be edited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<int, array{id: string, number: string|null, status: string, regenerable: bool}>
+     * @return array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>
      */
     private function invoicesByEntry(Workspace $workspace, EloquentCollection $entries): array
     {
@@ -345,6 +345,7 @@ class TimeSheetController extends Controller
                 'client_invoices.public_id as invoice_id',
                 'client_invoices.invoice_number as invoice_number',
                 'client_invoices.status as invoice_status',
+                'client_invoices.client_company_id as invoice_company_id',
                 'client_invoices.invoice_kind as invoice_kind',
                 'client_invoices.client_agreement_id as agreement_id',
                 'client_agreements.id as resolved_agreement_id',
@@ -387,6 +388,7 @@ class TimeSheetController extends Controller
                     ? null
                     : (string) $link->getAttribute('invoice_number'),
                 'status' => (string) $link->getAttribute('invoice_status'),
+                'company_id' => (int) $link->getAttribute('invoice_company_id'),
                 'regenerable' => $regenerable,
             ];
         }
@@ -683,7 +685,7 @@ class TimeSheetController extends Controller
 
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>  $invoicesByEntry
      * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, spent_earlier_in_cycle_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float|null, billed_hours: float|null, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
@@ -737,7 +739,7 @@ class TimeSheetController extends Controller
     }
 
     /**
-     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>  $invoicesByEntry
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return array<string, mixed>
      */
@@ -764,9 +766,12 @@ class TimeSheetController extends Controller
         // charged anyone yet. Its mutation path now regenerates the invoice in
         // the same transaction, so both a legacy draft-status allocation and
         // the approved time produced by the real generator remain editable.
-        // Anything that has left draft still freezes the entry.
+        // Anything that has left draft still freezes the entry, and so does a
+        // legacy link to another client's invoice, which every mutation path
+        // refuses before it looks at the status.
         $isDraftInvoice = $invoice !== null
             && $invoice['status'] === 'draft'
+            && $invoice['company_id'] === $entry->client_company_id
             && $invoice['regenerable'];
         $editableStatus = $entry->status === 'draft'
             || ($entry->status === 'approved' && $isDraftInvoice);
