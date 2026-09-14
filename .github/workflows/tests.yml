@@ -408,6 +408,22 @@ jobs:
              test \"\$brevo_exit\" -eq 0 -o \"\$brevo_exit\" -eq 1; \
              printf '%s\\n' \"\$brevo_status\""
 
+      # The account crontab is shared with every other application on this account. The script
+      # replaces only this application's lines (its header says how they are recognised), so a
+      # hand-installed or outdated line cannot run beside the deploy-managed one, and a new account
+      # gets its cron on the first deploy. Its harness runs first, so a regression in the script
+      # fails here instead of rewriting the crontab.
+      - name: Install and verify this application's cron lines
+        run: |
+          bash scripts/deploy/test-install-cron.sh
+          # shellcheck disable=SC2016 # $HOME is for cron to expand on the host, not this shell.
+          lines=(
+            '* * * * * cd "$HOME/svc-laravel" && /opt/cpanel/ea-php85/root/usr/bin/php -d memory_limit=1G artisan schedule:run > /dev/null 2>&1 # JOB:svc-laravel-scheduler'
+          )
+          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes \
+            "${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}" \
+            "bash -s -- $(printf '%q ' svc-laravel "${lines[@]}")" < scripts/deploy/install-cron.sh
+
       - name: Verify public health and OAuth redirect
         run: |
           curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 20 \
@@ -419,6 +435,14 @@ jobs:
             https://id.bherila.net/oauth/authorize?*) ;;
             *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
           esac
+
+      # The web handler's limits cannot be read from the CLI, and LiteSpeed silently ignores
+      # .user.ini, so ask the running site. Fails the deploy when the vhost runs another PHP
+      # version or a memory_limit below the php_value that public/.htaccess sets.
+      - name: Verify the web handler's PHP version and memory limit
+        run: |
+          bash scripts/deploy/verify-web-php.sh "${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}" \
+            svc-laravel https://svc.bherila.net 8.5 1024M -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes
 
   # The pre-merge smoke proves the code works; it runs against `artisan serve` on
   # a runner, with the runner's configuration, so it cannot see a production-only
