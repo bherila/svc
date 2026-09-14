@@ -48,6 +48,7 @@ const timeEntry: TimeEntry = {
     invoice_terms: null,
     can_edit: true,
     can_approve: true,
+    unapprove_url: null,
 };
 
 describe('time entry dialog', () => {

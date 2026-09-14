@@ -63,6 +63,7 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
         invoice_terms: null,
         can_edit: true,
         can_approve: true,
+        unapprove_url: null,
         ...overrides,
     };
 }
@@ -308,6 +309,46 @@ describe('time sheet controls', () => {
         await user.click(approve);
 
         expect(inertia.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('withdraws an approval at the URL the server sent, once', async () => {
+        const user = userEvent.setup();
+        render(
+            <TimeSheet
+                {...props({
+                    timeEntry: entry({
+                        status: 'approved',
+                        can_edit: false,
+                        can_approve: false,
+                        unapprove_url:
+                            '/workspaces/workspace-1/time-entries/entry-1/unapprove',
+                    }),
+                })}
+            />,
+        );
+        const unapprove = screen.getByRole('button', { name: 'Unapprove' });
+
+        await user.click(unapprove);
+
+        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/workspaces/workspace-1/time-entries/entry-1/unapprove',
+            { expected_version: 'version-1' },
+            expect.anything(),
+        );
+        expect(unapprove).toBeDisabled();
+
+        await user.click(unapprove);
+
+        expect(inertia.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers no withdrawal the server did not send', () => {
+        render(<TimeSheet {...props()} />);
+
+        expect(
+            screen.queryByRole('button', { name: 'Unapprove' }),
+        ).not.toBeInTheDocument();
     });
 
     it('keeps deletion single-flight until the request finishes', async () => {

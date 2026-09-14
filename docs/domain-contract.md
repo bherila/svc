@@ -36,6 +36,12 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - client visibility requires an explicit client-facing description; internal
   descriptions are never used as a client-facing fallback
 - status: `draft`, `approved`, or `invoiced`
+- lifecycle edges: `draft` → `approved`, `approved` → `draft`, `approved` →
+  `invoiced` when its invoice is issued, and `invoiced` → `approved` when that
+  invoice is voided. Withdrawing an approval is a workspace owner/admin act,
+  clears the approver, the timestamp and any rate not stated explicitly, and is
+  refused for time on an issued, paid, void or unrecognised invoice; time on a
+  draft invoice is released and the draft rebuilt in the same transaction
 - optional approval user/time and subcontractor cost metadata
 - billable approval snapshots the rate/currency from the most recently effective
   active project agreement, falling back to a company-wide agreement; an
