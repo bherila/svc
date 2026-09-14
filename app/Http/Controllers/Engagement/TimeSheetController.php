@@ -210,7 +210,7 @@ class TimeSheetController extends Controller
                     ])->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
-            'months' => $this->months($entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
+            'months' => $this->months($workspace, $entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
         ]);
     }
 
@@ -689,6 +689,7 @@ class TimeSheetController extends Controller
      * @return list<array<string, mixed>>
      */
     private function months(
+        Workspace $workspace,
         EloquentCollection $entries,
         array $invoicesByEntry,
         array $capacityByMonth,
@@ -713,7 +714,7 @@ class TimeSheetController extends Controller
             /** @var EloquentCollection<int, ClientTimeEntry> $monthEntries */
             $monthEntries = $grouped->get($yearMonth) ?? new EloquentCollection;
             $rows = $monthEntries
-                ->map(fn (ClientTimeEntry $entry): array => $this->row($entry, $invoicesByEntry, $permissions, $userId, $isManager))
+                ->map(fn (ClientTimeEntry $entry): array => $this->row($workspace, $entry, $invoicesByEntry, $permissions, $userId, $isManager))
                 ->values()
                 ->all();
 
@@ -741,6 +742,7 @@ class TimeSheetController extends Controller
      * @return array<string, mixed>
      */
     private function row(
+        Workspace $workspace,
         ClientTimeEntry $entry,
         array $invoicesByEntry,
         array $permissions,
@@ -815,6 +817,15 @@ class TimeSheetController extends Controller
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null
                 && ($permissions[$entry->client_project_id]['approve'] ?? false),
+            // Offered on the same terms `TimeEntryMutationService::unapprove()`
+            // enforces: an owner or admin, approved time, and no invoice that
+            // has charged anyone. A draft invoice qualifies only where it can
+            // be rebuilt, because withdrawing the approval rebuilds it.
+            'unapprove_url' => $isManager
+                && $entry->status === 'approved'
+                && $editableInvoice
+                ? route('svc.engagement.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
+                : null,
         ];
     }
 }

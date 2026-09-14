@@ -105,24 +105,107 @@ final class TimeEntryMutationService
                 $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
             }
 
-            // Draft regeneration can put an unchanged split group back
-            // together. If the edited row was the overflow fragment, its
-            // minutes now live on the lineage root and that is the record the
-            // next sheet read will expose.
-            $survivor = ClientTimeEntry::query()
+            return $this->survivor($workspace, $entry, $lineageRootId);
+        });
+    }
+
+    /**
+     * Withdraw an approval, returning the entry to draft.
+     *
+     * A workspace owner's or admin's act, and deliberately narrower than
+     * approval: a project manager may approve their team's time, but taking
+     * back what someone else approved is a correction to the workspace's
+     * books rather than part of reviewing a timesheet.
+     *
+     * What a client has been charged for stays put. Time on an issued, paid,
+     * void or unrecognised invoice is refused - `invoiced` entries by status,
+     * and any `approved` entry still linked to such an invoice by that link -
+     * and the way back is to void the invoice, which releases its time to
+     * `approved`. Time on a draft invoice has charged nobody, so it is
+     * released and the draft rebuilt in the same transaction, exactly as an
+     * edit to it would be.
+     *
+     * The approver and timestamp are cleared rather than kept, for the reason
+     * `WorkspaceExpenses::unapprove()` gives: a draft naming an approver is a
+     * row whose readers have to know to disbelieve two populated columns. A
+     * rate the operator stated (`explicit`) is kept, because approval keeps it
+     * too; any other rate was resolved at approval and is resolved again at
+     * the next one, so leaving it on a draft only makes unpriced work look
+     * priced.
+     */
+    public function unapprove(Workspace $workspace, ClientTimeEntry $entry, User $actor, string $expectedVersion): ClientTimeEntry
+    {
+        return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $expectedVersion): ClientTimeEntry {
+            $this->projectOf($workspace, $entry);
+            abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403);
+            abort_if(
+                $entry->status === 'invoiced',
+                409,
+                'This time has been billed. Void its invoice to change the approval.',
+            );
+            abort_unless($entry->status === 'approved', 409, 'Only approved time entries can be returned to draft.');
+            if ($invoice instanceof ClientInvoice) {
+                abort_unless(
+                    $invoice->client_company_id === $entry->client_company_id,
+                    409,
+                    'The time entry invoice allocation has an inconsistent client company.',
+                );
+                abort_unless(
+                    $invoice->status === 'draft',
+                    409,
+                    'Time on an issued, paid, void, or unknown invoice cannot be returned to draft.',
+                );
+            }
+            abort_unless(AgentApiVersion::matches($entry, $expectedVersion), 409, 'The time entry has changed; read it and retry.');
+
+            $lineageRootId = $entry->split_from_time_entry_id ?? $entry->id;
+            $keepsRate = $entry->billing_rate_source === 'explicit';
+            $updated = ClientTimeEntry::query()
                 ->whereKey($entry->id)
                 ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $entry->client_company_id)
-                ->first()
-                ?? ClientTimeEntry::query()
-                    ->whereKey($lineageRootId)
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $entry->client_company_id)
-                    ->first();
-            abort_unless($survivor instanceof ClientTimeEntry, 409, 'The regenerated time entry has an inconsistent split lineage.');
+                ->where('lock_version', $entry->lock_version)
+                ->where('status', 'approved')
+                ->update([
+                    'status' => 'draft',
+                    'approved_by_user_id' => null,
+                    'approved_at' => null,
+                    'billing_rate_amount' => $keepsRate ? $entry->billing_rate_amount : null,
+                    'billing_rate_source' => $keepsRate ? 'explicit' : null,
+                    'lock_version' => DB::raw('lock_version + 1'),
+                ]);
+            abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
-            return $survivor;
+            if ($invoice instanceof ClientInvoice) {
+                $this->assertNoForeignAllocations($workspace, $entry);
+                $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
+            }
+
+            return $this->survivor($workspace, $entry, $lineageRootId);
         });
+    }
+
+    /**
+     * The row a write left behind.
+     *
+     * Draft regeneration can put an unchanged split group back together. If
+     * the mutated row was the overflow fragment, its minutes now live on the
+     * lineage root and that is the record the next sheet read will expose.
+     */
+    private function survivor(Workspace $workspace, ClientTimeEntry $entry, int $lineageRootId): ClientTimeEntry
+    {
+        $survivor = ClientTimeEntry::query()
+            ->whereKey($entry->id)
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $entry->client_company_id)
+            ->first()
+            ?? ClientTimeEntry::query()
+                ->whereKey($lineageRootId)
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $entry->client_company_id)
+                ->first();
+        abort_unless($survivor instanceof ClientTimeEntry, 409, 'The regenerated time entry has an inconsistent split lineage.');
+
+        return $survivor;
     }
 
     public function delete(Workspace $workspace, ClientTimeEntry $entry, User $actor, string $expectedVersion): void

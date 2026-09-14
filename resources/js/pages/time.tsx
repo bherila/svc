@@ -1,5 +1,11 @@
 import { Head, router } from '@inertiajs/react';
-import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import {
+    CheckIcon,
+    PencilIcon,
+    PlusIcon,
+    Trash2Icon,
+    Undo2Icon,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { InvoiceSelectionDialog } from '@/components/time/invoice-selection-dialog';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
@@ -461,6 +467,27 @@ export default function TimeSheet({
         );
     };
 
+    // Shares approval's single-flight flag rather than having its own: both
+    // spend a row's version, and a withdrawal racing an approval of the same
+    // row can only end with one of them told it failed.
+    const unapprove = (entry: TimeEntry) => {
+        if (approving || entry.unapprove_url === null) {
+            return;
+        }
+
+        setApproving(true);
+        router.post(
+            entry.unapprove_url,
+            { expected_version: entry.version },
+            {
+                preserveScroll: true,
+                onSuccess: () => setNotice(null),
+                onError: reportFailure,
+                onFinish: () => setApproving(false),
+            },
+        );
+    };
+
     // Same hazard as approval: the version travelled with the row, so a
     // second click spends one the first has already used - the entry is
     // deleted and the operator is told it failed.
@@ -643,6 +670,7 @@ export default function TimeSheet({
                                 onEdit={openDialog}
                                 onDelete={setPendingDelete}
                                 onApprove={(entry) => approve([entry])}
+                                onUnapprove={unapprove}
                                 approving={approving}
                             />
                         ),
@@ -796,6 +824,7 @@ function MonthCard({
     onEdit,
     onDelete,
     onApprove,
+    onUnapprove,
     approving,
 }: {
     month: Month;
@@ -806,6 +835,7 @@ function MonthCard({
     onEdit: (entry: TimeEntry) => void;
     onDelete: (entry: TimeEntry) => void;
     onApprove: (entry: TimeEntry) => void;
+    onUnapprove: (entry: TimeEntry) => void;
     approving: boolean;
 }) {
     return (
@@ -965,6 +995,21 @@ function MonthCard({
                                                         }
                                                     >
                                                         <CheckIcon />
+                                                    </Button>
+                                                )}
+                                                {entry.unapprove_url !==
+                                                    null && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-xs"
+                                                        aria-label="Unapprove"
+                                                        title="Return to draft"
+                                                        disabled={approving}
+                                                        onClick={() =>
+                                                            onUnapprove(entry)
+                                                        }
+                                                    >
+                                                        <Undo2Icon />
                                                     </Button>
                                                 )}
                                                 {entry.can_edit && (

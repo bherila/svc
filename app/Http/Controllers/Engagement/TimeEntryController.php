@@ -164,4 +164,37 @@ class TimeEntryController extends EngagementController
             'Time approved.',
         );
     }
+
+    /**
+     * Return one approved entry to draft.
+     *
+     * Who may, and which entries stay frozen because a client has been
+     * charged for them, are the mutation service's rules; see
+     * {@see TimeEntryMutationService::unapprove()}.
+     */
+    public function unapprove(
+        Request $request,
+        Workspace $workspace,
+        ClientTimeEntry $timeEntry,
+        TimeEntryMutationService $entries,
+    ): JsonResponse|RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+        $validated = $request->validate(['expected_version' => ['required', 'string']]);
+
+        try {
+            $entry = $entries->unapprove($workspace, $timeEntry, $user, $validated['expected_version']);
+        } catch (DomainException $exception) {
+            return $this->reportFailure($request, new EngagementException($exception->getMessage()));
+        } catch (HttpExceptionInterface $exception) {
+            return $this->reportConflict($request, $exception);
+        }
+
+        return $this->respond(
+            $request,
+            ['data' => $entry],
+            'svc.engagement.time-entries.unapprove',
+            'Approval withdrawn.',
+        );
+    }
 }

@@ -1073,6 +1073,76 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             ->exists());
     }
 
+    public function test_withdrawing_approval_of_time_on_a_cadence_draft_rebuilds_it_without_the_entry(): void
+    {
+        $agreement = $this->agreement();
+        $entry = $this->approvedEntry(['minutes' => 60]);
+        $invoice = $this->generateJuly($agreement);
+        $this->assertSame(12000, $invoice->total_amount);
+
+        $returned = app(TimeEntryMutationService::class)->unapprove(
+            $this->workspace,
+            $entry,
+            $this->manager,
+            AgentApiVersion::for($entry->fresh() ?? $entry),
+        );
+
+        $this->assertSame($entry->id, $returned->id);
+        $this->assertSame('draft', $returned->status);
+        $this->assertDatabaseMissing('client_invoice_line_time_entries', [
+            'workspace_id' => $this->workspace->id,
+            'client_time_entry_id' => $entry->id,
+        ]);
+        $this->assertSame(0, $invoice->refresh()->total_amount);
+        $this->assertSame('draft', $invoice->status);
+        $this->assertSame(1, ClientInvoice::query()->count());
+    }
+
+    #[DataProvider('immutableInvoiceStatuses')]
+    public function test_time_on_a_non_draft_or_unknown_invoice_keeps_its_approval(string $status): void
+    {
+        $entry = $this->approvedEntry();
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'invoice_number' => 'KEPT-'.strtoupper($status),
+            'status' => $status,
+            'invoice_kind' => 'ad_hoc',
+            'currency' => 'USD',
+            'subtotal_amount' => 12000,
+            'tax_amount' => 0,
+            'total_amount' => 12000,
+        ]);
+        $line = $invoice->lines()->create([
+            'workspace_id' => $this->workspace->id,
+            'type' => 'time',
+            'description' => 'Charged time',
+            'quantity' => '1.0000',
+            'unit_amount' => 12000,
+            'tax_amount' => 0,
+            'total_amount' => 12000,
+            'sort_order' => 0,
+        ]);
+        $line->timeEntries()->attach($entry->id, ['workspace_id' => $this->workspace->id]);
+
+        try {
+            app(TimeEntryMutationService::class)->unapprove(
+                $this->workspace,
+                $entry,
+                $this->manager,
+                AgentApiVersion::for($entry),
+            );
+            $this->fail("Time on a {$status} invoice must keep its approval.");
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+            $this->assertSame('Time on an issued, paid, void, or unknown invoice cannot be returned to draft.', $exception->getMessage());
+        }
+
+        $this->assertSame('approved', $entry->fresh()?->status);
+        $this->assertSame(12000, $entry->fresh()?->billing_rate_amount);
+        $this->assertTrue($entry->fresh()?->invoiceLines()->whereKey($line->id)->exists());
+    }
+
     public function test_approved_time_without_a_draft_invoice_remains_immutable(): void
     {
         $entry = $this->approvedEntry();
