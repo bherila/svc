@@ -210,7 +210,7 @@ class TimeSheetController extends Controller
                     ])->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
-            'months' => $this->months($entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
+            'months' => $this->months($workspace, $entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
         ]);
     }
 
@@ -316,7 +316,7 @@ class TimeSheetController extends Controller
      * the row can still be edited.
      *
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @return array<int, array{id: string, number: string|null, status: string, regenerable: bool}>
+     * @return array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>
      */
     private function invoicesByEntry(Workspace $workspace, EloquentCollection $entries): array
     {
@@ -345,6 +345,7 @@ class TimeSheetController extends Controller
                 'client_invoices.public_id as invoice_id',
                 'client_invoices.invoice_number as invoice_number',
                 'client_invoices.status as invoice_status',
+                'client_invoices.client_company_id as invoice_company_id',
                 'client_invoices.invoice_kind as invoice_kind',
                 'client_invoices.client_agreement_id as agreement_id',
                 'client_agreements.id as resolved_agreement_id',
@@ -387,6 +388,7 @@ class TimeSheetController extends Controller
                     ? null
                     : (string) $link->getAttribute('invoice_number'),
                 'status' => (string) $link->getAttribute('invoice_status'),
+                'company_id' => (int) $link->getAttribute('invoice_company_id'),
                 'regenerable' => $regenerable,
             ];
         }
@@ -683,12 +685,13 @@ class TimeSheetController extends Controller
 
     /**
      * @param  EloquentCollection<int, ClientTimeEntry>  $entries
-     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>  $invoicesByEntry
      * @param  array<string, list<array{agreement: string, cycle_start: string, available_hours: float, retainer_hours: float, rollover_in_hours: float, expired_hours: float, rollover_months: int|null, deficit_offset_hours: float, spent_earlier_in_cycle_hours: float, worked_hours: float, unused_hours: float, over_hours: float, carried_deficit_hours: float, remaining_rollover: float, balance_hours: float, billed_overage_hours: float|null, billed_hours: float|null, pending_minutes: int}>>  $capacityByMonth
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return list<array<string, mixed>>
      */
     private function months(
+        Workspace $workspace,
         EloquentCollection $entries,
         array $invoicesByEntry,
         array $capacityByMonth,
@@ -713,7 +716,7 @@ class TimeSheetController extends Controller
             /** @var EloquentCollection<int, ClientTimeEntry> $monthEntries */
             $monthEntries = $grouped->get($yearMonth) ?? new EloquentCollection;
             $rows = $monthEntries
-                ->map(fn (ClientTimeEntry $entry): array => $this->row($entry, $invoicesByEntry, $permissions, $userId, $isManager))
+                ->map(fn (ClientTimeEntry $entry): array => $this->row($workspace, $entry, $invoicesByEntry, $permissions, $userId, $isManager))
                 ->values()
                 ->all();
 
@@ -736,11 +739,12 @@ class TimeSheetController extends Controller
     }
 
     /**
-     * @param  array<int, array{id: string, number: string|null, status: string, regenerable: bool}>  $invoicesByEntry
+     * @param  array<int, array{id: string, number: string|null, status: string, company_id: int, regenerable: bool}>  $invoicesByEntry
      * @param  array<int, array{log: bool, approve: bool}>  $permissions
      * @return array<string, mixed>
      */
     private function row(
+        Workspace $workspace,
         ClientTimeEntry $entry,
         array $invoicesByEntry,
         array $permissions,
@@ -762,9 +766,12 @@ class TimeSheetController extends Controller
         // charged anyone yet. Its mutation path now regenerates the invoice in
         // the same transaction, so both a legacy draft-status allocation and
         // the approved time produced by the real generator remain editable.
-        // Anything that has left draft still freezes the entry.
+        // Anything that has left draft still freezes the entry, and so does a
+        // legacy link to another client's invoice, which every mutation path
+        // refuses before it looks at the status.
         $isDraftInvoice = $invoice !== null
             && $invoice['status'] === 'draft'
+            && $invoice['company_id'] === $entry->client_company_id
             && $invoice['regenerable'];
         $editableStatus = $entry->status === 'draft'
             || ($entry->status === 'approved' && $isDraftInvoice);
@@ -815,6 +822,15 @@ class TimeSheetController extends Controller
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null
                 && ($permissions[$entry->client_project_id]['approve'] ?? false),
+            // Offered on the same terms `TimeEntryMutationService::unapprove()`
+            // enforces: an owner or admin, approved time, and no invoice that
+            // has charged anyone. A draft invoice qualifies only where it can
+            // be rebuilt, because withdrawing the approval rebuilds it.
+            'unapprove_url' => $isManager
+                && $entry->status === 'approved'
+                && $editableInvoice
+                ? route('svc.engagement.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
+                : null,
         ];
     }
 }

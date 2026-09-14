@@ -45,6 +45,11 @@ export type TimeEntry = {
     } | null;
     can_edit: boolean;
     can_approve: boolean;
+    /**
+     * Where to send a withdrawal of this entry's approval, or null when the
+     * viewer may not withdraw it or a client has been charged for the time.
+     */
+    unapprove_url: string | null;
 };
 
 export type Capacity = {
