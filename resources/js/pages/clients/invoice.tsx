@@ -14,7 +14,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -223,11 +223,15 @@ export default function ClientInvoiceDetail({
                     </p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            render={<a href={pdfHref}>View PDF</a>}
-                        />
+                        <a
+                            href={pdfHref}
+                            className={buttonVariants({
+                                variant: 'outline',
+                                size: 'sm',
+                            })}
+                        >
+                            View PDF
+                        </a>
                         {actions.issue !== null && (
                             <Button
                                 size="sm"
