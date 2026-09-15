@@ -169,6 +169,38 @@ class InvoiceEmailTest extends TestCase
         );
     }
 
+    public function test_a_definitely_failed_keyed_delivery_can_be_retried_with_the_same_key(): void
+    {
+        [$owner, $workspace, $invoice] = $this->issuedInvoice();
+        $payload = [
+            'recipients' => ['ap@synthetic.test'],
+            'subject' => 'Synthetic retry invoice',
+            'idempotency_key' => '11111111-1111-4111-8111-222222222222',
+        ];
+
+        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic refusal'));
+        $this->actingAs($owner)
+            ->postJson($this->sendUrl($workspace, $invoice), $payload)
+            ->assertStatus(422);
+        $failed = ClientInvoiceEmailDelivery::query()->sole();
+        $this->assertSame('failed', $failed->status);
+
+        Mail::clearResolvedInstance('mail.manager');
+        app()->forgetInstance('mail.manager');
+        Mail::fake();
+        $this->actingAs($owner)
+            ->postJson($this->sendUrl($workspace, $invoice), $payload)
+            ->assertOk();
+
+        Mail::assertSent(InvoiceMail::class, 1);
+        $retried = ClientInvoiceEmailDelivery::query()->sole();
+        $this->assertSame($failed->id, $retried->id);
+        $this->assertSame(2, $retried->attempt_number);
+        $this->assertSame('sent', $retried->status);
+        $this->assertNull($retried->failed_at);
+        $this->assertNull($retried->error_summary);
+    }
+
     /**
      * Sending moves the invoice on twice, and the count is the assertion.
      *

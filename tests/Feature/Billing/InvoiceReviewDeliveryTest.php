@@ -396,6 +396,47 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $this->assertSame('automatically_sent', $invoice->fresh()->automatic_delivery_status);
     }
 
+    public function test_exhausted_automatic_retries_do_not_offer_a_hold_that_the_service_refuses(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [$owner, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill([
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $invoicePage = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}";
+        $this->actingAs($owner)
+            ->get($invoicePage)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where(
+                'actions.hold_automatic',
+                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/hold",
+            ));
+
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            Mail::clearResolvedInstance('mail.manager');
+            app()->forgetInstance('mail.manager');
+            Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic client refusal'));
+            Artisan::call('svc:billing:dispatch-invoice-emails');
+
+            $invoice = $invoice->fresh();
+            $this->assertSame('failed', $invoice->automatic_delivery_status);
+            if ($attempt < 5) {
+                $this->assertNotNull($invoice->automatic_delivery_due_at);
+                Date::setTestNow($invoice->automatic_delivery_due_at->addSecond());
+            }
+        }
+
+        $this->assertNull($invoice->automatic_delivery_due_at);
+        $this->assertSame(5, ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->count());
+        $this->actingAs($owner)
+            ->get($invoicePage)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('actions.hold_automatic', null));
+    }
+
     public function test_manual_delivery_suppresses_the_pending_automatic_delivery_without_counting_the_admin_notice(): void
     {
         Mail::fake();
@@ -516,6 +557,34 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $this->assertSame('cancelled', $paid->fresh()->automatic_delivery_status);
     }
 
+    public function test_a_payment_is_refused_while_an_automatic_delivery_claim_is_in_flight(): void
+    {
+        Mail::fake();
+        [, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill([
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $invoice->forceFill(['automatic_delivery_status' => 'sending'])->save();
+
+        try {
+            app(InvoiceLifecycleService::class)->applyPayment($invoice, [
+                'amount' => 100,
+                'currency' => 'USD',
+                'method' => 'synthetic test payment',
+            ], $workspace);
+            $this->fail('A payment must not commit while an automatic send is crossing the provider boundary.');
+        } catch (\DomainException $exception) {
+            $this->assertSame(
+                'Automatic invoice delivery is in progress. Retry the payment after it finishes.',
+                $exception->getMessage(),
+            );
+        }
+
+        $this->assertSame(0, $invoice->payments()->where('workspace_id', $workspace->id)->count());
+    }
+
     public function test_audited_correction_updates_the_revision_and_pdf_facts_then_holds_delivery(): void
     {
         Mail::fake();
@@ -527,6 +596,12 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
         $line = $invoice->lines()->sole();
         $originalPdf = ClientInvoiceAdministratorNotification::query()->sole()->pdf_content_base64;
+        $this->actingAs($owner)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('actions.correct', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct")
+                ->where('lines.0.money_correctable', true));
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
@@ -567,7 +642,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
     public function test_correction_is_refused_after_client_send_or_payment_and_for_stale_revision(): void
     {
         Mail::fake();
-        [$owner, $workspace, , $invoice] = $this->draft();
+        [$owner, $workspace, $company, $invoice] = $this->draft();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
         $line = $invoice->lines()->sole();
         $payload = [
@@ -593,6 +668,12 @@ final class InvoiceReviewDeliveryTest extends TestCase
         );
         $this->actingAs($owner)->postJson($url, $payload)->assertStatus(422);
         $this->assertSame(1, $invoice->fresh()->document_revision);
+        $this->actingAs($owner)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('actions.correct', null)
+                ->where('lines.0.money_correctable', false));
     }
 
     public function test_description_only_correction_normalizes_equivalent_quantity_strings(): void

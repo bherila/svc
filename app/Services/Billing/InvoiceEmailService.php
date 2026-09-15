@@ -81,10 +81,19 @@ final class InvoiceEmailService
         $this->assertSendable($invoice, $workspace);
 
         $delivery = $this->record($invoice, $draft, 'manual', false, $idempotencyKey);
+        if ($delivery->wasRecentlyCreated) {
+            return $this->deliver($invoice, $delivery, $draft);
+        }
 
-        return $delivery->wasRecentlyCreated
-            ? $this->deliver($invoice, $delivery, $draft)
-            : $delivery;
+        if ($delivery->status !== 'failed') {
+            return $delivery;
+        }
+
+        $retry = $this->claimFailedManualDelivery($invoice, $delivery);
+
+        return $retry instanceof ClientInvoiceEmailDelivery
+            ? $this->deliver($invoice, $retry, $draft)
+            : ($delivery->fresh() ?? $delivery);
     }
 
     /**
@@ -497,6 +506,54 @@ final class InvoiceEmailService
             $locked->advanceAgentRevision();
 
             return $delivery;
+        });
+    }
+
+    /**
+     * A provider refusal is a definite outcome, so the same keyed request may
+     * be attempted again. Claim the existing row instead of inserting a
+     * second one: the key remains one logical delivery, while the row lock
+     * prevents two concurrent retries from submitting it together.
+     */
+    private function claimFailedManualDelivery(
+        ClientInvoice $invoice,
+        ClientInvoiceEmailDelivery $delivery,
+    ): ?ClientInvoiceEmailDelivery {
+        return DB::transaction(function () use ($invoice, $delivery): ?ClientInvoiceEmailDelivery {
+            $lockedInvoice = ClientInvoice::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->whereKey($invoice->id)
+                ->tap(Locks::forUpdate())
+                ->with('workspace')
+                ->firstOrFail();
+            if ($lockedInvoice->automatic_delivery_status === 'automatically_sent') {
+                throw new DomainException('This invoice was already delivered automatically.');
+            }
+
+            $lockedDelivery = ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('client_invoice_id', $lockedInvoice->id)
+                ->whereKey($delivery->id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
+            if ($lockedDelivery->status !== 'failed') {
+                return null;
+            }
+            if ($lockedDelivery->origin !== 'manual') {
+                throw new DomainException('Only a failed manual invoice delivery can be retried with its key.');
+            }
+
+            $lockedDelivery->forceFill([
+                'status' => 'sending',
+                'attempt_number' => $lockedDelivery->attempt_number + 1,
+                'claimed_at' => $this->clock->now($lockedInvoice->workspace)->utc(),
+                'failed_at' => null,
+                'next_attempt_at' => null,
+                'error_summary' => null,
+            ])->save();
+            $lockedInvoice->advanceAgentRevision();
+
+            return $lockedDelivery;
         });
     }
 

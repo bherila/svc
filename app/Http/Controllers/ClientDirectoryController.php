@@ -245,6 +245,15 @@ class ClientDirectoryController extends Controller
                 ->orderByDesc('received_on')
                 ->orderByDesc('id'),
         ]);
+        $clientInvoice->loadExists([
+            'emailDeliveries as correction_has_blocking_delivery' => fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('status', ['pending', 'sending', 'sent']),
+            'administratorNotifications as correction_has_original_evidence' => fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id)
+                ->where('invoice_revision', 1)
+                ->whereNotNull('pdf_content_base64'),
+        ]);
 
         // The lifecycle actions, where the invoice is - rather than on a
         // workspace-wide screen the operator had to leave the client to reach.
@@ -255,7 +264,13 @@ class ClientDirectoryController extends Controller
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $status = (string) $clientInvoice->status;
         $base = "/workspaces/{$workspace->public_id}/invoices/{$clientInvoice->public_id}";
-        $moneyCorrectable = $manages
+        $canCorrect = $manages
+            && $status === InvoiceStatus::Issued->value
+            && $clientInvoice->paid_amount === 0
+            && $clientInvoice->payments->isEmpty()
+            && ! (bool) $clientInvoice->getAttribute('correction_has_blocking_delivery')
+            && (bool) $clientInvoice->getAttribute('correction_has_original_evidence');
+        $moneyCorrectable = $canCorrect
             ? $corrections->moneyCorrectableLineIds($clientInvoice, $workspace)
             : [];
 
@@ -285,10 +300,10 @@ class ClientDirectoryController extends Controller
                 'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)
                     ? $base.'/payments'
                     : null,
-                'correct' => $manages && $status === InvoiceStatus::Issued->value && $clientInvoice->paid_amount === 0
-                    ? $base.'/correct'
-                    : null,
-                'hold_automatic' => $manages && in_array($clientInvoice->automatic_delivery_status, ['scheduled', 'failed'], true)
+                'correct' => $canCorrect ? $base.'/correct' : null,
+                'hold_automatic' => $manages
+                    && $clientInvoice->automatic_delivery_due_at !== null
+                    && in_array($clientInvoice->automatic_delivery_status, ['scheduled', 'failed'], true)
                     ? $base.'/automatic-delivery/hold'
                     : null,
                 'release_automatic' => $manages && $clientInvoice->automatic_delivery_status === 'held'

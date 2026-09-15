@@ -29,6 +29,7 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
         yield 'correction and scheduler' => ['correct', 'automatic'];
         yield 'void and scheduler' => ['void', 'automatic'];
         yield 'hold and scheduler' => ['hold', 'automatic'];
+        yield 'payment and scheduler' => ['pay', 'automatic'];
     }
 
     #[DataProvider('competitors')]
@@ -92,7 +93,12 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
                 ->where('client_invoice_id', $invoice->id)
                 ->where('status', 'sent')
                 ->count();
+            $payments = DB::table('client_invoice_payments')
+                ->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', $invoice->id)
+                ->count();
             $this->assertLessThanOrEqual(1, $sent, json_encode([$firstResult, $secondResult], JSON_THROW_ON_ERROR));
+            $this->assertFalse($sent > 0 && $payments > 0, json_encode([$firstResult, $secondResult], JSON_THROW_ON_ERROR));
 
             if ($firstOperation === 'automatic') {
                 $this->assertSame(1, $sent);
@@ -111,6 +117,12 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
             }
             if ($firstOperation === 'void' && $sent === 0) {
                 $this->assertSame('void', $invoice->status);
+            }
+            if ($firstOperation === 'pay') {
+                $this->assertTrue(
+                    ($payments === 1 && $invoice->automatic_delivery_status === 'cancelled')
+                    || ($payments === 0 && $invoice->automatic_delivery_status === 'automatically_sent' && $sent === 1),
+                );
             }
         } finally {
             foreach ($processes as $process) {

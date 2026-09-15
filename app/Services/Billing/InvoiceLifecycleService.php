@@ -662,6 +662,16 @@ final class InvoiceLifecycleService
                 }
             }
 
+            // The automatic sender has already committed its durable claim
+            // and is about to cross the mail-provider boundary. A payment
+            // cannot cancel that message after it has left, so refuse the new
+            // payment while the claim is in flight; the caller can retry once
+            // the short synchronous send has resolved. Existing keyed
+            // payments returned above remain idempotent.
+            if ($locked->automatic_delivery_status === 'sending') {
+                throw new DomainException('Automatic invoice delivery is in progress. Retry the payment after it finishes.');
+            }
+
             // Nothing above this line has written anything, and everything
             // below creates a payment - which is exactly the boundary the two
             // state-dependent refusals belong on. A date the caller never named

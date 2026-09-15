@@ -51,6 +51,12 @@ try {
         ),
         'hold' => app(InvoiceCorrectionService::class)->hold($invoice, $workspace),
         'void' => app(InvoiceLifecycleService::class)->void($invoice, $workspace),
+        'pay' => app(InvoiceLifecycleService::class)->applyPayment($invoice, [
+            'amount' => 100,
+            'currency' => 'USD',
+            'method' => 'synthetic race payment',
+            'idempotency_key' => 'synthetic-race-payment',
+        ], $workspace),
         'correct' => app(InvoiceCorrectionService::class)->correct(
             $invoice,
             $workspace,
