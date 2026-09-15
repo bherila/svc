@@ -9,7 +9,9 @@
     // The PR lane deliberately measures fast unit discrimination. Feature-only
     // behavior is reported as zero mutants rather than spending minutes per
     // mutant in database-backed scenarios.
-    timeout: 30,
+    // Bootstrapping the Laravel Unit suite takes roughly 37 seconds on the
+    // supported local/CI runners when a service-provider line is mutated.
+    timeout: 60,
     threads: "max",
     tmpDir: "storage/framework/cache/infection-diff",
     logs: {

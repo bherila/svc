@@ -13,6 +13,7 @@ use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
+use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -20,6 +21,7 @@ use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -47,6 +49,35 @@ class AppServiceProvider extends ServiceProvider
             application: $app,
             allowedHeaders: ['Idempotency-Key'],
             temporaryFilePrefix: 'svc-agent-',
+        ));
+        $this->app->singleton(McpHttpPolicy::class, static fn (): McpHttpPolicy => new McpHttpPolicy(
+            allowedOrigins: static function (): array {
+                $origins = config('agent_api.mcp_allowed_origins', []);
+
+                return is_array($origins)
+                    ? array_values(array_filter($origins, static fn (mixed $origin): bool => is_string($origin) && $origin !== ''))
+                    : [];
+            },
+            allowedHosts: static function (): array {
+                $configured = config('agent_api.mcp_allowed_hosts', []);
+                if (is_array($configured) && $configured !== []) {
+                    return array_values(array_filter($configured, static fn (mixed $host): bool => is_string($host) && $host !== ''));
+                }
+
+                $hosts = [];
+                foreach ([config('app.url'), config('bherila-auth.oauth_server.resource')] as $url) {
+                    if (is_string($url)) {
+                        $host = McpHttpPolicy::hostFromUrl($url);
+                        if (! in_array($host, $hosts, true)) {
+                            $hosts[] = $host;
+                        }
+                    }
+                }
+
+                return $hosts;
+            },
+            maxRequestBodyBytes: Config::integer('agent_api.mcp_max_body_bytes'),
+            maxResponseBodyBytes: Config::integer('agent_api.mcp_max_response_body_bytes'),
         ));
     }
 

@@ -8,7 +8,7 @@ mcp_smoke_workspace_id="$(php -r '$credentials = json_decode($argv[1], true, fla
 mcp_smoke_agreement_id="$(php -r '$credentials = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR); echo $credentials["agreement_id"];' "$mcp_smoke_credentials")"
 mcp_smoke_wrong_scope_token="$(php -r '$credentials = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR); echo $credentials["wrong_scope_token"];' "$mcp_smoke_credentials")"
 mcp_smoke_disabled_server_pid=""
-PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload --host=127.0.0.1 --port=8088 > storage/logs/mcp-smoke-server.log 2>&1 &
+AGENT_API_MCP_ALLOWED_HOSTS=localhost:8088 PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload --host=127.0.0.1 --port=8088 > storage/logs/mcp-smoke-server.log 2>&1 &
 mcp_smoke_server_pid=$!
 cleanup() {
     mcp_smoke_status=$?
@@ -41,7 +41,7 @@ MCP_SMOKE_WORKSPACE_ID="$mcp_smoke_workspace_id" \
 MCP_SMOKE_AGREEMENT_ID="$mcp_smoke_agreement_id" \
 node scripts/mcp-smoke.mjs
 
-AGENT_API_MCP_ENABLED=false PHP_CLI_SERVER_WORKERS=2 php artisan serve --no-reload --host=127.0.0.1 --port=8089 > storage/logs/mcp-smoke-disabled-server.log 2>&1 &
+AGENT_API_MCP_ALLOWED_HOSTS=localhost:8089 AGENT_API_MCP_ENABLED=false PHP_CLI_SERVER_WORKERS=2 php artisan serve --no-reload --host=127.0.0.1 --port=8089 > storage/logs/mcp-smoke-disabled-server.log 2>&1 &
 mcp_smoke_disabled_server_pid=$!
 
 for mcp_smoke_attempt in {1..30}; do

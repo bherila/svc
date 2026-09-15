@@ -23,7 +23,7 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertMatchesRegularExpression('/directories:\s*\["app"\]/', $configuration);
         $this->assertStringContainsString('summaryJson:', $configuration);
         $this->assertStringContainsString('--testsuite=Unit', $configuration);
-        $this->assertStringContainsString('timeout: 30', $configuration);
+        $this->assertStringContainsString('timeout: 60', $configuration);
         $this->assertStringNotContainsString('ExternalImport', $configuration);
         $this->assertStringContainsString('scripts/run-mutation-diff.sh', $command);
         $this->assertStringContainsString('MUTATION_BASE:-origin/main', $runner);

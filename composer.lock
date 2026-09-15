@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8c290053833dbed8df17aa4929347c92",
+    "content-hash": "3f7b985b76c21dcab4e2ad548eec0e31",
     "packages": [
         {
             "name": "bherila/auth-laravel",
@@ -69,16 +69,16 @@
         },
         {
             "name": "bherila/mcp-laravel-bridge",
-            "version": "v0.1.0",
+            "version": "v0.2.0",
             "source": {
                 "type": "git",
-                "url": "git@github.com:bherila/mcp-laravel-bridge.git",
-                "reference": "bc36bb0a5a8b9461143bf48aa9b6fc360963cf82"
+                "url": "https://github.com/bherila/mcp-laravel-bridge.git",
+                "reference": "89736139aa7f1323bbe9dc361e239b175ac1fbe6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/mcp-laravel-bridge/zipball/bc36bb0a5a8b9461143bf48aa9b6fc360963cf82",
-                "reference": "bc36bb0a5a8b9461143bf48aa9b6fc360963cf82",
+                "url": "https://api.github.com/repos/bherila/mcp-laravel-bridge/zipball/89736139aa7f1323bbe9dc361e239b175ac1fbe6",
+                "reference": "89736139aa7f1323bbe9dc361e239b175ac1fbe6",
                 "shasum": ""
             },
             "require": {
@@ -87,7 +87,7 @@
                 "illuminate/http": "^12.0 || ^13.0",
                 "illuminate/routing": "^12.0 || ^13.0",
                 "illuminate/support": "^12.0 || ^13.0",
-                "mcp/sdk": "^0.7.1",
+                "mcp/sdk": "^0.7.1 || ^0.8.0",
                 "php": ">=8.3 <8.6",
                 "psr/log": "^3.0",
                 "symfony/psr-http-message-bridge": "^7.2 || ^8.0"
@@ -102,21 +102,16 @@
                     "Bherila\\McpLaravelBridge\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Bherila\\McpLaravelBridge\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "phpunit"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
             "description": "Shared MCP-over-REST infrastructure for Laravel applications.",
-            "time": "2026-08-23T23:05:41+00:00"
+            "support": {
+                "issues": "https://github.com/bherila/mcp-laravel-bridge/issues",
+                "source": "https://github.com/bherila/mcp-laravel-bridge/tree/v0.2.0"
+            },
+            "time": "2026-09-15T09:52:12+00:00"
         },
         {
             "name": "brick/math",
