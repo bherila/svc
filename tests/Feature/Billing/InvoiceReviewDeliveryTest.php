@@ -257,6 +257,15 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->assertTrue($company->fresh()->automatic_invoice_email_enabled);
         $this->assertSame(0, $company->fresh()->automatic_invoice_email_delay_days);
+
+        $this->actingAs($owner)->patch($url, [
+            'name' => $company->name,
+            'billing_email' => null,
+            'is_active' => true,
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->assertSessionHasErrors('automatic_invoice_email_enabled');
+        $this->assertSame('billing@synthetic.test', $company->fresh()->billing_email);
         $this->assertDatabaseHas('client_company_activity', [
             'workspace_id' => $workspace->id,
             'action' => 'client.invoice_delivery_settings_updated',
@@ -361,6 +370,28 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('actions.send', null));
+    }
+
+    public function test_a_stale_dispatcher_does_not_cancel_a_retry_scheduled_by_the_winner(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill([
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $nextAttempt = now()->addMinutes(5);
+        $invoice->forceFill([
+            'automatic_delivery_status' => 'failed',
+            'automatic_delivery_due_at' => $nextAttempt,
+        ])->save();
+
+        $this->assertNull(app(InvoiceEmailService::class)->sendAutomatic($invoice));
+        $this->assertSame('failed', $invoice->fresh()->automatic_delivery_status);
+        $this->assertTrue($invoice->fresh()->automatic_delivery_due_at->equalTo($nextAttempt));
+        Mail::assertNotSent(InvoiceMail::class);
     }
 
     public function test_failed_automatic_delivery_uses_bounded_backoff_before_retry(): void
@@ -585,6 +616,45 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $this->assertSame(0, $invoice->payments()->where('workspace_id', $workspace->id)->count());
     }
 
+    public function test_an_ambiguous_automatic_claim_expires_without_erasing_its_audit_row(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill([
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $invoice->forceFill(['automatic_delivery_status' => 'sending'])->save();
+        $delivery = $invoice->emailDeliveries()->create([
+            'workspace_id' => $workspace->id,
+            'origin' => 'automatic',
+            'invoice_revision' => $invoice->document_revision,
+            'attempt_number' => 1,
+            'recipients' => ['billing@synthetic.test'],
+            'subject' => 'Synthetic ambiguous delivery',
+            'status' => 'sending',
+            'queued_at' => now(),
+            'claimed_at' => now(),
+        ]);
+
+        $payload = ['amount' => 100, 'currency' => 'USD', 'method' => 'synthetic settlement'];
+        try {
+            app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), $payload, $workspace);
+            $this->fail('A live provider claim must retain the payment exclusion.');
+        } catch (\DomainException $exception) {
+            $this->assertStringContainsString('in progress', $exception->getMessage());
+        }
+
+        Date::setTestNow('2026-09-15 13:01:00 UTC');
+        app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), $payload, $workspace);
+
+        $this->assertSame('cancelled', $invoice->fresh()->automatic_delivery_status);
+        $this->assertSame('sending', $delivery->fresh()->status);
+        $this->assertSame(1, $invoice->payments()->where('workspace_id', $workspace->id)->count());
+    }
+
     public function test_audited_correction_updates_the_revision_and_pdf_facts_then_holds_delivery(): void
     {
         Mail::fake();
@@ -702,6 +772,64 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->assertSame(2, $invoice->fresh()->document_revision);
         $this->assertSame('Corrected retainer wording', $line->fresh()->description);
+    }
+
+    public function test_correction_preserves_an_immutable_negative_credit_and_restores_release_after_exhaustion(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [$owner, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill([
+            'automatic_invoice_email_enabled' => true,
+            'automatic_invoice_email_delay_days' => 0,
+        ])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice->fresh(), $workspace);
+        // Synthetic historical invoice: applied credits are generated during
+        // draft preparation in production, but the correction contract only
+        // needs the persisted issued line and its immutable negative amount.
+        $credit = $invoice->lines()->create([
+            'workspace_id' => $workspace->id,
+            'type' => 'credit',
+            'description' => 'Synthetic overpayment credit',
+            'quantity' => '1',
+            'unit_amount' => -2500,
+            'tax_amount' => 0,
+            'total_amount' => -2500,
+            'sort_order' => 2,
+        ]);
+        $invoice->recalculateTotals();
+        $invoice->forceFill([
+            'automatic_delivery_status' => 'failed',
+            'automatic_delivery_due_at' => null,
+        ])->save();
+        $lines = $invoice->lines()->orderBy('id')->get();
+
+        $this->actingAs($owner)->postJson(
+            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
+            [
+                'expected_revision' => 1,
+                'reason' => 'Clarify the synthetic credit description.',
+                'lines' => $lines->map(fn ($line): array => [
+                    'id' => $line->public_id,
+                    'description' => $line->id === $credit->id ? 'Clarified synthetic credit' : $line->description,
+                    'quantity' => (string) $line->quantity,
+                    'unit_amount' => (int) $line->unit_amount,
+                    'tax_amount' => (int) $line->tax_amount,
+                ])->all(),
+            ],
+        )->assertOk();
+
+        $corrected = $invoice->fresh();
+        $this->assertSame(-2500, $credit->fresh()->unit_amount);
+        $this->assertSame('held', $corrected->automatic_delivery_status);
+        $this->assertNotNull($corrected->automatic_delivery_due_at);
+        $this->actingAs($owner)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where(
+                'actions.release_automatic',
+                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
+            ));
     }
 
     private function attachmentData(Attachment $attachment): string

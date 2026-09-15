@@ -201,6 +201,92 @@ class InvoiceEmailTest extends TestCase
         $this->assertNull($retried->error_summary);
     }
 
+    public function test_a_failed_key_cannot_send_a_new_invoice_revision_or_bypass_an_in_flight_delivery(): void
+    {
+        Mail::fake();
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Synthetic keyed delivery', null);
+        $key = 'synthetic-failed-revision-key';
+
+        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic refusal'));
+        try {
+            app(InvoiceEmailService::class)->send($invoice, $draft, $workspace, $key);
+            $this->fail('The first attempt must fail definitely.');
+        } catch (DomainException) {
+            // The failed row is the setup for both retry guards below.
+        }
+        $failed = ClientInvoiceEmailDelivery::query()->sole();
+
+        $invoice->forceFill(['document_revision' => 2])->save();
+        try {
+            app(InvoiceEmailService::class)->send($invoice->fresh(), $draft, $workspace, $key);
+            $this->fail('A key from an earlier revision must not send the corrected document.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('different invoice delivery', $exception->getMessage());
+        }
+
+        $invoice->forceFill(['document_revision' => 1])->save();
+        $invoice->emailDeliveries()->create([
+            'workspace_id' => $workspace->id,
+            'origin' => 'automatic',
+            'invoice_revision' => 1,
+            'attempt_number' => 1,
+            'recipients' => ['billing@synthetic.test'],
+            'subject' => 'Competing delivery',
+            'status' => 'sending',
+            'queued_at' => now(),
+            'claimed_at' => now(),
+        ]);
+        try {
+            app(InvoiceEmailService::class)->send($invoice->fresh(), $draft, $workspace, $key);
+            $this->fail('A failed retry must not be reclaimed beside another in-flight delivery.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('already in progress', $exception->getMessage());
+        }
+
+        $this->assertSame('failed', $failed->fresh()->status);
+        $this->assertSame(1, $failed->fresh()->attempt_number);
+    }
+
+    public function test_a_keyed_result_can_be_recovered_after_the_invoice_stops_being_collectible(): void
+    {
+        Mail::fake();
+        [, $workspace, $invoice] = $this->issuedInvoice();
+        $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Synthetic lost response', null);
+        $key = 'synthetic-paid-replay-key';
+
+        $first = app(InvoiceEmailService::class)->send($invoice, $draft, $workspace, $key);
+        app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), [
+            'amount' => $invoice->total_amount,
+            'currency' => $invoice->currency,
+            'method' => 'synthetic settlement',
+        ], $workspace);
+        $replayed = app(InvoiceEmailService::class)->send($invoice->fresh(), $draft, $workspace, $key);
+
+        $this->assertSame($first->id, $replayed->id);
+        Mail::assertSent(InvoiceMail::class, 1);
+    }
+
+    public function test_the_message_uses_the_invoice_revision_loaded_under_the_delivery_lock(): void
+    {
+        Mail::fake();
+        [, $workspace, $stale] = $this->issuedInvoice();
+        ClientInvoice::query()->whereKey($stale->id)->update([
+            'document_revision' => 2,
+            'due_date' => '2026-10-31',
+        ]);
+
+        $delivery = app(InvoiceEmailService::class)->send(
+            $stale,
+            InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Synthetic current revision', null),
+            $workspace,
+        );
+
+        $this->assertSame(2, $delivery->invoice_revision);
+        Mail::assertSent(InvoiceMail::class, fn (InvoiceMail $mail): bool => $mail->invoice->document_revision === 2
+            && $mail->invoice->due_date?->toDateString() === '2026-10-31');
+    }
+
     /**
      * Sending moves the invoice on twice, and the count is the assertion.
      *

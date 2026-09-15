@@ -103,7 +103,7 @@ class ClientCompanyController extends Controller
                 ? $request->boolean('automatic_invoice_email_enabled')
                 : (bool) $locked->automatic_invoice_email_enabled;
             $normalizedBillingEmail = is_string($billingEmail) ? $billingEmail : null;
-            if ($enabled && $emails->suggestedRecipientsForCompany($locked, $normalizedBillingEmail) === []) {
+            if ($enabled && $emails->suggestedRecipientsForCompany($locked, $normalizedBillingEmail, true) === []) {
                 throw ValidationException::withMessages([
                     'automatic_invoice_email_enabled' => 'Add a valid billing email or client portal recipient before enabling automatic invoice delivery.',
                 ]);

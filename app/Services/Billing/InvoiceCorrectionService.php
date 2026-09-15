@@ -113,6 +113,9 @@ final class InvoiceCorrectionService
                 if ($moneyChanged && ! $operatorAuthored) {
                     throw new DomainException('Generated and allocated invoice lines may only have their description corrected. Void and regenerate the invoice to change their accounting values.');
                 }
+                if ($operatorAuthored && ((int) $submitted['unit_amount'] < 0 || (int) $submitted['tax_amount'] < 0)) {
+                    throw new DomainException('Correctable invoice amounts must be non-negative minor-unit values.');
+                }
 
                 $descriptionChanged = $line->description !== trim($submitted['description']);
                 if (! $moneyChanged && ! $descriptionChanged) {
@@ -132,11 +135,17 @@ final class InvoiceCorrectionService
                     'quantity' => $quantity,
                     'unit_amount' => $unit,
                     'tax_amount' => $tax,
-                    'total_amount' => InvoiceLifecycleService::lineTotal([
-                        'quantity' => $quantity,
-                        'unit_amount' => $unit,
-                        'tax_amount' => $tax,
-                    ]),
+                    // A description-only correction must preserve a generated
+                    // credit's signed total. The general line calculator
+                    // deliberately accepts charges only and is used when
+                    // operator-authored money actually changes.
+                    'total_amount' => $moneyChanged
+                        ? InvoiceLifecycleService::lineTotal([
+                            'quantity' => $quantity,
+                            'unit_amount' => $unit,
+                            'tax_amount' => $tax,
+                        ])
+                        : $line->total_amount,
                 ])->save();
                 $changes[] = [
                     'line' => $line->public_id,
@@ -161,6 +170,9 @@ final class InvoiceCorrectionService
 
             $locked->refresh();
             $locked->recalculateTotals();
+            $automaticDeliveryAt = $locked->automatic_delivery_status === null
+                ? null
+                : ($locked->automatic_delivery_due_at ?? $this->clock->now($workspace)->utc());
             $locked->forceFill([
                 'due_date' => $parsedDueDate,
                 'document_revision' => $locked->document_revision + 1,
@@ -170,6 +182,11 @@ final class InvoiceCorrectionService
                 'automatic_delivery_held_at' => $locked->automatic_delivery_status === null
                     ? null
                     : $this->clock->now($workspace)->utc(),
+                // A correction creates a new document revision. If the prior
+                // revision exhausted its retries, give this held revision a
+                // real release point instead of publishing an action the hold
+                // service must reject for a null due time.
+                'automatic_delivery_due_at' => $automaticDeliveryAt,
                 'automatic_delivery_note' => $locked->automatic_delivery_status === null
                     ? null
                     : 'Held after an invoice correction; release explicitly after review.',

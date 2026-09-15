@@ -8,6 +8,7 @@ use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 
 require __DIR__.'/../../../vendor/autoload.php';
@@ -30,6 +31,32 @@ config(['database.connections.delivery_race' => $input['connection'], 'database.
 DB::purge('delivery_race');
 $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFail();
 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['invoice'])->firstOrFail();
+if (isset($input['lookup_ready'], $input['lookup_release'])) {
+    foreach ([$input['lookup_ready'], $input['lookup_release']] as $path) {
+        if (! is_string($path) || ! str_starts_with($path, $barrierPrefix)) {
+            exit(2);
+        }
+    }
+    $lookupArmed = true;
+    DB::listen(static function (QueryExecuted $query) use (&$lookupArmed, $input): void {
+        if (! $lookupArmed
+            || ! str_contains($query->sql, 'client_invoice_email_deliveries')
+            || ! str_contains($query->sql, 'idempotency_key')) {
+            return;
+        }
+        $lookupArmed = false;
+        if (! touch($input['lookup_ready'])) {
+            exit(3);
+        }
+        $lookupDeadline = microtime(true) + 15;
+        while (! is_file($input['lookup_release']) && microtime(true) < $lookupDeadline) {
+            usleep(10_000);
+        }
+        if (! is_file($input['lookup_release'])) {
+            exit(3);
+        }
+    });
+}
 if (! touch($input['ready'])) {
     exit(3);
 }
@@ -48,6 +75,12 @@ try {
             $invoice,
             InvoiceEmailDraft::of(['billing@synthetic.test'], [], 'Synthetic invoice', null),
             $workspace,
+        ),
+        'keyed-manual' => app(InvoiceEmailService::class)->send(
+            $invoice,
+            InvoiceEmailDraft::of(['billing@synthetic.test'], [], 'Synthetic keyed race', null),
+            $workspace,
+            (string) $input['key'],
         ),
         'hold' => app(InvoiceCorrectionService::class)->hold($invoice, $workspace),
         'void' => app(InvoiceLifecycleService::class)->void($invoice, $workspace),

@@ -57,6 +57,9 @@ uses the normal `InvoiceMail` path and its client-audience PDF. Each attempt
 records whether it was manual or automatic, its revision, recipients, result,
 retry time, and provider reference.
 
+`InvoiceMail` renders the `invoices.email` Blade view. The React screen only
+composes and submits the delivery facts; it does not render the email body.
+
 Successful manual delivery cancels the scheduled automatic delivery. A
 correction holds it until an administrator explicitly releases it. Voiding or
 disabling cancels it. Recording any payment also cancels it: automatic delivery
@@ -73,7 +76,8 @@ allocated lines allow description corrections only; an unallocated,
 operator-authored line may also change quantity, unit amount, or tax. Lines
 cannot be added or removed. Every correction requires the expected document
 revision and a reason, increments the revision, recalculates totals, creates an
-activity record, and holds automatic delivery.
+activity record, and holds automatic delivery. A generated credit keeps its
+signed amount and total during a description-only correction.
 
 Paid, partially paid, void, already sent, and in-flight invoices cannot use
 this path. Their accounting correction is void/reissue or the narrower payment
@@ -90,9 +94,19 @@ transaction.
 Known pre-provider failures use bounded backoff. A provider acceptance followed
 by a local persistence failure remains `sending`: the result is ambiguous and
 the scheduler will not blindly submit it again. Its durable claim and provider
-logs must be reconciled before an operator chooses another send. Administrator
-attempt history and client delivery rows retain the non-private audit facts;
-PDF bytes and recipient addresses are never written to application logs.
+logs must be reconciled before an operator chooses another send. A payment is
+refused during the first hour of that claim; after that conservative expiry it
+may proceed and cancels the automatic workflow while the delivery row remains
+`sending` as evidence of the unresolved outcome. Administrator attempt history
+and client delivery rows retain the non-private audit facts; PDF bytes and
+recipient addresses are never written to application logs.
+
+Manual delivery keys are unique per workspace. A replay returns the recorded
+result even if the invoice later becomes paid or void. A definitely failed
+attempt may be reclaimed only for the same invoice revision and only when no
+other delivery is in flight. Concurrent first use of one key on different
+invoices resolves to one delivery and one domain conflict, rather than exposing
+a database exception.
 
 Production rollout remains per-client opt-in. This feature does not enroll a
 client, migrate historical invoices into the schedule, or change agent access.
