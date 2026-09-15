@@ -11,20 +11,35 @@ class DeploymentSafetyTest extends TestCase
     public function deployment_is_hard_scoped_and_preserves_private_files(): void
     {
         $workflow = file_get_contents(__DIR__.'/../../.github/workflows/tests.yml');
+        $preMigrate = file_get_contents(__DIR__.'/../../scripts/deploy/pre-migrate.sh');
 
         $this->assertIsString($workflow);
+        $this->assertIsString($preMigrate);
         $this->assertStringContainsString('environment: web1', $workflow);
-        $this->assertStringContainsString(':~/svc-laravel/', $workflow);
-        $this->assertStringContainsString("--exclude='.env'", $workflow);
-        $this->assertStringContainsString("--exclude='svc-blobs'", $workflow);
-        $this->assertStringContainsString("--exclude='/storage/app/private/oauth/'", $workflow);
-        $this->assertStringContainsString('Create or verify persistent OAuth signing keys', $workflow);
-        $this->assertStringContainsString('artisan passport:keys --force', $workflow);
-        $this->assertStringContainsString('refusing to rotate it automatically', $workflow);
-        $this->assertStringNotContainsString(':~/', str_replace(':~/svc-laravel/', '', $workflow));
-        $this->assertStringNotContainsString(':~/bwh-php/', $workflow);
-        $this->assertStringNotContainsString(':~/phr-laravel/', $workflow);
-        $this->assertStringNotContainsString(':~/games-laravel/', $workflow);
+
+        // The shared action performs the rsync --delete, always excludes .env, and refuses a
+        // destination that does not already hold artisan. It holds a key that reaches every
+        // application on the account, so it must be pinned to a full commit, never a tag.
+        $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
+        $this->assertDoesNotMatchRegularExpression('~uses: bherila/shared-cpanel-deployment@(?![0-9a-f]{40}\b)~', $workflow);
+
+        // Exactly one destination, and it is this application's.
+        $this->assertSame(1, preg_match_all('~^\s*deploy-dir:~m', $workflow));
+        $this->assertMatchesRegularExpression('~^\s*deploy-dir: svc-laravel\s*$~m', $workflow);
+        $this->assertStringNotContainsString(':~/', $workflow);
+        foreach (['bwh-php', 'phr-laravel', 'games-laravel'] as $other) {
+            $this->assertStringNotContainsString("deploy-dir: {$other}", $workflow);
+        }
+
+        // svc-blobs is authoritative data and the OAuth key pair must never be replaced by a deploy.
+        $this->assertMatchesRegularExpression('~excludes: \|\n(?:\s+\S.*\n)*?\s+svc-blobs\s*\n~', $workflow);
+        $this->assertMatchesRegularExpression('~excludes: \|\n(?:\s+\S.*\n)*?\s+/storage/app/private/oauth/\s*\n~', $workflow);
+        $this->assertStringContainsString('env-source: .config/svc/deployment.env', $workflow);
+
+        // Signing keys are created only when both are absent; half a pair is a refusal.
+        $this->assertStringContainsString('pre-migrate-script: scripts/deploy/pre-migrate.sh', $workflow);
+        $this->assertStringContainsString('artisan passport:keys --force', $preMigrate);
+        $this->assertStringContainsString('refusing to rotate it automatically', $preMigrate);
     }
 
     #[Test]
