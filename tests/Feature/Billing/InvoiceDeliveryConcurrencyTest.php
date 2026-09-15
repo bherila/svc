@@ -11,8 +11,8 @@ use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Concerns\UsesAProbeDatabase;
 use Tests\TestCase;
@@ -44,6 +44,10 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
         DB::setDefaultConnection('delivery_race');
         Schema::clearResolvedInstance('db.schema');
         $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-delivery-race-'.Str::lower(Str::random(16));
+        $firstReady = $barrier.'-first-ready';
+        $secondReady = $barrier.'-second-ready';
+        $release = $barrier.'-release';
         try {
             $owner = User::factory()->create(['email' => 'race-owner@synthetic.test']);
             $workspace = Workspace::query()->create(['name' => 'Synthetic delivery race', 'slug' => 'synthetic-delivery-race']);
@@ -68,17 +72,14 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
             ]]);
             $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
 
-            [$first, $firstInput] = $this->worker($firstOperation, $workspace, $invoice);
-            [$second, $secondInput] = $this->worker($secondOperation, $workspace, $invoice);
+            $first = $this->worker($firstOperation, $workspace, $invoice, $firstReady, $release);
+            $second = $this->worker($secondOperation, $workspace, $invoice, $secondReady, $release);
             $processes = [$first, $second];
             $first->start();
             $second->start();
-            $this->assertTrue($first->waitUntil(fn (): bool => str_contains($first->getOutput(), "ready\n")), $first->getOutput());
-            $this->assertTrue($second->waitUntil(fn (): bool => str_contains($second->getOutput(), "ready\n")), $second->getOutput());
-            $firstInput->write("go\n");
-            $secondInput->write("go\n");
-            $firstInput->close();
-            $secondInput->close();
+            $this->awaitReady($first, $firstReady);
+            $this->awaitReady($second, $secondReady);
+            $this->assertTrue(touch($release), 'Could not release the invoice delivery race workers.');
             $first->wait();
             $second->wait();
             $firstResult = $this->workerResult($first);
@@ -115,32 +116,47 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
             foreach ($processes as $process) {
                 $process->stop(0);
             }
+            @unlink($firstReady);
+            @unlink($secondReady);
+            @unlink($release);
             DB::setDefaultConnection($original);
             Schema::clearResolvedInstance('db.schema');
         }
     }
 
-    /** @return array{0:Process,1:InputStream} */
-    private function worker(string $operation, Workspace $workspace, ClientInvoice $invoice): array
-    {
-        $input = new InputStream;
-        $input->write(json_encode([
+    private function worker(
+        string $operation,
+        Workspace $workspace,
+        ClientInvoice $invoice,
+        string $ready,
+        string $release,
+    ): Process {
+        $input = base64_encode(json_encode([
             'connection' => config('database.connections.delivery_race'),
             'workspace' => $workspace->id,
             'invoice' => $invoice->id,
             'operation' => $operation,
-        ], JSON_THROW_ON_ERROR)."\n");
+            'ready' => $ready,
+            'release' => $release,
+        ], JSON_THROW_ON_ERROR));
 
-        return [
-            new Process(
-                [PHP_BINARY, base_path('tests/Fixtures/Billing/invoice-delivery-race-worker.php')],
-                base_path(),
-                ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
-                $input,
-                60,
-            ),
-            $input,
-        ];
+        return new Process(
+            [PHP_BINARY, base_path('tests/Fixtures/Billing/invoice-delivery-race-worker.php'), $input],
+            base_path(),
+            ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
+            null,
+            60,
+        );
+    }
+
+    private function awaitReady(Process $process, string $ready): void
+    {
+        $deadline = microtime(true) + 15;
+        while (! is_file($ready) && $process->isRunning() && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+
+        $this->assertFileExists($ready, $process->getOutput().$process->getErrorOutput());
     }
 
     /** @return array<string, mixed> */

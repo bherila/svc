@@ -13,17 +13,31 @@ use Illuminate\Support\Facades\DB;
 require __DIR__.'/../../../vendor/autoload.php';
 $app = require __DIR__.'/../../../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
-$input = json_decode((string) fgets(STDIN), true, flags: JSON_THROW_ON_ERROR);
+$encoded = (string) ($argv[1] ?? '');
+$decoded = base64_decode($encoded, true);
+if ($decoded === false) {
+    exit(2);
+}
+$input = json_decode($decoded, true, flags: JSON_THROW_ON_ERROR);
 if (! $app->environment('testing') || ! str_starts_with($input['connection']['database'], 'svc_probe_')) {
+    exit(2);
+}
+$barrierPrefix = sys_get_temp_dir().DIRECTORY_SEPARATOR.'svc-delivery-race-';
+if (! str_starts_with($input['ready'], $barrierPrefix) || ! str_starts_with($input['release'], $barrierPrefix)) {
     exit(2);
 }
 config(['database.connections.delivery_race' => $input['connection'], 'database.default' => 'delivery_race']);
 DB::purge('delivery_race');
 $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFail();
 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['invoice'])->firstOrFail();
-echo "ready\n";
-flush();
-if (trim((string) fgets(STDIN)) !== 'go') {
+if (! touch($input['ready'])) {
+    exit(3);
+}
+$deadline = microtime(true) + 15;
+while (! is_file($input['release']) && microtime(true) < $deadline) {
+    usleep(10_000);
+}
+if (! is_file($input['release'])) {
     exit(3);
 }
 
