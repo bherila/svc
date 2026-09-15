@@ -1073,6 +1073,27 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             ->exists());
     }
 
+    public function test_failed_regeneration_rolls_back_withdrawal_pricing_and_allocations(): void
+    {
+        $entry = $this->approvedEntry(['approved_by_user_id' => $this->manager->id, 'approved_at' => now()]);
+        $invoice = $this->generateJuly($this->agreement());
+        $invoice->forceFill(['client_agreement_id' => null])->save();
+        $before = $entry->fresh()->getAttributes();
+        $total = $invoice->total_amount;
+        $lineIds = $entry->invoiceLines()->pluck('client_invoice_lines.id')->all();
+
+        try {
+            app(TimeEntryMutationService::class)->unapprove($this->workspace, $entry, $this->manager, AgentApiVersion::for($entry));
+            $this->fail('A cadence invoice without its agreement cannot be regenerated.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+
+        $this->assertSame($before, $entry->fresh()->getAttributes());
+        $this->assertSame($total, $invoice->fresh()->total_amount);
+        $this->assertSame($lineIds, $entry->invoiceLines()->pluck('client_invoice_lines.id')->all());
+    }
+
     public function test_withdrawing_approval_of_time_on_a_cadence_draft_rebuilds_it_without_the_entry(): void
     {
         $agreement = $this->agreement();

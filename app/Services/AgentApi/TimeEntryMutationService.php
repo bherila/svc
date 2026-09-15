@@ -21,6 +21,7 @@ use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -272,7 +273,7 @@ final class TimeEntryMutationService
                 ->get(['id']);
 
             $prelinkedInvoiceIds = $this->allocatedInvoiceIds($probe);
-            $lockedInvoiceIds = ClientInvoice::query()
+            $lockedInvoices = ClientInvoice::query()
                 ->where('workspace_id', $workspace->id)
                 ->where(function (Builder $query) use ($probe, $prelinkedInvoiceIds): void {
                     $query->where('client_company_id', $probe->client_company_id);
@@ -282,9 +283,8 @@ final class TimeEntryMutationService
                 })
                 ->orderBy('id')
                 ->tap(Locks::forUpdate())
-                ->pluck('id')
-                ->map(fn ($id): int => (int) $id)
-                ->all();
+                ->get()
+                ->keyBy('id');
 
             // Named here and not only in `assertDraftEditable()`: the route
             // binding does not scope the entry, so without this the lock is
@@ -298,12 +298,7 @@ final class TimeEntryMutationService
                 ->first();
             abort_unless($locked instanceof ClientTimeEntry, 404);
 
-            $invoice = $this->allocatedInvoice($locked);
-            abort_unless(
-                ! $invoice instanceof ClientInvoice || in_array($invoice->id, $lockedInvoiceIds, true),
-                409,
-                'The time entry invoice allocation changed; read it and retry.',
-            );
+            $invoice = $this->allocatedInvoice($locked, $lockedInvoices);
 
             return $write($locked, $invoice);
         });
@@ -540,8 +535,25 @@ final class TimeEntryMutationService
             ->all());
     }
 
-    private function allocatedInvoice(ClientTimeEntry $entry): ?ClientInvoice
+    /** @param Collection<int, ClientInvoice> $lockedInvoices */
+    private function allocatedInvoice(ClientTimeEntry $entry, Collection $lockedInvoices): ?ClientInvoice
     {
+        // REPEATABLE READ keeps the probe's snapshot even after the entry lock
+        // is acquired. Check that its allocation identities still agree with a
+        // current locking read before using relationships from that snapshot.
+        // A late allocation can otherwise look absent and bypass regeneration.
+        //
+        // Lock only this entry's tenant-owned pivots, after the entry. Existing
+        // invoice writers already meet at the invoice or entry lock. Do not
+        // acquire an invoice discovered here out of order: refuse and retry.
+        $pivots = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $entry->workspace_id)
+            ->where('client_time_entry_id', $entry->id)
+            ->orderBy('client_invoice_line_id');
+        $snapshot = (clone $pivots)->pluck('client_invoice_line_id')->all();
+        $current = $pivots->tap(Locks::forUpdate())->pluck('client_invoice_line_id')->all();
+        abort_unless($snapshot === $current, 409, 'The time entry invoice allocation changed; read it and retry.');
+
         $invoiceIds = $this->allocatedInvoiceIds($entry);
         abort_unless(count($invoiceIds) <= 1, 409, 'The time entry is allocated to more than one invoice.');
 
@@ -549,10 +561,12 @@ final class TimeEntryMutationService
             return null;
         }
 
-        return ClientInvoice::query()
-            ->whereKey($invoiceIds[0])
-            ->where('workspace_id', $entry->workspace_id)
-            ->first();
+        $invoice = $lockedInvoices->get($invoiceIds[0]);
+        abort_unless($invoice instanceof ClientInvoice, 409, 'The time entry invoice allocation changed; read it and retry.');
+
+        // The earlier locking read owns the authoritative status. Reloading it
+        // with an ordinary SELECT could resurrect a draft that was issued.
+        return $invoice;
     }
 
     private function assertClientDescription(bool $visible, mixed $description): void

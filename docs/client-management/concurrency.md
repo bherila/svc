@@ -187,6 +187,24 @@ command-level MariaDB tests covering concurrency and rollback. Existing receipt
 probes already provide multi-process test infrastructure; the missing work is the
 maintenance protocol and its specific proof, not a new testing platform.
 
+### Time-mutation snapshot validation
+
+A row lock does not refresh ordinary relationship reads under `REPEATABLE READ`.
+`TimeEntryMutationService` keeps the invoice models returned by its locking read,
+then locks the time entry and its tenant-owned allocation pivots. It compares the
+current pivot line IDs with the transaction snapshot before interpreting that
+snapshot's invoice relationships. A difference returns 409 without changing the
+entry: the caller must read again and retry. An invoice discovered after the
+invoice-lock phase is also refused rather than acquired out of order.
+
+The pivot resource `client_invoice_line_time_entries` follows `client_time_entries`
+in the registry. This adds a bounded lock on one entry's allocations, not locks
+on all unbilled time. `TimeMutationConcurrencyTest` drives a separate invoice
+writer after the initial probe, including a caller with an existing transaction
+snapshot, and checks committed billing state from a fresh connection. It also
+covers issuance winning that race. A failed draft regeneration restores approval,
+pricing and allocation together.
+
 ## Check-then-act inventory
 
 Every guard that reads a condition and then writes on the strength of it, with
@@ -208,7 +226,7 @@ gets a follow-up rather than an inline fix.
 | `InterimOverageGenerator::releaseUnchargedInterimClaims()` — only an unsettled draft is stripped | Locks the drafts, then **re-reads each one and re-checks its status** before rewriting. The cadence path holds the agreement and `issue()` holds the invoice and the company, so nothing else stops an operator issuing a draft between the read and the delete |
 | `AllocationService::recombineUnlinkedFragments()` — only a wholly unbilled group merges | Locks the lineage group, then validates the project chains **after** taking those locks, so a concurrent edit cannot move a fragment between the check and the destructive merge |
 | `TimeEntryMutationService::update()` — an entry on a draft may be edited | Locks the company's agreements, then its invoices, then the entry — then re-verifies that the entry's allocated invoice is among the ids it locked, and refuses if the allocation moved |
-| `TimeEntryMutationService::unapprove()` — billed time keeps its approval | The same agreement, invoice and entry locks as `update()`. The status and the invoice allocation are read from the **locked** entry, so an `issue()` that commits first leaves the entry `invoiced` (refused) and one that waits finds it already returned to draft and the draft rebuilt without it |
+| `TimeEntryMutationService::unapprove()` — billed time keeps its approval | The same agreement, invoice, entry and allocation-pivot locks as `update()`. Snapshot pivot membership must match the current read, and invoice status comes from the locked invoice model, so an `issue()` that commits first leaves the entry `invoiced` (refused) and one that waits finds it already returned to draft and the draft rebuilt without it |
 | `PaymentReconciliationService::upsert()` — active allocations do not exceed the payment net of refunds | Locks the payment, the existing reconciliation, and the sibling active rows it sums, all before the write; `pr_payment_system_transaction_unique` behind it |
 | `UndatedCollectibleInvoiceRepairer::repair()` — the set repaired is the set counted | Counts under the lock and refuses if the count differs from the operator's stated expectation |
 | `OAuthLoginController::resolveUser()` — one account per provider subject and per email | Locks by provider subject, then by email; `users.email` unique behind it |
