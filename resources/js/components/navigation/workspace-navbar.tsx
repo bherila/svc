@@ -5,7 +5,7 @@ import { CommandPaletteTrigger } from '@/components/command-palette';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { ClientCompanySwitcher } from '@/components/navigation/client-company-switcher';
 import { ClientModuleTabs } from '@/components/navigation/client-module-tabs';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
 import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
@@ -67,26 +67,19 @@ export function WorkspaceNavbar({
             <div
                 className={cn(SHELL_CONTAINER, 'flex h-12 items-center gap-2')}
             >
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    render={
-                        <Link href="/app" aria-label="Leave this workspace">
-                            {/*
-                             * A door, not a sign-out. The account menu holds
-                             * signing out; this leaves the tenant and returns
-                             * to the selector, which is the only thing in the
-                             * application that changes workspace.
-                             */}
-                            <LogOutIcon
-                                aria-hidden="true"
-                                className="size-4 rotate-180"
-                            />
-                        </Link>
-                    }
-                />
-
+                <Link
+                    href="/app"
+                    aria-label="Leave this workspace"
+                    className={cn(
+                        buttonVariants({ variant: 'ghost', size: 'icon' }),
+                        'shrink-0',
+                    )}
+                >
+                    <LogOutIcon
+                        aria-hidden="true"
+                        className="size-4 rotate-180"
+                    />
+                </Link>
                 <span
                     // Truncates rather than wraps, and the full name is on the
                     // selector one click away. Hidden below `sm` so a long

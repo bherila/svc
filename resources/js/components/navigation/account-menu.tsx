@@ -105,7 +105,7 @@ export function AccountMenu({
                          * A POST, because signing someone out on a GET means
                          * any image tag on any page can do it.
                          */}
-                        <DropdownMenuItem asChild>
+                        <DropdownMenuItem asChild nativeButton>
                             <Link
                                 href="/logout"
                                 method="post"

@@ -1,10 +1,25 @@
 import { createInertiaApp } from '@inertiajs/react';
+import type { ResolvedComponent } from '@inertiajs/react';
+import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import { CommandPalette } from '@/components/command-palette';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 createInertiaApp({
+    resolve: (name) =>
+        resolvePageComponent<ResolvedComponent>(
+            `./pages/${name}.tsx`,
+            import.meta.glob<ResolvedComponent>(
+                [
+                    './pages/**/*.tsx',
+                    '!./pages/**/*.test.tsx',
+                    '!./pages/**/*.spec.tsx',
+                    '!./pages/**/__tests__/**',
+                ],
+                { import: 'default' },
+            ),
+        ),
     title: (title) => (title ? `${title} - ${appName}` : appName),
     progress: {
         color: '#4B5563',
