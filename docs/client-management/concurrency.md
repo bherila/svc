@@ -57,18 +57,21 @@ the majority order won and the minority is named as an inversion below.
 | 4 | `client_invoice_payments` | Payment status and refund both start from the payment and reach the invoice through it — never the reverse |
 | 5 | `payment_reconciliations` | Hangs off a payment already held |
 | 6 | `client_invoices` | Every generator has an agreement or a schedule before it has an invoice |
-| 7 | `workspaces` | Reached only to serialise the number counter, which is reached only once there is an invoice to number |
-| 8 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
-| 9 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
-| 10 | `client_tasks` | Milestone claims, composed after time in every path but one |
-| 11 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
-| 12 | `client_companies` | Last, and this is the surprise — see below |
-| 13 | `client_projects` | Never co-acquired with anything above |
-| 14 | `users` | Never co-acquired with anything above |
-| 15 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 16 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 17 | `client_stripe_customers` | |
-| 18 | `client_stripe_payment_methods` | |
+| 7 | `client_invoice_lines` | Issued correction locks the invoice before preserving and changing its existing lines |
+| 8 | `workspaces` | Reached only to serialise the number counter, which is reached only once there is an invoice to number |
+| 9 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
+| 10 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
+| 11 | `client_tasks` | Milestone claims, composed after time in every path but one |
+| 12 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
+| 13 | `client_companies` | Last, and this is the surprise — see below |
+| 14 | `client_projects` | Never co-acquired with anything above |
+| 15 | `users` | Never co-acquired with anything above |
+| 16 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
+| 17 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
+| 18 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 19 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 20 | `client_stripe_customers` | |
+| 21 | `client_stripe_payment_methods` | |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -103,10 +106,15 @@ ClientBillingSchedule, ClientInvoice, ClientCompany            schedule run, iss
 ClientInvoicePayment, ClientInvoice                            payment status, refund
 ClientInvoicePayment, PaymentReconciliation                    reconciliation upsert
 ClientInvoice, ClientCompany                                   issuing, credit spend
+ClientInvoice, ClientCompany                                   disabling automatic delivery after locking the affected invoices
+ClientInvoice, ClientInvoiceLine                               issued correction
+ClientInvoice, ClientInvoiceEmailDelivery                      atomic client-delivery result persistence
 ClientAgreement, ClientInvoice, Workspace,
     WorkspaceInvoiceCounter, ClientTimeEntry, ClientTask       cadence generation
 ClientAgreement, ClientInvoice, Workspace,
     WorkspaceInvoiceCounter, ClientTimeEntry                   interim overage
+ClientInvoiceEmailDelivery                                    post-commit client delivery claim
+ClientInvoiceAdministratorNotification                        post-commit administrator notification claim
 StripePaymentMethodState, ClientStripeCustomer,
     ClientStripePaymentMethod                                  provider sync
 ```

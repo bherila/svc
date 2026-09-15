@@ -269,6 +269,8 @@ try {
 
         for (const screen of [
             'invoice',
+            'invoice_review',
+            'settings',
             'draft_invoice',
             'draft_time',
             'proposal',
@@ -464,6 +466,24 @@ try {
                 ).toBeVisible();
                 await capture(screen, 'correction', width);
             }
+
+            if (screen === 'invoice_review') {
+                await page
+                    .getByRole('button', {
+                        name: 'Correct invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByLabel('Reason for correction', { exact: true }),
+                ).toBeVisible();
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill(
+                        'SyntheticCorrectedDescriptionWithoutBreaks'.repeat(10),
+                    );
+                await capture(screen, 'correction', width);
+            }
         }
     }
 
@@ -601,7 +621,7 @@ try {
         [
             '# Browser layout evidence',
             '',
-            'Synthetic local fixtures only. Invoice/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

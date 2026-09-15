@@ -26,7 +26,7 @@ places where SVC deliberately diverges.
 | Invoice from selected time | [overview.md](overview.md#time-entry-splitting-and-allocation) | Implemented on the operator time sheet — managers select approved, billable, non-deferred, unallocated time, review recorded rates and a single-currency total, then create a draft. The existing endpoint rechecks eligibility and allocation under lock; the agent API and MCP write tool use the same allocation service. An ad-hoc draft also offers **Add time**, opening the same selection screen for that invoice. After unapproving, editing and reapproving an entry, add it back to the original draft; existing lines remain intact. Saving checks the invoice version and current allocations. Drafting or adding time does not issue or send the invoice |
 | Payments and balances | [payments.md](payments.md) | Implemented |
 | Stripe payment intents and webhooks | [stripe-billing.md](stripe-billing.md) | Implemented |
-| Invoice email delivery | [billing.md](billing.md) | Implemented |
+| Invoice review and email delivery | [invoice-delivery.md](invoice-delivery.md) | Implemented — administrator review notices are distinct from opt-in delayed client delivery |
 | Recurring billing schedules | [cadence-billing.md](cadence-billing.md) | Implemented |
 | Retainer draw-down | [billing.md](billing.md) | Implemented |
 | Rollover of unused retainer hours | [billing.md](billing.md) | Implemented — ages by elapsed calendar months, which the predecessor did not |
@@ -397,6 +397,7 @@ into a test.
 - **[Cadence billing & regeneration](cadence-billing.md)** — invoice period (`period_*` vs `cycle_*`), one-cycle offset, numbering, regeneration rules + legacy `period == cycle` migration, interim overage invoices.
 - **[Milestone billing](milestone-billing.md)** — flat-fee deliverable billing via `milestone_price`.
 - **[Payments](payments.md)** — payment methods, validation, status transitions, and the payments UI.
+- **[Invoice review and delivery](invoice-delivery.md)** — administrator notification, audited correction, per-client delayed delivery, retry and ambiguity policy.
 - **[CLI](cli.md)** — admin Artisan commands for invoice listing, manual payments, and time-entry creation.
 - **[Stripe billing](stripe-billing.md)** — online invoice payments, saved payment methods, payment cap, and webhook behavior.
 - **[Deferred billing](deferred-billing.md)** — per-entry flag that lets admins complete work now and bill for it only when retainer capacity exists.

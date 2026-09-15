@@ -216,9 +216,9 @@ final class LockOrderConformanceTest extends TestCase
     public function test_an_unregistered_table_cannot_be_locked(): void
     {
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('No lock-order registry entry for table "client_invoice_lines"');
+        $this->expectExceptionMessage('No lock-order registry entry for table "client_attachments"');
 
-        LockResource::forTable('client_invoice_lines');
+        LockResource::forTable('client_attachments');
     }
 
     /**

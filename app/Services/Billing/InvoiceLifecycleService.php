@@ -32,6 +32,7 @@ final class InvoiceLifecycleService
         private readonly ClientActivityRecorder $activities,
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly ?InvoiceAdministratorNotificationService $administratorNotifications = null,
     ) {}
 
     /**
@@ -276,13 +277,31 @@ final class InvoiceLifecycleService
             ClientCompany::query()->whereKey($locked->client_company_id)->tap(Locks::forUpdate())->first();
             $this->capOverpaymentCreditAtIssue($locked);
 
+            // Timestamps are persisted in UTC. Convert before Eloquent formats
+            // the value (which otherwise drops the offset), then return to the
+            // workspace timezone only for calendar-day arithmetic.
+            $issuedAt = $this->clock->now($locked->workspace)->utc();
+            $automatic = (bool) $locked->clientCompany->automatic_invoice_email_enabled;
+            $delayDays = $automatic
+                ? (int) $locked->clientCompany->automatic_invoice_email_delay_days
+                : null;
+
             $locked->forceFill([
                 'issue_date' => $issueDate,
                 'due_date' => $locked->due_date ?? $issueDate,
-                'issued_at' => $this->clock->now($locked->workspace),
+                'issued_at' => $issuedAt,
                 'status' => 'issued',
+                'document_revision' => 1,
                 'is_visible_to_client' => true,
                 'balance_amount' => $locked->total_amount,
+                // The setting is snapped only on the first committed issue.
+                // Adding calendar days to the workspace-local instant keeps
+                // its wall-clock time across daylight-saving transitions.
+                'automatic_delivery_status' => $automatic ? 'scheduled' : null,
+                'automatic_delivery_delay_days' => $delayDays,
+                'automatic_delivery_due_at' => $automatic
+                    ? $issuedAt->setTimezone($locked->workspace->timezone)->addDays($delayDays ?? 0)->utc()
+                    : null,
             ])->save();
 
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
@@ -306,8 +325,13 @@ final class InvoiceLifecycleService
                     'invoice_kind' => $locked->invoiceKindValue(),
                     'total_amount' => $locked->total_amount,
                     'currency' => $locked->currency,
+                    'automatic_delivery_status' => $locked->automatic_delivery_status,
+                    'automatic_delivery_delay_days' => $locked->automatic_delivery_delay_days,
                 ],
             );
+
+            ($this->administratorNotifications ?? app(InvoiceAdministratorNotificationService::class))
+                ->registerIssued($locked);
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
@@ -464,6 +488,13 @@ final class InvoiceLifecycleService
                 throw new DomainException('A paid invoice cannot be voided.');
             }
 
+            if ($locked->emailDeliveries()
+                ->where('workspace_id', $locked->workspace_id)
+                ->whereIn('status', ['pending', 'sending'])
+                ->exists()) {
+                throw new DomainException('Wait for the in-flight client delivery before voiding this invoice.');
+            }
+
             // Before the pending check, because it is the same question asked
             // of a row that cannot answer it. The check below is a positive
             // filter, so a payment whose status this application cannot read is
@@ -498,7 +529,14 @@ final class InvoiceLifecycleService
 
             $this->releaseAllocations($locked);
             $previousStatus = $locked->status;
-            $locked->forceFill(['status' => 'void', 'voided_at' => $this->clock->now($locked->workspace), 'void_reason' => $reason, 'balance_amount' => 0])->save();
+            $locked->forceFill([
+                'status' => 'void',
+                'voided_at' => $this->clock->now($locked->workspace),
+                'void_reason' => $reason,
+                'balance_amount' => 0,
+                'automatic_delivery_status' => $locked->automatic_delivery_status === null ? null : 'cancelled',
+                'automatic_delivery_note' => $locked->automatic_delivery_status === null ? null : 'Invoice voided.',
+            ])->save();
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
@@ -647,6 +685,15 @@ final class InvoiceLifecycleService
 
             $previousInvoiceStatus = $locked->status;
             $this->refreshStatus($locked);
+            if (in_array($locked->automatic_delivery_status, ['scheduled', 'held', 'failed'], true)) {
+                // Automatic delivery is an issuance notice, not a payment
+                // reminder. Any payment attempt moves the invoice out of that
+                // workflow; an operator can still send it manually.
+                $locked->forceFill([
+                    'automatic_delivery_status' => 'cancelled',
+                    'automatic_delivery_note' => 'A payment was recorded; automatic delivery does not send payment reminders.',
+                ])->save();
+            }
             if ($status === InvoicePaymentStatus::Succeeded) {
                 $this->recordPaymentActivity($locked, $payment, 'invoice.payment_received');
                 $this->recordMarkedPaid($locked, $previousInvoiceStatus, $payment->public_id);

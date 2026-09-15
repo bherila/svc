@@ -390,13 +390,15 @@ class InvoiceEmailTest extends TestCase
             InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Invoice', null),
         );
 
-        Mail::assertNothingSent();
+        // Issuance itself now sends the distinct administrator review notice;
+        // the missing client delivery must add no InvoiceMail.
+        Mail::assertNotSent(InvoiceMail::class);
     }
 
     public function test_a_refusal_after_commit_is_recorded_rather_than_thrown(): void
     {
         [, $workspace, $invoice] = $this->issuedInvoice();
-        Log::spy();
+        $log = Log::spy();
         Mail::shouldReceive('to')->andThrow(new TransportException('refused'));
 
         // Nobody is waiting on this: the request that asked for it has been
@@ -409,13 +411,13 @@ class InvoiceEmailTest extends TestCase
         );
 
         $this->assertSame('failed', $delivery->fresh()->status);
-        Log::shouldHaveReceived('warning');
+        $log->shouldHaveReceived('warning');
     }
 
     public function test_a_failed_send_is_logged_with_the_delivery_it_names(): void
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
-        Log::spy();
+        $log = Log::spy();
         Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
 
         $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertStatus(422);
@@ -425,7 +427,7 @@ class InvoiceEmailTest extends TestCase
         // The log line is the only place the reason survives - the screen gets
         // the class of failure and nothing more - so it has to name which
         // delivery it is about.
-        Log::shouldHaveReceived('error')
+        $log->shouldHaveReceived('error')
             ->withArgs(function (string $message, array $context) use ($delivery): bool {
                 return $message === 'An invoice email could not be sent.'
                     && ($context['delivery'] ?? null) === $delivery->public_id
@@ -522,7 +524,7 @@ class InvoiceEmailTest extends TestCase
             ->postJson($this->sendUrl($workspace, $invoice))
             ->assertForbidden();
 
-        Mail::assertNothingSent();
+        Mail::assertNotSent(InvoiceMail::class);
     }
 
     private function sendUrl(Workspace $workspace, ClientInvoice $invoice): string

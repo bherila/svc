@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property string $public_id
  * @property string $status
+ * @property string $origin
+ * @property int $invoice_revision
+ * @property int $attempt_number
+ * @property string|null $idempotency_key
  * @property list<string> $recipients
  * @property list<string> $bcc
  * @property string $subject
@@ -24,15 +28,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $provider_status
  * @property string|null $error_summary
  * @property CarbonImmutable|null $queued_at
+ * @property CarbonImmutable|null $claimed_at
  * @property CarbonImmutable|null $sent_at
  * @property CarbonImmutable|null $failed_at
+ * @property CarbonImmutable|null $next_attempt_at
  * @property CarbonImmutable|null $provider_status_at
  * @property-read Workspace|null $workspace
  */
 #[Fillable([
-    'workspace_id', 'client_invoice_id', 'recipients', 'bcc', 'subject', 'body', 'status',
+    'workspace_id', 'client_invoice_id', 'origin', 'invoice_revision', 'attempt_number', 'idempotency_key',
+    'recipients', 'bcc', 'subject', 'body', 'status',
     'provider_message_reference', 'provider_status', 'provider_status_at',
-    'error_summary', 'queued_at', 'sent_at', 'failed_at',
+    'error_summary', 'queued_at', 'claimed_at', 'sent_at', 'failed_at', 'next_attempt_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_invoice_id', 'provider_message_reference', 'error_summary'])]
 class ClientInvoiceEmailDelivery extends Model implements WorkspaceOwned
@@ -45,8 +52,10 @@ class ClientInvoiceEmailDelivery extends Model implements WorkspaceOwned
             'recipients' => EmailAddressList::class,
             'bcc' => EmailAddressList::class,
             'queued_at' => 'datetime',
+            'claimed_at' => 'datetime',
             'sent_at' => 'datetime',
             'failed_at' => 'datetime',
+            'next_attempt_at' => 'datetime',
             'provider_status_at' => 'datetime',
         ];
     }

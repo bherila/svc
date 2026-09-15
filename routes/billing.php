@@ -41,6 +41,9 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/stripe-payment-intent', [InvoiceController::class, 'stripePaymentIntent'])->name('svc.billing.invoices.stripe-payment-intent');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}/pdf', [InvoiceController::class, 'pdf'])->name('svc.billing.invoices.pdf');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/send', [InvoiceController::class, 'send'])->name('svc.billing.invoices.send');
+    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/correct', [InvoiceController::class, 'correct'])->name('svc.billing.invoices.correct');
+    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/automatic-delivery/hold', [InvoiceController::class, 'holdAutomatic'])->name('svc.billing.invoices.automatic-delivery.hold');
+    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/automatic-delivery/release', [InvoiceController::class, 'releaseAutomatic'])->name('svc.billing.invoices.automatic-delivery.release');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/void', [InvoiceController::class, 'void'])->name('svc.billing.invoices.void');
 
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/billing-schedules', [BillingScheduleController::class, 'store'])->name('svc.billing.schedules.store');

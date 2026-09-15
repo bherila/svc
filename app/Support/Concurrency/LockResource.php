@@ -50,6 +50,7 @@ enum LockResource: string
     case PaymentReconciliation = 'payment_reconciliations';
 
     case ClientInvoice = 'client_invoices';
+    case ClientInvoiceLine = 'client_invoice_lines';
 
     // Numbering, which every generator reaches only once it has an invoice to
     // number, and the workspace row that serialises the counter.
@@ -79,6 +80,13 @@ enum LockResource: string
     case ClientCompany = 'client_companies';
     case ClientProject = 'client_projects';
     case User = 'users';
+
+    // Durable email claims are taken in short transactions after the billing
+    // mutation commits. Client-delivery result persistence locks the invoice
+    // and then its delivery so those two local facts commit atomically; the
+    // administrator claim remains a notification-only lock.
+    case ClientInvoiceEmailDelivery = 'client_invoice_email_deliveries';
+    case ClientInvoiceAdministratorNotification = 'client_invoice_administrator_notifications';
 
     // Credentials. Disconnecting an agent revokes its refresh token and then
     // its access token, and takes no other lock on the way; nothing else in the

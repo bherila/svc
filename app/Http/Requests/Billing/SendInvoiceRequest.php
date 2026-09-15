@@ -19,6 +19,15 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class SendInvoiceRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $header = $this->header('Idempotency-Key');
+
+        if (! $this->exists('idempotency_key') && is_string($header) && $header !== '') {
+            $this->merge(['idempotency_key' => $header]);
+        }
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -35,6 +44,7 @@ class SendInvoiceRequest extends FormRequest
             // body of an invoice email cannot become a file transfer.
             'message' => ['nullable', 'string', 'max:5000'],
             'bcc_self' => ['sometimes', 'boolean'],
+            'idempotency_key' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

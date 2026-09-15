@@ -28,6 +28,12 @@ use RuntimeException;
  * @property CarbonImmutable|null $cycle_end
  * @property CarbonImmutable|null $paid_on
  * @property int $lock_version
+ * @property int $document_revision
+ * @property string|null $automatic_delivery_status
+ * @property int|null $automatic_delivery_delay_days
+ * @property CarbonImmutable|null $automatic_delivery_due_at
+ * @property CarbonImmutable|null $automatic_delivery_held_at
+ * @property string|null $automatic_delivery_note
  * @property numeric-string|null $retainer_hours_included
  * @property numeric-string|null $hours_worked
  * @property numeric-string|null $rollover_hours_used
@@ -41,7 +47,7 @@ use RuntimeException;
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
-    'invoice_number', 'status', 'issue_date', 'due_date', 'service_period_start',
+    'invoice_number', 'status', 'document_revision', 'issue_date', 'due_date', 'service_period_start',
     'service_period_end', 'currency', 'subtotal_amount', 'tax_amount', 'total_amount',
     'paid_amount', 'balance_amount', 'notes', 'void_reason', 'is_visible_to_client', 'issued_at', 'voided_at',
     // Restored ledger detail. These have casts but had no place in the fillable
@@ -50,7 +56,9 @@ use RuntimeException;
     // line hours.
     'invoice_kind', 'cycle_start', 'cycle_end', 'paid_on', 'retainer_hours_included', 'hours_worked',
     'rollover_hours_used', 'unused_hours_balance', 'negative_hours_balance', 'hours_billed_at_rate',
-    'starting_unused_hours', 'starting_negative_hours',
+    'starting_unused_hours', 'starting_negative_hours', 'automatic_delivery_status',
+    'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
+    'automatic_delivery_note',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason'])]
 class ClientInvoice extends Model implements WorkspaceOwned
@@ -77,6 +85,10 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'starting_negative_hours' => 'decimal:4',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
+            'automatic_delivery_due_at' => 'datetime',
+            'automatic_delivery_held_at' => 'datetime',
+            'document_revision' => 'integer',
+            'automatic_delivery_delay_days' => 'integer',
             'is_visible_to_client' => 'boolean',
             'subtotal_amount' => 'integer',
             'tax_amount' => 'integer',
@@ -120,6 +132,12 @@ class ClientInvoice extends Model implements WorkspaceOwned
     public function emailDeliveries(): HasMany
     {
         return $this->hasMany(ClientInvoiceEmailDelivery::class);
+    }
+
+    /** @return HasMany<ClientInvoiceAdministratorNotification, $this> */
+    public function administratorNotifications(): HasMany
+    {
+        return $this->hasMany(ClientInvoiceAdministratorNotification::class);
     }
 
     /**

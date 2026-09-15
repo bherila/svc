@@ -122,6 +122,7 @@ final class ClientActivityRecorder
     private function subjectType(Model&WorkspaceOwned $subject): string
     {
         return match (true) {
+            $subject instanceof ClientCompany => 'client_company',
             $subject instanceof ClientAgreement => 'client_agreement',
             $subject instanceof ClientInvoice => 'client_invoice',
             $subject instanceof ClientInvoicePayment => 'client_invoice_payment',
@@ -132,6 +133,10 @@ final class ClientActivityRecorder
 
     private function subjectCompanyId(Model&WorkspaceOwned $subject): ?int
     {
+        if ($subject instanceof ClientCompany) {
+            return $subject->id;
+        }
+
         if ($subject instanceof ClientInvoicePayment) {
             $companyId = ClientInvoice::query()
                 ->where('workspace_id', $subject->workspace_id)

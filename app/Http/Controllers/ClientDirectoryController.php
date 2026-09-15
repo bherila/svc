@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
@@ -20,6 +21,7 @@ use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
@@ -215,6 +217,7 @@ class ClientDirectoryController extends Controller
         ProjectAccess $access,
         BillingRecordAccess $billing,
         InvoiceEmailService $emails,
+        InvoiceCorrectionService $corrections,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -252,6 +255,9 @@ class ClientDirectoryController extends Controller
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $status = (string) $clientInvoice->status;
         $base = "/workspaces/{$workspace->public_id}/invoices/{$clientInvoice->public_id}";
+        $moneyCorrectable = $manages
+            ? $corrections->moneyCorrectableLineIds($clientInvoice, $workspace)
+            : [];
 
         return Inertia::render('clients/invoice', [
             'company' => [
@@ -277,6 +283,15 @@ class ClientDirectoryController extends Controller
                 'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)
                     ? $base.'/payments'
                     : null,
+                'correct' => $manages && $status === InvoiceStatus::Issued->value && $clientInvoice->paid_amount === 0
+                    ? $base.'/correct'
+                    : null,
+                'hold_automatic' => $manages && in_array($clientInvoice->automatic_delivery_status, ['scheduled', 'failed'], true)
+                    ? $base.'/automatic-delivery/hold'
+                    : null,
+                'release_automatic' => $manages && $clientInvoice->automatic_delivery_status === 'held'
+                    ? $base.'/automatic-delivery/release'
+                    : null,
                 // Voiding a paid invoice is a correction the service refuses,
                 // so it is not offered either.
                 'void' => $manages && in_array($status, [
@@ -296,6 +311,9 @@ class ClientDirectoryController extends Controller
                 'self' => (string) $user->email,
             ] : null,
             'deliveries' => $manages ? $this->deliveriesOf($workspace, $clientInvoice) : [],
+            'administrator_notification' => $manages
+                ? $this->administratorNotificationOf($workspace, $clientInvoice)
+                : null,
             'invoice' => $this->invoicePayload($clientInvoice),
             // What each line is made of, keyed by line. The pivot has carried
             // this since the billing workflow was written - a line billed from
@@ -311,7 +329,9 @@ class ClientDirectoryController extends Controller
                 'hours' => $line->hours === null ? null : (float) $line->hours,
                 'line_date' => $line->line_date?->toDateString(),
                 'unit_amount' => (int) $line->unit_amount,
+                'tax_amount' => (int) $line->tax_amount,
                 'total_amount' => (int) $line->total_amount,
+                'money_correctable' => in_array($line->public_id, $moneyCorrectable, true),
             ])->values()->all(),
             'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => [
                 'id' => $payment->public_id,
@@ -630,6 +650,7 @@ class ClientDirectoryController extends Controller
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
+        InvoiceEmailService $emails,
     ): Response {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -681,6 +702,9 @@ class ClientDirectoryController extends Controller
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
                 'billing_email' => $clientCompany->billing_email,
+                'automatic_invoice_email_enabled' => (bool) $clientCompany->automatic_invoice_email_enabled,
+                'automatic_invoice_email_delay_days' => $clientCompany->automatic_invoice_email_delay_days,
+                'invoice_recipients' => $emails->suggestedRecipientsForCompany($clientCompany),
                 'is_active' => (bool) $clientCompany->is_active,
             ],
             'projects' => $projects->map(fn (ClientProject $project): array => [
@@ -906,6 +930,8 @@ class ClientDirectoryController extends Controller
             $listed[] = [
                 'id' => (string) $delivery->public_id,
                 'status' => (string) $delivery->status,
+                'origin' => (string) $delivery->origin,
+                'invoice_revision' => (int) $delivery->invoice_revision,
                 'recipients' => $delivery->recipients,
                 'bcc' => $delivery->bcc,
                 'subject' => (string) $delivery->subject,
@@ -918,6 +944,30 @@ class ClientDirectoryController extends Controller
         }
 
         return $listed;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function administratorNotificationOf(Workspace $workspace, ClientInvoice $invoice): ?array
+    {
+        $notification = ClientInvoiceAdministratorNotification::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderByDesc('invoice_revision')
+            ->first();
+
+        if (! $notification instanceof ClientInvoiceAdministratorNotification) {
+            return null;
+        }
+
+        return [
+            'id' => $notification->public_id,
+            'status' => $notification->status,
+            'sent_at' => $notification->sent_at?->toISOString(),
+            'failed_at' => $notification->failed_at?->toISOString(),
+            'attempt_count' => (int) $notification->attempt_count,
+            'error_summary' => $notification->error_summary,
+            'invoice_revision' => (int) $notification->invoice_revision,
+        ];
     }
 
     /**
@@ -980,6 +1030,10 @@ class ClientDirectoryController extends Controller
             'id' => $invoice->public_id,
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
+            'document_revision' => (int) $invoice->document_revision,
+            'automatic_delivery_status' => $invoice->automatic_delivery_status,
+            'automatic_delivery_due_at' => $invoice->automatic_delivery_due_at?->toISOString(),
+            'automatic_delivery_note' => $invoice->automatic_delivery_note,
             'currency' => $invoice->currency,
             'issue_date' => $invoice->issue_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
