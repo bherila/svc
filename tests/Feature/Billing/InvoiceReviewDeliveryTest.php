@@ -45,6 +45,8 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->assertInstanceOf(DateTimeInterface::class, $issued->issue_date);
         $this->assertTrue($company->fresh()->is_active);
+        $this->assertSame('date', $issued->getCasts()['issue_date'] ?? null);
+        $this->assertSame('boolean', $company->getCasts()['is_active'] ?? null);
         Mail::assertSent(AdministratorInvoiceIssuedMail::class, 1);
         Mail::assertSent(AdministratorInvoiceIssuedMail::class, function (AdministratorInvoiceIssuedMail $mail) use ($owner, $invoice): bool {
             $attachment = $mail->attachments()[0] ?? null;
