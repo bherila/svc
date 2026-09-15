@@ -21,6 +21,7 @@ use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -72,8 +73,8 @@ class AppServiceProvider extends ServiceProvider
 
                 return array_values(array_unique($hosts));
             },
-            maxRequestBodyBytes: (int) config('agent_api.mcp_max_body_bytes', 262_144),
-            maxResponseBodyBytes: (int) config('agent_api.mcp_max_response_body_bytes', 1_048_576),
+            maxRequestBodyBytes: Config::integer('agent_api.mcp_max_body_bytes'),
+            maxResponseBodyBytes: Config::integer('agent_api.mcp_max_response_body_bytes'),
         ));
     }
 
