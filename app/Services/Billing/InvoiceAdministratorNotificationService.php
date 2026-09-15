@@ -242,7 +242,7 @@ final class InvoiceAdministratorNotificationService
             // outcome that must be reconciled.
             Log::critical('An accepted invoice administrator notification could not be persisted.', [
                 'notification' => $notification->public_id,
-                'exception' => $exception,
+                'exception_class' => $exception::class,
             ]);
         }
     }
@@ -391,12 +391,12 @@ final class InvoiceAdministratorNotificationService
 
             Log::error('An invoice administrator notification could not be sent.', [
                 'notification' => $notification->public_id,
-                'exception' => $exception,
+                'exception_class' => $exception::class,
             ]);
         } catch (Throwable $persistenceFailure) {
             Log::critical('An invoice administrator notification failure could not be persisted.', [
                 'notification' => $notification->public_id,
-                'exception' => $persistenceFailure,
+                'exception_class' => $persistenceFailure::class,
             ]);
         }
     }

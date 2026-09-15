@@ -61,6 +61,7 @@ try {
             $invoice,
             $workspace,
             1,
+            true,
             $invoice->due_date?->toDateString(),
             'Synthetic concurrent correction.',
             array_values($invoice->lines()->where('workspace_id', $workspace->id)->get()->map(fn (ClientInvoiceLine $line): array => [

@@ -246,6 +246,9 @@ class ClientDirectoryController extends Controller
                 ->orderByDesc('id'),
         ]);
         $clientInvoice->loadExists([
+            'emailDeliveries as send_has_blocking_delivery' => fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('status', ['pending', 'sending']),
             'emailDeliveries as correction_has_blocking_delivery' => fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('status', ['pending', 'sending', 'sent']),
@@ -295,6 +298,7 @@ class ClientDirectoryController extends Controller
                 'send' => $manages
                     && in_array($status, InvoiceStatus::collectible(), true)
                     && $clientInvoice->automatic_delivery_status !== 'automatically_sent'
+                    && ! (bool) $clientInvoice->getAttribute('send_has_blocking_delivery')
                     ? $base.'/send'
                     : null,
                 'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)

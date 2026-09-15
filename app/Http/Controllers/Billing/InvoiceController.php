@@ -192,6 +192,7 @@ class InvoiceController extends Controller
             $clientInvoice,
             $workspace,
             (int) $data['expected_revision'],
+            array_key_exists('due_date', $data),
             isset($data['due_date']) ? (string) $data['due_date'] : null,
             (string) $data['reason'],
             $data['lines'],

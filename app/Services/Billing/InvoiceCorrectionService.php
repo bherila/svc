@@ -39,11 +39,12 @@ final class InvoiceCorrectionService
         ClientInvoice $invoice,
         Workspace $workspace,
         int $expectedRevision,
+        bool $dueDateProvided,
         ?string $dueDate,
         string $reason,
         array $lines,
     ): ClientInvoice {
-        return DB::transaction(function () use ($invoice, $workspace, $expectedRevision, $dueDate, $reason, $lines): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $expectedRevision, $dueDateProvided, $dueDate, $reason, $lines): ClientInvoice {
             $locked = ClientInvoice::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereKey($invoice->id)
@@ -149,7 +150,7 @@ final class InvoiceCorrectionService
                 ];
             }
 
-            $parsedDueDate = $dueDate === null ? null : CarbonImmutable::parse($dueDate)->startOfDay();
+            $parsedDueDate = ! $dueDateProvided ? $locked->due_date : ($dueDate === null ? null : CarbonImmutable::parse($dueDate)->startOfDay());
             if ($parsedDueDate !== null && $locked->issue_date !== null && $parsedDueDate->lt($locked->issue_date)) {
                 throw new DomainException('The corrected due date cannot precede the issue date.');
             }

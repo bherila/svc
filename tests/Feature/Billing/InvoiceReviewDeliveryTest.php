@@ -608,7 +608,6 @@ final class InvoiceReviewDeliveryTest extends TestCase
             [
                 'expected_revision' => 1,
                 'reason' => 'Correct the synthetic service wording and rate.',
-                'due_date' => '2026-10-15',
                 'lines' => [[
                     'id' => $line->public_id,
                     'description' => 'Corrected synthetic service',
@@ -622,6 +621,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $corrected = $invoice->fresh();
         $this->assertSame(2, $corrected->document_revision);
         $this->assertSame(13000, $corrected->total_amount);
+        $this->assertSame('2026-10-15', $corrected->due_date?->toDateString());
         $this->assertSame('held', $corrected->automatic_delivery_status);
         $this->assertSame('Corrected synthetic service', $line->fresh()->description);
         $this->assertSame($originalPdf, ClientInvoiceAdministratorNotification::query()->sole()->pdf_content_base64);
