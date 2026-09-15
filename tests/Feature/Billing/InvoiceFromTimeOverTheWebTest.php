@@ -13,7 +13,9 @@ use App\Models\WorkspaceMembership;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\AgentApi\AgentApiVersion;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -216,6 +218,26 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $this->get($target)->assertNotFound();
         $this->get(route('clients.invoice', [$this->workspace, $this->company, $invoice]))
             ->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->where('actions.add_time', null));
+    }
+
+    public function test_a_full_selection_uses_one_allocation_read(): void
+    {
+        $service = app(InvoiceFromTimeService::class);
+        $invoice = $service->create($this->workspace, $this->company, ['currency' => 'USD'], [$this->entry(30, 'Synthetic included')->public_id]);
+        $ids = [];
+        for ($index = 0; $index < 100; $index++) {
+            $ids[] = $this->entry(1, 'Synthetic batch '.$index)->public_id;
+        }
+        $allocationReads = 0;
+        DB::listen(function (QueryExecuted $query) use (&$allocationReads): void {
+            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'client_invoice_line_time_entries')) {
+                $allocationReads++;
+            }
+        });
+        $this->actingAs($this->owner)->post($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => $ids])->assertRedirect();
+        $this->assertSame(1, $allocationReads, 'Allocation validation must not query once per selected entry.');
+        $this->assertSame(81250, $invoice->fresh()->total_amount);
+        $this->assertSame(101, $invoice->lines()->count());
     }
 
     private function addUrl(ClientInvoice $invoice): string
