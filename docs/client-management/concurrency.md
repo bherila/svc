@@ -151,7 +151,7 @@ paths — the majority, and the request paths — walking backwards instead.
 
 **2. `client_tasks` before `client_time_entries` — open, see #223.** Only inside
 one long transaction covering several periods, which is the shape
-`svc:billing:replay` produces: it wraps its whole run in a transaction it will
+`svc:billing:replay` and `svc:billing:rehearse-generation` produce: each wraps its whole run in a transaction it will
 roll back, so every period's locks are held together to the end. The first
 period claims a milestone and finds no fragments to recombine — its own
 allocation is what creates them — and the second recombines what the first left.
@@ -172,7 +172,20 @@ what creates them. Making that lock unconditional would widen the locking
 footprint of a request path to buy monotonicity against a race the agreement row
 lock already serialises, and would report a lock that was recorded rather than a
 row that was held. The pair is left listed, and the operational rule is that
-`svc:billing:replay` is not run against a workspace that is generating invoices.
+neither `svc:billing:replay` nor `svc:billing:rehearse-generation` is run against
+a workspace that is generating invoices. Rehearsal does not clear history first,
+but it still calls `generateAllInvoices()` across periods inside one outer
+rollback-only transaction. Its successful output proves its stated comparison,
+not safety against a concurrent writer.
+
+The real replay also acquires implicit UPDATE/DELETE locks while clearing billing
+rows before regeneration. The conformance fixture drives generation without that
+clearing phase, so fixing its recorded inversion alone would not prove replay
+safe. Keep #223 deferred until an explicit maintenance design provides either an
+isolated database or bounded exclusion honored by competing writers, with
+command-level MariaDB tests covering concurrency and rollback. Existing receipt
+probes already provide multi-process test infrastructure; the missing work is the
+maintenance protocol and its specific proof, not a new testing platform.
 
 ### Time-mutation snapshot validation
 
