@@ -12,21 +12,25 @@ general-availability work tracked by
   `2025-06-18`, and `2025-11-25`. SVC's current tests negotiate
   `2025-06-18`; no other version is a separately tested SVC compatibility
   promise.
-- `bherila/mcp-laravel-bridge` is locked to `v0.1.0`
-  (`bc36bb0a5a8b9461143bf48aa9b6fc360963cf82`).
-- `bherila/auth-laravel` is locked to signed `v0.11.0`
-  (`93eb535d4394947ed6980497a2154603d18c4807`). Its opt-in Passport
+- `bherila/mcp-laravel-bridge` is locked to `v0.2.0`
+  (`89736139aa7f1323bbe9dc361e239b175ac1fbe6`).
+- `bherila/auth-laravel` is locked to signed `v0.12.0`
+  (`cda94048c952eaaf10726be2c71d6f27cc8c6061`). Its opt-in Passport
   repositories own authorization-code, access-token, and refresh-token resource
   binding; SVC does not maintain parallel repository implementations.
 - `POST /api/v1/mcp` is Streamable HTTP. `DELETE /api/v1/mcp` is available for
   session termination and `OPTIONS /api/v1/mcp` supports configured browser
   origins. There is no stdio transport, SSE endpoint, resource subscription,
   sampling, roots, or elicitation endpoint configured by SVC.
-- `AgentMcpController` runs the bridge's `StreamableHttpResponder` with DNS
-  rebinding and protocol-version middleware. Maximum request size is
+- The shared bridge's hardened Laravel edge policy performs exact browser-Origin
+  matching, independent service-Host validation, bounded CORS preflight, and
+  SDK-version-aware protocol handling before `AgentMcpController` runs its
+  `StreamableHttpResponder`. Maximum request size is
   `AGENT_API_MCP_MAX_BODY_BYTES` (262144 by default); capability results are
   bounded after serialization by `AGENT_API_MCP_MAX_RESULT_BYTES` (also 262144
-  by default). Responses are `private, no-store`. When the global
+  by default), while complete non-streamed transport responses are independently capped by
+  `AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES` (1048576 by default). Responses are
+  `private, no-store`. When the global
   `AGENT_API_MCP_ENABLED` kill switch is false, authenticated POST and DELETE
   requests receive a stable no-store `503` with `Retry-After`; the application
   does not construct a server or emit a misleading empty capability document.
@@ -50,9 +54,9 @@ seed tenant data.
 
 MCP uses the `api` Passport guard and requires the `mcp:use` token scope at
 the route. It is not authenticated by the browser session or a query-string
-credential: a global, MCP-path-only guard rejects `access_token`, `token`,
-`authorization`, and `bearer` query parameters before route authentication
-with a no-store 400 response. The current provider resolves `AgentPrincipal`,
+credential: the shared MCP edge guard rejects query parameters shaped like
+bearer or API-key credentials before route authentication with a no-store 400
+response. The current provider resolves `AgentPrincipal`,
 an OAuth-only view of the local `users` table; its memberships and project
 roles remain SVC data. OAuth Authorization Code with S256 PKCE is the
 documented client flow. `McpPrincipalResolverInterface` is currently bound to
@@ -75,8 +79,10 @@ never interpreted as unrestricted access.
 The current route also has Laravel's `throttle:60,1` limiter. Browser requests
 with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native
 clients without an Origin are permitted. Browser origins never expand the service
-Host allowlist, which is derived from `APP_URL` and the configured OAuth resource.
-CORS exposes the MCP session, protocol, and OAuth challenge headers.
+Host allowlist, which defaults to `APP_URL` and the configured OAuth resource and
+may be replaced with exact `host[:port]` authorities through
+`AGENT_API_MCP_ALLOWED_HOSTS` for a reviewed reverse-proxy deployment. CORS exposes
+the MCP session, protocol, and OAuth challenge headers.
 
 Tools presently take `workspace_id` arguments. It is only a selector: an
 immutable `McpRequestContext` resolves it through the authenticated

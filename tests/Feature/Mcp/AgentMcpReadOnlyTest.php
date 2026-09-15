@@ -16,6 +16,7 @@ use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
+use Bherila\McpLaravelBridge\Testing\McpHttpConformanceAssertions;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -30,6 +31,7 @@ use Tests\TestCase;
 
 final class AgentMcpReadOnlyTest extends TestCase
 {
+    use McpHttpConformanceAssertions;
     use RefreshDatabase;
 
     public function test_mcp_exposes_only_the_fixed_read_catalog_and_uses_rest_authorization(): void
@@ -895,13 +897,33 @@ final class AgentMcpReadOnlyTest extends TestCase
         $user = User::factory()->create();
         $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
 
-        $this->withHeaders([
+        $response = $this->withHeaders([
             'Origin' => 'https://approved.example',
             'Mcp-Protocol-Version' => '2025-06-18',
         ])->postJson('/api/v1/mcp', $this->initializeMessage())
             ->assertOk()
             ->assertHeader('Access-Control-Allow-Origin', 'https://approved.example')
-            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate');
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate');
+
+        self::assertAllowedMcpOrigin($response->baseResponse, 'https://approved.example');
+        self::assertPrivateMcpResponse($response->baseResponse);
+    }
+
+    public function test_browser_origin_match_includes_scheme_and_non_default_port(): void
+    {
+        config(['agent_api.mcp_allowed_origins' => ['https://approved.example:8443']]);
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
+
+        $this->withHeader('Origin', 'http://approved.example:8443')
+            ->mcp($this->initializeMessage())
+            ->assertForbidden()
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+
+        $this->withHeader('Origin', 'https://approved.example:9443')
+            ->mcp($this->initializeMessage())
+            ->assertForbidden()
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
     }
 
     public function test_browser_origin_allowlist_does_not_expand_the_service_host_allowlist(): void
@@ -918,7 +940,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'Mcp-Protocol-Version' => '2025-06-18',
         ])->postJson('https://chatgpt.com/api/v1/mcp', $this->initializeMessage())
             ->assertForbidden()
-            ->assertSeeText('Forbidden: Invalid Host header.')
+            ->assertJsonPath('message', 'Invalid MCP service host.')
             ->assertHeader('Cache-Control', 'no-store, private');
 
         $this->withHeaders([
@@ -938,6 +960,27 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->mcp($this->initializeMessage())->assertOk()->assertHeader('Mcp-Session-Id');
     }
 
+    public function test_shared_transport_rejects_an_unsupported_protocol_version(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
+
+        $this->postJson('/api/v1/mcp', $this->initializeMessage(), [
+            'Mcp-Protocol-Version' => '1900-01-01',
+        ])->assertBadRequest();
+    }
+
+    public function test_shared_transport_caps_complete_non_streamed_responses(): void
+    {
+        config(['agent_api.mcp_max_response_body_bytes' => 1]);
+        $user = User::factory()->create();
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE]);
+
+        $this->mcp($this->initializeMessage())
+            ->assertInternalServerError()
+            ->assertJsonPath('error.message', 'MCP response exceeds the configured limit.');
+    }
+
     public function test_unauthenticated_mcp_request_returns_an_oauth_resource_challenge(): void
     {
         config(['agent_api.mcp_allowed_origins' => ['https://chatgpt.com']]);
@@ -945,7 +988,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->withHeader('Origin', 'https://chatgpt.com')->mcp($this->initializeMessage())
             ->assertUnauthorized()
             ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
-            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate')
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate')
             ->assertHeader('WWW-Authenticate', sprintf(
                 'Bearer resource_metadata="%s"',
                 url('/.well-known/oauth-protected-resource/api/v1/mcp'),
@@ -959,7 +1002,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18',
         ], json_encode($this->initializeMessage(), JSON_THROW_ON_ERROR))
             ->assertBadRequest()
-            ->assertJsonPath('message', 'MCP credentials must not be sent in the query string.')
+            ->assertJsonPath('message', 'MCP credentials are not accepted in the query string.')
             ->assertHeader('Cache-Control', 'no-store, private');
     }
 

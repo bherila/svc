@@ -13,6 +13,7 @@ use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
+use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -47,6 +48,32 @@ class AppServiceProvider extends ServiceProvider
             application: $app,
             allowedHeaders: ['Idempotency-Key'],
             temporaryFilePrefix: 'svc-agent-',
+        ));
+        $this->app->singleton(McpHttpPolicy::class, static fn (): McpHttpPolicy => new McpHttpPolicy(
+            allowedOrigins: static function (): array {
+                $origins = config('agent_api.mcp_allowed_origins', []);
+
+                return is_array($origins)
+                    ? array_values(array_filter($origins, static fn (mixed $origin): bool => is_string($origin) && $origin !== ''))
+                    : [];
+            },
+            allowedHosts: static function (): array {
+                $configured = config('agent_api.mcp_allowed_hosts', []);
+                if (is_array($configured) && $configured !== []) {
+                    return array_values(array_filter($configured, static fn (mixed $host): bool => is_string($host) && $host !== ''));
+                }
+
+                $hosts = [];
+                foreach ([config('app.url'), config('bherila-auth.oauth_server.resource')] as $url) {
+                    if (is_string($url)) {
+                        $hosts[] = McpHttpPolicy::hostFromUrl($url);
+                    }
+                }
+
+                return array_values(array_unique($hosts));
+            },
+            maxRequestBodyBytes: (int) config('agent_api.mcp_max_body_bytes', 262_144),
+            maxResponseBodyBytes: (int) config('agent_api.mcp_max_response_body_bytes', 1_048_576),
         ));
     }
 

@@ -10,7 +10,6 @@ use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
-use App\Http\Middleware\EnforceAgentMcpOrigin;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
@@ -19,6 +18,7 @@ use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Route;
@@ -132,8 +132,8 @@ Route::prefix('v1')
     });
 
 Route::options('/v1/mcp', static fn () => response()->noContent())
-    ->middleware([EnforceAgentMcpOrigin::class, 'throttle:60,1'])
+    ->middleware([McpHttpSecurityMiddleware::class, 'throttle:60,1'])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware([EnforceAgentMcpOrigin::class, ExpectOAuthResource::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');

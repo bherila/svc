@@ -11,7 +11,7 @@
     "require": {
         "php": "^8.4",
         "bherila/auth-laravel": "^0.12",
-        "bherila/mcp-laravel-bridge": "^0.1.0",
+        "bherila/mcp-laravel-bridge": "^0.2.0",
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/framework": "^13.17",
@@ -38,13 +38,6 @@
         "phpunit/phpunit": "^12.5.23",
         "spaze/phpstan-disallowed-calls": "^4.14"
     },
-    "repositories": [
-        {
-            "name": "mcp-laravel-bridge",
-            "type": "vcs",
-            "url": "git@github.com:bherila/mcp-laravel-bridge.git"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "App\\": "app/",
