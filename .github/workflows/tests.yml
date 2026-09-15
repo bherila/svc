@@ -346,7 +346,7 @@ jobs:
       # both are excluded explicitly, in addition to the runtime-storage excludes the action applies.
       # The svc-specific host steps live in scripts/deploy/pre-migrate.sh and post-deploy.sh.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@f5a4ce12657544a0b61f1f9a5b8c2157b470b740 # v1.0.0
+        uses: bherila/shared-cpanel-deployment@2da7295138423742e0987787abaaf2e9b55f82dd # v1.0.1
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
