@@ -277,7 +277,9 @@ class ClientDirectoryController extends Controller
                 'add_time' => $manages && $status === 'draft' && $clientInvoice->invoiceKindValue() === InvoiceKind::AdHoc->value
                     ? route('clients.time', [$workspace, $clientCompany, 'draft_invoice' => $clientInvoice->public_id], absolute: false) : null,
                 'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
-                'send' => $manages && in_array($status, InvoiceStatus::collectible(), true)
+                'send' => $manages
+                    && in_array($status, InvoiceStatus::collectible(), true)
+                    && $clientInvoice->automatic_delivery_status !== 'automatically_sent'
                     ? $base.'/send'
                     : null,
                 'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)

@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
@@ -339,7 +340,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
     {
         Mail::fake();
         Date::setTestNow('2026-09-15 12:00:00 UTC');
-        [, $workspace, $company, $invoice] = $this->draft();
+        [$owner, $workspace, $company, $invoice] = $this->draft();
         $company->forceFill([
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 0,
@@ -356,6 +357,10 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $this->assertSame('sent', $delivery->status);
         $this->assertSame(1, $delivery->invoice_revision);
         $this->assertSame('automatically_sent', $invoice->fresh()->automatic_delivery_status);
+        $this->actingAs($owner)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('actions.send', null));
     }
 
     public function test_failed_automatic_delivery_uses_bounded_backoff_before_retry(): void
