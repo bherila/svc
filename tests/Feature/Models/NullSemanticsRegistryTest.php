@@ -16,6 +16,7 @@ use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
+use Tests\Feature\Billing\InvoiceReviewDeliveryTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
@@ -185,6 +186,11 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
         'client_invoice_lines.hours => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_hours_snapshots_an_absent_quantity_rather_than_zero',
         'client_invoice_lines.line_date => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_undated_line_does_not_widen_the_service_period',
+        'client_invoices.automatic_delivery_delay_days => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+        'client_invoices.automatic_delivery_due_at => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+        'client_invoices.automatic_delivery_held_at => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+        'client_invoices.automatic_delivery_note => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+        'client_invoices.automatic_delivery_status => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
@@ -320,6 +326,30 @@ final class NullSemanticsRegistryTest extends TestCase
      */
     private const REGISTRY = [
         'client_invoices' => [
+            // Opt-out is represented by the whole automatic-delivery snapshot
+            // remaining absent. The cited test issues before enabling the
+            // company setting and checks every field independently; enabling
+            // later affects new issuance only and must not backfill that row.
+            'automatic_delivery_delay_days' => [
+                'covered_by' => InvoiceReviewDeliveryTest::class,
+                'method' => 'test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+            ],
+            'automatic_delivery_due_at' => [
+                'covered_by' => InvoiceReviewDeliveryTest::class,
+                'method' => 'test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+            ],
+            'automatic_delivery_held_at' => [
+                'covered_by' => InvoiceReviewDeliveryTest::class,
+                'method' => 'test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+            ],
+            'automatic_delivery_note' => [
+                'covered_by' => InvoiceReviewDeliveryTest::class,
+                'method' => 'test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+            ],
+            'automatic_delivery_status' => [
+                'covered_by' => InvoiceReviewDeliveryTest::class,
+                'method' => 'test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+            ],
             // For a *generated* draft, no agreement means no terms to reprice
             // against and regeneration refuses. Not a global rule: an ad-hoc
             // invoice legitimately has no agreement and regenerates from the
@@ -1194,7 +1224,7 @@ final class NullSemanticsRegistryTest extends TestCase
 
                 // One entry or several: a column whose null is branched on in
                 // more than one place carries one per branch.
-                $entries = isset($entry['covered_by']) || isset($entry['reader_in']) ? [$entry] : $entry;
+                $entries = array_key_exists('covered_by', $entry) || array_key_exists('reader_in', $entry) ? [$entry] : $entry;
                 $seen = [];
 
                 foreach ($entries as $one) {

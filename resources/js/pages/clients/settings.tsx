@@ -15,6 +15,9 @@ type ManagedCompany = {
     id: string;
     name: string;
     billing_email: string | null;
+    automatic_invoice_email_enabled?: boolean;
+    automatic_invoice_email_delay_days?: number | null;
+    invoice_recipients?: { email: string; label: string }[];
     is_active: boolean;
 };
 
@@ -157,6 +160,10 @@ function CompanyForm({
     const form = useForm({
         name: company.name,
         billing_email: company.billing_email ?? '',
+        automatic_invoice_email_enabled:
+            company.automatic_invoice_email_enabled ?? false,
+        automatic_invoice_email_delay_days:
+            company.automatic_invoice_email_delay_days ?? 0,
         is_active: company.is_active,
     });
 
@@ -219,6 +226,89 @@ function CompanyForm({
                     }
                 />
                 <Label htmlFor="company-active">Active client</Label>
+            </div>
+
+            <div className="grid max-w-xl grid-cols-1 gap-3 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                    <Switch
+                        id="automatic-invoice-email"
+                        checked={form.data.automatic_invoice_email_enabled}
+                        onCheckedChange={(next) =>
+                            form.setData(
+                                'automatic_invoice_email_enabled',
+                                next === true,
+                            )
+                        }
+                    />
+                    <Label htmlFor="automatic-invoice-email">
+                        Automatically email issued invoices to clients
+                    </Label>
+                </div>
+
+                {form.data.automatic_invoice_email_enabled && (
+                    <div className="grid max-w-xs grid-cols-1 gap-2">
+                        <Label htmlFor="automatic-invoice-delay">
+                            Days after issue
+                        </Label>
+                        <Input
+                            id="automatic-invoice-delay"
+                            type="number"
+                            min={0}
+                            max={365}
+                            step={1}
+                            value={form.data.automatic_invoice_email_delay_days}
+                            onChange={(event) =>
+                                form.setData(
+                                    'automatic_invoice_email_delay_days',
+                                    Number.parseInt(
+                                        event.target.value || '0',
+                                        10,
+                                    ),
+                                )
+                            }
+                        />
+                        <p className="text-xs wrap-anywhere text-muted-foreground">
+                            Zero makes a newly issued invoice eligible
+                            immediately. The maximum review window is 365
+                            calendar days in the workspace timezone.
+                        </p>
+                    </div>
+                )}
+
+                <div className="text-sm">
+                    <p className="font-medium">Configured recipients</p>
+                    {(company.invoice_recipients ?? []).length === 0 ? (
+                        <p className="wrap-anywhere text-destructive">
+                            None. Add a billing email or a client portal user
+                            before enabling automatic delivery.
+                        </p>
+                    ) : (
+                        <ul className="grid grid-cols-1 gap-1 text-muted-foreground">
+                            {(company.invoice_recipients ?? []).map(
+                                (recipient) => (
+                                    <li
+                                        key={recipient.email}
+                                        className="wrap-anywhere"
+                                    >
+                                        {recipient.label}: {recipient.email}
+                                    </li>
+                                ),
+                            )}
+                        </ul>
+                    )}
+                </div>
+
+                {form.errors.automatic_invoice_email_enabled !== undefined && (
+                    <p className="text-sm wrap-anywhere text-destructive">
+                        {form.errors.automatic_invoice_email_enabled}
+                    </p>
+                )}
+                {form.errors.automatic_invoice_email_delay_days !==
+                    undefined && (
+                    <p className="text-sm wrap-anywhere text-destructive">
+                        {form.errors.automatic_invoice_email_delay_days}
+                    </p>
+                )}
             </div>
 
             <div>

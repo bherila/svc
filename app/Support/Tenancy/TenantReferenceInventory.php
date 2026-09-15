@@ -106,6 +106,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_invoice_lines', 'client_invoice_id', 'client_invoices', 'cil_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_payments', 'client_invoice_id', 'client_invoices', 'cip_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_email_deliveries', 'client_invoice_id', 'client_invoices', 'cied_ws_invoice_fk'),
+            TenantReference::enforcedBy('client_invoice_administrator_notifications', 'client_invoice_id', 'client_invoices', 'cian_ws_invoice_fk'),
             TenantReference::enforcedBy('payment_reconciliations', 'client_invoice_payment_id', 'client_invoice_payments', 'pr_ws_payment_fk'),
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_invoice_line_id', 'client_invoice_lines', 'cilte_ws_line_fk'),
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_time_entry_id', 'client_time_entries', 'cilte_ws_time_entry_fk'),

@@ -57,6 +57,9 @@ export function SendInvoiceDialog({
     const [bccSelf, setBccSelf] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [idempotencyKey, setIdempotencyKey] = useState(() =>
+        crypto.randomUUID(),
+    );
 
     const add = () => {
         const address = adding.trim();
@@ -91,12 +94,14 @@ export function SendInvoiceDialog({
                 subject,
                 message: message.trim() === '' ? null : message,
                 bcc_self: bccSelf,
+                idempotency_key: idempotencyKey,
             },
             {
                 preserveScroll: true,
                 onSuccess: () => {
                     setError(null);
                     setMessage('');
+                    setIdempotencyKey(crypto.randomUUID());
                     onOpenChange(false);
                 },
                 // Stays open, holding what was typed. A failed send is a thing

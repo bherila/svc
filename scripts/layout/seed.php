@@ -24,6 +24,11 @@ if (PHP_SAPI !== 'cli') {
     throw new RuntimeException('Browser fixtures can only be created from the CLI.');
 }
 
+$runtime = getenv('SVC_LAYOUT_RUNTIME');
+if (! is_string($runtime)) {
+    throw new RuntimeException('Run pnpm test:layout to create an isolated harness.');
+}
+
 $app = require __DIR__.'/bootstrap.php';
 // The runner creates an empty file in a new mkdtemp directory for every run.
 if (filesize($runtime.'/database.sqlite') !== 0) {
@@ -55,6 +60,17 @@ $date = app(WorkspaceClock::class)->today($workspace)->subDay()->toDateString();
 $service->applyPayment($invoice, [
     'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => $date,
 ], $workspace);
+$company->forceFill([
+    'billing_email' => 'billing-notifications@synthetic-layout.example.test',
+    'automatic_invoice_email_enabled' => true,
+    'automatic_invoice_email_delay_days' => 365,
+])->save();
+$reviewInvoice = $service->issue($service->createDraft($workspace, $company, [
+    'invoice_number' => 'REVIEW-SYNTHETIC-'.str_repeat('Y', 48), 'currency' => 'USD',
+], [[
+    'type' => 'adjustment', 'description' => str_repeat('SyntheticReviewDescriptionWithoutBreaks', 10),
+    'quantity' => '1', 'unit_amount' => 12500, 'tax_amount' => 0, 'sort_order' => 1,
+]]), $workspace);
 $proposal = ClientProposal::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'title' => str_repeat('SyntheticProposal', 12), 'summary' => $description,
@@ -144,6 +160,8 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
+    'invoice_review' => route('clients.invoice', [$workspace, $company, $reviewInvoice], absolute: false),
+    'settings' => route('clients.settings', [$workspace, $company], absolute: false),
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),

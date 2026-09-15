@@ -29,6 +29,8 @@ export type InvoiceEmailContext = {
 export type InvoiceDelivery = {
     id: string;
     status: string;
+    origin?: string;
+    invoice_revision?: number;
     recipients: string[];
     bcc: string[];
     subject: string;

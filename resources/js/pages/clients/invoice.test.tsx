@@ -334,3 +334,122 @@ describe('correcting a recorded payment date', () => {
         ).toBeNull();
     });
 });
+
+describe('reviewing and correcting an issued invoice', () => {
+    it('uses server-supplied correction capabilities and posts a revisioned audit request', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: {
+                        issue: null,
+                        send: null,
+                        payment: null,
+                        void: null,
+                        correct: '/workspaces/w-1/invoices/invoice-1/correct',
+                    },
+                    invoice: {
+                        ...props().invoice,
+                        document_revision: 3,
+                    },
+                    lines: [
+                        {
+                            id: 'line-1',
+                            type: 'retainer',
+                            description: 'Original wording',
+                            quantity: 1,
+                            hours: null,
+                            line_date: null,
+                            unit_amount: 10000,
+                            tax_amount: 0,
+                            total_amount: 10000,
+                            money_correctable: false,
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Correct invoice' }),
+        );
+        expect(screen.getByLabelText('Quantity')).toBeDisabled();
+        expect(screen.getByLabelText('Unit amount')).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Description'), {
+            target: { value: 'Corrected wording' },
+        });
+        fireEvent.change(screen.getByLabelText('Reason for correction'), {
+            target: { value: 'Fix the issued description.' },
+        });
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Save audited correction' }),
+        );
+
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/workspaces/w-1/invoices/invoice-1/correct',
+            expect.objectContaining({
+                expected_revision: 3,
+                reason: 'Fix the issued description.',
+                lines: [
+                    expect.objectContaining({
+                        id: 'line-1',
+                        description: 'Corrected wording',
+                        quantity: '1',
+                        unit_amount: 10000,
+                    }),
+                ],
+            }),
+            expect.anything(),
+        );
+    });
+
+    it('shows review state and distinguishes automatic delivery revisions', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    email: {
+                        from: 'Synthetic Sender <sender@synthetic.test>',
+                        suggested_recipients: [],
+                        default_subject: 'Invoice INV-SYNTH-1',
+                        self: 'operator@synthetic.test',
+                    },
+                    invoice: {
+                        ...props().invoice,
+                        automatic_delivery_status: 'held',
+                        automatic_delivery_due_at: '2026-09-16T12:00:00Z',
+                        automatic_delivery_note: 'Held for review.',
+                    },
+                    administrator_notification: {
+                        id: 'notice-1',
+                        status: 'sent',
+                        sent_at: '2026-09-15T12:00:00Z',
+                        failed_at: null,
+                        attempt_count: 1,
+                        error_summary: null,
+                        invoice_revision: 1,
+                    },
+                    deliveries: [
+                        {
+                            id: 'delivery-1',
+                            status: 'sent',
+                            origin: 'automatic',
+                            invoice_revision: 2,
+                            recipients: ['billing@synthetic.test'],
+                            bcc: [],
+                            subject: 'Invoice INV-SYNTH-1',
+                            sent_at: '2026-09-16T12:00:00Z',
+                            failed_at: null,
+                            error_summary: null,
+                            provider_status: null,
+                            provider_status_at: null,
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Automatic client delivery')).toBeVisible();
+        expect(screen.getByText('Held for review.')).toBeVisible();
+        expect(screen.getByText('Administrator review notice')).toBeVisible();
+        expect(screen.getByText(/Automatic · revision 2/)).toBeVisible();
+    });
+});

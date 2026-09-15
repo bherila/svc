@@ -190,13 +190,13 @@ parameters:
 		-
 			message: '#^Parameter \#1 \$workspace of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
 			identifier: argument.type
-			count: 4
+			count: 3
 			path: app/Services/Billing/InvoiceLifecycleService.php
 
 		-
 			message: '#^Parameter \#2 \$company of method App\\Services\\Activity\\ClientActivityRecorder\:\:record\(\) expects App\\Models\\ClientCompany, App\\Models\\ClientCompany\|null given\.$#'
 			identifier: argument.type
-			count: 4
+			count: 3
 			path: app/Services/Billing/InvoiceLifecycleService.php
 
 		-

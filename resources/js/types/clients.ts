@@ -89,6 +89,10 @@ export type CompanyInvoice = {
     id: string;
     invoice_number: string | null;
     status: string;
+    document_revision?: number;
+    automatic_delivery_status?: string | null;
+    automatic_delivery_due_at?: string | null;
+    automatic_delivery_note?: string | null;
     currency: string | null;
     issue_date: string | null;
     due_date: string | null;

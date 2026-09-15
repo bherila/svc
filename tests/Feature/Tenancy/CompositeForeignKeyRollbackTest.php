@@ -210,7 +210,7 @@ final class CompositeForeignKeyRollbackTest extends TestCase
             'client_agreement_recurring_items', 'client_billing_schedules', 'client_tasks',
             'client_time_entries', 'client_invoices', 'client_invoice_lines',
             'client_invoice_line_time_entries', 'client_invoice_payments',
-            'client_invoice_email_deliveries', 'payment_reconciliations',
+            'client_invoice_email_deliveries', 'client_invoice_administrator_notifications', 'payment_reconciliations',
             'client_stripe_customers', 'client_stripe_payment_methods',
         ];
     }
@@ -224,7 +224,7 @@ final class CompositeForeignKeyRollbackTest extends TestCase
             'cbs_ws_agreement_fk', 'ct_ws_project_fk', 'cpm_ws_project_fk', 'cppa_ws_project_fk',
             'cppa_ws_membership_fk', 'cte_ws_company_fk', 'cte_ws_project_fk', 'ci_ws_company_fk',
             'cil_ws_invoice_fk', 'cilte_ws_line_fk', 'cilte_ws_time_entry_fk', 'cip_ws_invoice_fk',
-            'cied_ws_invoice_fk', 'pr_ws_payment_fk', 'csc_ws_company_fk', 'cspm_ws_company_fk',
+            'cied_ws_invoice_fk', 'cian_ws_invoice_fk', 'pr_ws_payment_fk', 'csc_ws_company_fk', 'cspm_ws_company_fk',
             'cspm_ws_customer_fk',
         ];
     }

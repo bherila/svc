@@ -6,12 +6,16 @@ use App\Actions\CreateClientCompany;
 use App\Http\Requests\StoreClientCompanyRequest;
 use App\Http\Requests\UpdateClientCompanyRequest;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Concurrency\Locks;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class ClientCompanyController extends Controller
 {
@@ -49,6 +53,8 @@ class ClientCompanyController extends Controller
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
+        InvoiceEmailService $emails,
+        ClientActivityRecorder $activities,
     ): RedirectResponse {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -65,7 +71,23 @@ class ClientCompanyController extends Controller
         // the check and the request authorized against one tenant modifies a
         // row now owned by another. Taking the lock and re-asserting ownership
         // under it makes the check and the write one decision.
-        DB::transaction(function () use ($workspace, $clientCompany, $request, $billingEmail): void {
+        DB::transaction(function () use ($workspace, $clientCompany, $request, $billingEmail, $emails, $activities): void {
+            $disablingAutomaticDelivery = $request->has('automatic_invoice_email_enabled')
+                && ! $request->boolean('automatic_invoice_email_enabled');
+            // An update acquires row locks too. Lock every delivery this
+            // request will cancel before the company, matching issuance's
+            // invoice -> company order instead of hiding the reverse order in
+            // a bulk UPDATE after the company lock.
+            $pendingInvoiceIds = $disablingAutomaticDelivery
+                ? ClientInvoice::query()
+                    ->where('workspace_id', $workspace->id)
+                    ->where('client_company_id', $clientCompany->id)
+                    ->whereIn('automatic_delivery_status', ['scheduled', 'held', 'failed'])
+                    ->orderBy('id')
+                    ->tap(Locks::forUpdate())
+                    ->pluck('id')
+                    ->all()
+                : [];
             $locked = ClientCompany::query()
                 ->whereKey($clientCompany->getKey())
                 ->where('workspace_id', $workspace->id)
@@ -77,11 +99,65 @@ class ClientCompanyController extends Controller
             // about a record it cannot reach, including that it exists.
             abort_if($locked === null, 404);
 
+            $enabled = $request->has('automatic_invoice_email_enabled')
+                ? $request->boolean('automatic_invoice_email_enabled')
+                : (bool) $locked->automatic_invoice_email_enabled;
+            $normalizedBillingEmail = is_string($billingEmail) ? $billingEmail : null;
+            if ($enabled && $emails->suggestedRecipientsForCompany($locked, $normalizedBillingEmail) === []) {
+                throw ValidationException::withMessages([
+                    'automatic_invoice_email_enabled' => 'Add a valid billing email or client portal recipient before enabling automatic invoice delivery.',
+                ]);
+            }
+
+            $before = [
+                'enabled' => (bool) $locked->automatic_invoice_email_enabled,
+                'delay_days' => $locked->automatic_invoice_email_delay_days,
+            ];
+
             $locked->update([
                 'name' => $request->string('name')->toString(),
-                'billing_email' => is_string($billingEmail) ? $billingEmail : null,
+                'billing_email' => $normalizedBillingEmail,
+                'automatic_invoice_email_enabled' => $enabled,
+                'automatic_invoice_email_delay_days' => $enabled
+                    ? (int) ($request->validated('automatic_invoice_email_delay_days')
+                        ?? $locked->automatic_invoice_email_delay_days)
+                    : null,
                 'is_active' => $request->boolean('is_active'),
             ]);
+
+            $cancelledInvoices = 0;
+            if (! $enabled && $pendingInvoiceIds !== []) {
+                $cancelledInvoices = ClientInvoice::query()
+                    ->where('workspace_id', $workspace->id)
+                    ->where('client_company_id', $locked->id)
+                    ->whereIn('id', $pendingInvoiceIds)
+                    ->whereIn('automatic_delivery_status', ['scheduled', 'held', 'failed'])
+                    ->update([
+                        'automatic_delivery_status' => 'cancelled',
+                        'automatic_delivery_note' => 'Automatic client delivery was disabled.',
+                        'lock_version' => DB::raw('lock_version + 1'),
+                        'updated_at' => $locked->freshTimestamp(),
+                    ]);
+            }
+
+            $after = [
+                'enabled' => $enabled,
+                'delay_days' => $locked->automatic_invoice_email_delay_days,
+            ];
+            if ($before !== $after) {
+                $activities->record(
+                    $workspace,
+                    $locked,
+                    'client.invoice_delivery_settings_updated',
+                    $locked,
+                    [
+                        'before' => $before,
+                        'after' => $after,
+                        'cancelled_invoices' => $cancelledInvoices,
+                    ],
+                    occurrence: (string) str()->uuid(),
+                );
+            }
         });
 
         return redirect()->back()->with('status', 'Client updated.');

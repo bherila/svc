@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Billing\CorrectIssuedInvoiceRequest;
 use App\Http\Requests\Billing\CorrectPaymentDateRequest;
 use App\Http\Requests\Billing\CreateStripePaymentIntentRequest;
 use App\Http\Requests\Billing\SendInvoiceRequest;
@@ -15,6 +16,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\BillingRecordAccess;
+use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -177,6 +179,44 @@ class InvoiceController extends Controller
         return $this->mutationResponse($request, $invoice, 'Invoice voided.');
     }
 
+    public function correct(
+        CorrectIssuedInvoiceRequest $request,
+        Workspace $workspace,
+        ClientInvoice $clientInvoice,
+        InvoiceCorrectionService $service,
+    ): JsonResponse|RedirectResponse {
+        Gate::authorize('manage', $workspace);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
+        $data = $request->validated();
+        $invoice = $service->correct(
+            $clientInvoice,
+            $workspace,
+            (int) $data['expected_revision'],
+            array_key_exists('due_date', $data),
+            isset($data['due_date']) ? (string) $data['due_date'] : null,
+            (string) $data['reason'],
+            $data['lines'],
+        );
+
+        return $this->mutationResponse($request, $invoice, 'Invoice corrected and automatic delivery held for review.');
+    }
+
+    public function holdAutomatic(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): JsonResponse|RedirectResponse
+    {
+        Gate::authorize('manage', $workspace);
+        $invoice = $service->hold($clientInvoice, $workspace);
+
+        return $this->mutationResponse($request, $invoice, 'Automatic invoice delivery held.');
+    }
+
+    public function releaseAutomatic(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): JsonResponse|RedirectResponse
+    {
+        Gate::authorize('manage', $workspace);
+        $invoice = $service->release($clientInvoice, $workspace);
+
+        return $this->mutationResponse($request, $invoice, 'Automatic invoice delivery released.');
+    }
+
     public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
@@ -304,12 +344,17 @@ class InvoiceController extends Controller
         // for why this is a flag rather than a field.
         $bcc = $request->boolean('bcc_self') && $user instanceof User ? [$user->email] : [];
 
-        $delivery = $service->send($clientInvoice, InvoiceEmailDraft::of(
-            $recipients,
-            $bcc,
-            $request->validated('subject') ?? $service->defaultSubject($clientInvoice),
-            $request->validated('message'),
-        ), $workspace);
+        $delivery = $service->send(
+            $clientInvoice,
+            InvoiceEmailDraft::of(
+                $recipients,
+                $bcc,
+                $request->validated('subject') ?? $service->defaultSubject($clientInvoice),
+                $request->validated('message'),
+            ),
+            $workspace,
+            $request->validated('idempotency_key'),
+        );
 
         $sent = $delivery->status === 'sent';
         $message = $sent

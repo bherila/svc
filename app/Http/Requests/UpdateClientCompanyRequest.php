@@ -24,6 +24,16 @@ class UpdateClientCompanyRequest extends FormRequest
             // address. Absent and empty are different intentions and this is a
             // full update, so the caller has to state which one it means.
             'billing_email' => ['present', 'nullable', 'email', 'max:255'],
+            'automatic_invoice_email_enabled' => ['sometimes', 'boolean'],
+            // Calendar days in the workspace timezone. A year is deliberately
+            // the upper bound: this is a review window, not archival workflow.
+            'automatic_invoice_email_delay_days' => [
+                'nullable',
+                'required_if:automatic_invoice_email_enabled,true',
+                'integer',
+                'min:0',
+                'max:365',
+            ],
             'is_active' => ['required', 'boolean'],
         ];
     }

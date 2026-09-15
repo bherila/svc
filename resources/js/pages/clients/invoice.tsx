@@ -33,6 +33,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -60,7 +61,9 @@ type InvoiceLine = {
     hours: number | null;
     line_date: string | null;
     unit_amount: number;
+    tax_amount?: number;
     total_amount: number;
+    money_correctable?: boolean;
 };
 
 type InvoicePayment = {
@@ -94,6 +97,19 @@ type InvoiceActions = {
     send: string | null;
     payment: string | null;
     void: string | null;
+    correct?: string | null;
+    hold_automatic?: string | null;
+    release_automatic?: string | null;
+};
+
+type AdministratorNotification = {
+    id: string;
+    status: string;
+    sent_at: string | null;
+    failed_at: string | null;
+    attempt_count: number;
+    error_summary: string | null;
+    invoice_revision: number;
 };
 
 /**
@@ -121,6 +137,7 @@ export default function ClientInvoiceDetail({
     actions,
     email,
     deliveries,
+    administrator_notification: administratorNotification = null,
     invoice,
     lines,
     line_detail: lineDetail,
@@ -136,6 +153,7 @@ export default function ClientInvoiceDetail({
     /** Null for a viewer who cannot send, alongside a `send` action of null. */
     email: InvoiceEmailContext | null;
     deliveries: InvoiceDelivery[];
+    administrator_notification?: AdministratorNotification | null;
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
     /** The work behind each line, keyed by line id. Absent for a line with none. */
@@ -145,6 +163,21 @@ export default function ClientInvoiceDetail({
     const [paying, setPaying] = useState(false);
     const [sending, setSending] = useState(false);
     const [voiding, setVoiding] = useState(false);
+    const [correctingInvoice, setCorrectingInvoice] = useState(false);
+    const [correctionReason, setCorrectionReason] = useState('');
+    const [correctionDueDate, setCorrectionDueDate] = useState(
+        invoice.due_date ?? '',
+    );
+    const [correctionLines, setCorrectionLines] = useState(() =>
+        lines.map((line) => ({
+            id: line.id,
+            description: line.description,
+            quantity: String(line.quantity),
+            unit_amount: (line.unit_amount / 100).toFixed(2),
+            tax_amount: ((line.tax_amount ?? 0) / 100).toFixed(2),
+            money_correctable: line.money_correctable ?? false,
+        })),
+    );
     const [amount, setAmount] = useState('');
     const [method, setMethod] = useState<string>('bank_transfer');
     // Only meaningful while `method` is "other": the name of the arrangement
@@ -165,7 +198,10 @@ export default function ClientInvoiceDetail({
 
     const post = (
         href: string,
-        data: Record<string, string | number | null> = {},
+        data: Record<
+            string,
+            string | number | null | Array<Record<string, string | number>>
+        > = {},
     ) => {
         if (busy) {
             return;
@@ -178,6 +214,7 @@ export default function ClientInvoiceDetail({
                 setNotice(null);
                 setPaying(false);
                 setVoiding(false);
+                setCorrectingInvoice(false);
                 setCorrecting(null);
             },
             onError: (errors) =>
@@ -259,6 +296,39 @@ export default function ClientInvoiceDetail({
                                 onClick={() => setSending(true)}
                             >
                                 Send to client
+                            </Button>
+                        )}
+                        {(actions.correct ?? null) !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setCorrectingInvoice(true)}
+                            >
+                                Correct invoice
+                            </Button>
+                        )}
+                        {(actions.hold_automatic ?? null) !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() =>
+                                    post(actions.hold_automatic ?? '')
+                                }
+                            >
+                                Hold automatic sending
+                            </Button>
+                        )}
+                        {(actions.release_automatic ?? null) !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() =>
+                                    post(actions.release_automatic ?? '')
+                                }
+                            >
+                                Release automatic sending
                             </Button>
                         )}
                         {actions.payment !== null && (
@@ -469,7 +539,244 @@ export default function ClientInvoiceDetail({
                             </Button>
                         </form>
                     )}
+
+                    {correctingInvoice && (
+                        <form
+                            className="mt-3 grid grid-cols-1 gap-4 rounded-lg border border-amber-500/40 p-4"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                post(actions.correct ?? '', {
+                                    expected_revision:
+                                        invoice.document_revision ?? 1,
+                                    reason: correctionReason,
+                                    due_date:
+                                        correctionDueDate === ''
+                                            ? null
+                                            : correctionDueDate,
+                                    lines: correctionLines.map((line) => ({
+                                        id: line.id,
+                                        description: line.description,
+                                        quantity: line.quantity,
+                                        unit_amount: Math.round(
+                                            Number.parseFloat(
+                                                line.unit_amount || '0',
+                                            ) * 100,
+                                        ),
+                                        tax_amount: Math.round(
+                                            Number.parseFloat(
+                                                line.tax_amount || '0',
+                                            ) * 100,
+                                        ),
+                                    })),
+                                });
+                            }}
+                        >
+                            <p className="text-sm wrap-anywhere text-muted-foreground">
+                                Corrections are limited to an unpaid invoice
+                                that has never been sent to the client. Existing
+                                line identities and allocations stay in place.
+                                Generated and allocated lines allow wording
+                                changes only; use void and regeneration for
+                                accounting changes.
+                            </p>
+                            <div className="grid max-w-xs grid-cols-1 gap-2">
+                                <Label htmlFor="correction-due-date">
+                                    Due date
+                                </Label>
+                                <Input
+                                    id="correction-due-date"
+                                    type="date"
+                                    value={correctionDueDate}
+                                    onChange={(event) =>
+                                        setCorrectionDueDate(event.target.value)
+                                    }
+                                />
+                            </div>
+                            {correctionLines.map((line, index) => (
+                                <div
+                                    key={line.id}
+                                    className="grid grid-cols-1 gap-2 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_8rem_9rem_9rem]"
+                                >
+                                    <div className="grid grid-cols-1 gap-1">
+                                        <Label
+                                            htmlFor={`correction-description-${line.id}`}
+                                        >
+                                            Description
+                                        </Label>
+                                        <Textarea
+                                            id={`correction-description-${line.id}`}
+                                            value={line.description}
+                                            onChange={(event) =>
+                                                setCorrectionLines((current) =>
+                                                    current.map(
+                                                        (item, itemIndex) =>
+                                                            itemIndex === index
+                                                                ? {
+                                                                      ...item,
+                                                                      description:
+                                                                          event
+                                                                              .target
+                                                                              .value,
+                                                                  }
+                                                                : item,
+                                                    ),
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    {(
+                                        [
+                                            'quantity',
+                                            'unit_amount',
+                                            'tax_amount',
+                                        ] as const
+                                    ).map((field) => (
+                                        <div
+                                            key={field}
+                                            className="grid grid-cols-1 gap-1"
+                                        >
+                                            <Label
+                                                htmlFor={`${field}-${line.id}`}
+                                            >
+                                                {field === 'quantity'
+                                                    ? 'Quantity'
+                                                    : field === 'unit_amount'
+                                                      ? 'Unit amount'
+                                                      : 'Tax amount'}
+                                            </Label>
+                                            <Input
+                                                id={`${field}-${line.id}`}
+                                                inputMode="decimal"
+                                                disabled={
+                                                    !line.money_correctable
+                                                }
+                                                value={line[field]}
+                                                onChange={(event) =>
+                                                    setCorrectionLines(
+                                                        (current) =>
+                                                            current.map(
+                                                                (
+                                                                    item,
+                                                                    itemIndex,
+                                                                ) =>
+                                                                    itemIndex ===
+                                                                    index
+                                                                        ? {
+                                                                              ...item,
+                                                                              [field]:
+                                                                                  event
+                                                                                      .target
+                                                                                      .value,
+                                                                          }
+                                                                        : item,
+                                                            ),
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                            <div className="grid max-w-xl grid-cols-1 gap-2">
+                                <Label htmlFor="correction-reason">
+                                    Reason for correction
+                                </Label>
+                                <Textarea
+                                    id="correction-reason"
+                                    required
+                                    maxLength={500}
+                                    value={correctionReason}
+                                    onChange={(event) =>
+                                        setCorrectionReason(event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <Button type="submit" disabled={busy}>
+                                    Save audited correction
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setCorrectingInvoice(false)}
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </form>
+                    )}
                 </header>
+
+                {(invoice.automatic_delivery_status ?? null) !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Automatic client delivery</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-2 text-sm">
+                            <p>
+                                <Badge variant="outline">
+                                    {statusLabel(
+                                        invoice.automatic_delivery_status ?? '',
+                                    )}
+                                </Badge>
+                            </p>
+                            {invoice.automatic_delivery_due_at !== null &&
+                                invoice.automatic_delivery_due_at !==
+                                    undefined && (
+                                    <p>
+                                        {[
+                                            'scheduled',
+                                            'failed',
+                                            'sending',
+                                        ].includes(
+                                            invoice.automatic_delivery_status ??
+                                                '',
+                                        )
+                                            ? 'Next send time'
+                                            : 'Scheduled time'}
+                                        :{' '}
+                                        {formatTimestamp(
+                                            invoice.automatic_delivery_due_at,
+                                        )}
+                                    </p>
+                                )}
+                            {invoice.automatic_delivery_note !== null &&
+                                invoice.automatic_delivery_note !==
+                                    undefined && (
+                                    <p className="wrap-anywhere text-muted-foreground">
+                                        {invoice.automatic_delivery_note}
+                                    </p>
+                                )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {administratorNotification !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Administrator review notice</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-2 text-sm">
+                            <p>
+                                Revision{' '}
+                                {administratorNotification.invoice_revision} ·{' '}
+                                {statusLabel(administratorNotification.status)}
+                            </p>
+                            <p className="text-muted-foreground">
+                                {formatTimestamp(
+                                    administratorNotification.sent_at ??
+                                        administratorNotification.failed_at,
+                                )}
+                            </p>
+                            {administratorNotification.error_summary !==
+                                null && (
+                                <p className="wrap-anywhere text-destructive">
+                                    {administratorNotification.error_summary}
+                                </p>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card>
                     <CardHeader>
@@ -780,6 +1087,7 @@ export default function ClientInvoiceDetail({
                                                 <TableHead className="min-w-48">
                                                     To
                                                 </TableHead>
+                                                <TableHead>Delivery</TableHead>
                                                 <TableHead>
                                                     Our record
                                                 </TableHead>
@@ -804,6 +1112,15 @@ export default function ClientInvoiceDetail({
                                                         {delivery.bcc.length >
                                                             0 &&
                                                             ` · bcc ${delivery.bcc.join(', ')}`}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {statusLabel(
+                                                            delivery.origin ??
+                                                                'manual',
+                                                        )}{' '}
+                                                        · revision{' '}
+                                                        {delivery.invoice_revision ??
+                                                            0}
                                                     </TableCell>
                                                     <TableCell>
                                                         <Badge

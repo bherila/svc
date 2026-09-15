@@ -20,9 +20,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $name
  * @property string $slug
  * @property string|null $billing_email
+ * @property bool $automatic_invoice_email_enabled
+ * @property int|null $automatic_invoice_email_delay_days
  * @property bool $is_active
  */
-#[Fillable(['workspace_id', 'name', 'slug', 'billing_email', 'is_active'])]
+#[Fillable([
+    'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
+    'automatic_invoice_email_delay_days', 'is_active',
+])]
 #[Hidden(['id', 'workspace_id'])]
 class ClientCompany extends Model implements WorkspaceOwned
 {
@@ -30,7 +35,11 @@ class ClientCompany extends Model implements WorkspaceOwned
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return [
+            'is_active' => 'boolean',
+            'automatic_invoice_email_enabled' => 'boolean',
+            'automatic_invoice_email_delay_days' => 'integer',
+        ];
     }
 
     /** @return BelongsTo<Workspace, $this> */
