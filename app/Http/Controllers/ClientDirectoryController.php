@@ -23,6 +23,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
@@ -267,6 +268,8 @@ class ClientDirectoryController extends Controller
             // because an invoice screen can sit open past its own midnight.
             'timezone' => $workspace->timezone,
             'actions' => [
+                'add_time' => $manages && $status === 'draft' && $clientInvoice->invoiceKindValue() === InvoiceKind::AdHoc->value
+                    ? route('clients.time', [$workspace, $clientCompany, 'draft_invoice' => $clientInvoice->public_id], absolute: false) : null,
                 'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
                 'send' => $manages && in_array($status, InvoiceStatus::collectible(), true)
                     ? $base.'/send'

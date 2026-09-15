@@ -783,6 +783,73 @@ describe('drafting an invoice from selected time', () => {
         return user;
     }
 
+    it('adds selected time to the named draft using its version and preserves invoice metadata', async () => {
+        const values = invoiceProps();
+        values.invoice_draft = {
+            url: '/synthetic/draft/time',
+            target: {
+                number: 'SYNTHETIC-DRAFT',
+                currency: 'USD',
+                total_amount: 500,
+                version: 'current-draft-version',
+                href: '/synthetic/draft',
+            },
+        };
+        render(<TimeSheet {...values} />);
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: 'Select Review implementation for invoice',
+            }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Review draft invoice' }),
+        );
+        expect(screen.getByText('New draft total: $7.06')).toBeVisible();
+        expect(
+            screen.queryByLabelText('Invoice number'),
+        ).not.toBeInTheDocument();
+        await user.click(
+            screen.getByRole('button', { name: 'Add time to draft' }),
+        );
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/synthetic/draft/time',
+            {
+                expected_version: 'current-draft-version',
+                time_entry_ids: ['entry-1'],
+            },
+            expect.any(Object),
+        );
+    });
+
+    it('refuses a selection in another currency than the existing draft', async () => {
+        const values = invoiceProps();
+        values.invoice_draft = {
+            url: '/synthetic/draft/time',
+            target: {
+                number: 'SYNTHETIC-DRAFT',
+                currency: 'EUR',
+                total_amount: 500,
+                version: 'current-draft-version',
+                href: '/synthetic/draft',
+            },
+        };
+        render(<TimeSheet {...values} />);
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole('checkbox', {
+                name: 'Select Review implementation for invoice',
+            }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Review draft invoice' }),
+        );
+        expect(
+            screen.getByRole('button', { name: 'Add time to draft' }),
+        ).toBeDisabled();
+        expect(inertia.post).not.toHaveBeenCalled();
+    });
+
     it('does not offer invoice creation without the server action', () => {
         render(<TimeSheet {...props()} />);
         expect(

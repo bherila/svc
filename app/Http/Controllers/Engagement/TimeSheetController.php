@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -172,6 +173,15 @@ class TimeSheetController extends Controller
                 ? $this->capacityByMonth($ledgers, $selector, $selectedCompany, $entries, $workspace->timezone)
                 : [];
 
+        $draft = null;
+        if ($request->filled('draft_invoice')) {
+            $request->validate(['draft_invoice' => ['required', 'uuid']]);
+            Gate::authorize('manage', $workspace);
+            $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $clientCompany->id)->where('public_id', $request->string('draft_invoice')->toString())
+                ->where('status', 'draft')->where('invoice_kind', InvoiceKind::AdHoc->value)->firstOrFail();
+        }
+
         return Inertia::render('time', [
             'workspace' => [
                 'id' => $workspace->public_id,
@@ -183,7 +193,11 @@ class TimeSheetController extends Controller
             // a selection the write will refuse.
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
             'invoice_draft' => $isManager ? [
-                'url' => route('svc.billing.invoices.store', [$workspace, $clientCompany]),
+                'url' => $draft === null ? route('svc.billing.invoices.store', [$workspace, $clientCompany])
+                    : route('svc.billing.invoices.time', [$workspace, $draft]),
+                'target' => $draft === null ? null : ['number' => $draft->invoice_number, 'currency' => $draft->currency,
+                    'total_amount' => $draft->total_amount, 'version' => AgentApiVersion::for($draft),
+                    'href' => route('clients.invoice', [$workspace, $clientCompany, $draft], absolute: false)],
             ] : null,
             'filters' => [
                 'company_id' => $selectedCompany?->public_id,

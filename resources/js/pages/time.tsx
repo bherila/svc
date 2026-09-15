@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import {
     CheckIcon,
     PencilIcon,
@@ -385,7 +385,7 @@ export default function TimeSheet({
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
     const [selectionMode, setSelectionMode] = useState<'approve' | 'invoice'>(
-        'approve',
+        invoiceDraft?.target ? 'invoice' : 'approve',
     );
     const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
     // Approval can fail for a reason the row cannot show - most often a
@@ -516,6 +516,7 @@ export default function TimeSheet({
                 <InvoiceSelectionDialog
                     entries={selectedEntries}
                     url={invoiceDraft.url}
+                    target={invoiceDraft.target}
                     timezone={workspace.timezone}
                     onClose={() => setInvoiceDialogOpen(false)}
                     onSuccess={() => {
@@ -528,6 +529,25 @@ export default function TimeSheet({
             )}
 
             <main className={cn(SHELL_CONTAINER, 'py-8')}>
+                {invoiceDraft?.target && (
+                    <div
+                        className={cn(
+                            SHELL_CONTAINER,
+                            'pt-6 text-sm wrap-anywhere',
+                        )}
+                    >
+                        Adding time to draft{' '}
+                        <Link
+                            className="underline"
+                            href={invoiceDraft.target.href}
+                        >
+                            {invoiceDraft.target.number}
+                        </Link>
+                        . Select up to 100 approved entries in{' '}
+                        {invoiceDraft.target.currency}.
+                    </div>
+                )}
+
                 <header className="flex flex-wrap items-end justify-between gap-4">
                     <h1 className="text-3xl font-semibold tracking-tight">
                         Time

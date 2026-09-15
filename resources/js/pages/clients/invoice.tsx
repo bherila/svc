@@ -89,6 +89,7 @@ type InvoicePayment = {
  * not an authorization check.
  */
 type InvoiceActions = {
+    add_time?: string | null;
     issue: string | null;
     send: string | null;
     payment: string | null;
@@ -232,6 +233,16 @@ export default function ClientInvoiceDetail({
                         >
                             View PDF
                         </a>
+                        {actions.add_time && (
+                            <Link
+                                href={actions.add_time}
+                                className={buttonVariants({
+                                    variant: 'outline',
+                                })}
+                            >
+                                Add time
+                            </Link>
+                        )}
                         {actions.issue !== null && (
                             <Button
                                 size="sm"
