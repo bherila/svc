@@ -67,11 +67,14 @@ class AppServiceProvider extends ServiceProvider
                 $hosts = [];
                 foreach ([config('app.url'), config('bherila-auth.oauth_server.resource')] as $url) {
                     if (is_string($url)) {
-                        $hosts[] = McpHttpPolicy::hostFromUrl($url);
+                        $host = McpHttpPolicy::hostFromUrl($url);
+                        if (! in_array($host, $hosts, true)) {
+                            $hosts[] = $host;
+                        }
                     }
                 }
 
-                return array_values(array_unique($hosts));
+                return $hosts;
             },
             maxRequestBodyBytes: Config::integer('agent_api.mcp_max_body_bytes'),
             maxResponseBodyBytes: Config::integer('agent_api.mcp_max_response_body_bytes'),
