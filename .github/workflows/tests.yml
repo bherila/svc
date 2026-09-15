@@ -332,102 +332,37 @@ jobs:
           name: frontend-build
           path: public/build/
 
-      - name: Append cPanel PHP handler to .htaccess
-        run: cat htaccess-append.txt >> public/.htaccess
+      # Shared deploy for Laravel on a cPanel account: https://github.com/bherila/shared-cpanel-deployment
+      # (its README lists every input and what each guard refuses). Pinned to a commit because this job
+      # holds a key that reaches every application on the account.
+      #
+      # It keeps what this job did by hand: the ea-php85 handler, a guarded rsync --delete to
+      # ~/svc-laravel (refused unless that directory already holds artisan), .env installed from
+      # ~/.config/svc/deployment.env, config:clear / migrate --force / config:cache, this application's
+      # crontab lines through the lock-backup-readback installer (the default line is byte-identical to
+      # the one installed before), and the /up and web-PHP checks.
+      #
+      # svc-blobs is authoritative production data and the OAuth key pair must never rotate on deploy;
+      # both are excluded explicitly, in addition to the runtime-storage excludes the action applies.
+      # The svc-specific host steps live in scripts/deploy/pre-migrate.sh and post-deploy.sh.
+      - name: Deploy to the cPanel account
+        uses: bherila/shared-cpanel-deployment@f5a4ce12657544a0b61f1f9a5b8c2157b470b740 # v1.0.0
+        with:
+          ssh-host: ${{ secrets.SSH_HOST }}
+          ssh-username: ${{ secrets.SSH_USERNAME }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          deploy-dir: svc-laravel
+          site-url: https://svc.bherila.net
+          env-source: .config/svc/deployment.env
+          excludes: |
+            svc-blobs
+            /storage/app/private/oauth/
+          pre-migrate-script: scripts/deploy/pre-migrate.sh
+          post-deploy-script: scripts/deploy/post-deploy.sh
 
-      - name: Set up pinned SSH credentials
+      - name: Verify the OAuth redirect targets the identity provider
         run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ecdsa
-          chmod 600 ~/.ssh/id_ecdsa
-          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      # The destination is intentionally hard-coded. This cPanel account also hosts
-      # other applications; an interpolated or broad --delete target is unsafe.
-      # svc-blobs is authoritative production data and must survive every code deploy.
-      - name: Deploy application with guarded rsync
-        run: |
-          rsync -av --delete \
-            --exclude='.env' \
-            --exclude='svc-blobs' \
-            --exclude='/storage/app/private/oauth/' \
-            -e "ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes" \
-            app \
-            bootstrap \
-            config \
-            database \
-            public \
-            resources \
-            routes \
-            storage \
-            vendor \
-            artisan \
-            composer.json \
-            composer.lock \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/svc-laravel/
-
-      - name: Create or verify persistent OAuth signing keys
-        run: |
-          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "cd ~/svc-laravel && \
-             install -d -m 700 storage/app/private/oauth && \
-             if [ -s storage/app/private/oauth/oauth-private.key ] && [ -s storage/app/private/oauth/oauth-public.key ]; then \
-               chmod 600 storage/app/private/oauth/oauth-private.key storage/app/private/oauth/oauth-public.key; \
-             elif [ ! -e storage/app/private/oauth/oauth-private.key ] && [ ! -e storage/app/private/oauth/oauth-public.key ]; then \
-               /opt/cpanel/ea-php85/root/usr/bin/php artisan passport:keys --force && \
-               chmod 600 storage/app/private/oauth/oauth-private.key storage/app/private/oauth/oauth-public.key; \
-             else \
-               echo 'OAuth signing key pair is incomplete; refusing to rotate it automatically.' >&2; \
-               exit 1; \
-             fi"
-
-      - name: Install private configuration and migrate schema
-        run: |
-          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "set -eu; \
-             test -f ~/.config/svc/deployment.env; \
-             test -f ~/.config/svc/database.env; \
-             install -m 600 ~/.config/svc/deployment.env ~/svc-laravel/.env; \
-             install -m 600 ~/.config/svc/database.env ~/svc-laravel/.db-credentials; \
-             install -d -m 700 ~/svc-laravel/storage/app/private/svc-blobs; \
-             cd ~/svc-laravel; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:database:status --format=json; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan migrate --force; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache; \
-             /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:storage:status --write --format=json; \
-             stripe_exit=0; \
-             stripe_status=\$(/opt/cpanel/ea-php85/root/usr/bin/php artisan svc:stripe:status --format=json) || stripe_exit=\$?; \
-             test \"\$stripe_exit\" -eq 0 -o \"\$stripe_exit\" -eq 1; \
-             printf '%s\\n' \"\$stripe_status\"; \
-             brevo_exit=0; \
-             brevo_status=\$(/opt/cpanel/ea-php85/root/usr/bin/php artisan svc:brevo:status --format=json) || brevo_exit=\$?; \
-             test \"\$brevo_exit\" -eq 0 -o \"\$brevo_exit\" -eq 1; \
-             printf '%s\\n' \"\$brevo_status\""
-
-      # The account crontab is shared with every other application on this account. The script
-      # replaces only this application's lines (its header says how they are recognised), so a
-      # hand-installed or outdated line cannot run beside the deploy-managed one, and a new account
-      # gets its cron on the first deploy. Its harness runs first, so a regression in the script
-      # fails here instead of rewriting the crontab.
-      - name: Install and verify this application's cron lines
-        run: |
-          bash scripts/deploy/test-install-cron.sh
-          # shellcheck disable=SC2016 # $HOME is for cron to expand on the host, not this shell.
-          lines=(
-            '* * * * * cd "$HOME/svc-laravel" && /opt/cpanel/ea-php85/root/usr/bin/php -d memory_limit=1G artisan schedule:run > /dev/null 2>&1 # JOB:svc-laravel-scheduler'
-          )
-          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes \
-            "${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}" \
-            "bash -s -- $(printf '%q ' svc-laravel "${lines[@]}")" < scripts/deploy/install-cron.sh
-
-      - name: Verify public health and OAuth redirect
-        run: |
-          curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 20 \
-            https://svc.bherila.net/up > /dev/null
           redirect_url="$(curl --fail --silent --show-error --max-time 20 \
             --output /dev/null --write-out '%{redirect_url}' \
             https://svc.bherila.net/oauth/redirect)"
@@ -435,14 +370,6 @@ jobs:
             https://id.bherila.net/oauth/authorize?*) ;;
             *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
           esac
-
-      # The web handler's limits cannot be read from the CLI, and LiteSpeed silently ignores
-      # .user.ini, so ask the running site. Fails the deploy when the vhost runs another PHP
-      # version or a memory_limit below the php_value that public/.htaccess sets.
-      - name: Verify the web handler's PHP version and memory limit
-        run: |
-          bash scripts/deploy/verify-web-php.sh "${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}" \
-            svc-laravel https://svc.bherila.net 8.5 1024M -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes
 
   # The pre-merge smoke proves the code works; it runs against `artisan serve` on
   # a runner, with the runner's configuration, so it cannot see a production-only
