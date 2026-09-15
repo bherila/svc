@@ -185,6 +185,8 @@ final class InvoiceLifecycleService
     {
         return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
             $locked = $this->lockInvoice($invoice, $workspace);
+            $owningWorkspace = $workspace ?? Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
+            $locked->setRelation('workspace', $owningWorkspace);
 
             if ($locked->status !== 'draft') {
                 if (InvoiceStatus::hasChargedValue($locked->status)) {
@@ -261,7 +263,7 @@ final class InvoiceLifecycleService
                 throw new DomainException($this->reversedPeriodRefusal($locked));
             }
 
-            $issueDate = $locked->issue_date ?? $this->clock->today($locked->workspace);
+            $issueDate = $locked->issue_date ?? $this->clock->today($owningWorkspace);
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
                 throw new DomainException('The due date cannot precede the issue date.');
             }
@@ -274,17 +276,26 @@ final class InvoiceLifecycleService
             // The invoice row lock is not enough: two different drafts lock two
             // different rows, so both could read the same unconsumed pool. The
             // company is what the pool belongs to, so that is what serializes.
-            ClientCompany::query()->whereKey($locked->client_company_id)->tap(Locks::forUpdate())->first();
+            $company = ClientCompany::query()
+                ->where('workspace_id', $locked->workspace_id)
+                ->whereKey($locked->client_company_id)
+                ->tap(Locks::forUpdate())
+                ->first();
+            if (! $company instanceof ClientCompany) {
+                throw new DomainException('The invoice client does not belong to this workspace.');
+            }
+            $locked->setRelation('clientCompany', $company);
             $this->capOverpaymentCreditAtIssue($locked);
 
             // Timestamps are persisted in UTC. Convert before Eloquent formats
             // the value (which otherwise drops the offset), then return to the
             // workspace timezone only for calendar-day arithmetic.
-            $issuedAt = $this->clock->now($locked->workspace)->utc();
-            $automatic = (bool) $locked->clientCompany->automatic_invoice_email_enabled;
-            $delayDays = $automatic
-                ? (int) $locked->clientCompany->automatic_invoice_email_delay_days
-                : null;
+            $issuedAt = $this->clock->now($owningWorkspace)->utc();
+            $automatic = $company->automatic_invoice_email_enabled;
+            $delayDays = $automatic ? $company->automatic_invoice_email_delay_days : null;
+            if ($automatic && $delayDays === null) {
+                throw new DomainException('Automatic invoice delivery is enabled without a configured delay.');
+            }
 
             $locked->forceFill([
                 'issue_date' => $issueDate,
@@ -300,7 +311,7 @@ final class InvoiceLifecycleService
                 'automatic_delivery_status' => $automatic ? 'scheduled' : null,
                 'automatic_delivery_delay_days' => $delayDays,
                 'automatic_delivery_due_at' => $automatic
-                    ? $issuedAt->setTimezone($locked->workspace->timezone)->addDays($delayDays ?? 0)->utc()
+                    ? $issuedAt->setTimezone($owningWorkspace->timezone)->addDays($delayDays)->utc()
                     : null,
             ])->save();
 
@@ -317,8 +328,8 @@ final class InvoiceLifecycleService
                     ]);
             }
             $this->activities->record(
-                $locked->workspace,
-                $locked->clientCompany,
+                $owningWorkspace,
+                $company,
                 'invoice.issued',
                 $locked,
                 [

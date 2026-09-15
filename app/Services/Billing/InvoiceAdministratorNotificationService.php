@@ -6,6 +6,7 @@ use App\Mail\AdministratorInvoiceIssuedMail;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
@@ -18,6 +19,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use RuntimeException;
 use Throwable;
 
 /** Durable, administrator-only delivery of the document that was first issued. */
@@ -46,15 +48,23 @@ final class InvoiceAdministratorNotificationService
             return $existing;
         }
 
+        $workspace = Workspace::query()->whereKey($invoice->workspace_id)->firstOrFail();
+        $company = ClientCompany::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_company_id)
+            ->firstOrFail();
+        $invoice->setRelation('workspace', $workspace);
+        $invoice->setRelation('clientCompany', $company);
+
         $administrator = $this->responsibleAdministrator($invoice);
         $subject = 'Review issued invoice '.$invoice->invoice_number;
         $openUrl = route('clients.invoice', [
-            $invoice->workspace,
-            $invoice->clientCompany,
+            $workspace,
+            $company,
             $invoice,
         ]);
 
-        $now = $this->clock->now($invoice->workspace)->utc();
+        $now = $this->clock->now($workspace)->utc();
         $attributes = [
             'workspace_id' => $invoice->workspace_id,
             'client_invoice_id' => $invoice->id,
@@ -63,7 +73,7 @@ final class InvoiceAdministratorNotificationService
             'recipient' => $administrator?->email,
             'subject' => $subject,
             'open_url' => $openUrl,
-            'client_name' => (string) $invoice->clientCompany->name,
+            'client_name' => $company->name,
             'invoice_number' => (string) $invoice->invoice_number,
             'currency' => (string) $invoice->currency,
             'total_amount' => (int) $invoice->total_amount,
@@ -168,7 +178,7 @@ final class InvoiceAdministratorNotificationService
                 'error_summary' => null,
             ])->save();
 
-            return $candidate->fresh(['invoice.clientCompany', 'invoice.workspace']);
+            return $candidate;
         });
 
         if (! $notification instanceof ClientInvoiceAdministratorNotification) {
@@ -253,7 +263,8 @@ final class InvoiceAdministratorNotificationService
                     ->orWhere('next_attempt_at', '<=', $now)))
             ->orderBy('id')
             ->limit($limit)
-            ->pluck('id');
+            ->get(['id'])
+            ->map(fn (Workspace $workspace): int => $workspace->id);
 
         $inspected = 0;
         foreach ($workspaceIds as $workspaceId) {
@@ -270,10 +281,11 @@ final class InvoiceAdministratorNotificationService
                     ->orWhere('next_attempt_at', '<=', $now))
                 ->orderBy('id')
                 ->limit($remaining)
-                ->pluck('id');
+                ->get(['id'])
+                ->map(fn (ClientInvoiceAdministratorNotification $notification): int => $notification->id);
 
             foreach ($ids as $id) {
-                $this->deliverRegistered((int) $workspaceId, (int) $id);
+                $this->deliverRegistered($workspaceId, $id);
                 $inspected++;
             }
         }
@@ -286,8 +298,8 @@ final class InvoiceAdministratorNotificationService
         $projectIds = $invoice->lines()
             ->where('workspace_id', $invoice->workspace_id)
             ->whereNotNull('client_project_id')
-            ->pluck('client_project_id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->get(['client_project_id'])
+            ->map(fn (ClientInvoiceLine $line): int => $this->databaseId($line->client_project_id))
             ->unique()
             ->values();
 
@@ -295,7 +307,7 @@ final class InvoiceAdministratorNotificationService
             ->where('workspace_id', $invoice->workspace_id)
             ->value('client_project_id');
         if ($agreementProjectId !== null) {
-            $projectIds->push((int) $agreementProjectId);
+            $projectIds->push($this->databaseId($agreementProjectId));
             $projectIds = $projectIds->unique()->values();
         }
 
@@ -332,6 +344,18 @@ final class InvoiceAdministratorNotificationService
             ->orderBy('id')
             ->get()
             ->first(fn (User $user): bool => filter_var($user->email, FILTER_VALIDATE_EMAIL) !== false);
+    }
+
+    private function databaseId(mixed $value): int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+        if (is_string($value) && ctype_digit($value) && $value !== '0') {
+            return (int) $value;
+        }
+
+        throw new RuntimeException('A persisted invoice relationship contains an invalid database id.');
     }
 
     private function nextAttemptAt(ClientInvoiceAdministratorNotification $notification): CarbonImmutable

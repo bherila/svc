@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
@@ -17,6 +18,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 /** A bounded, audited correction of an unpaid and never-delivered invoice. */
 final class InvoiceCorrectionService
@@ -48,6 +50,8 @@ final class InvoiceCorrectionService
                 ->tap(Locks::forUpdate())
                 ->with(['workspace', 'clientCompany'])
                 ->firstOrFail();
+            $company = $this->loadOwningCompany($locked, $workspace);
+            $locked->setRelation('clientCompany', $company);
 
             if ($locked->status !== InvoiceStatus::Issued->value || $locked->paid_amount > 0) {
                 throw new DomainException('Only an unpaid issued invoice can be corrected. Paid, partially paid, draft, and void invoices are unchanged.');
@@ -172,7 +176,7 @@ final class InvoiceCorrectionService
 
             $this->activities->record(
                 $workspace,
-                $locked->clientCompany,
+                $company,
                 'invoice.corrected',
                 $locked,
                 [
@@ -185,7 +189,14 @@ final class InvoiceCorrectionService
                 occurrence: (string) Str::uuid(),
             );
 
-            return $locked->fresh(['lines', 'clientCompany']);
+            $locked->setRelation('lines', ClientInvoiceLine::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', $locked->id)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get());
+
+            return $locked;
         });
     }
 
@@ -225,6 +236,8 @@ final class InvoiceCorrectionService
         return DB::transaction(function () use ($invoice, $workspace, $hold): ClientInvoice {
             $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)
                 ->tap(Locks::forUpdate())->with(['workspace', 'clientCompany'])->firstOrFail();
+            $company = $this->loadOwningCompany($locked, $workspace);
+            $locked->setRelation('clientCompany', $company);
             if ($locked->status !== InvoiceStatus::Issued->value || $locked->automatic_delivery_due_at === null) {
                 throw new DomainException('This invoice has no active automatic delivery to change.');
             }
@@ -251,7 +264,7 @@ final class InvoiceCorrectionService
 
             $this->activities->record(
                 $workspace,
-                $locked->clientCompany,
+                $company,
                 $hold ? 'invoice.automatic_delivery_held' : 'invoice.automatic_delivery_released',
                 $locked,
                 ['revision' => $locked->document_revision],
@@ -281,20 +294,45 @@ final class InvoiceCorrectionService
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_invoice_line_id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->map(fn (mixed $id): int => $this->databaseId($id))
             ->all();
         $expenses = ClientExpense::withTrashed()->where('workspace_id', $workspace->id)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_invoice_line_id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->map(fn (mixed $id): int => $this->databaseId($id))
             ->all();
         $tasks = ClientTask::query()->where('workspace_id', $workspace->id)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->pluck('client_invoice_line_id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->map(fn (mixed $id): int => $this->databaseId($id))
             ->all();
 
         return array_values(array_unique([...$time, ...$expenses, ...$tasks]));
+    }
+
+    private function loadOwningCompany(ClientInvoice $invoice, Workspace $workspace): ClientCompany
+    {
+        $company = ClientCompany::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($invoice->client_company_id)
+            ->first();
+        if (! $company instanceof ClientCompany) {
+            throw new DomainException('The invoice client does not belong to this workspace.');
+        }
+
+        return $company;
+    }
+
+    private function databaseId(mixed $value): int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+        if (is_string($value) && ctype_digit($value) && $value !== '0') {
+            return (int) $value;
+        }
+
+        throw new RuntimeException('A persisted invoice allocation contains an invalid database id.');
     }
 
     /** @param list<int> $allocated */
