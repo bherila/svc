@@ -8,12 +8,14 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
 use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /** Creates a draft only from explicitly selected, approved time. */
 final class InvoiceFromTimeService
@@ -59,6 +61,60 @@ final class InvoiceFromTimeService
             $this->attachTime($updated, $workspace, $lines);
 
             return $updated->fresh(['lines', 'clientCompany']);
+        });
+    }
+
+    /** Add a selection without replacing existing time, manual lines or their identities.
+     * @param list<string> $timeEntryIds */
+    public function addTime(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $timeEntryIds): ClientInvoice
+    {
+        return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $timeEntryIds): ClientInvoice {
+            $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)
+                ->tap(Locks::forUpdate())->firstOrFail();
+            if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
+                throw new DomainException('Time can only be added to an ad-hoc draft invoice.');
+            }
+            abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; reload it and retry.');
+            $locked->assertLineOwnership();
+            $company = ClientCompany::query()->where('workspace_id', $workspace->id)
+                ->whereKey($locked->client_company_id)->firstOrFail();
+            [$lines, $subtotals] = $this->prepareLines($workspace, $company, $locked->currency, $timeEntryIds, [], checkAllocations: false);
+            // A prior ordinary read may have established an old RR snapshot.
+            // Entries are locked above; current pivot reads close allocation-only races.
+            // Scope through the already-locked local entries: a malformed pivot's
+            // own workspace must not hide an existing claim on this tenant's time.
+            $allocated = DB::table('client_invoice_line_time_entries')
+                ->join('client_time_entries as owned_time', 'owned_time.id', '=', 'client_invoice_line_time_entries.client_time_entry_id')
+                ->where('owned_time.workspace_id', $workspace->id)->whereIn('owned_time.id', array_column($lines, '_entry_id'))
+                ->orderBy('owned_time.id')->tap(Locks::forUpdate())->get(['client_invoice_line_time_entries.client_time_entry_id']);
+            if ($allocated->isNotEmpty()) {
+                throw new DomainException('Selected time has already been allocated to an invoice.');
+            }
+            $nextOrder = MoneyService::nonNegativeInteger($locked->lines()->where('workspace_id', $workspace->id)->max('sort_order') ?? 0, 'sort_order') + 1;
+            foreach ($lines as $index => $attributes) {
+                $entryId = $attributes['_entry_id'];
+                unset($attributes['_entry_id']);
+                $line = $locked->lines()->create([
+                    ...$attributes, 'workspace_id' => $workspace->id,
+                    'sort_order' => $nextOrder + $index, 'total_amount' => $subtotals[$index],
+                ]);
+                $line->timeEntries()->attach($entryId, ['workspace_id' => $workspace->id]);
+            }
+            $addition = array_sum($subtotals);
+            $total = MoneyService::nonNegativeInteger($locked->total_amount + $addition, 'total_amount');
+            $locked->forceFill([
+                'subtotal_amount' => MoneyService::nonNegativeInteger($locked->subtotal_amount + $addition, 'subtotal_amount'),
+                'total_amount' => $total, 'balance_amount' => ClientInvoice::balanceOwed($total, $locked->paid_amount),
+                'lock_version' => $locked->lock_version + 1,
+            ])->save();
+            app(ClientActivityRecorder::class)->record(
+                $workspace, $company, 'invoice.updated', $locked,
+                ['invoice_kind' => $locked->invoiceKindValue(), 'total_amount' => $locked->total_amount,
+                    'currency' => $locked->currency, 'added_time_count' => count($lines)],
+                occurrence: (string) Str::uuid(),
+            );
+
+            return $locked->refresh()->load(['lines', 'clientCompany']);
         });
     }
 
@@ -200,7 +256,7 @@ final class InvoiceFromTimeService
      * @param  list<array<string, mixed>>  $manualLines
      * @return array{list<array<string,mixed>>,array<int,int>}
      */
-    private function prepareLines(Workspace $workspace, ClientCompany $company, string $currency, array $timeEntryIds, array $manualLines, ?ClientInvoice $currentInvoice = null): array
+    private function prepareLines(Workspace $workspace, ClientCompany $company, string $currency, array $timeEntryIds, array $manualLines, ?ClientInvoice $currentInvoice = null, bool $checkAllocations = true): array
     {
         if (count($timeEntryIds) !== count(array_unique($timeEntryIds))) {
             throw new DomainException('Selected time entries must be distinct.');
@@ -208,6 +264,7 @@ final class InvoiceFromTimeService
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('public_id', $timeEntryIds)
+            ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->get()
             ->keyBy('public_id');
@@ -236,12 +293,15 @@ final class InvoiceFromTimeService
             if ($terms === null) {
                 throw new DomainException('Selected time must be approved, billable by this workspace, non-deferred, completely priced, and currency-compatible.');
             }
-            $allocated = $entry->invoiceLines();
-            if ($currentInvoice !== null) {
-                $allocated->where('client_invoice_lines.client_invoice_id', '!=', $currentInvoice->id);
-            }
-            if ($allocated->exists()) {
-                throw new DomainException('Selected time has already been allocated to an invoice.');
+            // addTime checks the whole selection with one current locking read.
+            if ($checkAllocations) {
+                $allocated = $entry->invoiceLines();
+                if ($currentInvoice !== null) {
+                    $allocated->where('client_invoice_lines.client_invoice_id', '!=', $currentInvoice->id);
+                }
+                if ($allocated->exists()) {
+                    throw new DomainException('Selected time has already been allocated to an invoice.');
+                }
             }
             $index = count($lines);
             $lines[] = [

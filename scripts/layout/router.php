@@ -23,15 +23,16 @@ if (PHP_SAPI !== 'cli-server'
 $fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true, flags: JSON_THROW_ON_ERROR);
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
-// Only schedule actions for this run's synthetic workspace may mutate the
-// disposable database. Other writes remain refused, even with the token.
+// Only allowlisted schedule and draft-time acceptance actions may mutate this
+// run's disposable database. Other writes remain refused, even with the token.
 $scheduleWrite = is_string($requestPath) && (
     ($method === 'POST' && $requestPath === $fixture['expense_schedule_store'])
     || (preg_match('#^'.preg_quote($fixture['expense_schedule_prefix'], '#').'[0-9a-f-]{36}(/generate)?$#D', $requestPath) === 1
         && (($method === 'PATCH' && ! str_ends_with($requestPath, '/generate'))
             || ($method === 'POST' && str_ends_with($requestPath, '/generate'))))
 );
-if ($method !== 'GET' && ! $scheduleWrite) {
+$draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], true);
+if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }

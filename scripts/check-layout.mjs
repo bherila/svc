@@ -245,6 +245,7 @@ try {
         await page.screenshot({
             path: path.join(artifacts, screenshot),
             fullPage: true,
+            animations: 'disabled',
         });
         results.push({
             screen,
@@ -268,6 +269,8 @@ try {
 
         for (const screen of [
             'invoice',
+            'draft_invoice',
+            'draft_time',
             'proposal',
             'proposal_acceptance',
             'operations',
@@ -345,6 +348,28 @@ try {
                         )
                         .first(),
                 ).toBeVisible();
+            }
+
+            if (screen === 'draft_time') {
+                await page
+                    .getByRole('checkbox', {
+                        name: /^Select SyntheticUnbrokenWork.* for invoice$/,
+                    })
+                    .check();
+                await page
+                    .getByRole('button', {
+                        name: 'Review draft invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await expect(
+                    page.getByText('New draft total: $390.75', { exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'add-preview', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'time') {
@@ -441,6 +466,61 @@ try {
             }
         }
     }
+
+    // Full operator correction path, all writes confined to the seeded records.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(origin + fixture.draft_invoice);
+    await page.getByRole('link', { name: 'Add time', exact: true }).click();
+    let correction = page
+        .getByRole('row')
+        .filter({ hasText: 'Synthetic draft correction' });
+    await correction
+        .getByRole('button', { name: 'Unapprove', exact: true })
+        .click();
+    await expect(correction).toContainText('Draft');
+    await correction.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByLabel('Duration', { exact: true }).fill('1:30');
+    await page
+        .getByLabel('Work performed', { exact: true })
+        .fill('Synthetic corrected work');
+    await page
+        .getByRole('button', { name: 'Save changes', exact: true })
+        .click();
+    correction = page
+        .getByRole('row')
+        .filter({ hasText: 'Synthetic corrected work' });
+    await correction
+        .getByRole('button', { name: 'Approve', exact: true })
+        .click();
+    await expect(correction).toContainText('Approved');
+    await correction.getByRole('checkbox').check();
+    await page
+        .getByRole('button', { name: 'Review draft invoice', exact: true })
+        .click();
+    await expect(
+        page.getByText('New draft total: $245.00', { exact: true }),
+    ).toBeVisible();
+    await page
+        .getByRole('button', { name: 'Add time to draft', exact: true })
+        .click();
+    await expect(page).toHaveURL(origin + fixture.draft_invoice);
+    await expect(
+        page.getByRole('row').filter({ hasText: 'Synthetic preserved fee' }),
+    ).toContainText('$5.00');
+    await page.getByRole('button', { name: 'Issue', exact: true }).click();
+    await expect(
+        page.getByRole('button', { name: 'Issue', exact: true }),
+    ).toHaveCount(0);
+    await page
+        .getByRole('button', { name: 'Record payment', exact: true })
+        .click();
+    await expect(page.getByLabel('Amount', { exact: true })).toHaveValue(
+        '245.00',
+    );
+    await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+    await capture('draft_invoice', 'paid-after-correction', 1440);
+    run('php', ['scripts/layout/verify-draft-time.php'], env);
 
     // Exercise real saves against the isolated database after layout capture,
     // so the additional schedule cannot change the fixtures used at each width.

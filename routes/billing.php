@@ -30,6 +30,7 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}', [InvoiceController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.invoices.show');
+    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/time', [InvoiceController::class, 'addTime'])->name('svc.billing.invoices.time');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/issue', [InvoiceController::class, 'issue'])->name('svc.billing.invoices.issue');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/payments', [InvoiceController::class, 'payment'])->name('svc.billing.invoices.payments.store');
     // Narrowly the date, and only the date. Corrections to what a payment is

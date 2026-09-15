@@ -144,6 +144,21 @@ class InvoiceController extends Controller
         return redirect()->route('clients.invoice', [$workspace, $company, $clientInvoice]);
     }
 
+    public function addTime(Request $request, Workspace $workspace, string $clientInvoice, InvoiceFromTimeService $service): RedirectResponse
+    {
+        Gate::authorize('manage', $workspace);
+        $data = $request->validate([
+            'expected_version' => ['required', 'string', 'max:100'],
+            'time_entry_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'time_entry_ids.*' => ['required', 'uuid', 'distinct'],
+        ]);
+        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)
+            ->where('public_id', $clientInvoice)->firstOrFail();
+        $updated = $service->addTime($invoice, $workspace, $data['expected_version'], array_values($data['time_entry_ids']));
+
+        return redirect()->route('clients.invoice', [$workspace, $updated->clientCompany, $updated])->with('status', 'Time added to draft invoice.');
+    }
+
     public function issue(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);

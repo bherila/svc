@@ -149,7 +149,7 @@ export type TimeSheetProps = {
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;
-    invoice_draft: { url: string } | null;
+    invoice_draft: { url: string; target?: DraftTimeTarget | null } | null;
     /**
      * Which company the sheet actually read.
      *
@@ -160,4 +160,12 @@ export type TimeSheetProps = {
     filters: { company_id: string | null };
     companies: CompanyOption[];
     months: Month[];
+};
+
+export type DraftTimeTarget = {
+    number: string;
+    currency: string;
+    total_amount: number;
+    version: string;
+    href: string;
 };

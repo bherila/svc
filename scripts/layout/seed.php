@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Billing\ExpenseInvoiceAllocations;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\Billing\BillingCadence;
@@ -113,7 +114,30 @@ app(AttachmentStorageService::class)->store(
     UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
 );
 
+$correction = ClientTimeEntry::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+    'user_id' => $owner->id, 'worked_on' => $date, 'minutes' => 60, 'description' => 'Synthetic draft correction',
+    'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 12000, 'billing_rate_source' => 'explicit', 'currency' => 'USD',
+]);
+$companion = ClientTimeEntry::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+    'user_id' => $owner->id, 'worked_on' => $date, 'minutes' => 30, 'description' => 'Synthetic preserved time',
+    'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 12000, 'billing_rate_source' => 'explicit', 'currency' => 'USD',
+]);
+$draft = app(InvoiceFromTimeService::class)->create($workspace, $company,
+    ['invoice_number' => 'SYNTHETIC-DRAFT-'.str_repeat('X', 50), 'currency' => 'USD'], [$correction->public_id, $companion->public_id],
+    [['type' => 'service', 'description' => 'Synthetic preserved fee', 'quantity' => '1', 'unit_amount' => 500]]);
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
+    'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),
+    'draft_id' => $draft->id, 'correction_id' => $correction->id,
+    'preserved_lines' => $draft->lines()->whereDoesntHave('timeEntries')->orderBy('id')->get()->map->getAttributes()->all(),
+    'draft_writes' => [
+        'POST' => [route('svc.billing.invoices.time', [$workspace, $draft], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
+            '/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/workspaces/'.$workspace->public_id.'/time-entries/approve'],
+        'PATCH' => ['/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
+    ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,
     'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),

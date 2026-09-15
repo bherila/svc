@@ -15,19 +15,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
 import { formatHours, todayIn } from '@/lib/time';
-import type { TimeEntry } from '@/types/time-sheet';
+import type { DraftTimeTarget, TimeEntry } from '@/types/time-sheet';
 
 /** A quote from server-priced rows; the write rechecks availability under lock. */
 export function InvoiceSelectionDialog({
     entries,
     url,
     timezone,
+    target,
     onClose,
     onSuccess,
 }: {
     entries: TimeEntry[];
     url: string;
     timezone: string;
+    target?: DraftTimeTarget | null;
     onClose: () => void;
     onSuccess: () => void;
 }) {
@@ -37,8 +39,10 @@ export function InvoiceSelectionDialog({
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const currency = entries[0]?.invoice_terms?.currency;
+    const currency = target?.currency ?? entries[0]?.invoice_terms?.currency;
     const valid =
+        entries.length > 0 &&
+        (!target || entries.length <= 100) &&
         currency !== undefined &&
         entries.every((entry) => entry.invoice_terms?.currency === currency);
     const total = entries.reduce(
@@ -60,11 +64,15 @@ export function InvoiceSelectionDialog({
                 showCloseButton={!saving}
             >
                 <DialogHeader>
-                    <DialogTitle>Draft invoice from selected time</DialogTitle>
+                    <DialogTitle className="min-w-0 pr-6 wrap-anywhere">
+                        {target
+                            ? `Add time to ${target.number}`
+                            : 'Draft invoice from selected time'}
+                    </DialogTitle>
                     <DialogDescription>
-                        Review the selected work and its recorded rates.
-                        Creating a draft allocates these entries; it does not
-                        issue or send the invoice.
+                        {target
+                            ? 'Review the work to add at its recorded rates. Existing lines stay on the draft.'
+                            : 'Review the selected work and its recorded rates. Creating a draft allocates these entries; it does not issue or send the invoice.'}
                     </DialogDescription>
                 </DialogHeader>
                 <form
@@ -72,7 +80,11 @@ export function InvoiceSelectionDialog({
                     onSubmit={(event) => {
                         event.preventDefault();
 
-                        if (saving || !valid || number.trim() === '') {
+                        if (
+                            saving ||
+                            !valid ||
+                            (!target && number.trim() === '')
+                        ) {
                             return;
                         }
 
@@ -80,16 +92,23 @@ export function InvoiceSelectionDialog({
                         setError(null);
                         router.post(
                             url,
-                            {
-                                invoice_number: number.trim(),
-                                currency,
-                                issue_date: issueDate || null,
-                                due_date: dueDate || null,
-                                notes: notes || null,
-                                time_entry_ids: entries.map(
-                                    (entry) => entry.id,
-                                ),
-                            },
+                            target
+                                ? {
+                                      expected_version: target.version,
+                                      time_entry_ids: entries.map(
+                                          (entry) => entry.id,
+                                      ),
+                                  }
+                                : {
+                                      invoice_number: number.trim(),
+                                      currency,
+                                      issue_date: issueDate || null,
+                                      due_date: dueDate || null,
+                                      notes: notes || null,
+                                      time_entry_ids: entries.map(
+                                          (entry) => entry.id,
+                                      ),
+                                  },
                             {
                                 preserveScroll: true,
                                 onSuccess,
@@ -145,74 +164,85 @@ export function InvoiceSelectionDialog({
                     </ul>
                     {valid && (
                         <p className="text-right font-medium tabular-nums">
-                            Draft total: {formatMoney(total, currency)}
+                            {target ? 'New draft total: ' : 'Draft total: '}
+                            {formatMoney(
+                                total + (target?.total_amount ?? 0),
+                                currency,
+                            )}
                         </p>
                     )}
                     {!valid && (
                         <p role="alert" className="text-sm text-destructive">
-                            Select entries in one currency for each invoice.
+                            {target
+                                ? 'Select up to 100 entries matching the invoice currency.'
+                                : 'Select entries in one currency for each invoice.'}
                         </p>
                     )}
-                    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="grid min-w-0 grid-cols-1 gap-2 sm:col-span-2">
-                            <Label htmlFor="selected-invoice-number">
-                                Invoice number
-                            </Label>
-                            <Input
-                                id="selected-invoice-number"
-                                value={number}
-                                onChange={(event) =>
-                                    setNumber(event.target.value)
-                                }
-                                required
-                                maxLength={80}
-                                disabled={saving}
-                            />
-                        </div>
-                        <div className="grid min-w-0 grid-cols-1 gap-2">
-                            <Label htmlFor="selected-invoice-issue">
-                                Invoice date
-                            </Label>
-                            <Input
-                                id="selected-invoice-issue"
-                                type="date"
-                                value={issueDate}
-                                onChange={(event) =>
-                                    setIssueDate(event.target.value)
-                                }
-                                disabled={saving}
-                            />
-                        </div>
-                        <div className="grid min-w-0 grid-cols-1 gap-2">
-                            <Label htmlFor="selected-invoice-due">
-                                Due date (optional)
-                            </Label>
-                            <Input
-                                id="selected-invoice-due"
-                                type="date"
-                                value={dueDate}
-                                onChange={(event) =>
-                                    setDueDate(event.target.value)
-                                }
-                                disabled={saving}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid min-w-0 grid-cols-1 gap-2">
-                        <Label htmlFor="selected-invoice-notes">
-                            Notes (optional)
-                        </Label>
-                        <Textarea
-                            id="selected-invoice-notes"
-                            value={notes}
-                            onChange={(event) => setNotes(event.target.value)}
-                            maxLength={10000}
-                            disabled={saving}
-                        />
-                    </div>
+                    {!target && (
+                        <>
+                            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                                <div className="grid min-w-0 grid-cols-1 gap-2 sm:col-span-2">
+                                    <Label htmlFor="selected-invoice-number">
+                                        Invoice number
+                                    </Label>
+                                    <Input
+                                        id="selected-invoice-number"
+                                        value={number}
+                                        onChange={(event) =>
+                                            setNumber(event.target.value)
+                                        }
+                                        required
+                                        maxLength={80}
+                                        disabled={saving}
+                                    />
+                                </div>
+                                <div className="grid min-w-0 grid-cols-1 gap-2">
+                                    <Label htmlFor="selected-invoice-issue">
+                                        Invoice date
+                                    </Label>
+                                    <Input
+                                        id="selected-invoice-issue"
+                                        type="date"
+                                        value={issueDate}
+                                        onChange={(event) =>
+                                            setIssueDate(event.target.value)
+                                        }
+                                        disabled={saving}
+                                    />
+                                </div>
+                                <div className="grid min-w-0 grid-cols-1 gap-2">
+                                    <Label htmlFor="selected-invoice-due">
+                                        Due date (optional)
+                                    </Label>
+                                    <Input
+                                        id="selected-invoice-due"
+                                        type="date"
+                                        value={dueDate}
+                                        onChange={(event) =>
+                                            setDueDate(event.target.value)
+                                        }
+                                        disabled={saving}
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid min-w-0 grid-cols-1 gap-2">
+                                <Label htmlFor="selected-invoice-notes">
+                                    Notes (optional)
+                                </Label>
+                                <Textarea
+                                    id="selected-invoice-notes"
+                                    value={notes}
+                                    onChange={(event) =>
+                                        setNotes(event.target.value)
+                                    }
+                                    maxLength={10000}
+                                    disabled={saving}
+                                />
+                            </div>
+                        </>
+                    )}
                     <p className="text-xs text-muted-foreground">
-                        Availability and rates are checked again when the draft
-                        is created.
+                        Availability and rates are checked again when you save.
                     </p>
                     {error !== null && (
                         <p
@@ -233,8 +263,12 @@ export function InvoiceSelectionDialog({
                         </Button>
                         <Button type="submit" disabled={saving || !valid}>
                             {saving
-                                ? 'Creating draft…'
-                                : 'Create draft invoice'}
+                                ? target
+                                    ? 'Saving…'
+                                    : 'Creating draft…'
+                                : target
+                                  ? 'Add time to draft'
+                                  : 'Create draft invoice'}
                         </Button>
                     </DialogFooter>
                 </form>
