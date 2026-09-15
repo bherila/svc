@@ -27,7 +27,8 @@ use RuntimeException;
  * inversion stops happening.
  *
  * What none of this does is prove race freedom. It proves ordering discipline.
- * The suite runs on one connection, so it cannot make two transactions contend;
+ * The conformance fixture runs on one connection; separate receipt probes
+ * exercise real contention, but do not prove this whole registry race-free;
  * a green conformance run says the code takes its locks in one consistent
  * order, not that concurrent callers are safe. See the doc's honest-limits
  * section.
@@ -57,6 +58,10 @@ enum LockResource: string
 
     // What an invoice is built out of.
     case ClientTimeEntry = 'client_time_entries';
+
+    // Time mutation verifies snapshot membership against these current pivots
+    // after locking the entry; invoice state was already locked before it.
+    case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
     case ClientTask = 'client_tasks';
 
     // Recurrence locks its schedule before inserting draft expense rows.
