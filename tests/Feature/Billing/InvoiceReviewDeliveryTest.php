@@ -188,9 +188,15 @@ final class InvoiceReviewDeliveryTest extends TestCase
     {
         Mail::fake();
         [, $workspace, , $invoice] = $this->draft();
-        DB::unprepared(in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)
-            ? "create trigger synthetic_admin_acceptance before update on client_invoice_administrator_notifications for each row begin if new.status = 'sent' then signal sqlstate '45000' set message_text = 'synthetic local failure'; end if; end"
-            : "create trigger synthetic_admin_acceptance before update on client_invoice_administrator_notifications when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
+        $rejectAcceptedResult = true;
+        ClientInvoiceAdministratorNotification::updating(
+            static function (ClientInvoiceAdministratorNotification $notification) use (&$rejectAcceptedResult): void {
+                if ($notification->status === 'sent' && $rejectAcceptedResult) {
+                    $rejectAcceptedResult = false;
+                    throw new \RuntimeException('Synthetic local failure.');
+                }
+            },
+        );
 
         try {
             $issued = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
@@ -201,7 +207,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             Artisan::call('svc:billing:dispatch-invoice-emails');
             Mail::assertSent(AdministratorInvoiceIssuedMail::class, 1);
         } finally {
-            DB::unprepared('drop trigger if exists synthetic_admin_acceptance');
+            $rejectAcceptedResult = false;
         }
     }
 
@@ -449,9 +455,15 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'automatic_invoice_email_delay_days' => 0,
         ])->save();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
-        DB::unprepared(in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)
-            ? "create trigger synthetic_delivery_acceptance before update on client_invoice_email_deliveries for each row begin if new.status = 'sent' then signal sqlstate '45000' set message_text = 'synthetic local failure'; end if; end"
-            : "create trigger synthetic_delivery_acceptance before update on client_invoice_email_deliveries when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
+        $rejectAcceptedResult = true;
+        ClientInvoiceEmailDelivery::updating(
+            static function (ClientInvoiceEmailDelivery $delivery) use (&$rejectAcceptedResult): void {
+                if ($delivery->status === 'sent' && $rejectAcceptedResult) {
+                    $rejectAcceptedResult = false;
+                    throw new \RuntimeException('Synthetic local failure.');
+                }
+            },
+        );
 
         try {
             $this->actingAs($owner)->postJson(
@@ -463,7 +475,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             Artisan::call('svc:billing:dispatch-invoice-emails');
             Mail::assertSent(InvoiceMail::class, 1);
         } finally {
-            DB::unprepared('drop trigger if exists synthetic_delivery_acceptance');
+            $rejectAcceptedResult = false;
         }
     }
 

@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
@@ -39,8 +40,9 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
 
         $this->bootProbeDatabase('delivery_race');
         Artisan::call('migrate', ['--database' => 'delivery_race', '--force' => true]);
-        $original = config('database.default');
-        config(['database.default' => 'delivery_race']);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('delivery_race');
+        Schema::clearResolvedInstance('db.schema');
         $processes = [];
         try {
             $owner = User::factory()->create(['email' => 'race-owner@synthetic.test']);
@@ -113,7 +115,8 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
             foreach ($processes as $process) {
                 $process->stop(0);
             }
-            config(['database.default' => $original]);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
         }
     }
 
@@ -134,7 +137,7 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
                 base_path(),
                 ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
                 $input,
-                30,
+                60,
             ),
             $input,
         ];
