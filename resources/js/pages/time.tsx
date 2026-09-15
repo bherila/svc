@@ -530,12 +530,7 @@ export default function TimeSheet({
 
             <main className={cn(SHELL_CONTAINER, 'py-8')}>
                 {invoiceDraft?.target && (
-                    <div
-                        className={cn(
-                            SHELL_CONTAINER,
-                            'pt-6 text-sm wrap-anywhere',
-                        )}
-                    >
+                    <div className="mb-6 text-sm wrap-anywhere">
                         Adding time to draft{' '}
                         <Link
                             className="underline"

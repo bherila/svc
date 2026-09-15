@@ -245,6 +245,7 @@ try {
         await page.screenshot({
             path: path.join(artifacts, screenshot),
             fullPage: true,
+            animations: 'disabled',
         });
         results.push({
             screen,
