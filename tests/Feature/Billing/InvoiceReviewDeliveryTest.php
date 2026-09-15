@@ -15,6 +15,7 @@ use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceEmailDraft;
 use Closure;
+use DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Attachment;
 use Illuminate\Support\Facades\Artisan;
@@ -39,9 +40,11 @@ final class InvoiceReviewDeliveryTest extends TestCase
         Mail::fake();
         [$owner, $workspace, $company, $invoice] = $this->draft();
 
-        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $issued = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
         app(InvoiceLifecycleService::class)->issue($invoice->fresh(), $workspace);
 
+        $this->assertInstanceOf(DateTimeInterface::class, $issued->issue_date);
+        $this->assertTrue($company->fresh()->is_active);
         Mail::assertSent(AdministratorInvoiceIssuedMail::class, 1);
         Mail::assertSent(AdministratorInvoiceIssuedMail::class, function (AdministratorInvoiceIssuedMail $mail) use ($owner, $invoice): bool {
             $attachment = $mail->attachments()[0] ?? null;
@@ -183,7 +186,9 @@ final class InvoiceReviewDeliveryTest extends TestCase
     {
         Mail::fake();
         [, $workspace, , $invoice] = $this->draft();
-        DB::unprepared("create trigger synthetic_admin_acceptance before update on client_invoice_administrator_notifications when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
+        DB::unprepared(in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)
+            ? "create trigger synthetic_admin_acceptance before update on client_invoice_administrator_notifications for each row begin if new.status = 'sent' then signal sqlstate '45000' set message_text = 'synthetic local failure'; end if; end"
+            : "create trigger synthetic_admin_acceptance before update on client_invoice_administrator_notifications when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
 
         try {
             $issued = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
@@ -442,7 +447,9 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'automatic_invoice_email_delay_days' => 0,
         ])->save();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
-        DB::unprepared("create trigger synthetic_delivery_acceptance before update on client_invoice_email_deliveries when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
+        DB::unprepared(in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)
+            ? "create trigger synthetic_delivery_acceptance before update on client_invoice_email_deliveries for each row begin if new.status = 'sent' then signal sqlstate '45000' set message_text = 'synthetic local failure'; end if; end"
+            : "create trigger synthetic_delivery_acceptance before update on client_invoice_email_deliveries when new.status = 'sent' begin select raise(abort, 'synthetic local failure'); end");
 
         try {
             $this->actingAs($owner)->postJson(

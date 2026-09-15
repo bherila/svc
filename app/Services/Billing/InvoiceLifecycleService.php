@@ -185,7 +185,11 @@ final class InvoiceLifecycleService
     {
         return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
             $locked = $this->lockInvoice($invoice, $workspace);
-            $owningWorkspace = $workspace ?? Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
+            // Re-read even when the caller supplied the authorized workspace.
+            // A freshly-created model does not contain database defaults, so a
+            // workspace whose timezone comes from the schema default otherwise
+            // looks null here on MariaDB.
+            $owningWorkspace = Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
             $locked->setRelation('workspace', $owningWorkspace);
 
             if ($locked->status !== 'draft') {
