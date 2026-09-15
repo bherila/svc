@@ -1,6 +1,7 @@
 import { Link, router } from '@inertiajs/react';
 import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -166,7 +167,7 @@ export function ClientCompanySwitcher({
                                             ? 'true'
                                             : undefined
                                     }
-                                    onClick={(event) => {
+                                    onClick={(event: ReactMouseEvent<HTMLAnchorElement>) => {
                                         event.preventDefault();
                                         choose(client);
                                     }}

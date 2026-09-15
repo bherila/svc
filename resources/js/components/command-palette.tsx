@@ -248,7 +248,7 @@ export function CommandPalette() {
             <CommandInput
                 placeholder="Search clients, projects, invoices and tasks…"
                 value={term}
-                onValueChange={(next) => {
+                onValueChange={(next: string) => {
                     setTerm(next);
 
                     // Emptying the box returns the palette to rest at once,
