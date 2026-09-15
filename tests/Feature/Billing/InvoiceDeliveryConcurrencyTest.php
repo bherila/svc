@@ -136,20 +136,106 @@ final class InvoiceDeliveryConcurrencyTest extends TestCase
         }
     }
 
+    public function test_concurrent_cross_invoice_idempotency_collision_returns_a_bounded_conflict(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('The delivery idempotency collision is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('delivery_key_race');
+        Artisan::call('migrate', ['--database' => 'delivery_key_race', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('delivery_key_race');
+        Schema::clearResolvedInstance('db.schema');
+        $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-delivery-race-'.Str::lower(Str::random(16));
+        $firstReady = $barrier.'-first-ready';
+        $secondReady = $barrier.'-second-ready';
+        $release = $barrier.'-release';
+        $firstLookup = $barrier.'-first-lookup';
+        $secondLookup = $barrier.'-second-lookup';
+        $lookupRelease = $barrier.'-lookup-release';
+        try {
+            $owner = User::factory()->create(['email' => 'key-race-owner@synthetic.test']);
+            $workspace = Workspace::query()->create(['name' => 'Synthetic key race', 'slug' => 'synthetic-key-race']);
+            $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => 'Synthetic key-race client',
+                'slug' => 'synthetic-key-race-client',
+                'billing_email' => 'billing@synthetic.test',
+            ]);
+            $invoice = fn (string $number): ClientInvoice => app(InvoiceLifecycleService::class)->issue(
+                app(InvoiceLifecycleService::class)->createDraft($workspace, $company, [
+                    'invoice_number' => $number,
+                    'currency' => 'USD',
+                ], [[
+                    'type' => 'fee',
+                    'description' => 'Synthetic keyed race service',
+                    'quantity' => '1',
+                    'unit_amount' => 1000,
+                    'tax_amount' => 0,
+                ]]),
+                $workspace,
+            );
+            $firstInvoice = $invoice('SYNTHETIC-KEY-RACE-1');
+            $secondInvoice = $invoice('SYNTHETIC-KEY-RACE-2');
+            $key = 'synthetic-shared-delivery-key';
+
+            $first = $this->worker('keyed-manual', $workspace, $firstInvoice, $firstReady, $release, $firstLookup, $lookupRelease, $key);
+            $second = $this->worker('keyed-manual', $workspace, $secondInvoice, $secondReady, $release, $secondLookup, $lookupRelease, $key);
+            $processes = [$first, $second];
+            $first->start();
+            $second->start();
+            $this->awaitReady($first, $firstReady);
+            $this->awaitReady($second, $secondReady);
+            $this->assertTrue(touch($release), 'Could not release the keyed delivery workers.');
+            $this->awaitReady($first, $firstLookup);
+            $this->awaitReady($second, $secondLookup);
+            $this->assertTrue(touch($lookupRelease), 'Could not release the idempotency lookups.');
+            $first->wait();
+            $second->wait();
+            $outcomes = [$this->workerResult($first)['outcome'], $this->workerResult($second)['outcome']];
+            sort($outcomes);
+
+            $this->assertSame(['refused', 'success'], $outcomes);
+            DB::purge('delivery_key_race');
+            $this->assertSame(1, ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('idempotency_key', $key)
+                ->count());
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
+            foreach ([$firstReady, $secondReady, $release, $firstLookup, $secondLookup, $lookupRelease] as $path) {
+                @unlink($path);
+            }
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
     private function worker(
         string $operation,
         Workspace $workspace,
         ClientInvoice $invoice,
         string $ready,
         string $release,
+        ?string $lookupReady = null,
+        ?string $lookupRelease = null,
+        ?string $key = null,
     ): Process {
         $input = base64_encode(json_encode([
-            'connection' => config('database.connections.delivery_race'),
+            'connection' => config('database.connections.'.DB::getDefaultConnection()),
             'workspace' => $workspace->id,
             'invoice' => $invoice->id,
             'operation' => $operation,
             'ready' => $ready,
             'release' => $release,
+            'lookup_ready' => $lookupReady,
+            'lookup_release' => $lookupRelease,
+            'key' => $key,
         ], JSON_THROW_ON_ERROR));
 
         return new Process(

@@ -66,6 +66,17 @@ type InvoiceLine = {
     money_correctable?: boolean;
 };
 
+function correctionFields(lines: InvoiceLine[]) {
+    return lines.map((line) => ({
+        id: line.id,
+        description: line.description,
+        quantity: String(line.quantity),
+        unit_amount: (line.unit_amount / 100).toFixed(2),
+        tax_amount: ((line.tax_amount ?? 0) / 100).toFixed(2),
+        money_correctable: line.money_correctable ?? false,
+    }));
+}
+
 type InvoicePayment = {
     id: string;
     status: string;
@@ -169,14 +180,7 @@ export default function ClientInvoiceDetail({
         invoice.due_date ?? '',
     );
     const [correctionLines, setCorrectionLines] = useState(() =>
-        lines.map((line) => ({
-            id: line.id,
-            description: line.description,
-            quantity: String(line.quantity),
-            unit_amount: (line.unit_amount / 100).toFixed(2),
-            tax_amount: ((line.tax_amount ?? 0) / 100).toFixed(2),
-            money_correctable: line.money_correctable ?? false,
-        })),
+        correctionFields(lines),
     );
     const [amount, setAmount] = useState('');
     const [method, setMethod] = useState<string>('bank_transfer');
@@ -302,7 +306,18 @@ export default function ClientInvoiceDetail({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setCorrectingInvoice(true)}
+                                onClick={() => {
+                                    // Inertia keeps this page mounted when a
+                                    // correction refreshes its props. Start
+                                    // every edit from that newest revision,
+                                    // not from the state captured at mount.
+                                    setCorrectionReason('');
+                                    setCorrectionDueDate(
+                                        invoice.due_date ?? '',
+                                    );
+                                    setCorrectionLines(correctionFields(lines));
+                                    setCorrectingInvoice(true);
+                                }}
                             >
                                 Correct invoice
                             </Button>

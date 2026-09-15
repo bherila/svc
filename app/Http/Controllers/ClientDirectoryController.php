@@ -310,7 +310,9 @@ class ClientDirectoryController extends Controller
                     && in_array($clientInvoice->automatic_delivery_status, ['scheduled', 'failed'], true)
                     ? $base.'/automatic-delivery/hold'
                     : null,
-                'release_automatic' => $manages && $clientInvoice->automatic_delivery_status === 'held'
+                'release_automatic' => $manages
+                    && $clientInvoice->automatic_delivery_status === 'held'
+                    && $clientInvoice->automatic_delivery_due_at !== null
                     ? $base.'/automatic-delivery/release'
                     : null,
                 // Voiding a paid invoice is a correction the service refuses,

@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientTask;
@@ -27,6 +28,13 @@ use RuntimeException;
 
 final class InvoiceLifecycleService
 {
+    /**
+     * Provider calls are synchronous and normally resolve within one request.
+     * Keep a generous boundary around a live call, then let an operator record
+     * payment while retaining the delivery row as an ambiguous audit record.
+     */
+    private const AMBIGUOUS_DELIVERY_CLAIM_MINUTES = 60;
+
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly ClientActivityRecorder $activities,
@@ -669,7 +677,29 @@ final class InvoiceLifecycleService
             // the short synchronous send has resolved. Existing keyed
             // payments returned above remain idempotent.
             if ($locked->automatic_delivery_status === 'sending') {
-                throw new DomainException('Automatic invoice delivery is in progress. Retry the payment after it finishes.');
+                $claim = $locked->emailDeliveries()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->where('origin', 'automatic')
+                    ->where('status', 'sending')
+                    ->orderByDesc('claimed_at')
+                    ->orderByDesc('id')
+                    ->tap(Locks::forUpdate())
+                    ->first();
+                $claimIsStale = $claim instanceof ClientInvoiceEmailDelivery
+                    && $claim->claimed_at !== null
+                    && $claim->claimed_at->lte(
+                        $this->clock->now($locked->workspace)->utc()
+                            ->subMinutes(self::AMBIGUOUS_DELIVERY_CLAIM_MINUTES),
+                    );
+                if (! $claimIsStale) {
+                    throw new DomainException('Automatic invoice delivery is in progress. Retry the payment after it finishes.');
+                }
+
+                $locked->forceFill([
+                    'automatic_delivery_status' => 'cancelled',
+                    'automatic_delivery_due_at' => null,
+                    'automatic_delivery_note' => 'The unresolved delivery claim expired; a payment was recorded and automatic delivery was cancelled.',
+                ])->save();
             }
 
             // Nothing above this line has written anything, and everything

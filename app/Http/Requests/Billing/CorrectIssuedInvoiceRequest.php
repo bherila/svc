@@ -22,7 +22,10 @@ final class CorrectIssuedInvoiceRequest extends FormRequest
             'lines.*.id' => ['required', 'uuid', 'distinct'],
             'lines.*.description' => ['required', 'string', 'max:10000'],
             'lines.*.quantity' => ['required', 'regex:/^\d+(?:\.\d{1,4})?$/'],
-            'lines.*.unit_amount' => ['required', 'integer', 'min:0'],
+            // Generated credit lines carry a negative immutable amount. The
+            // service compares every submitted line with the locked row and
+            // refuses money changes on credits and other generated lines.
+            'lines.*.unit_amount' => ['required', 'integer'],
             'lines.*.tax_amount' => ['required', 'integer', 'min:0'],
         ];
     }

@@ -16,6 +16,7 @@ use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -78,21 +79,23 @@ final class InvoiceEmailService
         ?Workspace $workspace = null,
         ?string $idempotencyKey = null,
     ): ClientInvoiceEmailDelivery {
-        $this->assertSendable($invoice, $workspace);
+        if ($workspace !== null && ! $this->workspaceAuthorization->isOwnedBy($workspace, $invoice)) {
+            throw new DomainException('Invoice does not belong to this workspace.');
+        }
 
-        $delivery = $this->record($invoice, $draft, 'manual', false, $idempotencyKey);
+        [$delivery, $recordedInvoice] = $this->record($invoice, $draft, 'manual', false, $idempotencyKey);
         if ($delivery->wasRecentlyCreated) {
-            return $this->deliver($invoice, $delivery, $draft);
+            return $this->deliver($recordedInvoice, $delivery, $draft);
         }
 
         if ($delivery->status !== 'failed') {
             return $delivery;
         }
 
-        $retry = $this->claimFailedManualDelivery($invoice, $delivery);
+        $retry = $this->claimFailedManualDelivery($recordedInvoice, $delivery);
 
-        return $retry instanceof ClientInvoiceEmailDelivery
-            ? $this->deliver($invoice, $retry, $draft)
+        return is_array($retry)
+            ? $this->deliver($retry[1], $retry[0], $draft)
             : ($delivery->fresh() ?? $delivery);
     }
 
@@ -113,7 +116,7 @@ final class InvoiceEmailService
     {
         $this->assertSendable($invoice, $workspace);
 
-        $delivery = $this->record($invoice, $draft, 'manual', true, null);
+        [$delivery] = $this->record($invoice, $draft, 'manual', true, null);
         $id = $delivery->id;
 
         if ($delivery->wasRecentlyCreated) {
@@ -142,10 +145,19 @@ final class InvoiceEmailService
      */
     public function deliverRegistered(ClientInvoice $invoice, int $deliveryId, InvoiceEmailDraft $draft): void
     {
-        $registered = DB::transaction(function () use ($invoice, $deliveryId): ?ClientInvoiceEmailDelivery {
-            $delivery = ClientInvoiceEmailDelivery::query()
+        $registered = DB::transaction(function () use ($invoice, $deliveryId): ?array {
+            $lockedInvoice = ClientInvoice::query()
                 ->where('workspace_id', $invoice->workspace_id)
-                ->where('client_invoice_id', $invoice->id)
+                ->whereKey($invoice->id)
+                ->tap(Locks::forUpdate())
+                ->with('workspace')
+                ->first();
+            if (! $lockedInvoice instanceof ClientInvoice) {
+                return null;
+            }
+            $delivery = ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('client_invoice_id', $lockedInvoice->id)
                 ->whereKey($deliveryId)
                 ->tap(Locks::forUpdate())
                 ->first();
@@ -153,24 +165,31 @@ final class InvoiceEmailService
             if (! $delivery instanceof ClientInvoiceEmailDelivery || $delivery->status !== 'pending') {
                 return null;
             }
+            if ($delivery->invoice_revision !== $lockedInvoice->document_revision) {
+                throw new DomainException('The invoice changed before its registered delivery could be sent.');
+            }
 
             $delivery->forceFill([
                 'status' => 'sending',
                 'claimed_at' => $this->clock->now($delivery->workspace)->utc(),
             ])->save();
 
-            return $delivery;
+            return [$lockedInvoice, $delivery];
         });
 
-        if (! $registered instanceof ClientInvoiceEmailDelivery) {
+        if (! is_array($registered)) {
             return;
         }
 
+        /** @var ClientInvoice $registeredInvoice */
+        /** @var ClientInvoiceEmailDelivery $registeredDelivery */
+        [$registeredInvoice, $registeredDelivery] = $registered;
+
         try {
-            $this->deliver($invoice, $registered, $draft);
+            $this->deliver($registeredInvoice, $registeredDelivery, $draft);
         } catch (DomainException $failure) {
             Log::warning('An invoice email failed after commit.', [
-                'delivery' => $registered->public_id,
+                'delivery' => $registeredDelivery->public_id,
                 'reason' => $failure->getMessage(),
             ]);
         }
@@ -200,8 +219,11 @@ final class InvoiceEmailService
     /**
      * @return list<array{email: string, label: string}>
      */
-    public function suggestedRecipientsForCompany(ClientCompany $company, ?string $billingEmail = null): array
-    {
+    public function suggestedRecipientsForCompany(
+        ClientCompany $company,
+        ?string $billingEmail = null,
+        bool $billingEmailProvided = false,
+    ): array {
 
         $suggestions = [];
         // A list of the addresses already offered rather than a map to `true`.
@@ -210,7 +232,7 @@ final class InvoiceEmailService
         // decides whether a client is emailed twice.
         $seen = [];
 
-        $billing = trim((string) ($billingEmail ?? $company->billing_email));
+        $billing = trim((string) ($billingEmailProvided ? $billingEmail : $company->billing_email));
 
         if ($billing !== '' && filter_var($billing, FILTER_VALIDATE_EMAIL) !== false) {
             $suggestions[] = ['email' => $billing, 'label' => 'Billing address'];
@@ -291,6 +313,13 @@ final class InvoiceEmailService
 
             $company = $locked->clientCompany;
             $due = $locked->automatic_delivery_due_at;
+            if ($due?->isFuture()
+                || ($locked->automatic_delivery_status === 'failed' && $due === null)) {
+                // Another dispatcher already resolved this candidate. A future
+                // retry, or an exhausted failure with no next attempt, is not
+                // newly ineligible and must not be rewritten as cancelled.
+                return null;
+            }
             if ($company === null
                 || ! $company->automatic_invoice_email_enabled
                 || $locked->status !== InvoiceStatus::Issued->value
@@ -442,71 +471,108 @@ final class InvoiceEmailService
         }
     }
 
+    /** @return array{0: ClientInvoiceEmailDelivery, 1: ClientInvoice} */
     private function record(
         ClientInvoice $invoice,
         InvoiceEmailDraft $draft,
         string $origin,
         bool $deferred,
         ?string $idempotencyKey,
-    ): ClientInvoiceEmailDelivery {
-        return DB::transaction(function () use ($invoice, $draft, $origin, $deferred, $idempotencyKey): ClientInvoiceEmailDelivery {
-            $locked = ClientInvoice::query()
+    ): array {
+        try {
+            return DB::transaction(function () use ($invoice, $draft, $origin, $deferred, $idempotencyKey): array {
+                $locked = ClientInvoice::query()
+                    ->where('workspace_id', $invoice->workspace_id)
+                    ->whereKey($invoice->id)
+                    ->tap(Locks::forUpdate())
+                    ->with('workspace')
+                    ->firstOrFail();
+                if ($idempotencyKey !== null && $idempotencyKey !== '') {
+                    $existing = ClientInvoiceEmailDelivery::query()
+                        ->where('workspace_id', $locked->workspace_id)
+                        ->where('idempotency_key', $idempotencyKey)
+                        ->first();
+                    if ($existing instanceof ClientInvoiceEmailDelivery) {
+                        $this->assertMatchingDelivery($existing, $locked, $draft, $origin);
+
+                        return [$existing, $locked];
+                    }
+                }
+
+                $this->assertSendable($locked, null);
+
+                if ($origin === 'manual' && $locked->automatic_delivery_status === 'automatically_sent') {
+                    throw new DomainException('This invoice was already delivered automatically.');
+                }
+
+                $inFlight = $locked->emailDeliveries()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->whereIn('status', ['pending', 'sending'])
+                    ->exists();
+                if ($inFlight) {
+                    throw new DomainException('Another client delivery is already in progress for this invoice.');
+                }
+
+                $delivery = $locked->emailDeliveries()->create([
+                    'workspace_id' => $locked->workspace_id,
+                    'origin' => $origin,
+                    'invoice_revision' => $locked->document_revision,
+                    'attempt_number' => 1,
+                    'idempotency_key' => $idempotencyKey,
+                    'recipients' => $draft->recipients,
+                    'bcc' => $draft->bcc === [] ? null : $draft->bcc,
+                    'subject' => $draft->subject,
+                    'body' => $draft->body,
+                    'status' => $deferred ? 'pending' : 'sending',
+                    'queued_at' => $this->clock->now($locked->workspace)->utc(),
+                    'claimed_at' => $deferred ? null : $this->clock->now($locked->workspace)->utc(),
+                ]);
+                $locked->advanceAgentRevision();
+
+                return [$delivery, $locked];
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            if ($idempotencyKey === null || $idempotencyKey === '') {
+                throw $exception;
+            }
+
+            // Two invoices in one workspace do not share a row lock, so both
+            // callers can observe an unused key before one wins the unique
+            // insert. Resolve the winner into the same bounded idempotency
+            // result as a sequential call instead of leaking a database error.
+            $existing = ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if (! $existing instanceof ClientInvoiceEmailDelivery) {
+                throw $exception;
+            }
+            $current = ClientInvoice::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->whereKey($invoice->id)
-                ->tap(Locks::forUpdate())
                 ->with('workspace')
                 ->firstOrFail();
-            $this->assertSendable($locked, null);
+            $this->assertMatchingDelivery($existing, $current, $draft, $origin);
 
-            if ($idempotencyKey !== null && $idempotencyKey !== '') {
-                $existing = ClientInvoiceEmailDelivery::query()
-                    ->where('workspace_id', $locked->workspace_id)
-                    ->where('idempotency_key', $idempotencyKey)
-                    ->first();
-                if ($existing instanceof ClientInvoiceEmailDelivery) {
-                    if ($existing->client_invoice_id !== $locked->id
-                        || $existing->origin !== $origin
-                        || $existing->recipients !== $draft->recipients
-                        || ($existing->bcc ?? []) !== $draft->bcc
-                        || $existing->subject !== $draft->subject
-                        || $existing->body !== $draft->body) {
-                        throw new DomainException('The idempotency key is already bound to a different invoice delivery.');
-                    }
+            return [$existing, $current];
+        }
+    }
 
-                    return $existing;
-                }
-            }
-
-            if ($origin === 'manual' && $locked->automatic_delivery_status === 'automatically_sent') {
-                throw new DomainException('This invoice was already delivered automatically.');
-            }
-
-            $inFlight = $locked->emailDeliveries()
-                ->where('workspace_id', $locked->workspace_id)
-                ->whereIn('status', ['pending', 'sending'])
-                ->exists();
-            if ($inFlight) {
-                throw new DomainException('Another client delivery is already in progress for this invoice.');
-            }
-
-            $delivery = $locked->emailDeliveries()->create([
-                'workspace_id' => $locked->workspace_id,
-                'origin' => $origin,
-                'invoice_revision' => $locked->document_revision,
-                'attempt_number' => 1,
-                'idempotency_key' => $idempotencyKey,
-                'recipients' => $draft->recipients,
-                'bcc' => $draft->bcc === [] ? null : $draft->bcc,
-                'subject' => $draft->subject,
-                'body' => $draft->body,
-                'status' => $deferred ? 'pending' : 'sending',
-                'queued_at' => $this->clock->now($locked->workspace)->utc(),
-                'claimed_at' => $deferred ? null : $this->clock->now($locked->workspace)->utc(),
-            ]);
-            $locked->advanceAgentRevision();
-
-            return $delivery;
-        });
+    private function assertMatchingDelivery(
+        ClientInvoiceEmailDelivery $existing,
+        ClientInvoice $invoice,
+        InvoiceEmailDraft $draft,
+        string $origin,
+    ): void {
+        if ($existing->client_invoice_id !== $invoice->id
+            || $existing->origin !== $origin
+            || $existing->recipients !== $draft->recipients
+            || ($existing->bcc ?? []) !== $draft->bcc
+            || $existing->subject !== $draft->subject
+            || $existing->body !== $draft->body
+            || ($existing->status === 'failed' && $existing->invoice_revision !== $invoice->document_revision)) {
+            throw new DomainException('The idempotency key is already bound to a different invoice delivery.');
+        }
     }
 
     /**
@@ -515,11 +581,12 @@ final class InvoiceEmailService
      * second one: the key remains one logical delivery, while the row lock
      * prevents two concurrent retries from submitting it together.
      */
+    /** @return array{0: ClientInvoiceEmailDelivery, 1: ClientInvoice}|null */
     private function claimFailedManualDelivery(
         ClientInvoice $invoice,
         ClientInvoiceEmailDelivery $delivery,
-    ): ?ClientInvoiceEmailDelivery {
-        return DB::transaction(function () use ($invoice, $delivery): ?ClientInvoiceEmailDelivery {
+    ): ?array {
+        return DB::transaction(function () use ($invoice, $delivery): ?array {
             $lockedInvoice = ClientInvoice::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->whereKey($invoice->id)
@@ -529,6 +596,7 @@ final class InvoiceEmailService
             if ($lockedInvoice->automatic_delivery_status === 'automatically_sent') {
                 throw new DomainException('This invoice was already delivered automatically.');
             }
+            $this->assertSendable($lockedInvoice, null);
 
             $lockedDelivery = ClientInvoiceEmailDelivery::query()
                 ->where('workspace_id', $lockedInvoice->workspace_id)
@@ -542,6 +610,17 @@ final class InvoiceEmailService
             if ($lockedDelivery->origin !== 'manual') {
                 throw new DomainException('Only a failed manual invoice delivery can be retried with its key.');
             }
+            if ($lockedDelivery->invoice_revision !== $lockedInvoice->document_revision) {
+                throw new DomainException('The idempotency key belongs to an earlier invoice revision.');
+            }
+            $inFlight = $lockedInvoice->emailDeliveries()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('id', '!=', $lockedDelivery->id)
+                ->whereIn('status', ['pending', 'sending'])
+                ->exists();
+            if ($inFlight) {
+                throw new DomainException('Another client delivery is already in progress for this invoice.');
+            }
 
             $lockedDelivery->forceFill([
                 'status' => 'sending',
@@ -553,7 +632,7 @@ final class InvoiceEmailService
             ])->save();
             $lockedInvoice->advanceAgentRevision();
 
-            return $lockedDelivery;
+            return [$lockedDelivery, $lockedInvoice];
         });
     }
 

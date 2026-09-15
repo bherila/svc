@@ -402,6 +402,81 @@ describe('reviewing and correcting an issued invoice', () => {
         );
     });
 
+    it('starts a later correction from the refreshed invoice props', () => {
+        const editable = {
+            issue: null,
+            send: null,
+            payment: null,
+            void: null,
+            correct: '/workspaces/w-1/invoices/invoice-1/correct',
+        };
+        const { rerender } = render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: editable,
+                    lines: [
+                        {
+                            id: 'line-1',
+                            type: 'adjustment',
+                            description: 'First revision',
+                            quantity: 1,
+                            hours: null,
+                            line_date: null,
+                            unit_amount: 10000,
+                            tax_amount: 0,
+                            total_amount: 10000,
+                            money_correctable: true,
+                        },
+                    ],
+                })}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Correct invoice' }),
+        );
+        fireEvent.change(screen.getByLabelText('Description'), {
+            target: { value: 'Unsaved stale edit' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+        rerender(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: editable,
+                    invoice: {
+                        ...props().invoice,
+                        document_revision: 2,
+                        due_date: '2026-10-01',
+                    },
+                    lines: [
+                        {
+                            id: 'line-1',
+                            type: 'adjustment',
+                            description: 'Committed second revision',
+                            quantity: 2,
+                            hours: null,
+                            line_date: null,
+                            unit_amount: 12500,
+                            tax_amount: 0,
+                            total_amount: 25000,
+                            money_correctable: true,
+                        },
+                    ],
+                })}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Correct invoice' }),
+        );
+
+        expect(screen.getByLabelText('Description')).toHaveValue(
+            'Committed second revision',
+        );
+        expect(screen.getByLabelText('Quantity')).toHaveValue('2');
+        expect(screen.getByLabelText('Unit amount')).toHaveValue('125.00');
+        expect(screen.getByLabelText('Due date')).toHaveValue('2026-10-01');
+    });
+
     it('shows review state and distinguishes automatic delivery revisions', () => {
         render(
             <ClientInvoiceDetail
