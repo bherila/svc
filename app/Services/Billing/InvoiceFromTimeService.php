@@ -81,9 +81,12 @@ final class InvoiceFromTimeService
             [$lines, $subtotals] = $this->prepareLines($workspace, $company, $locked->currency, $timeEntryIds, [], checkAllocations: false);
             // A prior ordinary read may have established an old RR snapshot.
             // Entries are locked above; current pivot reads close allocation-only races.
+            // Scope through the already-locked local entries: a malformed pivot's
+            // own workspace must not hide an existing claim on this tenant's time.
             $allocated = DB::table('client_invoice_line_time_entries')
-                ->where('workspace_id', $workspace->id)->whereIn('client_time_entry_id', array_column($lines, '_entry_id'))
-                ->orderBy('client_time_entry_id')->tap(Locks::forUpdate())->get();
+                ->join('client_time_entries as owned_time', 'owned_time.id', '=', 'client_invoice_line_time_entries.client_time_entry_id')
+                ->where('owned_time.workspace_id', $workspace->id)->whereIn('owned_time.id', array_column($lines, '_entry_id'))
+                ->orderBy('owned_time.id')->tap(Locks::forUpdate())->get(['client_invoice_line_time_entries.client_time_entry_id']);
             if ($allocated->isNotEmpty()) {
                 throw new DomainException('Selected time has already been allocated to an invoice.');
             }

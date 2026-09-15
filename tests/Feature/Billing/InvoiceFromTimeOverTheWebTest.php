@@ -17,6 +17,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
 final class InvoiceFromTimeOverTheWebTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -238,6 +240,24 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $this->assertSame(1, $allocationReads, 'Allocation validation must not query once per selected entry.');
         $this->assertSame(81250, $invoice->fresh()->total_amount);
         $this->assertSame(101, $invoice->lines()->count());
+    }
+
+    public function test_a_malformed_foreign_allocation_of_local_time_is_not_ignored(): void
+    {
+        $service = app(InvoiceFromTimeService::class);
+        $line = [['type' => 'service', 'description' => 'Synthetic retained fee', 'quantity' => '1', 'unit_amount' => 500]];
+        $target = $service->create($this->workspace, $this->company, ['currency' => 'USD'], [], $line);
+        $entry = $this->entry(60, 'Synthetic malformed allocation');
+        $foreign = Workspace::create(['name' => 'Synthetic foreign', 'slug' => 'synthetic-foreign']);
+        $company = ClientCompany::create(['workspace_id' => $foreign->id, 'name' => 'Synthetic foreign client', 'slug' => 'synthetic-foreign-client']);
+        $other = $service->create($foreign, $company, ['currency' => 'USD'], [], $line);
+        $this->writingLegacyCrossTenantRows(fn () => $other->lines()->sole()->timeEntries()->attach($entry->id, ['workspace_id' => $foreign->id]));
+        $this->actingAs($this->owner)->postJson($this->addUrl($target), [
+            'expected_version' => AgentApiVersion::for($target), 'time_entry_ids' => [$entry->public_id],
+        ])->assertStatus(422);
+        $this->assertSame(500, $target->fresh()->total_amount);
+        $this->assertSame(1, $target->lines()->count());
+        $this->assertSame(1, $entry->invoiceLines()->count());
     }
 
     private function addUrl(ClientInvoice $invoice): string
