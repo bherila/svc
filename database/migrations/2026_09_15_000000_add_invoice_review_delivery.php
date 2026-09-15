@@ -46,8 +46,12 @@ return new class extends Migration
             $table->id();
             $table->uuid('public_id')->unique();
             $table->foreignId('workspace_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('client_invoice_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('recipient_user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('client_invoice_id');
+            $table->foreign('client_invoice_id', 'cian_invoice_fk')
+                ->references('id')->on('client_invoices')->cascadeOnDelete();
+            $table->foreignId('recipient_user_id')->nullable();
+            $table->foreign('recipient_user_id', 'cian_recipient_user_fk')
+                ->references('id')->on('users')->nullOnDelete();
             $table->unsignedInteger('invoice_revision');
             $table->string('recipient', 255)->nullable();
             $table->string('subject', 255);

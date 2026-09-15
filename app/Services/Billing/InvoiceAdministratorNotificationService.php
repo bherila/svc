@@ -299,6 +299,7 @@ final class InvoiceAdministratorNotificationService
             ->where('workspace_id', $invoice->workspace_id)
             ->whereNotNull('client_project_id')
             ->get(['client_project_id'])
+            ->toBase()
             ->map(fn (ClientInvoiceLine $line): int => $this->databaseId($line->client_project_id))
             ->unique()
             ->values();

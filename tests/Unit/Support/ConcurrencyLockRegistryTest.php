@@ -97,13 +97,13 @@ final class ConcurrencyLockRegistryTest extends TestCase
     {
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage(
-            'No lock-order registry entry for table "client_invoice_lines". Add a case to '
+            'No lock-order registry entry for table "synthetic_unranked_rows". Add a case to '
             .LockResource::class
             .' in the position the acquisition order puts it, and record why in '
             .'docs/client-management/concurrency.md.',
         );
 
-        LockResource::forTable('client_invoice_lines');
+        LockResource::forTable('synthetic_unranked_rows');
     }
 
     /**
@@ -136,18 +136,18 @@ final class ConcurrencyLockRegistryTest extends TestCase
      * A repointed model query whose real table is unranked is refused by name.
      *
      * The other half of the same correction, and the one that shows the
-     * refusal follows the SQL rather than the model: `client_invoice_lines` is
-     * a real table nothing locks and the registry has never ranked, so a lock
-     * taken there is exactly the unranked lock the registry means to refuse -
+     * refusal follows the SQL rather than the model: the synthetic table name
+     * is intentionally absent from the registry, so a lock taken there is
+     * exactly the unranked lock the registry means to refuse -
      * however respectable the model in the chain looks.
      */
     public function test_a_repointed_model_query_is_refused_when_its_real_table_is_unranked(): void
     {
         $repointed = ClientInvoice::query()->whereKey(1);
-        $repointed->getQuery()->from = 'client_invoice_lines';
+        $repointed->getQuery()->from = 'synthetic_unranked_rows';
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No lock-order registry entry for table "client_invoice_lines"');
+        $this->expectExceptionMessage('No lock-order registry entry for table "synthetic_unranked_rows"');
 
         LockResource::forQuery($repointed);
     }

@@ -267,7 +267,12 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->actingAs($viewer)->patch($url, $enabled)->assertForbidden();
         $this->actingAs($owner)->patch($url, $enabled)->assertRedirect();
-        $this->assertNull($historical->fresh()->automatic_delivery_status);
+        $historical = $historical->fresh();
+        $this->assertNull($historical->automatic_delivery_status);
+        $this->assertNull($historical->automatic_delivery_delay_days);
+        $this->assertNull($historical->automatic_delivery_due_at);
+        $this->assertNull($historical->automatic_delivery_held_at);
+        $this->assertNull($historical->automatic_delivery_note);
 
         [, , , $newInvoice] = $this->draft('INV-NEW-OPT-IN', existing: [$owner, $workspace, $company->fresh()]);
         $newInvoice = app(InvoiceLifecycleService::class)->issue($newInvoice, $workspace);
