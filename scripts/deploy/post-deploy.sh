@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 #
-# svc's deploy steps after migration, config cache and cron.
+# svc's candidate checks after migration and config cache, before activation.
 #
 # Runs ON THE HOST as the shared deploy action's post-deploy-script:
 #
-#   post-deploy.sh <app-dir> <php>
+#   post-deploy.sh <candidate-path> <php> <stable-path>
 set -euo pipefail
 
 app_dir=$1
 php=$2
+stable_dir=$3
+test "$stable_dir" = svc-laravel
 cd "$HOME/$app_dir"
 
 "$php" artisan svc:storage:status --write --format=json

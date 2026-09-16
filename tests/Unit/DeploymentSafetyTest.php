@@ -8,18 +8,21 @@ use PHPUnit\Framework\TestCase;
 class DeploymentSafetyTest extends TestCase
 {
     #[Test]
-    public function deployment_is_hard_scoped_and_preserves_private_files(): void
+    public function deployment_is_atomic_hard_scoped_and_preserves_private_files(): void
     {
         $workflow = file_get_contents(__DIR__.'/../../.github/workflows/tests.yml');
         $preMigrate = file_get_contents(__DIR__.'/../../scripts/deploy/pre-migrate.sh');
+        $quiesce = file_get_contents(__DIR__.'/../../scripts/deploy/quiesce.sh');
+        $verifyLive = file_get_contents(__DIR__.'/../../scripts/deploy/verify-live.sh');
 
         $this->assertIsString($workflow);
         $this->assertIsString($preMigrate);
+        $this->assertIsString($quiesce);
+        $this->assertIsString($verifyLive);
         $this->assertStringContainsString('environment: web1', $workflow);
 
-        // The shared action performs the rsync --delete, always excludes .env, and refuses a
-        // destination that does not already hold artisan. It holds a key that reaches every
-        // application on the account, so it must be pinned to a full commit, never a tag.
+        // The shared action holds a key that reaches every application on the account, so it
+        // must be pinned to a full commit, never a mutable tag.
         $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
         $this->assertDoesNotMatchRegularExpression('~uses: bherila/shared-cpanel-deployment@(?![0-9a-f]{40}\b)~', $workflow);
 
@@ -31,15 +34,45 @@ class DeploymentSafetyTest extends TestCase
             $this->assertStringNotContainsString("deploy-dir: {$other}", $workflow);
         }
 
-        // svc-blobs is authoritative data and the OAuth key pair must never be replaced by a deploy.
-        $this->assertMatchesRegularExpression('~excludes: \|\n(?:\s+\S.*\n)*?\s+svc-blobs\s*\n~', $workflow);
-        $this->assertMatchesRegularExpression('~excludes: \|\n(?:\s+\S.*\n)*?\s+/storage/app/private/oauth/\s*\n~', $workflow);
+        // Atomic releases share the complete storage tree. That makes svc-blobs, sessions,
+        // runtime state and OAuth keys authoritative across every release and rollback.
+        $this->assertStringContainsString('deployment-mode: atomic', $workflow);
+        $this->assertStringContainsString('persistent-paths: storage', $workflow);
+        $this->assertStringContainsString('retain-releases:', $workflow);
+        $this->assertStringContainsString('failure-policy: maintenance', $workflow);
+        $this->assertStringContainsString('initial-live-commit:', $workflow);
         $this->assertStringContainsString('env-source: .config/svc/deployment.env', $workflow);
+        $this->assertStringContainsString('passport-key-directory: storage/app/private/oauth', $workflow);
+        $this->assertStringNotContainsString("excludes: |\n            svc-blobs", $workflow);
 
-        // Signing keys are created only when both are absent; half a pair is a refusal.
+        // The candidate is gated before migration, activation and final commit. The live OAuth/MCP
+        // probe executes inside the action's recovery boundary, not in a detached follow-up job.
+        $this->assertStringContainsString('quiesce-script: scripts/deploy/quiesce.sh', $workflow);
         $this->assertStringContainsString('pre-migrate-script: scripts/deploy/pre-migrate.sh', $workflow);
-        $this->assertStringContainsString('artisan passport:keys --force', $preMigrate);
-        $this->assertStringContainsString('refusing to rotate it automatically', $preMigrate);
+        $this->assertStringContainsString('post-deploy-script: scripts/deploy/post-deploy.sh', $workflow);
+        $this->assertStringContainsString('verification-script: scripts/deploy/verify-live.sh', $workflow);
+        $this->assertStringNotContainsString('deployed-mcp-smoke:', $workflow);
+
+        $this->assertStringContainsString('mapfile -d', $quiesce);
+        $this->assertStringContainsString('artisan | */artisan', $quiesce);
+        $this->assertStringContainsString('"$stable_root/"*', $quiesce);
+        $this->assertStringNotContainsString('pkill', $quiesce);
+        $this->assertStringNotContainsString('kill ', $quiesce);
+
+        $this->assertStringContainsString('test -s storage/app/private/oauth/oauth-private.key', $preMigrate);
+        $this->assertStringContainsString('test -s storage/app/private/oauth/oauth-public.key', $preMigrate);
+        $this->assertStringNotContainsString('passport:keys --force', $preMigrate);
+
+        $this->assertStringContainsString('test "$DEPLOY_LIVE_COMMIT" = "$DEPLOY_SOURCE_COMMIT"', $verifyLive);
+        $this->assertStringContainsString('trap cleanup EXIT', $verifyLive);
+        $this->assertStringContainsString('svc:mcp:deploy-smoke-credentials', $verifyLive);
+        $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);
+        $this->assertStringContainsString('node scripts/mcp-smoke.mjs', $verifyLive);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, 'trap cleanup EXIT'),
+            'Credential cleanup must be armed before the remote issuance attempt.',
+        );
     }
 
     #[Test]
