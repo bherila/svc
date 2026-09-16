@@ -365,7 +365,7 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@2d2ef6109f5814d5916bb009467c22ab8e1810d2 # v2.0.1
+        uses: bherila/shared-cpanel-deployment@c2b66878ac830a1ae68e8a0234f54ed366028f13 # v2.0.2
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
