@@ -1,0 +1,221 @@
+name: Recover production webroot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RECOVER_SVC_F997A89 to recover the exact selected release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: svc-production-web1
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Restore the selected release as a real directory
+    if: ${{ inputs.confirmation == 'RECOVER_SVC_F997A89' }}
+    runs-on: ubuntu-24.04-arm
+    environment: web1
+    timeout-minutes: 15
+
+    steps:
+      - name: Authorize the production host
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Pin the production host key
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Restore the exact selected release under a real webroot
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" \
+            'bash -s -- svc-laravel f997a89fb5ce-35054670169-1 f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a /opt/cpanel/ea-php85/root/usr/bin/php' <<'REMOTE'
+          set -euo pipefail
+
+          app=$1
+          release=$2
+          expected_commit=$3
+          php=$4
+          stable="$HOME/$app"
+          control="$HOME/.deployments/$app"
+          candidate="$control/releases/$release"
+          shared_storage="$control/shared/storage"
+          staging=''
+
+          cleanup() {
+            if [ -n "$staging" ] && [ -d "$staging" ] && [ ! -L "$staging" ]; then
+              case $staging in
+                "$HOME/$app.recovery."*) rm -rf -- "$staging" ;;
+                *) echo "Refusing to clean unexpected staging path: $staging" >&2 ;;
+              esac
+            fi
+          }
+          trap cleanup EXIT
+
+          [ "$app" = svc-laravel ]
+          [ "$release" = f997a89fb5ce-35054670169-1 ]
+          [ "$expected_commit" = f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a ]
+          [ -x "$php" ]
+          [ -d "$control" ] && [ ! -L "$control" ]
+          [ -d "$control/releases" ] && [ ! -L "$control/releases" ]
+          [ -d "$control/shared" ] && [ ! -L "$control/shared" ]
+          [ -d "$control/recovery" ] && [ ! -L "$control/recovery" ]
+          [ ! -e "$control/deploy.lock" ] && [ ! -L "$control/deploy.lock" ]
+          [ -L "$stable" ] || { echo "Stable application path is not the expected symlink." >&2; exit 1; }
+          [ "$(readlink "$stable")" = ".deployments/$app/releases/$release" ]
+          [ -d "$candidate" ] && [ ! -L "$candidate" ]
+          [ "$(readlink -f "$stable")" = "$(readlink -f "$candidate")" ] || {
+            echo "Stable symlink does not select the expected release." >&2
+            exit 1
+          }
+          [ "$(grep -c '^release=' "$candidate/.deploy-release")" = 1 ]
+          [ "$(grep -c '^commit=' "$candidate/.deploy-release")" = 1 ]
+          [ "$(sed -n 's/^release=//p' "$candidate/.deploy-release")" = "$release" ]
+          [ "$(sed -n 's/^commit=//p' "$candidate/.deploy-release")" = "$expected_commit" ]
+          [ -f "$candidate/artisan" ] && [ ! -L "$candidate/artisan" ]
+          [ -f "$candidate/.env" ] && [ ! -L "$candidate/.env" ]
+          [ -f "$candidate/vendor/autoload.php" ] && [ ! -L "$candidate/vendor/autoload.php" ]
+          [ -f "$candidate/bootstrap/app.php" ] && [ ! -L "$candidate/bootstrap/app.php" ]
+          [ -f "$candidate/public/index.php" ] && [ ! -L "$candidate/public/index.php" ]
+          [ -L "$candidate/storage" ]
+          [ -d "$shared_storage" ] && [ ! -L "$shared_storage" ]
+          [ "$(readlink -f "$candidate/storage")" = "$(readlink -f "$shared_storage")" ]
+
+          staging=$(mktemp -d "$HOME/$app.recovery.XXXXXX")
+          cp -a "$candidate/." "$staging/"
+          [ -d "$staging" ] && [ ! -L "$staging" ]
+          [ "$(sed -n 's/^commit=//p' "$staging/.deploy-release" | head -1)" = "$expected_commit" ]
+          [ "$(readlink -f "$staging/storage")" = "$(readlink -f "$shared_storage")" ]
+
+          [ -L "$stable" ]
+          [ "$(readlink "$stable")" = ".deployments/$app/releases/$release" ]
+          [ "$(readlink -f "$stable")" = "$(readlink -f "$candidate")" ]
+          unlink "$stable"
+          mv "$staging" "$stable"
+          staging=''
+          [ -d "$stable" ] && [ ! -L "$stable" ]
+          [ "$(sed -n 's/^commit=//p' "$stable/.deploy-release" | head -1)" = "$expected_commit" ]
+          [ "$(readlink -f "$stable/storage")" = "$(readlink -f "$shared_storage")" ]
+
+          cd "$stable"
+          "$php" -d memory_limit=1G artisan up --no-ansi
+          "$php" -d memory_limit=1G artisan migrate:status --no-ansi >/dev/null
+          "$php" -d memory_limit=1G -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            exit($app->isDownForMaintenance() ? 1 : 0);
+          '
+          echo "Recovered $app at exact commit $expected_commit under a real directory."
+          REMOTE
+
+      - name: Verify public health before restoring cron
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 20 \
+            https://svc.bherila.net/up >/dev/null
+
+      - name: Restore the preserved application cron
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" \
+            'bash -s -- svc-laravel f997a89fb5ce-35054670169-1' <<'REMOTE'
+          set -euo pipefail
+
+          app=$1
+          release=$2
+          recovery="$HOME/.deployments/$app/recovery/$release.cron"
+          work=$(mktemp -d "$HOME/$app.cron-recovery.XXXXXX")
+          cleanup() {
+            case $work in
+              "$HOME/$app.cron-recovery."*) rm -rf -- "$work" ;;
+              *) echo "Refusing to clean unexpected cron staging path: $work" >&2 ;;
+            esac
+          }
+          trap cleanup EXIT
+
+          [ "$app" = svc-laravel ]
+          [ "$release" = f997a89fb5ce-35054670169-1 ]
+          [ -f "$recovery" ] && [ ! -L "$recovery" ] && [ -O "$recovery" ]
+          [ "$(stat -c '%a' "$recovery")" = 600 ]
+          [ -s "$recovery" ]
+          grep -F 'cd "$HOME/svc-laravel"' "$recovery" >/dev/null
+          ! grep -vF 'cd "$HOME/svc-laravel"' "$recovery" | grep -q '[^[:space:]]'
+
+          exec 9>"$HOME/.crontab-deploy.lock"
+          flock -w 120 9
+          if ! crontab -l >"$work/current" 2>"$work/error"; then
+            grep -qi 'no crontab for' "$work/error" || { cat "$work/error" >&2; exit 1; }
+            : >"$work/current"
+          fi
+          ! grep -F 'svc-laravel' "$work/current" >/dev/null || {
+            echo "An SVC cron entry already exists; refusing to create a duplicate." >&2
+            exit 1
+          }
+          cat "$work/current" "$recovery" >"$work/next"
+          crontab "$work/next"
+          crontab -l | cmp -s - "$work/next"
+          echo "Restored the preserved $app cron entry."
+          REMOTE
+
+      - name: Verify recovered production surfaces
+        run: |
+          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://svc.bherila.net/up)" = 200
+          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://svc.bherila.net/.well-known/oauth-authorization-server)" = 200
+          redirect=$(curl --silent --show-error --output /dev/null --write-out '%{redirect_url}' https://svc.bherila.net/oauth/redirect)
+          case $redirect in
+            https://id.bherila.net/oauth/authorize\?*) ;;
+            *) echo "Unexpected OAuth redirect: $redirect" >&2; exit 1 ;;
+          esac
+          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request POST --header 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+            https://svc.bherila.net/api/v1/mcp)" = 401
+
+      - name: Keep SVC quiesced if recovery verification fails
+        if: ${{ failure() }}
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" \
+            'bash -s -- svc-laravel f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a /opt/cpanel/ea-php85/root/usr/bin/php' <<'REMOTE'
+          set -euo pipefail
+          app=$1
+          expected_commit=$2
+          php=$3
+          stable="$HOME/$app"
+          [ -d "$stable" ] && [ ! -L "$stable" ] || exit 0
+          [ "$(sed -n 's/^commit=//p' "$stable/.deploy-release" | head -1)" = "$expected_commit" ] || exit 0
+          cd "$stable"
+          "$php" -d memory_limit=1G artisan down --no-ansi
+
+          work=$(mktemp -d "$HOME/$app.failed-recovery.XXXXXX")
+          trap 'rm -rf -- "$work"' EXIT
+          exec 9>"$HOME/.crontab-deploy.lock"
+          flock -w 120 9
+          if ! crontab -l >"$work/current" 2>"$work/error"; then
+            grep -qi 'no crontab for' "$work/error" || { cat "$work/error" >&2; exit 1; }
+            : >"$work/current"
+          fi
+          awk -v literal='cd "$HOME/svc-laravel"' 'index($0, literal) == 0 { print }' \
+            "$work/current" >"$work/paused"
+          crontab "$work/paused"
+          crontab -l | cmp -s - "$work/paused"
+          echo "SVC remains in maintenance with its cron entry paused."
+          REMOTE

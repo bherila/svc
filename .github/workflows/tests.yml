@@ -304,7 +304,9 @@ jobs:
   deploy:
     name: Deploy empty alpha to web1
     needs: [ci, mariadb, mcp-smoke]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
+    # Keep production deploys explicitly disabled while the cPanel vhost requires
+    # the configured application directory itself to remain a real directory.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.ATOMIC_DEPLOY_ENABLED == 'true' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
     concurrency:
