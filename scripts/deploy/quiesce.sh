@@ -13,9 +13,9 @@ candidate_path=$1
 php=$2
 stable_path=$3
 
-# The arguments are part of the shared action's host-hook contract. The
-# candidate is not populated yet during the first conversion, and the PHP path
-# is checked here so a malformed invocation cannot silently claim quiescence.
+# The arguments are part of the shared action's host-hook contract. Validate
+# them before inspecting processes so a malformed invocation cannot silently
+# claim quiescence.
 case $candidate_path in
     .deployments/svc-laravel/releases/*) ;;
     *) echo "::error::Unexpected SVC candidate path: $candidate_path" >&2; exit 2 ;;
