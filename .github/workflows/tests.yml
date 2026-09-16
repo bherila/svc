@@ -358,7 +358,7 @@ jobs:
       #
       # All of storage is shared across releases, including authoritative svc-blobs and the OAuth key
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
-      # deliberately no queue worker; quiesce.sh drains only this app's in-flight scheduler process.
+      # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
         uses: bherila/shared-cpanel-deployment@962e99abb0f8ac8d819a686446be9f40f35720cb # v2 release candidate
         with:

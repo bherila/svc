@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Wait for an already-running SVC scheduler invocation before shared storage is
-# moved into the atomic deployment area. The shared action has already paused
-# SVC's tagged cron lines and put the selected release into maintenance mode.
+# Wait for every already-running SVC Artisan invocation before shared storage
+# is moved into the atomic deployment area. The shared action has already
+# paused SVC's tagged cron lines and put the selected release into maintenance
+# mode. Production intentionally has no queue worker, but an unexpected one (or
+# a manual command) must fail closed here instead of racing a storage move.
 #
 #   quiesce.sh <candidate-path> <php> <stable-path>
 set -euo pipefail
@@ -37,7 +39,7 @@ while :; do
 
         command=$(tr '\0' ' ' <"$process/cmdline" 2>/dev/null || true)
         case " $command " in
-            *" artisan schedule:run "*) ;;
+            *" artisan "*) ;;
             *) continue ;;
         esac
 
@@ -48,15 +50,15 @@ while :; do
     done
 
     if [ "${#running[@]}" -eq 0 ]; then
-        echo "SVC scheduler is quiescent."
+        echo "SVC Artisan processes are quiescent."
         exit 0
     fi
 
     if [ "$SECONDS" -ge "$deadline" ]; then
-        echo "::error::Timed out waiting for SVC scheduler process(es): ${running[*]}" >&2
+        echo "::error::Timed out waiting for SVC Artisan process(es): ${running[*]}" >&2
         exit 1
     fi
 
-    echo "Waiting for ${#running[@]} SVC scheduler process(es) to finish."
+    echo "Waiting for ${#running[@]} SVC Artisan process(es) to finish."
     sleep 5
 done

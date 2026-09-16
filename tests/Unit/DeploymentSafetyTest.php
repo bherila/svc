@@ -54,7 +54,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringNotContainsString('deployed-mcp-smoke:', $workflow);
 
         $this->assertStringContainsString('/proc/[0-9]*', $quiesce);
-        $this->assertStringContainsString('artisan schedule:run', $quiesce);
+        $this->assertStringContainsString('*" artisan "*', $quiesce);
         $this->assertStringContainsString('"$stable_root/"*', $quiesce);
         $this->assertStringNotContainsString('pkill', $quiesce);
         $this->assertStringNotContainsString('kill ', $quiesce);
