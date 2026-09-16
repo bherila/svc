@@ -24,7 +24,7 @@ class DeploymentSafetyTest extends TestCase
         // The shared action holds a key that reaches every application on the account, so it
         // must be pinned to a full commit, never a mutable tag.
         $this->assertStringContainsString(
-            'uses: bherila/shared-cpanel-deployment@e97463f105268c9f63449cf5b6730c95386f709d',
+            'uses: bherila/shared-cpanel-deployment@6e9edf640e38b828eb0b273c339474b28ab3dca4',
             $workflow,
         );
         $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
@@ -44,6 +44,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('persistent-paths: storage', $workflow);
         $this->assertStringContainsString('retain-releases:', $workflow);
         $this->assertStringContainsString('failure-policy: maintenance', $workflow);
+        $this->assertStringContainsString("operational-audit: 'true'", $workflow);
         $this->assertStringContainsString('initial-live-commit:', $workflow);
         $this->assertStringContainsString('env-source: .config/svc/deployment.env', $workflow);
         $this->assertStringContainsString('passport-key-directory: storage/app/private/oauth', $workflow);
