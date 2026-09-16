@@ -302,6 +302,9 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
+    concurrency:
+      group: svc-production-web1
+      cancel-in-progress: false
     permissions:
       contents: read
 
@@ -318,6 +321,16 @@ jobs:
           tools: composer:v2
           coverage: none
 
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.23.0 --activate
+
       - name: Authorize private MCP bridge dependency
         uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
@@ -325,6 +338,9 @@ jobs:
 
       - name: Install production Composer dependencies
         run: composer install --no-dev --no-interaction --optimize-autoloader
+
+      - name: Install the pinned production-smoke client
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Download frontend build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -336,17 +352,15 @@ jobs:
       # (its README lists every input and what each guard refuses). Pinned to a commit because this job
       # holds a key that reaches every application on the account.
       #
-      # It keeps what this job did by hand: the ea-php85 handler, a guarded rsync --delete to
-      # ~/svc-laravel (refused unless that directory already holds artisan), .env installed from
-      # ~/.config/svc/deployment.env, config:clear / migrate --force / config:cache, this application's
-      # crontab lines through the lock-backup-readback installer (the default line is byte-identical to
-      # the one installed before), and the /up and web-PHP checks.
+      # v2 builds and validates a versioned candidate before selecting it, keeps the previous release,
+      # and records the exact selected commit. A migration or live OAuth/MCP verification failure leaves
+      # the selected release in maintenance for an explicit operator decision.
       #
-      # svc-blobs is authoritative production data and the OAuth key pair must never rotate on deploy;
-      # both are excluded explicitly, in addition to the runtime-storage excludes the action applies.
-      # The svc-specific host steps live in scripts/deploy/pre-migrate.sh and post-deploy.sh.
+      # All of storage is shared across releases, including authoritative svc-blobs and the OAuth key
+      # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
+      # deliberately no queue worker; quiesce.sh drains only this app's in-flight scheduler process.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@2da7295138423742e0987787abaaf2e9b55f82dd # v1.0.1
+        uses: bherila/shared-cpanel-deployment@962e99abb0f8ac8d819a686446be9f40f35720cb # v2 release candidate
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
@@ -354,104 +368,15 @@ jobs:
           ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
           deploy-dir: svc-laravel
           site-url: https://svc.bherila.net
+          deployment-mode: atomic
+          persistent-paths: storage
+          retain-releases: '3'
+          failure-policy: maintenance
+          initial-live-commit: 67ec019822a680297d6b86cc25f7aef9c7005f4c
           env-source: .config/svc/deployment.env
-          excludes: |
-            svc-blobs
-            /storage/app/private/oauth/
+          passport-key-directory: storage/app/private/oauth
+          artisan-memory-limit: 1G
+          quiesce-script: scripts/deploy/quiesce.sh
           pre-migrate-script: scripts/deploy/pre-migrate.sh
           post-deploy-script: scripts/deploy/post-deploy.sh
-
-      - name: Verify the OAuth redirect targets the identity provider
-        run: |
-          redirect_url="$(curl --fail --silent --show-error --max-time 20 \
-            --output /dev/null --write-out '%{redirect_url}' \
-            https://svc.bherila.net/oauth/redirect)"
-          case "$redirect_url" in
-            https://id.bherila.net/oauth/authorize?*) ;;
-            *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
-          esac
-
-  # The pre-merge smoke proves the code works; it runs against `artisan serve` on
-  # a runner, with the runner's configuration, so it cannot see a production-only
-  # difference. This one asks the deployed host the same questions (#50).
-  #
-  # It never reads a business record. The credentials belong to a principal that
-  # is a member of no workspace, company or project - see
-  # DeploySmokeCredentialsCommand for why that is a stronger guarantee than any
-  # masking rule.
-  deployed-mcp-smoke:
-    name: Authenticated MCP smoke against the deployment
-    needs: [deploy]
-    if: ${{ needs.deploy.result == 'success' }}
-    runs-on: ubuntu-24.04-arm
-    environment: web1
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.23.0 --activate
-
-      - name: Install the pinned MCP client SDK
-        run: pnpm install --frozen-lockfile --prefer-offline
-
-      - name: Set up pinned SSH credentials
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ecdsa
-          chmod 600 ~/.ssh/id_ecdsa
-          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      # Minted on the host and masked before anything else can echo them. They
-      # are short-lived as a backstop, but revocation below is what actually
-      # ends them.
-      - name: Issue short-lived smoke credentials
-        id: credentials
-        run: |
-          credentials="$(ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes -o BatchMode=yes \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "cd ~/svc-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:mcp:deploy-smoke-credentials --ttl=15")"
-          authorized="$(printf '%s' "$credentials" | jq -r '.authorized_token')"
-          wrong_scope="$(printf '%s' "$credentials" | jq -r '.wrong_scope_token')"
-          test -n "$authorized" -a "$authorized" != null
-          test -n "$wrong_scope" -a "$wrong_scope" != null
-          echo "::add-mask::$authorized"
-          echo "::add-mask::$wrong_scope"
-          {
-            echo "authorized<<SVCTOKEN"
-            echo "$authorized"
-            echo "SVCTOKEN"
-            echo "wrong_scope<<SVCTOKEN"
-            echo "$wrong_scope"
-            echo "SVCTOKEN"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Run the authenticated MCP smoke
-        env:
-          MCP_SMOKE_URL: https://svc.bherila.net/api/v1/mcp
-          MCP_SMOKE_EXPECTED_RESOURCE: https://svc.bherila.net/api/v1
-          MCP_SMOKE_BEARER_TOKEN: ${{ steps.credentials.outputs.authorized }}
-          MCP_SMOKE_WRONG_SCOPE_BEARER_TOKEN: ${{ steps.credentials.outputs.wrong_scope }}
-        run: node scripts/mcp-smoke.mjs
-
-      # Always, including after a failed assertion: a credential that outlives
-      # the run it was minted for is the thing this job must not leave behind.
-      - name: Revoke the smoke credentials
-        if: ${{ always() && steps.credentials.outcome != 'skipped' }}
-        run: |
-          ssh -i ~/.ssh/id_ecdsa -o IdentitiesOnly=yes -o BatchMode=yes \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "cd ~/svc-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan svc:mcp:deploy-smoke-credentials --revoke"
+          verification-script: scripts/deploy/verify-live.sh
