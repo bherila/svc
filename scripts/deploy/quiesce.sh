@@ -27,21 +27,37 @@ stable_root=$(readlink -f "$HOME/$stable_path")
 test -n "$stable_root" -a -d "$stable_root"
 
 uid=$(id -u)
-deadline=$((SECONDS + 420))
+proc_root=${DEPLOY_QUIESCE_PROC_ROOT:-/proc}
+expected_uid=${DEPLOY_QUIESCE_UID:-$uid}
+timeout=${DEPLOY_QUIESCE_TIMEOUT_SECONDS:-420}
+interval=${DEPLOY_QUIESCE_INTERVAL_SECONDS:-5}
+[[ $timeout =~ ^[0-9]+$ ]] || { echo "::error::Quiescence timeout must be numeric." >&2; exit 2; }
+[[ $interval =~ ^[1-9][0-9]*$ ]] || { echo "::error::Quiescence interval must be positive." >&2; exit 2; }
+test -d "$proc_root" || { echo "::error::Process filesystem is unavailable." >&2; exit 1; }
+deadline=$((SECONDS + timeout))
 
 while :; do
     running=()
 
-    for process in /proc/[0-9]*; do
+    for process in "$proc_root"/[0-9]*; do
         test -r "$process/status" -a -r "$process/cmdline" || continue
         process_uid=$(awk '/^Uid:/ { print $2; exit }' "$process/status" 2>/dev/null || true)
-        test "$process_uid" = "$uid" || continue
+        test "$process_uid" = "$expected_uid" || continue
 
-        command=$(tr '\0' ' ' <"$process/cmdline" 2>/dev/null || true)
-        case " $command " in
-            *" artisan "*) ;;
+        executable=$(readlink -f -- "$process/exe" 2>/dev/null || true)
+        case ${executable##*/} in
+            php | php-cgi | lsphp | ea-php*) ;;
             *) continue ;;
         esac
+
+        mapfile -d '' -t arguments <"$process/cmdline" || true
+        is_artisan=false
+        for argument in "${arguments[@]}"; do
+            case $argument in
+                artisan | */artisan) is_artisan=true; break ;;
+            esac
+        done
+        test "$is_artisan" = true || continue
 
         working_directory=$(readlink -f "$process/cwd" 2>/dev/null || true)
         case "$working_directory/" in
@@ -60,5 +76,5 @@ while :; do
     fi
 
     echo "Waiting for ${#running[@]} SVC Artisan process(es) to finish."
-    sleep 5
+    sleep "$interval"
 done

@@ -52,6 +52,11 @@ jobs:
       - name: Setup Application
         run: composer setup
 
+      - name: Test deployment hooks
+        run: |
+          bash -n scripts/deploy/*.sh tests/Deployment/test-deploy-hooks.sh
+          tests/Deployment/test-deploy-hooks.sh
+
       - name: Run CI Checks
         run: composer ci:check
 
