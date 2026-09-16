@@ -359,15 +359,16 @@ jobs:
       # (its README lists every input and what each guard refuses). Pinned to a commit because this job
       # holds a key that reaches every application on the account.
       #
-      # v2 builds and validates a versioned candidate before selecting it, keeps the previous release,
-      # and records the exact selected commit. A migration or live OAuth/MCP verification failure leaves
-      # the selected release in maintenance for an explicit operator decision.
+      # v2.1 builds and validates a versioned candidate before selecting it beneath a real cPanel
+      # application directory, keeps the previous release, and records the exact selected commit.
+      # A migration or live OAuth/MCP verification failure leaves the selected release in maintenance
+      # for an explicit operator decision.
       #
       # All of storage is shared across releases, including authoritative svc-blobs and the OAuth key
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@c2b66878ac830a1ae68e8a0234f54ed366028f13 # v2.0.2
+        uses: bherila/shared-cpanel-deployment@5ee5d2a006eb4c21d827069e4c9428e764907c16 # v2.1.0
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
@@ -376,12 +377,13 @@ jobs:
           deploy-dir: svc-laravel
           site-url: https://svc.bherila.net
           deployment-mode: atomic
+          atomic-layout: stable-directory
           persistent-paths: storage
           retain-releases: '3'
           failure-policy: maintenance
-          initial-live-commit: 67ec019822a680297d6b86cc25f7aef9c7005f4c
+          initial-live-commit: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
           # Normally empty. Set only to the exact owner reported by a failed atomic
-          # run; v2.0.1 finalizes it and proves the selected app serves before retrying.
+          # run; recovery finalizes it and proves the selected app serves before retrying.
           recovery-release-id: ${{ vars.ATOMIC_RECOVERY_RELEASE_ID }}
           env-source: .config/svc/deployment.env
           passport-key-directory: storage/app/private/oauth
