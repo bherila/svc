@@ -1,0 +1,127 @@
+name: Verify recovered production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type VERIFY_SVC_F997A89 to audit the exact recovered release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: svc-production-web1
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Audit the recovered production release
+    if: ${{ inputs.confirmation == 'VERIFY_SVC_F997A89' }}
+    runs-on: ubuntu-24.04-arm
+    environment: web1
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825a76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Install the pinned MCP smoke client
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.23.0 --activate
+          pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Authorize the production host
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Pin the production host key
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Prove the recovered host state
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" \
+            'bash -s -- svc-laravel f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a /opt/cpanel/ea-php85/root/usr/bin/php' <<'REMOTE'
+          set -euo pipefail
+
+          app=$1
+          expected_commit=$2
+          php=$3
+          stable="$HOME/$app"
+          control="$HOME/.deployments/$app"
+          shared_storage="$control/shared/storage"
+          expected_cron='* * * * * cd "$HOME/svc-laravel" && /opt/cpanel/ea-php85/root/usr/bin/php -d memory_limit=1G artisan schedule:run > /dev/null 2>&1 # JOB:svc-laravel-scheduler'
+
+          [ "$app" = svc-laravel ]
+          [ "$expected_commit" = f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a ]
+          [ -x "$php" ]
+          [ -d "$control" ] && [ ! -L "$control" ]
+          [ ! -e "$control/deploy.lock" ] && [ ! -L "$control/deploy.lock" ]
+          [ -d "$stable" ] && [ ! -L "$stable" ]
+          [ "$(grep -c '^commit=' "$stable/.deploy-release")" = 1 ]
+          [ "$(sed -n 's/^commit=//p' "$stable/.deploy-release")" = "$expected_commit" ]
+          [ -f "$stable/.env" ] && [ ! -L "$stable/.env" ]
+          [ -f "$stable/artisan" ] && [ ! -L "$stable/artisan" ]
+          [ -L "$stable/storage" ]
+          [ -d "$shared_storage" ] && [ ! -L "$shared_storage" ]
+          [ "$(readlink -f "$stable/storage")" = "$(readlink -f "$shared_storage")" ]
+
+          cd "$stable"
+          "$php" -d memory_limit=1G -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            if ($app->isDownForMaintenance()) {
+                fwrite(STDERR, "Application is in maintenance.\n");
+                exit(1);
+            }
+            $migrator = $app->make("migrator");
+            $files = $migrator->getMigrationFiles([database_path("migrations"), ...$migrator->paths()]);
+            $pending = array_diff(array_keys($files), $migrator->getRepository()->getRan());
+            if ($pending !== []) {
+                fwrite(STDERR, "Pending migrations: ".implode(", ", $pending)."\n");
+                exit(1);
+            }
+          '
+
+          cron=$(crontab -l)
+          [ "$(printf '%s\n' "$cron" | grep -Fxc "$expected_cron")" = 1 ]
+          [ "$(printf '%s\n' "$cron" | grep -Fc 'svc-laravel')" = 1 ]
+          echo "Exact recovered commit, shared storage, serving state, migrations, and cron are valid."
+          REMOTE
+
+      - name: Run the authenticated OAuth and MCP deployment smoke
+        env:
+          DEPLOYMENT_MODE: atomic
+          DEPLOY_SSH_TARGET: ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}
+          DEPLOY_PHP_BINARY: /opt/cpanel/ea-php85/root/usr/bin/php
+          DEPLOY_STABLE_DIR: svc-laravel
+          DEPLOY_SITE_URL: https://svc.bherila.net
+          DEPLOY_SOURCE_COMMIT: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
+          DEPLOY_LIVE_COMMIT: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
+          DEPLOY_LIVE_STATE: serving
+        run: timeout 300 bash scripts/deploy/verify-live.sh
+
+      - name: Recheck bounded public surfaces
+        run: |
+          test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' https://svc.bherila.net/up)" = 200
+          test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' https://svc.bherila.net/.well-known/oauth-authorization-server)" = 200
+          test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' https://svc.bherila.net/.well-known/oauth-protected-resource/api/v1/mcp)" = 200
