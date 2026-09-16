@@ -23,6 +23,10 @@ class DeploymentSafetyTest extends TestCase
 
         // The shared action holds a key that reaches every application on the account, so it
         // must be pinned to a full commit, never a mutable tag.
+        $this->assertStringContainsString(
+            'uses: bherila/shared-cpanel-deployment@e97463f105268c9f63449cf5b6730c95386f709d',
+            $workflow,
+        );
         $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
         $this->assertDoesNotMatchRegularExpression('~uses: bherila/shared-cpanel-deployment@(?![0-9a-f]{40}\b)~', $workflow);
 
