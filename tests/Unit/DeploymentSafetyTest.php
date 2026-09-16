@@ -68,6 +68,9 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringNotContainsString('passport:keys --force', $preMigrate);
 
         $this->assertStringContainsString('test "$DEPLOY_LIVE_COMMIT" = "$DEPLOY_SOURCE_COMMIT"', $verifyLive);
+        $this->assertStringContainsString('test "$home_status" = 200', $verifyLive);
+        $this->assertStringContainsString('Public home page did not render HTML.', $verifyLive);
+        $this->assertStringContainsString('--connect-timeout 5 --max-time 20', $verifyLive);
         $this->assertStringContainsString('trap cleanup EXIT', $verifyLive);
         $this->assertStringContainsString('svc:mcp:deploy-smoke-credentials', $verifyLive);
         $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);

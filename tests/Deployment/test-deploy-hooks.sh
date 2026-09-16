@@ -59,4 +59,57 @@ if run_quiesce >/dev/null 2>&1; then
     fail 'absolute SVC Artisan path outside the app cwd was accepted'
 fi
 
+cat >"$temporary/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+case "${!#}" in
+    https://svc.bherila.net/) printf '%s\n' "$FIXTURE_HOME_RESPONSE" ;;
+    https://svc.bherila.net/oauth/redirect) printf '%s\n' 'https://id.bherila.net/oauth/authorize?client_id=fixture' ;;
+    *) exit 1 ;;
+esac
+MOCK
+cat >"$temporary/bin/ssh" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FIXTURE_SSH_LOG"
+case "$*" in
+    *--ttl=15*) printf '%s\n' '{"authorized_token":"fixture-authorized","wrong_scope_token":"fixture-wrong-scope"}' ;;
+    *--revoke*) ;;
+    *) exit 1 ;;
+esac
+MOCK
+cat >"$temporary/bin/jq" <<'MOCK'
+#!/usr/bin/env bash
+while IFS= read -r line; do :; done
+printf '%s\n' fixture-token
+MOCK
+cat >"$temporary/bin/node" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' smoke >>"$FIXTURE_NODE_LOG"
+MOCK
+chmod +x "$temporary/bin/"{curl,ssh,jq,node}
+
+run_live_verify() {
+    PATH="$temporary/bin:$PATH" \
+        DEPLOYMENT_MODE=atomic DEPLOY_SSH_TARGET=fixture-host \
+        DEPLOY_PHP_BINARY=/fixture/php DEPLOY_STABLE_DIR=svc-laravel \
+        DEPLOY_SITE_URL=https://svc.bherila.net DEPLOY_SOURCE_COMMIT=fixture-commit \
+        DEPLOY_LIVE_COMMIT=fixture-commit DEPLOY_LIVE_STATE=serving \
+        FIXTURE_HOME_RESPONSE="$1" FIXTURE_SSH_LOG="$temporary/ssh.log" \
+        FIXTURE_NODE_LOG="$temporary/node.log" \
+        bash "$repository/scripts/deploy/verify-live.sh"
+}
+
+for response in '500 text/html' '302 text/html' '200 application/json'; do
+    rm -f "$temporary/ssh.log" "$temporary/node.log"
+    if run_live_verify "$response" >/dev/null 2>&1; then
+        fail "broken home page response '$response' was accepted"
+    fi
+    [ ! -e "$temporary/ssh.log" ] || fail 'credentials were issued before home page verification passed'
+    [ ! -e "$temporary/node.log" ] || fail 'API smoke hid a broken home page'
+done
+
+run_live_verify '200 text/html; charset=utf-8' >/dev/null || fail 'rendered HTML home page was rejected'
+grep -Fq -- '--ttl=15' "$temporary/ssh.log" || fail 'successful home probe skipped credential issuance'
+grep -Fq -- '--revoke' "$temporary/ssh.log" || fail 'successful verification skipped credential cleanup'
+[ -f "$temporary/node.log" ] || fail 'successful home probe skipped MCP smoke'
+
 echo 'Deployment hook tests passed.'

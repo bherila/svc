@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Runner-side verification performed before the shared atomic action commits a
-# release as healthy. It verifies the production OAuth redirect, protected
+# release as healthy. It verifies the rendered home page, production OAuth redirect, protected
 # resource discovery, authentication, operation scopes and MCP session
 # isolation. Smoke credentials are short-lived, data-blind and always revoked.
 set -euo pipefail
@@ -19,6 +19,17 @@ test "$DEPLOY_STABLE_DIR" = svc-laravel
 test "$DEPLOY_SITE_URL" = https://svc.bherila.net
 test "$DEPLOY_LIVE_COMMIT" = "$DEPLOY_SOURCE_COMMIT"
 test "$DEPLOY_LIVE_STATE" = serving
+
+# /up and API probes can succeed while stale cached view paths break Inertia.
+# Do not follow redirects: the public welcome page itself must render HTML.
+home_response=$(curl --silent --show-error --connect-timeout 5 --max-time 20 \
+    --output /dev/null --write-out '%{http_code} %{content_type}' "$DEPLOY_SITE_URL/")
+read -r home_status home_content_type <<<"$home_response"
+test "$home_status" = 200 || { echo 'Public home page did not return HTTP 200.' >&2; exit 1; }
+case "${home_content_type,,}" in
+    text/html | text/html\;*) ;;
+    *) echo 'Public home page did not render HTML.' >&2; exit 1 ;;
+esac
 
 redirect_url=$(curl --fail --silent --show-error --max-time 20 \
     --output /dev/null --write-out '%{redirect_url}' \
