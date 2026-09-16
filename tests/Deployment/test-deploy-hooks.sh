@@ -40,11 +40,10 @@ run_quiesce >/dev/null || fail 'an empty process inventory was rejected'
 make_process 100 "$temporary/sibling" php artisan queue:work
 run_quiesce >/dev/null || fail 'a sibling application process was treated as SVC-owned'
 
-for invocation in bare relative absolute; do
+for invocation in bare relative; do
     case $invocation in
         bare) artisan=artisan ;;
         relative) artisan=./artisan ;;
-        absolute) artisan=$stable_release/artisan ;;
     esac
     make_process 200 "$stable_release" php "$artisan" queue:work
     if run_quiesce >/dev/null 2>&1; then
@@ -52,5 +51,12 @@ for invocation in bare relative absolute; do
     fi
     rm -r "$temporary/proc/200"
 done
+
+# An absolute script path identifies SVC ownership even when a supervisor starts
+# PHP from another working directory.
+make_process 201 "$temporary/sibling" php "$stable_release/artisan" queue:work
+if run_quiesce >/dev/null 2>&1; then
+    fail 'absolute SVC Artisan path outside the app cwd was accepted'
+fi
 
 echo 'Deployment hook tests passed.'
