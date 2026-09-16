@@ -68,6 +68,11 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('svc:mcp:deploy-smoke-credentials', $verifyLive);
         $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);
         $this->assertStringContainsString('node scripts/mcp-smoke.mjs', $verifyLive);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, 'trap cleanup EXIT'),
+            'Credential cleanup must be armed before the remote issuance attempt.',
+        );
     }
 
     #[Test]

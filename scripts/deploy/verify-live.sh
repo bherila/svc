@@ -29,8 +29,6 @@ case $redirect_url in
 esac
 
 remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials"
-credentials=$(ssh "$DEPLOY_SSH_TARGET" "$remote_artisan --ttl=15")
-
 cleanup() {
     status=$?
     trap - EXIT
@@ -41,6 +39,10 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT
+
+# Arm cleanup before issuance: if the remote command creates a credential and
+# then loses its SSH response, revocation still runs instead of relying on TTL.
+credentials=$(ssh "$DEPLOY_SSH_TARGET" "$remote_artisan --ttl=15")
 
 authorized=$(printf '%s' "$credentials" | jq -er '.authorized_token | select(type == "string" and length > 0)')
 wrong_scope=$(printf '%s' "$credentials" | jq -er '.wrong_scope_token | select(type == "string" and length > 0)')
