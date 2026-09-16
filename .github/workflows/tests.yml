@@ -359,7 +359,7 @@ jobs:
       # (its README lists every input and what each guard refuses). Pinned to a commit because this job
       # holds a key that reaches every application on the account.
       #
-      # v2.1 builds and validates a versioned candidate before selecting it beneath a real cPanel
+      # v2.1.1 builds and validates a versioned candidate before selecting it beneath a real cPanel
       # application directory, keeps the previous release, and records the exact selected commit.
       # A migration or live OAuth/MCP verification failure leaves the selected release in maintenance
       # for an explicit operator decision.
@@ -368,7 +368,7 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@5ee5d2a006eb4c21d827069e4c9428e764907c16 # v2.1.0
+        uses: bherila/shared-cpanel-deployment@e97463f105268c9f63449cf5b6730c95386f709d # v2.1.1
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
