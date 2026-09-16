@@ -88,6 +88,13 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('svc:mcp:deploy-smoke-credentials', $verifyLive);
         $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);
         $this->assertStringContainsString('node scripts/mcp-smoke.mjs', $verifyLive);
+        $this->assertStringContainsString('node scripts/deploy/verify-oauth-redirect.mjs', $verifyLive);
+        $this->assertStringContainsString('node --test tests/Deployment/verify-oauth-redirect.test.mjs', $workflow);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, 'node scripts/deploy/verify-oauth-redirect.mjs'),
+            'The complete OAuth redirect contract must pass before smoke credential issuance.',
+        );
         $this->assertLessThan(
             strpos($verifyLive, 'credentials=$(ssh'),
             strpos($verifyLive, 'trap cleanup EXIT'),

@@ -54,9 +54,10 @@ jobs:
 
       - name: Test deployment hooks
         run: |
-          bash -n scripts/deploy/*.sh tests/Deployment/test-deploy-hooks.sh
+          for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
           bash tests/Deployment/test-preflight.sh
+          node --test tests/Deployment/verify-oauth-redirect.test.mjs
 
       - name: Run CI Checks
         run: composer ci:check
