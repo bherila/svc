@@ -476,6 +476,9 @@ describe('workspace shell', () => {
         expect(
             screen.queryByRole('menuitem', { name: 'Workspace settings' }),
         ).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('menuitem', { name: 'MCP setup guide' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/mcp');
     });
 
     it('offers adding a client only to a viewer who may create one', async () => {

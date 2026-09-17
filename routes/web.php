@@ -6,6 +6,7 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
+use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
@@ -73,6 +74,7 @@ Route::middleware('auth')->group(function (): void {
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
             ->name('clients.show');
@@ -100,6 +102,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}', [ClientDirectoryController::class, 'invoice'])
             ->name('clients.invoice');
 
+        Route::get('/portal/{clientCompany}/mcp', [McpSetupController::class, 'portal'])->name('portal.mcp.setup');
         Route::get('/portal/{clientCompany}', [ClientPortalController::class, 'show'])->name('portal.show');
         Route::get('/portal/{clientCompany}/invoices', [ClientPortalController::class, 'invoices'])
             ->name('portal.invoices');

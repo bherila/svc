@@ -31,6 +31,7 @@ final class WorkspaceNavigation
         public readonly array $clients,
         public readonly WorkspaceNavigationPermissions $permissions,
         public readonly ?string $workspaceSettingsHref,
+        public readonly ?string $mcpSetupHref = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -53,6 +54,7 @@ final class WorkspaceNavigation
      *     clients: list<array{id: string, name: string, destinations: array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}}>,
      *     permissions: array{manage_workspace: bool, create_client: bool, manage_current_client: bool, search: bool},
      *     workspace_settings_href: string|null,
+     *     mcp_setup_href: string|null,
      * }
      */
     public function toArray(): array
@@ -67,6 +69,7 @@ final class WorkspaceNavigation
             ),
             'permissions' => $this->permissions->toArray(),
             'workspace_settings_href' => $this->workspaceSettingsHref,
+            'mcp_setup_href' => $this->mcpSetupHref,
         ];
     }
 }

@@ -145,6 +145,7 @@ $draft = app(InvoiceFromTimeService::class)->create($workspace, $company,
     [['type' => 'service', 'description' => 'Synthetic preserved fee', 'quantity' => '1', 'unit_amount' => 500]]);
 
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'mcp_setup' => route('mcp.setup', $workspace, absolute: false),
     'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
     'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),
     'draft_id' => $draft->id, 'correction_id' => $correction->id,
