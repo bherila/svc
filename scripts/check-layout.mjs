@@ -268,6 +268,7 @@ try {
         await page.setViewportSize({ width, height: 1000 });
 
         for (const screen of [
+            'mcp_setup',
             'invoice',
             'invoice_review',
             'settings',
@@ -313,6 +314,12 @@ try {
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
+
+            if (screen === 'mcp_setup') {
+                await page.emulateMedia({ colorScheme: 'dark' });
+                await capture(screen, 'dark', width);
+                await page.emulateMedia({ colorScheme: 'light' });
+            }
 
             if (screen === 'expense_schedules') {
                 await page

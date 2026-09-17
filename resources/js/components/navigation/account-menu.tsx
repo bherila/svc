@@ -10,6 +10,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
  * Everything that is true regardless of which client is selected.
@@ -33,6 +34,8 @@ export function AccountMenu({
     const page = usePage();
     const auth = page.props.auth;
     const applications = page.props.applications;
+    const navigation = page.props
+        .workspaceNavigation as WorkspaceNavigation | null;
 
     return (
         <DropdownMenu>
@@ -66,6 +69,19 @@ export function AccountMenu({
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />
                     </>
+                )}
+
+                {navigation?.mcp_setup_href && (
+                    <DropdownMenuGroup>
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href={navigation.mcp_setup_href}
+                                data-test="account-mcp-setup"
+                            >
+                                MCP setup guide
+                            </Link>
+                        </DropdownMenuItem>
+                    </DropdownMenuGroup>
                 )}
 
                 {typeof workspaceSettingsHref === 'string' && (

@@ -58,4 +58,5 @@ export type WorkspaceNavigation = {
         search: boolean;
     };
     workspace_settings_href: string | null;
+    mcp_setup_href: string | null;
 };

@@ -105,6 +105,7 @@ final class WorkspaceNavigationFactory
             // the account menu has one authorized place to put it, rather than
             // growing a second navigation hierarchy when it lands.
             workspaceSettingsHref: null,
+            mcpSetupHref: $isMember ? route('mcp.setup', $workspace) : ($options === [] ? null : route('portal.mcp.setup', $options[0]->id)),
         );
     }
 

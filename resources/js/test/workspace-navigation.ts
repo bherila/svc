@@ -49,6 +49,7 @@ export function workspaceNavigation(
             search: true,
         },
         workspace_settings_href: null,
+        mcp_setup_href: '/workspaces/workspace-1/mcp',
         ...overrides,
     };
 }
