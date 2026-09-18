@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v cloud-repo-bootstrap >/dev/null 2>&1 && cloud-repo-bootstrap || true",
+            "timeout": 600,
+            "statusMessage": "Installing dependencies (cloud sessions only)..."
+          }
+        ]
+      }
+    ]
+  }
+}

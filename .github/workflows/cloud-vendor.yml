@@ -1,0 +1,95 @@
+name: Cloud vendor bundle
+
+# Claude Code cloud sessions cannot download Composer packages: the session's
+# GitHub proxy answers 403 for github.com archives of every repository not
+# attached to the session, and git fetches of those repositories each need a
+# manual permission grant. The proxy does serve release assets of the
+# session's own repository, so this workflow builds vendor/ for each
+# composer.lock and uploads it as vendor-<sha256 of composer.lock>.tar.zst to a
+# DRAFT release tagged cloud-vendor. The SessionStart hook
+# (cloud-repo-bootstrap, from the cloud environment's setup script) downloads
+# the bundle that matches the checkout.
+#
+# The release stays a draft on purpose: a draft creates no tag and never fires
+# `release: published`, so it cannot trigger release or deploy workflows.
+# Never publish it.
+
+on:
+  push:
+    paths:
+      - composer.lock
+      - .github/workflows/cloud-vendor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cloud-vendor
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: Build and upload vendor bundle
+    # x86_64, like the cloud session VM.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: cloud-vendor
+      KEEP: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Find or create the draft release
+        id: release
+        run: |
+          name="vendor-$(sha256sum composer.lock | cut -d' ' -f1).tar.zst"
+          id="$(gh api "repos/$REPO/releases?per_page=100" --jq "[.[] | select(.draft and .tag_name == \"$TAG\")][0].id // empty")"
+          if [[ -z "$id" ]]; then
+            id="$(gh api -X POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" -F draft=true -F prerelease=true \
+              -f name="cloud-vendor bundles (draft; never publish)" \
+              -f body="vendor/ builds for Claude Code cloud sessions, one per composer.lock, named by its SHA-256. Written by .github/workflows/cloud-vendor.yml. Keep this a draft: publishing it would create a tag and fire release workflows." \
+              --jq .id)"
+          fi
+          exists="$(gh api "repos/$REPO/releases/$id/assets?per_page=100" --jq "any(.[]; .name == \"$name\")")"
+          {
+            echo "id=$id"
+            echo "name=$name"
+            echo "exists=$exists"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        if: steps.release.outputs.exists != 'true'
+        with:
+          php-version: '8.5'
+          extensions: bcmath, curl, gd, intl, mbstring, sodium, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Build vendor/
+        if: steps.release.outputs.exists != 'true'
+        # Scripts run in the session instead, after unpacking: they need the
+        # checkout's .env and write the autoloader for that path.
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Upload the bundle and prune old ones
+        if: steps.release.outputs.exists != 'true'
+        env:
+          ID: ${{ steps.release.outputs.id }}
+          NAME: ${{ steps.release.outputs.name }}
+        run: |
+          tar --exclude-vcs -cf - vendor | zstd -T0 -12 -q -o "$NAME"
+          ls -lh "$NAME"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Content-Type: application/zstd' \
+            --data-binary @"$NAME" \
+            "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$NAME" >/dev/null
+          gh api "repos/$REPO/releases/$ID/assets?per_page=100" \
+            --jq "sort_by(.created_at) | reverse | .[$KEEP:][] | .id" \
+            | while read -r old; do
+                gh api -X DELETE "repos/$REPO/releases/assets/$old"
+              done
