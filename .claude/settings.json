@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "command -v cloud-repo-bootstrap >/dev/null 2>&1 && cloud-repo-bootstrap || true",
-            "timeout": 1800,
+            "timeout": 600,
             "statusMessage": "Installing dependencies (cloud sessions only)..."
           }
         ]
