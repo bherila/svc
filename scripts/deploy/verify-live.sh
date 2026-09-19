@@ -31,13 +31,10 @@ case "${home_content_type,,}" in
     *) echo 'Public home page did not render HTML.' >&2; exit 1 ;;
 esac
 
-redirect_url=$(curl --fail --silent --show-error --max-time 20 \
+redirect_url=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
     --output /dev/null --write-out '%{redirect_url}' \
     "$DEPLOY_SITE_URL/oauth/redirect")
-case $redirect_url in
-    https://id.bherila.net/oauth/authorize\?*) ;;
-    *) echo "OAuth redirect did not target the configured identity provider." >&2; exit 1 ;;
-esac
+printf '%s' "$redirect_url" | node scripts/deploy/verify-oauth-redirect.mjs
 
 remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials"
 cleanup() {

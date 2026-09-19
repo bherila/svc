@@ -54,8 +54,10 @@ jobs:
 
       - name: Test deployment hooks
         run: |
-          bash -n scripts/deploy/*.sh tests/Deployment/test-deploy-hooks.sh
+          for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
+          bash tests/Deployment/test-preflight.sh
+          node --test tests/Deployment/verify-oauth-redirect.test.mjs
 
       - name: Run CI Checks
         run: composer ci:check
@@ -368,7 +370,7 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@6e9edf640e38b828eb0b273c339474b28ab3dca4 # v2.1.2
+        uses: bherila/shared-cpanel-deployment@3c0cc99456d79d06537aa97a410c06f10da01699 # v2.2.0
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
@@ -389,6 +391,7 @@ jobs:
           passport-key-directory: storage/app/private/oauth
           artisan-memory-limit: 1G
           operational-audit: 'true'
+          preflight-script: scripts/deploy/preflight.sh
           quiesce-script: scripts/deploy/quiesce.sh
           pre-migrate-script: scripts/deploy/pre-migrate.sh
           post-deploy-script: scripts/deploy/post-deploy.sh
