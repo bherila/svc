@@ -14,17 +14,19 @@ class DeploymentSafetyTest extends TestCase
         $preMigrate = file_get_contents(__DIR__.'/../../scripts/deploy/pre-migrate.sh');
         $quiesce = file_get_contents(__DIR__.'/../../scripts/deploy/quiesce.sh');
         $verifyLive = file_get_contents(__DIR__.'/../../scripts/deploy/verify-live.sh');
+        $preflight = file_get_contents(__DIR__.'/../../scripts/deploy/preflight.sh');
 
         $this->assertIsString($workflow);
         $this->assertIsString($preMigrate);
         $this->assertIsString($quiesce);
         $this->assertIsString($verifyLive);
+        $this->assertIsString($preflight);
         $this->assertStringContainsString('environment: web1', $workflow);
 
         // The shared action holds a key that reaches every application on the account, so it
         // must be pinned to a full commit, never a mutable tag.
         $this->assertStringContainsString(
-            'uses: bherila/shared-cpanel-deployment@6e9edf640e38b828eb0b273c339474b28ab3dca4',
+            'uses: bherila/shared-cpanel-deployment@3c0cc99456d79d06537aa97a410c06f10da01699',
             $workflow,
         );
         $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
@@ -52,6 +54,16 @@ class DeploymentSafetyTest extends TestCase
 
         // The candidate is gated before migration, activation and final commit. The live OAuth/MCP
         // probe executes inside the action's recovery boundary, not in a detached follow-up job.
+        $this->assertStringContainsString('preflight-script: scripts/deploy/preflight.sh', $workflow);
+        $this->assertStringContainsString('bash tests/Deployment/test-preflight.sh', $workflow);
+        $this->assertStringContainsString("stat -c '%a:%u'", $preflight);
+        $this->assertStringContainsString('test "$stable_dir" = svc-laravel', $preflight);
+        foreach (['deployment.env', 'database.env', 'oauth-private.key', 'oauth-public.key'] as $prerequisite) {
+            $this->assertStringContainsString($prerequisite, $preflight);
+        }
+        foreach (['chmod ', 'install ', 'cat ', 'passport:keys', 'artisan '] as $mutationOrContentRead) {
+            $this->assertStringNotContainsString($mutationOrContentRead, $preflight);
+        }
         $this->assertStringContainsString('quiesce-script: scripts/deploy/quiesce.sh', $workflow);
         $this->assertStringContainsString('pre-migrate-script: scripts/deploy/pre-migrate.sh', $workflow);
         $this->assertStringContainsString('post-deploy-script: scripts/deploy/post-deploy.sh', $workflow);
@@ -76,6 +88,13 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('svc:mcp:deploy-smoke-credentials', $verifyLive);
         $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);
         $this->assertStringContainsString('node scripts/mcp-smoke.mjs', $verifyLive);
+        $this->assertStringContainsString('node scripts/deploy/verify-oauth-redirect.mjs', $verifyLive);
+        $this->assertStringContainsString('node --test tests/Deployment/verify-oauth-redirect.test.mjs', $workflow);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, 'node scripts/deploy/verify-oauth-redirect.mjs'),
+            'The complete OAuth redirect contract must pass before smoke credential issuance.',
+        );
         $this->assertLessThan(
             strpos($verifyLive, 'credentials=$(ssh'),
             strpos($verifyLive, 'trap cleanup EXIT'),
