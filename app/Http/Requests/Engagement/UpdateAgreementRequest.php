@@ -84,23 +84,31 @@ class UpdateAgreementRequest extends FormRequest
     {
         $validator->after(function (Validator $validator): void {
             $agreement = $this->route('clientAgreement');
-            $stored = $agreement instanceof ClientAgreement ? $agreement : null;
 
-            $startsOn = $this->has('starts_on')
-                ? $this->input('starts_on')
-                : $stored?->starts_on?->toDateString();
-
-            $endsOn = $this->has('ends_on')
-                ? $this->input('ends_on')
-                : $stored?->ends_on?->toDateString();
-
-            if (! is_string($startsOn) || ! is_string($endsOn)) {
-                return;
-            }
-
-            if ($endsOn < $startsOn) {
+            if (self::datesRunBackwards($this->all(), $agreement instanceof ClientAgreement ? $agreement : null)) {
                 $validator->errors()->add('ends_on', 'The agreement cannot end before it starts.');
             }
         });
+    }
+
+    /**
+     * Whether the dates this input would leave the agreement with run backwards.
+     *
+     * Static and free of the request so MCP applies the same rule the web form
+     * does: whichever date the input omits is read from the stored agreement.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public static function datesRunBackwards(array $input, ?ClientAgreement $stored): bool
+    {
+        $startsOn = array_key_exists('starts_on', $input)
+            ? $input['starts_on']
+            : $stored?->starts_on?->toDateString();
+
+        $endsOn = array_key_exists('ends_on', $input)
+            ? $input['ends_on']
+            : $stored?->ends_on?->toDateString();
+
+        return is_string($startsOn) && is_string($endsOn) && $endsOn < $startsOn;
     }
 }
