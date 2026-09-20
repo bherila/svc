@@ -69,6 +69,19 @@ The deployment installs the server-held `.env`, runs schema migrations, performs
 write/read/delete probe against the private disk, checks the redacted Stripe status,
 and verifies `/up` plus the OAuth redirect. It does not seed or import business data.
 
+Before maintenance, persistent-path conversion or database risk, a read-only host
+preflight requires account-owned regular files at `~/.config/svc/deployment.env`,
+`~/.config/svc/database.env` and both existing Passport key paths. File modes must be
+0400 or 0600; unmanaged aliases and incomplete pairs fail without changing anything.
+It checks metadata only and never opens secret contents. Candidate use-site checks
+remain in place because preflight cannot prevent a later host configuration change.
+
+Live OAuth verification parses the authorization redirect before issuing the
+short-lived authenticated MCP smoke credentials. It requires the exact provider
+endpoint, callback and `identity:read` scope, authorization-code response type,
+nonempty client/state and a valid S256 challenge, with one value per required
+parameter. Redirect query values never appear in arguments or verification logs.
+
 ### There is no queue worker
 
 Nothing on the shared account runs `queue:work`, so anything dispatched to the
