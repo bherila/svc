@@ -21,16 +21,16 @@ use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Token;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\HttpFoundation\Response;
+use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
 final class AgentMcpReadOnlyTest extends TestCase
 {
+    use CallsMcp;
     use McpHttpConformanceAssertions;
     use RefreshDatabase;
 
@@ -1226,32 +1226,5 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertNull($replay->json('result'));
         $this->assertIsArray($replay->json('error'));
         $this->assertDatabaseCount('client_time_entries', 1);
-    }
-
-    private function initialize(): string
-    {
-        $response = $this->mcp($this->initializeMessage())->assertOk();
-        $session = $response->headers->get('Mcp-Session-Id');
-        $this->assertIsString($session);
-
-        return $session;
-    }
-
-    /** @return array<string, mixed> */
-    private function initializeMessage(): array
-    {
-        return ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC test', 'version' => '1']]];
-    }
-
-    /** @param array<string, mixed> $message
-     * @return TestResponse<Response> */
-    private function mcp(array $message, ?string $session = null): TestResponse
-    {
-        $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
-        if ($session !== null) {
-            $headers['Mcp-Session-Id'] = $session;
-        }
-
-        return $this->postJson('/api/v1/mcp', $message, $headers);
     }
 }

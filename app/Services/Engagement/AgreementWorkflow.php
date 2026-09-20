@@ -215,6 +215,63 @@ class AgreementWorkflow
         });
     }
 
+    /**
+     * Retire an agreement without deleting it.
+     *
+     * The archive of this domain: invoices, time and the capacity ledger keep
+     * pointing at the row, and billing still reads a terminated agreement for
+     * the periods it covered. What ends is the window - `ends_on` stops it
+     * governing anything later.
+     *
+     * With no date it ends today in the workspace's timezone, never extending an
+     * end date already in the past and never landing before the start. An
+     * explicit date is taken as stated, so a caller correcting a lapse can
+     * backdate it; the one thing refused is an end before the start.
+     *
+     * One-way: nothing reactivates a terminated agreement, and `activate()`
+     * refuses it, so a mistaken termination is corrected by a new agreement.
+     */
+    public function terminate(ClientAgreement $agreement, ?string $endsOn = null): ClientAgreement
+    {
+        return DB::transaction(function () use ($agreement, $endsOn): ClientAgreement {
+            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
+
+            if ($locked->status === 'terminated') {
+                return $locked;
+            }
+
+            if (! in_array($locked->status, ['draft', 'active', 'paused'], true)) {
+                throw new EngagementException('Only draft, active or paused agreements can be terminated.');
+            }
+
+            $startsOn = $locked->starts_on->toDateString();
+            $today = $this->clock->now($locked->workspace)->toDateString();
+            $existing = $locked->ends_on?->toDateString();
+            $default = $existing !== null && $existing < $today ? $existing : $today;
+            $end = $endsOn ?? max($default, $startsOn);
+
+            if ($end < $startsOn) {
+                throw new EngagementException('The agreement cannot end before it starts.');
+            }
+
+            $previousStatus = $locked->status;
+            $locked->forceFill(['status' => 'terminated', 'ends_on' => $end])->save();
+            $this->activities->record(
+                $locked->workspace,
+                $locked->clientCompany,
+                'agreement.transitioned',
+                $locked,
+                ['changes' => [
+                    'status' => ['old' => $previousStatus, 'new' => 'terminated'],
+                    'ends_on' => ['old' => $existing, 'new' => $end],
+                ]],
+                occurrence: (string) Str::uuid(),
+            );
+
+            return $locked;
+        });
+    }
+
     private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement): void
     {
         $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);

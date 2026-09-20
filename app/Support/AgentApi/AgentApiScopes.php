@@ -32,6 +32,10 @@ final class AgentApiScopes
 
     public const string PAYMENTS_RECORD = 'payments:record';
 
+    public const string CLIENTS_READ = 'clients:read';
+
+    public const string CLIENTS_WRITE = 'clients:write';
+
     public const string MCP_USE = 'mcp:use';
 
     /** @return array<string, string> */
@@ -52,6 +56,8 @@ final class AgentApiScopes
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
             self::PAYMENTS_RECORD => 'Record money already received; never initiate a charge',
+            self::CLIENTS_READ => 'Read client companies as a workspace manager',
+            self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
             self::MCP_USE => 'Connect to SVC through MCP',
         ];
     }

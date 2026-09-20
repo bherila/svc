@@ -6,6 +6,8 @@ use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
+use App\Services\AgentApi\AgentClientMutationAction;
+use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
@@ -55,6 +57,8 @@ final class AgentMcpServerFactory
         private readonly AgentBillingScheduleReadService $billingScheduleReadService,
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
         private readonly AgentBillingAuditReadService $billingAuditReadService,
+        private readonly AgentClientReadService $clientReadService,
+        private readonly AgentClientMutationAction $clientMutations,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpAuthorizer $authorizer,
         private readonly McpPrincipalResolverInterface $principals,
@@ -80,11 +84,13 @@ final class AgentMcpServerFactory
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
+        $clients = new AgentMcpClientTools($this->clientReadService, $this->accounts, $context);
+        $clientWrites = new AgentMcpClientWriteTools($this->clientMutations, $this->clientReadService, $this->agreementReadService, $this->accounts, $this->requestArguments, $context);
         $writes = $this->writes->forContext($context);
         $resultLimiter = new McpCapabilityResultLimiter;
         $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
         $concurrencyLimiter = new McpCapabilityConcurrencyLimiter($cacheStore instanceof LockProvider ? $cacheStore : null);
-        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $agreementResource, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes)->all();
+        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $agreementResource, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes, $clients, $clientWrites)->all();
         $hasManagerCapabilities = false;
         foreach ($definitions as $definition) {
             if ($definition->policyAbility === 'AgentAccess::isWorkspaceManager') {
