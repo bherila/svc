@@ -231,7 +231,12 @@ final class AgentReadService
             if (! $entry instanceof ClientTimeEntry) {
                 continue;
             }
-            $data[] = $this->timeEntryPresenter->present($workspace, $entry, $includeFinancials, $entry->is_visible_to_client);
+            $data[] = $this->timeEntryPresenter->present(
+                $workspace,
+                $entry,
+                $includeFinancials,
+                $entry->is_visible_to_client && ! $includeFinancials && ! $this->access->canReadInternalTimeNote($user, $entry),
+            );
         }
 
         return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
