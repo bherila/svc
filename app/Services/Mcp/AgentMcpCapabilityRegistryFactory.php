@@ -17,9 +17,10 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
+        private readonly AgentMcpClientCapabilities $clientCapabilities,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes, AgentMcpClientTools $clients): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -29,6 +30,9 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->agreementResource($agreementResource));
+        foreach ($this->clientCapabilities->definitions($clients) as $definition) {
+            $registry->register($definition);
+        }
         $registry->register($this->billingScheduleList($schedules));
         $registry->register($this->billingScheduleGet($schedules));
         $registry->register($this->capacityLedgerGet($capacityLedger));
@@ -210,7 +214,7 @@ final class AgentMcpCapabilityRegistryFactory
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project'],
+            'required' => ['id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project', 'client_id', 'client_name', 'project_id'],
             'properties' => [
                 'id' => ['type' => 'string', 'format' => 'uuid'],
                 'title' => ['type' => 'string', 'maxLength' => 255],
@@ -229,6 +233,9 @@ final class AgentMcpCapabilityRegistryFactory
                 'hourly_rate_amount' => ['type' => ['integer', 'null'], 'minimum' => 0],
                 'rollover_months' => ['type' => ['integer', 'null'], 'minimum' => 0, 'maximum' => 120],
                 'project' => ['type' => ['string', 'null'], 'maxLength' => 255],
+                'client_id' => ['type' => 'string', 'format' => 'uuid'],
+                'client_name' => ['type' => 'string', 'maxLength' => 160],
+                'project_id' => ['type' => ['string', 'null'], 'format' => 'uuid'],
             ],
         ];
     }
