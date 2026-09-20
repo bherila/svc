@@ -16,6 +16,7 @@ use App\Services\Mcp\AgentMcpBillingScheduleTools;
 use App\Services\Mcp\AgentMcpCapabilityRegistryFactory;
 use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientTools;
+use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpInputSchemaFactory;
 use App\Services\Mcp\AgentMcpPrompts;
@@ -69,6 +70,7 @@ final class AgentMcpContractTest extends TestCase
             app(AgentMcpPrompts::class),
             app(AgentMcpWriteTools::class),
             app(AgentMcpClientTools::class),
+            app(AgentMcpClientWriteTools::class),
         );
 
         $this->assertSame(
@@ -90,6 +92,7 @@ final class AgentMcpContractTest extends TestCase
             app(AgentMcpPrompts::class),
             app(AgentMcpWriteTools::class),
             app(AgentMcpClientTools::class),
+            app(AgentMcpClientWriteTools::class),
         );
 
         $this->assertContains('paused', $registry->get('agreements.list')->inputSchema['properties']['status']['enum']);
@@ -370,6 +373,7 @@ final class AgentMcpContractTest extends TestCase
             app(AgentMcpReadTools::class),
             app(AgentMcpWriteTools::class),
             app(AgentMcpClientTools::class),
+            app(AgentMcpClientWriteTools::class),
         );
     }
 

@@ -169,7 +169,8 @@
           "expenses:read": "Read authorized expenses", "expenses:write": "Record, edit and delete draft expenses as a workspace manager", "mcp:use": "Connect through MCP", "identity:read": "Read identity and workspaces", "projects:read": "Read projects",
           "tasks:read": "Read tasks", "tasks:write": "Create and update tasks", "time:read": "Read time",
           "time:write": "Log and manage draft time", "time:approve": "Set billing rates and approve project time", "billing:read": "Read invoices",
-          "billing:write": "Create invoice drafts", "payments:read": "Read received payments on authorized invoices", "payments:record": "Record money already received; never initiate a charge", "billing:deliver": "Issue, send, and void invoices"
+          "billing:write": "Create invoice drafts", "payments:read": "Read received payments on authorized invoices", "payments:record": "Record money already received; never initiate a charge", "billing:deliver": "Issue, send, and void invoices",
+          "clients:read": "Read client companies as a workspace manager", "clients:write": "Create, edit and archive client companies and their agreements as a workspace manager"
         }
       }}
     }},

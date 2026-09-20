@@ -121,6 +121,9 @@ final class AgentCapabilities
         if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
             $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';
         }
+        if ($this->writesEnabled() && (bool) config('agent_api.client_writes_enabled')) {
+            $mapping[AgentApiScopes::CLIENTS_WRITE] = 'clients:write';
+        }
         if ($this->timeEntryWritesEnabled()) {
             $mapping[AgentApiScopes::TIME_WRITE] = 'time:write';
         }
