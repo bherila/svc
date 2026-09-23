@@ -9,9 +9,11 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\AgentReadService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 final class AgentTimeEntryMutationTest extends TestCase
@@ -382,6 +384,37 @@ final class AgentTimeEntryMutationTest extends TestCase
         $managerMembership->forceFill(['role' => 'contributor'])->save();
         $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertForbidden();
         $this->assertDatabaseCount('client_time_entries', 1);
+    }
+
+    /**
+     * The by-id read behind the log tool's response is workspace-scoped: an
+     * owner of two workspaces cannot read one's entry through the other, even
+     * holding its id.
+     */
+    public function test_time_entries_by_id_never_crosses_workspaces(): void
+    {
+        [$home, $homeProject] = $this->project();
+        $away = Workspace::query()->create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $awayCompany = ClientCompany::query()->create(['workspace_id' => $away->id, 'name' => 'Other Client', 'slug' => 'other-client']);
+        $awayProject = ClientProject::query()->create(['workspace_id' => $away->id, 'client_company_id' => $awayCompany->id, 'name' => 'Other Project']);
+        $owner = User::factory()->create();
+        foreach ([$home, $away] as $workspace) {
+            WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $owner->id, 'role' => 'owner']);
+        }
+        $entry = fn (Workspace $workspace, ClientProject $project): ClientTimeEntry => ClientTimeEntry::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'client_project_id' => $project->id, 'user_id' => $owner->id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Work', 'currency' => 'USD']);
+        $homeEntry = $entry($home, $homeProject);
+        $awayEntry = $entry($away, $awayProject);
+        $reads = app(AgentReadService::class);
+
+        $this->assertSame([$homeEntry->public_id], array_column($reads->timeEntriesByIds($owner, $home, [$homeEntry->public_id]), 'id'));
+        $this->assertSame([$awayEntry->public_id], array_column($reads->timeEntriesByIds($owner, $away, [$awayEntry->public_id]), 'id'));
+
+        try {
+            $reads->timeEntriesByIds($owner, $home, [$homeEntry->public_id, $awayEntry->public_id]);
+            $this->fail('An entry from another workspace was returned.');
+        } catch (HttpException $exception) {
+            $this->assertSame(404, $exception->getStatusCode());
+        }
     }
 
     /** @return array{Workspace, ClientProject} */
