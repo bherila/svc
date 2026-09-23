@@ -170,9 +170,11 @@ either logged and approved or not written at all. It carries every gate
 scope, and the approver role on each project - and rechecks the scope, flag
 and role before replaying a receipt. The flag is part of the request digest,
 so the same key with and without it is a conflict. When the token also holds
-`time:read`, the tool returns its rows through `AgentReadService`, exactly as
-`time_entries.list` presents them (status, rate, and client-facing
-description included), so an agent needs no follow-up list call.
+`time:read` and `time_entries.list` is not switched off, the tool returns its
+rows through `AgentReadService`, exactly as `time_entries.list` presents them,
+so an agent needs no follow-up list call. That includes the list's rule that
+rates are shown to workspace owners and admins only, so a project-role manager
+who approves sees the status but not the rate.
 
 The tool catalog is `AgentMcpToolCatalog`; `AgentMcpInputSchemaFactory` and
 `AgentMcpOutputSchemaFactory` derive public schemas from the checked-in
