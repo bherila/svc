@@ -163,6 +163,17 @@ default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
 migration plus the approved confirmation design before general availability.
 
+`time_entries.log` accepts `approve: true` to approve the logged entries in
+the same transaction and under the same idempotency receipt, so a batch is
+either logged and approved or not written at all. It carries every gate
+`time_entries.approve` does - `AGENT_API_WRITES_ENABLED`, the `time:approve`
+scope, and the approver role on each project - and rechecks the scope, flag
+and role before replaying a receipt. The flag is part of the request digest,
+so the same key with and without it is a conflict. When the token also holds
+`time:read`, the tool returns its rows through `AgentReadService`, exactly as
+`time_entries.list` presents them (status, rate, and client-facing
+description included), so an agent needs no follow-up list call.
+
 The tool catalog is `AgentMcpToolCatalog`; `AgentMcpInputSchemaFactory` and
 `AgentMcpOutputSchemaFactory` derive public schemas from the checked-in
 OpenAPI response catalog. Inputs are validated before dispatch, output is

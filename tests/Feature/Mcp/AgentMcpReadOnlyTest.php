@@ -1166,6 +1166,79 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertJsonMissingPath('result');
     }
 
+    /**
+     * One call logs and approves, and returns the rows time_entries.list would.
+     *
+     * The rate is stated at logging time on purpose: approval is where a rate
+     * is stamped, and folding approval into the log call must keep the rate the
+     * caller typed rather than resolving the agreement over it.
+     */
+    public function test_log_can_approve_in_the_same_call_and_returns_list_rows(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project, $session] = $this->mcpTimeWriter('mcp-log-approve');
+        $arguments = ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-approve-1', 'approve' => true, 'entries' => [[
+            'project_id' => $project->public_id,
+            'worked_on' => '2026-09-22',
+            'minutes' => 20,
+            'description' => 'Internal release notes',
+            'is_visible_to_client' => true,
+            'client_visible_description' => 'Release readiness review',
+            'billing_rate_amount' => 37500,
+            'currency' => 'USD',
+        ]]];
+
+        $logged = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => $arguments]], $session)->assertOk()->json('result');
+        $this->assertFalse($logged['isError']);
+        $row = $logged['structuredContent']['data'][0];
+        $this->assertSame('approved', $row['status']);
+        $this->assertSame(37500, $row['billing_rate_amount']);
+        $this->assertSame('USD', $row['currency']);
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $row['id'], 'status' => 'approved', 'billing_rate_amount' => 37500, 'billing_rate_source' => 'explicit']);
+
+        $listed = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id]]], $session)->assertOk()->json('result.structuredContent.data');
+        $this->assertSame($listed, $logged['structuredContent']['data']);
+
+        $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => $arguments]], $session)->assertOk()->json('result');
+        $this->assertSame($logged['structuredContent']['data'], $replay['structuredContent']['data']);
+        $this->assertDatabaseCount('client_time_entries', 1);
+
+        // The flag is part of the request: the same key without it is a different request.
+        unset($arguments['approve']);
+        $changed = $this->mcp(['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => $arguments]], $session)->assertOk();
+        $this->assertNotFalse($changed->json('result.isError') ?? true);
+        $this->assertDatabaseCount('client_time_entries', 1);
+    }
+
+    /** Approval through log is withheld wherever time_entries.approve is, and then nothing is logged either. */
+    public function test_log_with_approve_writes_nothing_while_the_approval_cutover_is_off(): void
+    {
+        config(['agent_api.writes_enabled' => false]);
+        [$workspace, $project, $session] = $this->mcpTimeWriter('mcp-log-approve-off');
+        $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => [
+            'workspace_id' => $workspace->public_id,
+            'idempotency_key' => 'mcp-log-approve-off-1',
+            'approve' => true,
+            'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Work', 'billing_rate_amount' => 37500, 'currency' => 'USD']],
+        ]]], $session)->assertOk();
+
+        $this->assertNotFalse($response->json('result.isError') ?? true);
+        $this->assertDatabaseCount('client_time_entries', 0);
+    }
+
+    /** @return array{Workspace, ClientProject, string} */
+    private function mcpTimeWriter(string $slug): array
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'MCP '.$slug, 'slug' => $slug]);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'MCP '.$slug.' client', 'slug' => $slug.'-client']);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'MCP '.$slug.' project']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+
+        return [$workspace, $project, $this->initialize()];
+    }
+
     public function test_write_catalog_is_conditionally_registered_after_cutover(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);

@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentExpenseMutationAction;
 use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
@@ -128,7 +129,7 @@ final class AgentMcpWriteTools
 
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
-    public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $approve = false): array
     {
         $context = $this->context('time:write');
         $context = $this->accounts->resolve($context, $workspace_id);
@@ -137,14 +138,22 @@ final class AgentMcpWriteTools
             throw new \LogicException('MCP time logging requires a workspace context.');
         }
         $actor = User::query()->findOrFail($context->principal->subject->id);
+        // `approve` joins the payload only when set, so the digest of a plain
+        // log - and every receipt written before the flag existed - is unchanged.
+        $payload = ['entries' => $entries] + ($approve ? ['approve' => true] : []);
         $ids = $this->logTime->run(
             $actor,
             $workspace,
             $context->principal->clientId,
             $idempotency_key,
-            ['entries' => $entries],
+            $payload,
             $context->principal->hasScope('time:approve'),
         );
+        // A token that may read time gets the rows exactly as time_entries.list
+        // returns them, rate and status included, so no follow-up read is needed.
+        if ($context->principal->hasScope('time:read')) {
+            return ['data' => app(AgentReadService::class)->timeEntriesByIds($context->principal->subject, $workspace, $ids)];
+        }
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('public_id', $ids)

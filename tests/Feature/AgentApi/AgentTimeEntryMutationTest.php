@@ -339,6 +339,51 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
     }
 
+    /**
+     * `approve: true` on a log carries every gate the approve endpoint has, and
+     * a refused approval leaves nothing logged: the batch is one transaction.
+     */
+    public function test_logging_with_approve_is_gated_like_approval_and_all_or_nothing(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $worker = User::factory()->create();
+        $manager = User::factory()->create();
+        $this->member($workspace, $worker);
+        $this->member($workspace, $manager);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $worker->id, 'role' => 'contributor']);
+        $managerMembership = ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $manager->id, 'role' => 'manager']);
+        $url = "/api/v1/workspaces/{$workspace->public_id}/time-entries";
+        $payload = ['approve' => true, 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Release readiness', 'billing_rate_amount' => 17500, 'currency' => 'USD']]];
+        $plain = ['entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Release readiness']]];
+
+        // Contributor role: may log, may not approve - so the approving log writes nothing.
+        $this->actingAsAgent($worker, [AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        $this->withHeader('Idempotency-Key', 'log-approve-contributor')->postJson($url, ['approve' => true] + $plain)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        // Manager role without the approval scope.
+        $this->actingAsAgent($manager, [AgentApiScopes::TIME_WRITE]);
+        $this->withHeader('Idempotency-Key', 'log-approve-unscoped')->postJson($url, ['approve' => true] + $plain)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        // Scope and role, but the approval cutover is off.
+        $this->actingAsAgent($manager, [AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        config(['agent_api.writes_enabled' => false]);
+        $this->withHeader('Idempotency-Key', 'log-approve-cutover')->postJson($url, $payload)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+        config(['agent_api.writes_enabled' => true]);
+
+        $id = $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->json('data.0.id');
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $id, 'status' => 'approved', 'approved_by_user_id' => $manager->id, 'billing_rate_amount' => 17500, 'billing_rate_source' => 'explicit']);
+        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->assertJsonPath('data.0.id', $id);
+
+        // A replay rechecks the approver role, as the approve endpoint's replay does.
+        $managerMembership->forceFill(['role' => 'contributor'])->save();
+        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 1);
+    }
+
     /** @return array{Workspace, ClientProject} */
     private function project(): array
     {
