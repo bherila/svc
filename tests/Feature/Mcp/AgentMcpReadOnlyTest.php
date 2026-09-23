@@ -1246,6 +1246,21 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame('draft', $logged['structuredContent']['data'][0]['status']);
     }
 
+    /** With time_entries.list switched off, log keeps its plain shape and withholds the list's financials. */
+    public function test_log_returns_the_plain_shape_while_the_list_tool_is_switched_off(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.mcp_feature_flags' => ['time_entries.list' => false]]);
+        [$workspace, $project, $session] = $this->mcpTimeWriter('mcp-log-list-switch');
+        $logged = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => [
+            'workspace_id' => $workspace->public_id, 'idempotency_key' => 'list-switch-1', 'approve' => true,
+            'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Work', 'billing_rate_amount' => 37500, 'currency' => 'USD']],
+        ]]], $session)->assertOk()->json('result');
+
+        $this->assertFalse($logged['isError']);
+        $this->assertSame('approved', $logged['structuredContent']['data'][0]['status']);
+        $this->assertArrayNotHasKey('billing_rate_amount', $logged['structuredContent']['data'][0]);
+    }
+
     /** @return array{Workspace, ClientProject, string} */
     private function mcpTimeWriter(string $slug): array
     {

@@ -156,7 +156,9 @@ final class AgentMcpWriteTools
         );
         // A token that may read time gets the rows exactly as time_entries.list
         // returns them, rate and status included, so no follow-up read is needed.
-        if ($context->principal->hasScope('time:read')) {
+        // It is the list read, so it answers to the list's scope and kill switch.
+        if ($context->principal->hasScope('time:read')
+            && app(McpFeatureFlags::class)->enabledFor('time_entries.list', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(true))) {
             return ['data' => app(AgentReadService::class)->timeEntriesByIds($context->principal->subject, $workspace, $ids)];
         }
         $entriesById = ClientTimeEntry::query()
