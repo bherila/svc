@@ -1226,6 +1226,26 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertDatabaseCount('client_time_entries', 0);
     }
 
+    /** The per-tool kill switch for time_entries.approve also stops approval folded into log. */
+    public function test_log_with_approve_honours_the_approve_tool_kill_switch(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.mcp_feature_flags' => ['time_entries.approve' => false]]);
+        [$workspace, $project, $session] = $this->mcpTimeWriter('mcp-log-approve-switch');
+        $entries = [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Work', 'billing_rate_amount' => 37500, 'currency' => 'USD']];
+
+        $refused = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => [
+            'workspace_id' => $workspace->public_id, 'idempotency_key' => 'switch-1', 'approve' => true, 'entries' => $entries,
+        ]]], $session)->assertOk();
+        $this->assertNotFalse($refused->json('result.isError') ?? true);
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        $logged = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => [
+            'workspace_id' => $workspace->public_id, 'idempotency_key' => 'switch-2', 'entries' => $entries,
+        ]]], $session)->assertOk()->json('result');
+        $this->assertFalse($logged['isError']);
+        $this->assertSame('draft', $logged['structuredContent']['data'][0]['status']);
+    }
+
     /** @return array{Workspace, ClientProject, string} */
     private function mcpTimeWriter(string $slug): array
     {

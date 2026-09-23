@@ -137,6 +137,11 @@ final class AgentMcpWriteTools
         if (! $workspace instanceof Workspace) {
             throw new \LogicException('MCP time logging requires a workspace context.');
         }
+        // Approval arriving through log answers to the same kill switch as the
+        // approve tool; the action separately enforces the write cutover.
+        if ($approve && ! app(McpFeatureFlags::class)->enabledFor('time_entries.approve', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(false))) {
+            throw new ToolCallException('Approving time is not enabled for agents.');
+        }
         $actor = User::query()->findOrFail($context->principal->subject->id);
         // `approve` joins the payload only when set, so the digest of a plain
         // log - and every receipt written before the flag existed - is unchanged.
