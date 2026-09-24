@@ -131,13 +131,17 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `context.get`, `operations.summary`, `projects.list`, `projects.get`,
 `tasks.list`, `tasks.get`, `time_entries.list`, `expenses.list`, `invoices.list`, and
 `invoices.get`, `agreements.list`, `agreements.get`,
+`clients.list`, `clients.get`,
 `billing_schedules.list`, `billing_schedules.get`, `capacity_ledger.get`,
 `billing.audit_unplaceable_invoices`,
 `billing.audit_undated_collectible_invoices`, and
 `billing.audit_missing_billed_overage`, and
 `billing.audit_opening_rollover`.
 
-Agreement tools require `billing:read` and an SVC workspace-manager role.
+Agreement tools require `billing:read` and an SVC workspace-manager role. Each
+agreement names the client it is with (`client_id`, `client_name`) and, when it
+is scoped to one, its project (`project_id`); an agreement with no project
+covers the whole client. Client tools require `clients:read` and the same role.
 They return only the existing directory's allowlisted, derived agreement DTO.
 The DTO preserves the stored cadence for compatibility and separately reports
 the effective cadence, effective first-cycle proration, and monthly and
@@ -308,6 +312,40 @@ The equivalent OAuth REST endpoints are GET/POST
 identifiers, status labels, current versions, and edit/delete eligibility; they
 contain no internal database identifiers. This slice adds no approval tools,
 receipt upload, recurrence or invoice claim/release integration.
+
+### Client and agreement management
+
+`clients.create`, `clients.update`, `clients.archive`, `clients.restore`,
+`agreements.create`, `agreements.update`, `agreements.activate` and
+`agreements.terminate` require `clients:write` and workspace owner/admin
+permission. They are available only when both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_CLIENT_WRITES_ENABLED` are true; the client flag defaults to false and
+nothing enables it at deployment. Like the expense tools they exist only in MCP
+and take an idempotency key with the same actor/workspace/OAuth-client/operation
+contract: a retry returns the first result and reusing a key for a different
+request is a conflict.
+
+Nothing is deleted. "Delete" is **archive**: `clients.archive` deactivates a
+company and `clients.restore` reverses it; `agreements.terminate` ends an
+agreement (`ends_on` defaults to today in the workspace timezone, never extends
+an earlier end and never lands before the start). Invoices, time, payments and
+capacity history keep pointing at the archived record. Termination is one-way -
+a terminated agreement cannot be reactivated, so a mistake is corrected with a
+new agreement.
+
+These are the same workflows the web forms call, not a second implementation:
+`CreateClientCompany`, `UpdateClientCompany` and `AgreementWorkflow`. The
+validation rules are the forms' own, so a value the browser refuses is refused
+here. `clients.update` and `agreements.update` change only the fields sent -
+omitting a field leaves it alone and sending a nullable field as `null` clears it.
+Enabling automatic invoice delivery needs `automatic_invoice_email_delay_days` and
+someone to send to; disabling it cancels deliveries still scheduled.
+
+Deliberately not exposed: signing an agreement, editing an agreement's `status`
+directly, creating one from a proposal, scoping one to a project, and any
+removal of a row. `agreements.create` makes a draft that bills nothing until
+`agreements.activate`, which refuses an overlap with another active agreement for
+the same client.
 
 ## Received-payment bookkeeping
 

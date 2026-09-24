@@ -6,8 +6,6 @@ use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use App\Services\Mcp\Registry\McpCapabilityKind;
 use App\Services\Mcp\Registry\McpCapabilityRegistry;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
-use App\Support\Billing\BillingCadence;
-use App\Support\Billing\FirstCycleProration;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 
 /** Builds the reviewed MCP registry from the compatibility catalog. */
@@ -17,9 +15,10 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
+        private readonly AgentMcpClientCapabilities $clientCapabilities,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes, AgentMcpClientTools $clients, AgentMcpClientWriteTools $clientWrites): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
         foreach ($this->catalog->definitions($reads, $writes) as $tool) {
@@ -29,6 +28,9 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->agreementResource($agreementResource));
+        foreach ($this->clientCapabilities->definitions($clients, $clientWrites) as $definition) {
+            $registry->register($definition);
+        }
         $registry->register($this->billingScheduleList($schedules));
         $registry->register($this->billingScheduleGet($schedules));
         $registry->register($this->capacityLedgerGet($capacityLedger));
@@ -135,7 +137,7 @@ final class AgentMcpCapabilityRegistryFactory
                 'type' => 'object',
                 'additionalProperties' => false,
                 'required' => ['data'],
-                'properties' => ['data' => $this->agreementDto()],
+                'properties' => ['data' => AgentMcpAgreementSchema::dto()],
             ],
             requiredScopes: ['billing:read'],
             policyAbility: 'AgentAccess::isWorkspaceManager',
@@ -170,7 +172,7 @@ final class AgentMcpCapabilityRegistryFactory
                 'type' => 'object',
                 'additionalProperties' => false,
                 'required' => ['data'],
-                'properties' => ['data' => $this->agreementDto()],
+                'properties' => ['data' => AgentMcpAgreementSchema::dto()],
             ],
             requiredScopes: ['billing:read'],
             policyAbility: 'AgentAccess::isWorkspaceManager',
@@ -193,42 +195,13 @@ final class AgentMcpCapabilityRegistryFactory
             'additionalProperties' => false,
             'required' => ['data', 'meta'],
             'properties' => [
-                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => $this->agreementDto()],
+                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => AgentMcpAgreementSchema::dto()],
                 'meta' => [
                     'type' => 'object',
                     'additionalProperties' => false,
                     'required' => ['next_cursor'],
                     'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]],
                 ],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function agreementDto(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project'],
-            'properties' => [
-                'id' => ['type' => 'string', 'format' => 'uuid'],
-                'title' => ['type' => 'string', 'maxLength' => 255],
-                'status' => ['type' => 'string', 'maxLength' => 64],
-                'currency' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 3],
-                'billing_cadence' => ['type' => ['string', 'null'], 'maxLength' => 32],
-                'effective_billing_cadence' => ['type' => ['string', 'null'], 'enum' => [...array_column(BillingCadence::cases(), 'value'), null]],
-                'effective_first_cycle_proration' => ['type' => ['string', 'null'], 'enum' => [...array_column(FirstCycleProration::cases(), 'value'), null]],
-                'is_recurring' => ['type' => 'boolean'],
-                'starts_on' => ['type' => 'string', 'format' => 'date'],
-                'ends_on' => ['type' => ['string', 'null'], 'format' => 'date'],
-                'signed_at' => ['type' => ['string', 'null'], 'format' => 'date-time'],
-                'retainer_minutes_per_period' => ['type' => ['integer', 'null'], 'minimum' => 0],
-                'retainer_minutes_per_month' => ['type' => ['integer', 'null'], 'minimum' => 0],
-                'retainer_amount_per_period' => ['type' => ['integer', 'null'], 'minimum' => 0],
-                'hourly_rate_amount' => ['type' => ['integer', 'null'], 'minimum' => 0],
-                'rollover_months' => ['type' => ['integer', 'null'], 'minimum' => 0, 'maximum' => 120],
-                'project' => ['type' => ['string', 'null'], 'maxLength' => 255],
             ],
         ];
     }
