@@ -6,6 +6,7 @@ use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -105,6 +106,40 @@ final class AgentAccess
         }
 
         return $role === ProjectRole::Contributor && $entry->user_id === $user->id;
+    }
+
+    /**
+     * Resolve internal-note access for a page of entries with bounded queries.
+     *
+     * @param  iterable<ClientTimeEntry>  $entries
+     * @return array<int, bool> keyed by time entry id
+     */
+    public function canReadInternalTimeNotes(User|AgentPrincipal $user, Workspace $workspace, iterable $entries, bool $workspaceManager): array
+    {
+        $records = collect($entries)->values();
+        if ($records->isEmpty()) {
+            return [];
+        }
+
+        if ($workspaceManager) {
+            return $records->mapWithKeys(fn (ClientTimeEntry $entry): array => [$entry->id => true])->all();
+        }
+
+        $workspaceRole = $this->projects->workspaceRole($user, $workspace);
+        $projectRoles = $workspaceRole === null ? collect() : ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->whereIn('client_project_id', $records->pluck('client_project_id')->unique()->all())
+            ->get(['client_project_id', 'role'])
+            ->keyBy('client_project_id');
+
+        return $records->mapWithKeys(function (ClientTimeEntry $entry) use ($projectRoles, $user): array {
+            $role = $projectRoles->get($entry->client_project_id)?->role;
+            $canRead = in_array($role, [ProjectRole::Owner, ProjectRole::Manager], true)
+                || ($role === ProjectRole::Contributor && $entry->user_id === $user->id);
+
+            return [$entry->id => $canRead];
+        })->all();
     }
 
     public function canViewInvoice(User|AgentPrincipal $user, ClientInvoice $invoice): bool

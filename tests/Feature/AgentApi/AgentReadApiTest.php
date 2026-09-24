@@ -13,9 +13,11 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\AgentReadService;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Passport;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
@@ -125,6 +127,34 @@ class AgentReadApiTest extends TestCase
                 ->assertJsonPath('data.1.is_visible_to_client', false)
                 ->assertJsonPath('data.1.client_visible_description', null);
         }
+    }
+
+    public function test_visible_time_internal_note_permissions_use_a_bounded_membership_lookup(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->workspaceMember($workspace, $contributor, 'member');
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        foreach (range(1, 5) as $index) {
+            $this->time($workspace, $company, $project, $contributor, "Internal note {$index}", [
+                'is_visible_to_client' => true,
+                'client_visible_description' => "Client summary {$index}",
+                'worked_on' => '2026-08-'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $membershipLookups = [];
+        DB::listen(static function ($query) use (&$membershipLookups): void {
+            $sql = strtolower($query->sql);
+            if (str_contains($sql, 'client_project_memberships') && ! str_contains($sql, 'exists (')) {
+                $membershipLookups[] = $sql;
+            }
+        });
+
+        $result = app(AgentReadService::class)->timeEntries($contributor, $workspace, null, null, null, null, 100, null);
+
+        self::assertCount(5, $result['data']);
+        self::assertCount(1, $membershipLookups);
     }
 
     public function test_portal_client_never_reads_the_internal_note_of_visible_time(): void

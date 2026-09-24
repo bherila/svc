@@ -226,16 +226,15 @@ final class AgentReadService
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
 
         $page = $this->page($query, $workspace, 'time_entries|project_id='.($projectId ?? '').'|status='.($status ?? '').'|from='.($from ?? '').'|to='.($to ?? ''), $limit, $cursor);
+        $entries = array_values(array_filter($page['records'], static fn (Model $record): bool => $record instanceof ClientTimeEntry));
+        $canReadInternalNotes = $this->access->canReadInternalTimeNotes($user, $workspace, $entries, $includeFinancials);
         $data = [];
-        foreach ($page['records'] as $entry) {
-            if (! $entry instanceof ClientTimeEntry) {
-                continue;
-            }
+        foreach ($entries as $entry) {
             $data[] = $this->timeEntryPresenter->present(
                 $workspace,
                 $entry,
                 $includeFinancials,
-                $entry->is_visible_to_client && ! $includeFinancials && ! $this->access->canReadInternalTimeNote($user, $entry),
+                $entry->is_visible_to_client && ! ($canReadInternalNotes[$entry->id] ?? false),
             );
         }
 
