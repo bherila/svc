@@ -325,12 +325,21 @@ final class TimeEntryMutationService
                 ->keyBy('public_id');
             abort_unless($lockedEntries->count() === count($entries), 404);
             $projectIds = $lockedEntries->pluck('client_project_id')->unique()->values();
-            $projects = ClientProject::query()->where('workspace_id', $workspace->id)->whereIn('id', $projectIds)->get();
+            $projects = ClientProject::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('id', $projectIds)
+                ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))
+                ->get()
+                ->keyBy('id');
             abort_unless($projects->count() === $projectIds->count(), 404);
+            foreach ($lockedEntries as $entry) {
+                $project = $projects->get($entry->client_project_id);
+                abort_unless($project instanceof ClientProject && $project->client_company_id === $entry->client_company_id, 404);
+            }
             abort_unless($this->access->canApproveTimeForProjects(
                 $actor,
                 $workspace,
-                $projects,
+                $projects->values(),
             ), 403);
 
             foreach ($entries as $item) {

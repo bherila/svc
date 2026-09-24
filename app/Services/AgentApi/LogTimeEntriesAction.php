@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -89,12 +90,21 @@ final class LogTimeEntriesAction
                     $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->get();
                     abort_unless($entries->count() === count($ids), 404);
                     $projectIds = $entries->pluck('client_project_id')->unique()->values();
-                    $projects = ClientProject::query()->where('workspace_id', $workspace->id)->whereIn('id', $projectIds)->get();
+                    $projects = ClientProject::query()
+                        ->where('workspace_id', $workspace->id)
+                        ->whereIn('id', $projectIds)
+                        ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))
+                        ->get()
+                        ->keyBy('id');
                     abort_unless($projects->count() === $projectIds->count(), 404);
+                    foreach ($entries as $entry) {
+                        $project = $projects->get($entry->client_project_id);
+                        abort_unless($project instanceof ClientProject && $project->client_company_id === $entry->client_company_id, 404);
+                    }
                     abort_unless($this->access->canApproveTimeForProjects(
                         $user,
                         $workspace,
-                        $projects,
+                        $projects->values(),
                     ), 403);
                 }
             },

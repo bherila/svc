@@ -2373,6 +2373,26 @@ class TimeSheetTest extends TestCase
         $this->assertNull($entry->fresh()?->billing_rate_amount);
     }
 
+    public function test_approval_rejects_an_entry_whose_company_does_not_match_its_project(): void
+    {
+        $this->agreementWithAnHourlyRate();
+        $otherCompany = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Other synthetic client',
+            'slug' => 'other-synthetic-client',
+        ]);
+        $entry = $this->entry(['client_company_id' => $otherCompany->id]);
+
+        $this->actingAs($this->manager)
+            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+                'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertNull($entry->fresh()?->billing_rate_amount);
+    }
+
     /**
      * The selector returns the first later candidate in collection order, so
      * `starts_on` has to lead the sort and `id` is only the tie-break. Sorted
