@@ -9,6 +9,16 @@ final class McpFeatureFlags
 {
     public function enabled(McpCapabilityDefinition $capability): bool
     {
+        return $this->enabledFor($capability->name, $capability->featureFlag);
+    }
+
+    /**
+     * The same decision for a capability reached from inside another one -
+     * approval folded into time_entries.log must stop when the switch that
+     * withdraws time_entries.approve is thrown.
+     */
+    public function enabledFor(string $name, string $featureFlag): bool
+    {
         if (! (bool) config('agent_api.mcp_enabled', true)) {
             return false;
         }
@@ -18,7 +28,7 @@ final class McpFeatureFlags
             return true;
         }
 
-        $value = $flags[$capability->featureFlag] ?? $flags[$capability->name] ?? true;
+        $value = $flags[$featureFlag] ?? $flags[$name] ?? true;
 
         return $value === true;
     }

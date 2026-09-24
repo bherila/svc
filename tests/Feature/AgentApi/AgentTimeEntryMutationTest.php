@@ -9,14 +9,18 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\AgentReadService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 final class AgentTimeEntryMutationTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_contributor_can_idempotently_log_then_edit_and_delete_their_draft_only(): void
     {
@@ -365,6 +369,118 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry->public_id, 'status' => 'approved', 'billing_rate_amount' => 17500, 'currency' => 'USD']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
+    }
+
+    public function test_approval_roles_cannot_be_borrowed_from_another_workspace_membership(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign Mutation Workspace', 'slug' => 'foreign-mutation-workspace']);
+        $actor = User::factory()->create();
+        $this->member($workspace, $actor);
+        $foreignWorkspace->memberships()->create(['user_id' => $actor->id, 'role' => 'admin']);
+        $worker = User::factory()->create();
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Review me',
+            'currency' => 'USD',
+        ]);
+        $this->writingLegacyCrossTenantRows(fn () => ClientProjectMembership::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $actor->id,
+            'role' => 'manager',
+        ]));
+
+        $this->actingAsAgent($actor, [AgentApiScopes::TIME_APPROVE]);
+        $this->withHeader('Idempotency-Key', 'cross-workspace-approval-role')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve",
+            ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]],
+        )->assertForbidden();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
+    }
+
+    /**
+     * `approve: true` on a log carries every gate the approve endpoint has, and
+     * a refused approval leaves nothing logged: the batch is one transaction.
+     */
+    public function test_logging_with_approve_is_gated_like_approval_and_all_or_nothing(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $worker = User::factory()->create();
+        $manager = User::factory()->create();
+        $this->member($workspace, $worker);
+        $this->member($workspace, $manager);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $worker->id, 'role' => 'contributor']);
+        $managerMembership = ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $manager->id, 'role' => 'manager']);
+        $url = "/api/v1/workspaces/{$workspace->public_id}/time-entries";
+        $payload = ['approve' => true, 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Release readiness', 'billing_rate_amount' => 17500, 'currency' => 'USD']]];
+        $plain = ['entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Release readiness']]];
+
+        // Contributor role: may log, may not approve - so the approving log writes nothing.
+        $this->actingAsAgent($worker, [AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        $this->withHeader('Idempotency-Key', 'log-approve-contributor')->postJson($url, ['approve' => true] + $plain)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        // Manager role without the approval scope.
+        $this->actingAsAgent($manager, [AgentApiScopes::TIME_WRITE]);
+        $this->withHeader('Idempotency-Key', 'log-approve-unscoped')->postJson($url, ['approve' => true] + $plain)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+
+        // Scope and role, but the approval cutover is off.
+        $this->actingAsAgent($manager, [AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        config(['agent_api.writes_enabled' => false]);
+        $this->withHeader('Idempotency-Key', 'log-approve-cutover')->postJson($url, $payload)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 0);
+        config(['agent_api.writes_enabled' => true]);
+
+        $id = $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->json('data.0.id');
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $id, 'status' => 'approved', 'approved_by_user_id' => $manager->id, 'billing_rate_amount' => 17500, 'billing_rate_source' => 'explicit']);
+        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->assertJsonPath('data.0.id', $id);
+
+        // A replay rechecks the approver role, as the approve endpoint's replay does.
+        $managerMembership->forceFill(['role' => 'contributor'])->save();
+        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertForbidden();
+        $this->assertDatabaseCount('client_time_entries', 1);
+    }
+
+    /**
+     * The by-id read behind the log tool's response is workspace-scoped: an
+     * owner of two workspaces cannot read one's entry through the other, even
+     * holding its id.
+     */
+    public function test_time_entries_by_id_never_crosses_workspaces(): void
+    {
+        [$home, $homeProject] = $this->project();
+        $away = Workspace::query()->create(['name' => 'Other Workspace', 'slug' => 'other-workspace']);
+        $awayCompany = ClientCompany::query()->create(['workspace_id' => $away->id, 'name' => 'Other Client', 'slug' => 'other-client']);
+        $awayProject = ClientProject::query()->create(['workspace_id' => $away->id, 'client_company_id' => $awayCompany->id, 'name' => 'Other Project']);
+        $owner = User::factory()->create();
+        foreach ([$home, $away] as $workspace) {
+            WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $owner->id, 'role' => 'owner']);
+        }
+        $entry = fn (Workspace $workspace, ClientProject $project): ClientTimeEntry => ClientTimeEntry::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'client_project_id' => $project->id, 'user_id' => $owner->id, 'worked_on' => '2026-09-22', 'minutes' => 20, 'description' => 'Work', 'currency' => 'USD']);
+        $homeEntry = $entry($home, $homeProject);
+        $awayEntry = $entry($away, $awayProject);
+        $reads = app(AgentReadService::class);
+
+        $this->assertSame([$homeEntry->public_id], array_column($reads->timeEntriesByIds($owner, $home, [$homeEntry->public_id]), 'id'));
+        $this->assertSame([$awayEntry->public_id], array_column($reads->timeEntriesByIds($owner, $away, [$awayEntry->public_id]), 'id'));
+
+        try {
+            $reads->timeEntriesByIds($owner, $home, [$homeEntry->public_id, $awayEntry->public_id]);
+            $this->fail('An entry from another workspace was returned.');
+        } catch (HttpException $exception) {
+            $this->assertSame(404, $exception->getStatusCode());
+        }
     }
 
     /** @return array{Workspace, ClientProject} */

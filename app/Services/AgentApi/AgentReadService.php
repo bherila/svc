@@ -241,6 +241,39 @@ final class AgentReadService
         return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
     }
 
+    /**
+     * The given entries, in the given order, exactly as `timeEntries` lists them.
+     *
+     * A write that returns its rows this way saves the caller the list call it
+     * would otherwise make to learn the rate and status the write settled on.
+     *
+     * @param  list<string>  $ids
+     * @return list<array<string, mixed>>
+     */
+    public function timeEntriesByIds(User|AgentPrincipal $user, Workspace $workspace, array $ids): array
+    {
+        $this->requireWorkspace($user, $workspace);
+        $entries = $this->timeQueries->visibleTo($user, $workspace)
+            ->with(['project', 'clientCompany', 'task', 'user'])
+            ->whereIn('public_id', $ids)
+            ->get()
+            ->keyBy('public_id');
+        $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
+        $canReadInternalNotes = $this->access->canReadInternalTimeNotes($user, $workspace, $entries->values(), $includeFinancials);
+
+        return array_map(function (string $id) use ($entries, $workspace, $includeFinancials, $canReadInternalNotes): array {
+            $entry = $entries->get($id);
+            abort_unless($entry instanceof ClientTimeEntry, 404);
+
+            return $this->timeEntryPresenter->present(
+                $workspace,
+                $entry,
+                $includeFinancials,
+                $entry->is_visible_to_client && ! ($canReadInternalNotes[$entry->id] ?? false),
+            );
+        }, $ids);
+    }
+
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
     public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor): array
     {

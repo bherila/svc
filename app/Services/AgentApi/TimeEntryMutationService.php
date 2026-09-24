@@ -317,9 +317,36 @@ final class TimeEntryMutationService
     public function approve(Workspace $workspace, User $actor, array $entries): void
     {
         DB::transaction(function () use ($workspace, $actor, $entries): void {
+            $lockedEntries = ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('public_id', array_column($entries, 'id'))
+                ->tap(Locks::forUpdate())
+                ->get()
+                ->keyBy('public_id');
+            abort_unless($lockedEntries->count() === count($entries), 404);
+            $projectIds = $lockedEntries->pluck('client_project_id')->unique()->values();
+            $projects = ClientProject::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('id', $projectIds)
+                ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))
+                ->get()
+                ->keyBy('id');
+            abort_unless($projects->count() === $projectIds->count(), 404);
+            foreach ($lockedEntries as $entry) {
+                $project = $projects->get($entry->client_project_id);
+                abort_unless($project instanceof ClientProject && $project->client_company_id === $entry->client_company_id, 404);
+            }
+            abort_unless($this->access->canApproveTimeForProjects(
+                $actor,
+                $workspace,
+                $projects->values(),
+            ), 403);
+
             foreach ($entries as $item) {
-                $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->tap(Locks::forUpdate())->firstOrFail();
-                abort_unless($this->access->canApproveTime($actor, $this->projectOf($workspace, $entry)), 403);
+                $entry = $lockedEntries->get($item['id']);
+                if (! $entry instanceof ClientTimeEntry) {
+                    throw new \LogicException('A locked time entry is missing from the approval batch.');
+                }
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
                 // The same freeze update and delete carry, for the same
                 // reason and then some: approval is where the rate is stamped,

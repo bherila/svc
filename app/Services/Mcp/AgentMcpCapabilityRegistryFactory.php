@@ -64,8 +64,14 @@ final class AgentMcpCapabilityRegistryFactory
             destructive: $tool->destructive,
             rateLimitBucket: $tool->readOnly ? 'mcp-read' : 'mcp-write',
             auditClassification: $tool->readOnly ? 'agent_api.read' : 'agent_api.write',
-            featureFlag: $tool->readOnly ? 'mcp.read' : 'mcp.write',
+            featureFlag: self::toolFeatureFlag($tool->readOnly),
         );
+    }
+
+    /** The kill-switch group a catalog tool belongs to. */
+    public static function toolFeatureFlag(bool $readOnly): string
+    {
+        return $readOnly ? 'mcp.read' : 'mcp.write';
     }
 
     private function policyAbility(string $name): string

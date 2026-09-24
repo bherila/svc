@@ -37,11 +37,12 @@ final class AgentMutationExecutor
         array $payload,
         callable $callback,
         ?callable $replayGuard = null,
+        ?string $additionalAuditOperation = null,
     ): array {
         $digest = hash('sha256', json_encode($this->canonicalize($payload), JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard): array {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation): array {
                 app(LegacyAgentReceiptNamespace::class)->reserve($user, $workspace, $clientId, $operation, $key);
                 // Keep the compatibility reservation when replaying an existing receipt.
                 // createOrFirst isolates a duplicate insert in a savepoint, not this transaction.
@@ -64,6 +65,9 @@ final class AgentMutationExecutor
                         $replayGuard($ids);
                     }
                     $this->audit($user, $workspace, $clientId, $operation, $ids, 'replay');
+                    if ($additionalAuditOperation !== null) {
+                        $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $ids, 'replay');
+                    }
 
                     return $ids;
                 }
@@ -74,11 +78,17 @@ final class AgentMutationExecutor
                     'completed_at' => $this->clock->now($workspace),
                 ])->save();
                 $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
+                if ($additionalAuditOperation !== null) {
+                    $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $ids, 'success');
+                }
 
                 return $ids;
             });
         } catch (Throwable $exception) {
             $this->auditFailure($user, $workspace, $clientId, $operation, $exception);
+            if ($additionalAuditOperation !== null) {
+                $this->auditFailure($user, $workspace, $clientId, $additionalAuditOperation, $exception);
+            }
 
             throw $exception;
         }
