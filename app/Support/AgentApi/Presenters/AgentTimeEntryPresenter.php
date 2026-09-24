@@ -27,6 +27,8 @@ final class AgentTimeEntryPresenter
                 : $entry->description,
             'is_billable' => $entry->is_billable,
             'is_deferred' => $entry->is_deferred,
+            'is_visible_to_client' => $entry->is_visible_to_client,
+            'client_visible_description' => $entry->client_visible_description,
             'status' => $entry->status,
             'version' => AgentApiVersion::for($entry),
             'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id,

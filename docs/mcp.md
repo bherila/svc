@@ -152,7 +152,10 @@ response as for an inaccessible agreement.
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
 scope. They and `tasks.create` / `tasks.update` use tenant-scoped application
-actions directly. The broader write flag also retains a legacy compatibility
+actions directly. For `time_entries.log`, supplying `client_visible_description`
+without `is_visible_to_client` makes the entry client-visible by default; set
+`is_visible_to_client: false` to stage the client text privately. The broader
+write flag also retains a legacy compatibility
 registration for `time_entries.approve`. The six invoice registrations -
 `invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
 `invoices.issue`, `invoices.send`, and `invoices.void` - require *both* that
