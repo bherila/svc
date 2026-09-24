@@ -14,11 +14,13 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 final class AgentTimeEntryMutationTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_contributor_can_idempotently_log_then_edit_and_delete_their_draft_only(): void
     {
@@ -367,6 +369,42 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $entry->public_id, 'status' => 'approved', 'billing_rate_amount' => 17500, 'currency' => 'USD']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
+    }
+
+    public function test_approval_roles_cannot_be_borrowed_from_another_workspace_membership(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign Mutation Workspace', 'slug' => 'foreign-mutation-workspace']);
+        $actor = User::factory()->create();
+        $this->member($workspace, $actor);
+        $foreignWorkspace->memberships()->create(['user_id' => $actor->id, 'role' => 'admin']);
+        $worker = User::factory()->create();
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id,
+            'user_id' => $worker->id,
+            'worked_on' => '2026-08-23',
+            'minutes' => 30,
+            'description' => 'Review me',
+            'currency' => 'USD',
+        ]);
+        $this->writingLegacyCrossTenantRows(fn () => ClientProjectMembership::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            'client_project_id' => $project->id,
+            'user_id' => $actor->id,
+            'role' => 'manager',
+        ]));
+
+        $this->actingAsAgent($actor, [AgentApiScopes::TIME_APPROVE]);
+        $this->withHeader('Idempotency-Key', 'cross-workspace-approval-role')->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/time-entries/approve",
+            ['entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]],
+        )->assertForbidden();
+
+        $this->assertSame('draft', $entry->fresh()?->status);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'failed', 'error_category' => 'forbidden']);
     }
 
     /**
