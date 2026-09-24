@@ -320,15 +320,17 @@ final class TimeEntryMutationService
             $lockedEntries = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('public_id', array_column($entries, 'id'))
-                ->with('project')
                 ->tap(Locks::forUpdate())
                 ->get()
                 ->keyBy('public_id');
             abort_unless($lockedEntries->count() === count($entries), 404);
+            $projectIds = $lockedEntries->pluck('client_project_id')->unique()->values();
+            $projects = ClientProject::query()->where('workspace_id', $workspace->id)->whereIn('id', $projectIds)->get();
+            abort_unless($projects->count() === $projectIds->count(), 404);
             abort_unless($this->access->canApproveTimeForProjects(
                 $actor,
                 $workspace,
-                $lockedEntries->map(static fn (ClientTimeEntry $entry): ClientProject => $entry->project),
+                $projects,
             ), 403);
 
             foreach ($entries as $item) {

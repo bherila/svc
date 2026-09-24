@@ -86,12 +86,15 @@ final class LogTimeEntriesAction
                 $this->assertApprovalAllowed($approve, $allowsApprovalScope);
                 $this->replayGuard->assertAllowed($workspace, $user, $ids);
                 if ($approve) {
-                    $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get();
+                    $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->get();
                     abort_unless($entries->count() === count($ids), 404);
+                    $projectIds = $entries->pluck('client_project_id')->unique()->values();
+                    $projects = ClientProject::query()->where('workspace_id', $workspace->id)->whereIn('id', $projectIds)->get();
+                    abort_unless($projects->count() === $projectIds->count(), 404);
                     abort_unless($this->access->canApproveTimeForProjects(
                         $user,
                         $workspace,
-                        $entries->map(static fn (ClientTimeEntry $entry): ClientProject => $entry->project),
+                        $projects,
                     ), 403);
                 }
             },
