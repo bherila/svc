@@ -60,6 +60,15 @@ final class TimeEntryMutationService
                 'billing_rate_amount' => 'Only a project manager can set the rate time bills at. Log the time and leave the rate to be resolved from the agreement.',
             ]);
         }
+        // Time that arrives with client-facing text is meant for the client, so
+        // an omitted flag follows the text. It never follows the internal
+        // description: that note is not written for a client to read, and an
+        // entry without client text stays internal rather than being refused.
+        if (! array_key_exists('is_visible_to_client', $data)
+            && is_string($data['client_visible_description'] ?? null)
+            && trim($data['client_visible_description']) !== '') {
+            $data['is_visible_to_client'] = true;
+        }
         $task = null;
         if (is_string($data['task_id'] ?? null)) {
             $task = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $data['task_id'])->firstOrFail();

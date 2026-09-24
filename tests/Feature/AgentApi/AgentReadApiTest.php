@@ -13,9 +13,11 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\AgentReadService;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Passport;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
@@ -97,6 +99,83 @@ class AgentReadApiTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $invoice->public_id)
             ->assertJsonMissingPath('data.0.notes');
+    }
+
+    public function test_internal_viewers_read_the_internal_note_beside_the_client_text_of_visible_time(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $owner = User::factory()->create();
+        $this->workspaceMember($workspace, $owner, 'owner');
+        $contributor = User::factory()->create();
+        $this->workspaceMember($workspace, $contributor, 'member');
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $entry = $this->time($workspace, $company, $project, $contributor, 'Internal note', [
+            'is_visible_to_client' => true,
+            'client_visible_description' => 'Client summary',
+        ]);
+        $hidden = $this->time($workspace, $company, $project, $contributor, 'Internal only', ['worked_on' => '2026-08-21']);
+
+        foreach ([$owner, $contributor] as $viewer) {
+            $this->actingAsAgent($viewer, [AgentApiScopes::TIME_READ]);
+            $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
+                ->assertOk()->assertJsonCount(2, 'data')
+                ->assertJsonPath('data.0.id', $entry->public_id)
+                ->assertJsonPath('data.0.description', 'Internal note')
+                ->assertJsonPath('data.0.is_visible_to_client', true)
+                ->assertJsonPath('data.0.client_visible_description', 'Client summary')
+                ->assertJsonPath('data.1.id', $hidden->public_id)
+                ->assertJsonPath('data.1.is_visible_to_client', false)
+                ->assertJsonPath('data.1.client_visible_description', null);
+        }
+    }
+
+    public function test_visible_time_internal_note_permissions_use_a_bounded_membership_lookup(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->workspaceMember($workspace, $contributor, 'member');
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        foreach (range(1, 5) as $index) {
+            $this->time($workspace, $company, $project, $contributor, "Internal note {$index}", [
+                'is_visible_to_client' => true,
+                'client_visible_description' => "Client summary {$index}",
+                'worked_on' => '2026-08-'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $membershipLookups = [];
+        DB::listen(static function ($query) use (&$membershipLookups): void {
+            $sql = strtolower($query->sql);
+            if (str_contains($sql, 'client_project_memberships') && ! str_contains($sql, 'exists (')) {
+                $membershipLookups[] = $sql;
+            }
+        });
+
+        $result = app(AgentReadService::class)->timeEntries($contributor, $workspace, null, null, null, null, 100, null);
+
+        self::assertCount(5, $result['data']);
+        self::assertCount(1, $membershipLookups);
+    }
+
+    public function test_portal_client_never_reads_the_internal_note_of_visible_time(): void
+    {
+        [$workspace, $company, $project] = $this->project();
+        $client = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $client->id, 'role' => 'client']);
+        $worker = User::factory()->create();
+        $this->workspaceMember($workspace, $worker, 'member');
+        $this->time($workspace, $company, $project, $worker, 'Internal note must stay private', [
+            'status' => 'approved',
+            'is_visible_to_client' => true,
+            'client_visible_description' => 'Client summary',
+        ]);
+        $this->actingAsAgent($client, [AgentApiScopes::TIME_READ]);
+
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")
+            ->assertOk()
+            ->assertJsonPath('data.0.description', 'Client summary')
+            ->assertJsonPath('data.0.client_visible_description', 'Client summary')
+            ->assertJsonMissing(['Internal note must stay private']);
     }
 
     public function test_client_cannot_read_a_hidden_task_directly(): void

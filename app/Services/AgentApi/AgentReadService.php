@@ -226,12 +226,16 @@ final class AgentReadService
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
 
         $page = $this->page($query, $workspace, 'time_entries|project_id='.($projectId ?? '').'|status='.($status ?? '').'|from='.($from ?? '').'|to='.($to ?? ''), $limit, $cursor);
+        $entries = array_values(array_filter($page['records'], static fn (Model $record): bool => $record instanceof ClientTimeEntry));
+        $canReadInternalNotes = $this->access->canReadInternalTimeNotes($user, $workspace, $entries, $includeFinancials);
         $data = [];
-        foreach ($page['records'] as $entry) {
-            if (! $entry instanceof ClientTimeEntry) {
-                continue;
-            }
-            $data[] = $this->presentTimeEntry($workspace, $entry, $includeFinancials);
+        foreach ($entries as $entry) {
+            $data[] = $this->timeEntryPresenter->present(
+                $workspace,
+                $entry,
+                $includeFinancials,
+                $entry->is_visible_to_client && ! ($canReadInternalNotes[$entry->id] ?? false),
+            );
         }
 
         return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
@@ -255,19 +259,19 @@ final class AgentReadService
             ->get()
             ->keyBy('public_id');
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
+        $canReadInternalNotes = $this->access->canReadInternalTimeNotes($user, $workspace, $entries->values(), $includeFinancials);
 
-        return array_map(function (string $id) use ($entries, $workspace, $includeFinancials): array {
+        return array_map(function (string $id) use ($entries, $workspace, $includeFinancials, $canReadInternalNotes): array {
             $entry = $entries->get($id);
             abort_unless($entry instanceof ClientTimeEntry, 404);
 
-            return $this->presentTimeEntry($workspace, $entry, $includeFinancials);
+            return $this->timeEntryPresenter->present(
+                $workspace,
+                $entry,
+                $includeFinancials,
+                $entry->is_visible_to_client && ! ($canReadInternalNotes[$entry->id] ?? false),
+            );
         }, $ids);
-    }
-
-    /** @return array<string, mixed> */
-    private function presentTimeEntry(Workspace $workspace, ClientTimeEntry $entry, bool $includeFinancials): array
-    {
-        return $this->timeEntryPresenter->present($workspace, $entry, $includeFinancials, $entry->is_visible_to_client);
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */

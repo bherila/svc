@@ -158,6 +158,34 @@ final class AgentTimeEntryMutationTest extends TestCase
         ])->assertUnprocessable()->assertJsonPath('message', 'Client-visible time requires an explicit client-facing description.');
     }
 
+    public function test_time_with_client_text_is_client_visible_unless_the_caller_says_otherwise(): void
+    {
+        config(['agent_api.writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $contributor = User::factory()->create();
+        $this->member($workspace, $contributor);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        $this->actingAsAgent($contributor, [AgentApiScopes::TIME_WRITE]);
+        $entry = ['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'Internal note'];
+
+        $this->withHeader('Idempotency-Key', 'default-visible')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [
+            [...$entry, 'client_visible_description' => 'Client text'],
+        ]])->assertCreated()
+            ->assertJsonPath('data.0.is_visible_to_client', true)
+            ->assertJsonPath('data.0.client_visible_description', 'Client text')
+            ->assertJsonPath('data.0.is_billable', true)
+            ->assertJsonPath('data.0.description', 'Internal note');
+
+        $this->withHeader('Idempotency-Key', 'explicit-hidden')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [
+            [...$entry, 'client_visible_description' => 'Client text', 'is_visible_to_client' => false],
+        ]])->assertCreated()->assertJsonPath('data.0.is_visible_to_client', false);
+
+        $this->withHeader('Idempotency-Key', 'no-client-text')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$entry]])
+            ->assertCreated()
+            ->assertJsonPath('data.0.is_visible_to_client', false)
+            ->assertJsonPath('data.0.client_visible_description', null);
+    }
+
     public function test_time_write_cutoff_overrides_the_broad_write_flag(): void
     {
         config([

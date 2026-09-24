@@ -6,6 +6,7 @@ use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -78,6 +79,24 @@ final class AgentAccess
 
     public function canViewTime(User|AgentPrincipal $user, ClientTimeEntry $entry): bool
     {
+        if ($this->canReadInternalTimeNote($user, $entry)) {
+            return true;
+        }
+
+        return $entry->status === 'approved'
+            && $entry->is_visible_to_client
+            && $this->isCompanyMember($user, $entry->clientCompany);
+    }
+
+    /**
+     * Whether the viewer is on the worker's side of the entry and so reads the
+     * internal description, rather than the client-facing one a portal user is
+     * limited to. Being able to see an entry is not the same thing: marking
+     * time client-visible must not swap the note its own author and managers
+     * read for the text written for the client.
+     */
+    public function canReadInternalTimeNote(User|AgentPrincipal $user, ClientTimeEntry $entry): bool
+    {
         if ($this->isWorkspaceManager($user, $entry->workspace)) {
             return true;
         }
@@ -85,13 +104,42 @@ final class AgentAccess
         if (in_array($role, [ProjectRole::Owner, ProjectRole::Manager], true)) {
             return true;
         }
-        if ($role === ProjectRole::Contributor && $entry->user_id === $user->id) {
-            return true;
+
+        return $role === ProjectRole::Contributor && $entry->user_id === $user->id;
+    }
+
+    /**
+     * Resolve internal-note access for a page of entries with bounded queries.
+     *
+     * @param  iterable<ClientTimeEntry>  $entries
+     * @return array<int, bool> keyed by time entry id
+     */
+    public function canReadInternalTimeNotes(User|AgentPrincipal $user, Workspace $workspace, iterable $entries, bool $workspaceManager): array
+    {
+        $records = collect($entries)->values();
+        if ($records->isEmpty()) {
+            return [];
         }
 
-        return $entry->status === 'approved'
-            && $entry->is_visible_to_client
-            && $this->isCompanyMember($user, $entry->clientCompany);
+        if ($workspaceManager) {
+            return $records->mapWithKeys(fn (ClientTimeEntry $entry): array => [$entry->id => true])->all();
+        }
+
+        $workspaceRole = $this->projects->workspaceRole($user, $workspace);
+        $projectRoles = $workspaceRole === null ? collect() : ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->whereIn('client_project_id', $records->pluck('client_project_id')->unique()->all())
+            ->get(['client_project_id', 'role'])
+            ->keyBy('client_project_id');
+
+        return $records->mapWithKeys(function (ClientTimeEntry $entry) use ($projectRoles, $user): array {
+            $role = $projectRoles->get($entry->client_project_id)?->role;
+            $canRead = in_array($role, [ProjectRole::Owner, ProjectRole::Manager], true)
+                || ($role === ProjectRole::Contributor && $entry->user_id === $user->id);
+
+            return [$entry->id => $canRead];
+        })->all();
     }
 
     public function canViewInvoice(User|AgentPrincipal $user, ClientInvoice $invoice): bool
