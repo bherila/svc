@@ -377,7 +377,7 @@ final class AgentMcpServerFactory
             ? 'Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required.'
             : 'This connection is read-only; use the SVC website for changes.';
         if ($this->hasTools($available, ['time_entries.log', 'time_entries.approve'])) {
-            $mode .= ' When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read it returns the rows as time_entries.list does.';
+            $mode .= ' When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape.';
         }
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, or void.';

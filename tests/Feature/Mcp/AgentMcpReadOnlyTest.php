@@ -1195,12 +1195,15 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame(37500, $row['billing_rate_amount']);
         $this->assertSame('USD', $row['currency']);
         $this->assertDatabaseHas('client_time_entries', ['public_id' => $row['id'], 'status' => 'approved', 'billing_rate_amount' => 37500, 'billing_rate_source' => 'explicit']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.log', 'outcome' => 'success']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'success']);
 
         $listed = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id]]], $session)->assertOk()->json('result.structuredContent.data');
         $this->assertSame($listed, $logged['structuredContent']['data']);
 
         $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => $arguments]], $session)->assertOk()->json('result');
         $this->assertSame($logged['structuredContent']['data'], $replay['structuredContent']['data']);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.approve', 'outcome' => 'replay']);
         $this->assertDatabaseCount('client_time_entries', 1);
 
         // The flag is part of the request: the same key without it is a different request.

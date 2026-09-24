@@ -308,9 +308,25 @@ final class TimeEntryMutationService
     public function approve(Workspace $workspace, User $actor, array $entries): void
     {
         DB::transaction(function () use ($workspace, $actor, $entries): void {
+            $lockedEntries = ClientTimeEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('public_id', array_column($entries, 'id'))
+                ->with('project')
+                ->tap(Locks::forUpdate())
+                ->get()
+                ->keyBy('public_id');
+            abort_unless($lockedEntries->count() === count($entries), 404);
+            abort_unless($this->access->canApproveTimeForProjects(
+                $actor,
+                $workspace,
+                $lockedEntries->map(static fn (ClientTimeEntry $entry): ClientProject => $entry->project),
+            ), 403);
+
             foreach ($entries as $item) {
-                $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $item['id'])->tap(Locks::forUpdate())->firstOrFail();
-                abort_unless($this->access->canApproveTime($actor, $this->projectOf($workspace, $entry)), 403);
+                $entry = $lockedEntries->get($item['id']);
+                if (! $entry instanceof ClientTimeEntry) {
+                    throw new \LogicException('A locked time entry is missing from the approval batch.');
+                }
                 abort_unless($entry->status === 'draft', 409, 'Only draft time entries can be approved.');
                 // The same freeze update and delete carry, for the same
                 // reason and then some: approval is where the rate is stamped,

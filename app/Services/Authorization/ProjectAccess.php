@@ -119,6 +119,39 @@ final class ProjectAccess
         return $this->projectRole($user, $project)?->canApproveTime() ?? false;
     }
 
+    /**
+     * Check approval roles for a bounded set of projects with one membership
+     * read instead of one read per entry.
+     *
+     * @param  iterable<ClientProject>  $projects
+     */
+    public function canApproveTimeForProjects(User|AgentPrincipal $user, Workspace $workspace, iterable $projects): bool
+    {
+        $projectIds = collect($projects)->pluck('id')->unique()->values()->all();
+        if ($projectIds === []) {
+            return false;
+        }
+
+        $workspaceRole = $this->workspaceRole($user, $workspace);
+        if ($workspaceRole === null) {
+            return false;
+        }
+        if (in_array($workspaceRole, ['owner', 'admin'], true)) {
+            return true;
+        }
+
+        $authorizedProjectIds = ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->whereIn('client_project_id', $projectIds)
+            ->whereIn('role', [ProjectRole::Owner->value, ProjectRole::Manager->value])
+            ->pluck('client_project_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        return array_diff($projectIds, $authorizedProjectIds) === [];
+    }
+
     public function canLogTime(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projectRole($user, $project)?->canLogTime() ?? false;

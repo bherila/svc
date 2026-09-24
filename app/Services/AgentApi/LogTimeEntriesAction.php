@@ -37,6 +37,8 @@ final class LogTimeEntriesAction
      */
     public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload, bool $allowsApprovalScope): array
     {
+        $additionalAuditOperation = $this->approves($payload) ? 'time_entries.approve' : null;
+
         return $this->mutations->run(
             $user,
             $workspace,
@@ -85,11 +87,15 @@ final class LogTimeEntriesAction
                 $this->replayGuard->assertAllowed($workspace, $user, $ids);
                 if ($approve) {
                     $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get();
-                    foreach ($entries as $entry) {
-                        abort_unless($this->access->canApproveTime($user, $entry->project), 403);
-                    }
+                    abort_unless($entries->count() === count($ids), 404);
+                    abort_unless($this->access->canApproveTimeForProjects(
+                        $user,
+                        $workspace,
+                        $entries->map(static fn (ClientTimeEntry $entry): ClientProject => $entry->project),
+                    ), 403);
                 }
             },
+            $additionalAuditOperation,
         );
     }
 
