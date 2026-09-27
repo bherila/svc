@@ -35,7 +35,7 @@ places where SVC deliberately diverges.
 | Deferred billing allocation | [deferred-billing.md](deferred-billing.md) | Implemented |
 | Milestone billing | [milestone-billing.md](milestone-billing.md) | Implemented — the billing line is a column on the task, not a pivot, since a deliverable cannot be split |
 | Overpayment credits | [overpayment-credits.md](overpayment-credits.md) | Implemented — one currency only, and re-checked when an invoice is issued. An overpaid invoice owes nothing rather than a negative balance; the column is unsigned and would refuse the write |
-| Client expenses | [overview.md](overview.md#client-expenses) | **Schema, approval lifecycle and manager screen** — `client_expenses` exists with explicit workspace ownership, a composite tenant key on its client, an optional project link and the `draft`/`approved`/`invoiced` lifecycle. A workspace-scoped boundary records, edits, approves, un-approves and discards an expense; every move locks the row and re-reads its status under that lock, through the lock-order registry. A manager surface reaches all of that from a screen. What is still missing is the `approved` → `invoiced` edge's caller: there is no invoicing hook, no receipt attachments and no recurrence. It diverges from the page opposite where this schema's own rules win: money is integer minor units plus an ISO 4217 `currency` rather than `decimal(12,2)`; the date is `spent_on` and the project link `client_project_id`, matching every sibling table; and manager approval replaces `is_reimbursable`/`is_reimbursed`/`reimbursed_date`, since an expense reaching an invoice is the decision those flags were standing in for. `category`, `notes` and `external_finance_transaction_uuid` are not there yet, and no markup column is planned |
+| Client expenses | [overview.md](overview.md#client-expenses) | **Schema, approval lifecycle and manager screen** — `client_expenses` exists with explicit workspace ownership, a composite tenant key on its client, an optional project link and the `draft`/`approved`/`invoiced` lifecycle. A workspace-scoped boundary records, edits, approves, un-approves and discards an expense; every move locks the row and re-reads its status under that lock, through the lock-order registry. A manager surface reaches all of that from a screen. Approved expenses are billed at cost through cadence-invoice allocation, which moves them `approved` → `invoiced` (#288); receipts are private attachments (#290); and recurring expense schedules materialise drafts on a manager's request, each of which is approved before it can be invoiced (#291, #296). It diverges from the page opposite where this schema's own rules win: money is integer minor units plus an ISO 4217 `currency` rather than `decimal(12,2)`; the date is `spent_on` and the project link `client_project_id`, matching every sibling table; and manager approval replaces `is_reimbursable`/`is_reimbursed`/`reimbursed_date`, since an expense reaching an invoice is the decision those flags were standing in for. `category`, `notes` and `external_finance_transaction_uuid` are not there yet, and no markup column is planned |
 | Subcontractor billing modes | [overview.md](overview.md#subcontractors) | Implemented at the time-entry snapshot boundary — `flat_hourly` bills separately, `retainer` draws on the agreement pool, and `direct` is tracked but never invoiced. Existing cost-bearing rows are migrated to `flat_hourly`; the source importer carries all three modes and refuses incomplete or unknown terms |
 | Invoice line types beyond time and manual | [billing.md](billing.md) | Implemented — see `App\Support\Billing\InvoiceLineType` |
 | Activity timeline | [overview.md](overview.md) | Implemented — imported history and native agreement, invoice, payment, Stripe, and saved-payment-method events share one tenant-scoped timeline |
@@ -286,16 +286,24 @@ the two time-entry write paths that disagreed about who may write (#101), the
 load-bearing NULLs the registry was built to pin (#115), the lock-order registry
 itself (#117), and the replay correction mutants (#132).
 
-The rows that move money now are #135 and the six defects beneath it. Every one
-was found by the null-semantics and lock-order audits rather than by review of a
-change, which is the argument for having run them.
+The rows that moved money when the audits reported them have closed too, and
+are recorded here for the same reason: the unguarded nulls in billing math
+(#135), the interim draft billed twice for the same hours (#218), the schedule
+that could not see its own unlinked invoice (#219), the null identity column that
+hid an invoice from the guard meant to stop it being raised twice (#224) and left
+time moved into that draft billed by nothing (#225), and the deferred termination
+line that read one column two ways (#226). So have two of the three lock-order
+findings (#217, #222), client expenses (#75: billing at cost, receipts and
+recurrence), and the race between the two cadence generators, which locked
+different rows and could both bill one period - they now serialise on the
+agreement (see [concurrency.md](concurrency.md#the-two-cadence-generators-exclude-each-other-on-the-agreement)).
+Every one of the money defects was found by the null-semantics and lock-order
+audits rather than by review of a change, which is the argument for having run
+them.
 
 | Remaining | Why it is open | Tracked |
 | --- | --- | --- |
-| Unguarded nulls in billing math | The consequential one drops a charged invoice with no service period out of the billed-overage sum, so its overage can be charged a second time; the others parse a null into "now" or raise where a fallback was intended. | #135 |
-| Billing defects the null audit found | Most of them move money. An interim draft with no `service_period_end` is billed a second time for the same hours (#218); a schedule cannot see its own unlinked invoice and bills the month again (#219); a null identity column hides an invoice from the guard that exists to stop it being raised twice (#224), and leaves time moved into that draft billed by nothing (#225); and a deferred termination line reads one column two ways, dating the charge to neither the period nor nothing consistently (#226). | #218, #219, #224, #225, #226 |
-| Lock orders that disagree with the registry | #117 recorded one acquisition order; three paths do not take it. Two disagree with the registry outright (#217), interim overage takes time entries before the workspace and its invoice counter (#222), and multi-period replay holds tasks before time entries across periods (#223). | #217, #222, #223 |
-| Client expenses | The table, the model, the workspace-scoped boundary, the approval lifecycle and the manager screen exist. Nothing bills an expense: the generator hook that would move an approved one to `invoiced` is the next slice, and the claim/release rules that go with regenerating a draft invoice come with it. Receipts and recurrence are still to come. The remaining scope is recorded on the issue: reimbursable pass-through at cost, receipt attachments through `ClientAttachment`, the invoicing hook, and recurring expenses whose every occurrence is approved after it recurs and before it can be invoiced. | #75 |
+| Multi-period replay holds tasks before time entries | Deferred by decision, not by neglect. The inversion exists only inside the one long rollback-only transaction that `svc:billing:replay` and `svc:billing:rehearse-generation` hold across periods, and both obvious fixes are closed: ending the transaction per period either writes what the command exists never to write or discards what it compares. The operational rule is that neither command runs against a workspace that is generating invoices; a real fix needs a maintenance protocol (an isolated database, or exclusion competing writers honour). See [concurrency.md](concurrency.md#the-known-inversions). | #223 |
 
 ### What the replay says now
 
