@@ -4,8 +4,10 @@ namespace App\Services\Billing;
 
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Support\Billing\InvoiceDeliveryStatusOutcome;
+use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Recording what the mail provider reported about a message we sent.
@@ -90,21 +92,35 @@ final class InvoiceDeliveryStatusService
             return InvoiceDeliveryStatusOutcome::Ambiguous;
         }
 
-        /** @var ClientInvoiceEmailDelivery $delivery */
-        $delivery = $deliveries->first();
+        /** @var ClientInvoiceEmailDelivery $matched */
+        $matched = $deliveries->first();
 
-        $known = $delivery->provider_status;
+        // The comparison and the write under one row lock, on a status read
+        // under it. The provider retries and batches independently, so two
+        // events for one message can be in flight at once: read unlocked, a
+        // hard bounce and a late `delivered` both saw no status, both passed
+        // the ranking, and whichever saved second won - a bounced invoice
+        // recorded as delivered, the one outcome the ranking exists to stop.
+        return DB::transaction(function () use ($matched, $type, $event): InvoiceDeliveryStatusOutcome {
+            $delivery = ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $matched->workspace_id)
+                ->whereKey($matched->getKey())
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
 
-        if ($known !== null && (self::SEVERITY[$known] ?? 0) > self::SEVERITY[$type]) {
-            return InvoiceDeliveryStatusOutcome::Superseded;
-        }
+            $known = $delivery->provider_status;
 
-        $delivery->forceFill([
-            'provider_status' => $type,
-            'provider_status_at' => $this->eventTime($event) ?? $this->clock->now($delivery->workspace),
-        ])->save();
+            if ($known !== null && (self::SEVERITY[$known] ?? 0) > self::SEVERITY[$type]) {
+                return InvoiceDeliveryStatusOutcome::Superseded;
+            }
 
-        return InvoiceDeliveryStatusOutcome::Recorded;
+            $delivery->forceFill([
+                'provider_status' => $type,
+                'provider_status_at' => $this->eventTime($event) ?? $this->clock->now($delivery->workspace),
+            ])->save();
+
+            return InvoiceDeliveryStatusOutcome::Recorded;
+        });
     }
 
     /**
