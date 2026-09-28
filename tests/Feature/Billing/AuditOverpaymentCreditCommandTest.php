@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
+use App\Services\Billing\OverpaymentCreditAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -163,6 +164,31 @@ class AuditOverpaymentCreditCommandTest extends TestCase
 
         $this->assertSame(0, $report['summary']['pools']);
         $this->assertSame([], $report['pools']);
+    }
+
+    /**
+     * The audit is meant for whole production histories, so its query count
+     * must not grow with the number of invoices: rows are loaded in bounded
+     * batches and the arithmetic is done in memory.
+     */
+    public function test_its_query_count_does_not_grow_with_the_number_of_invoices(): void
+    {
+        $company = $this->company('batched');
+        for ($i = 0; $i < 30; $i++) {
+            $this->overpaid($company, 100);
+        }
+        $this->spent($company, 1000, 'SYNTH-BATCH-SPEND');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $pools = app(OverpaymentCreditAuditor::class)->partitions();
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertCount(1, $pools);
+        $this->assertSame(3000, $pools[0]->funded());
+        $this->assertSame(1000, $pools[0]->consumed());
+        $this->assertLessThanOrEqual(6, $queries, 'One batch of 31 invoices should take a handful of queries, not two per invoice');
     }
 
     public function test_it_writes_nothing(): void

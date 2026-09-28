@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Support\Billing\CreditPoolPartition;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -26,6 +27,9 @@ use RuntimeException;
  */
 final class OverpaymentCreditAuditor
 {
+    /** Invoices per batch; each batch costs three queries. */
+    private const BATCH = 500;
+
     /** @return list<CreditPoolPartition> */
     public function partitions(): array
     {
@@ -36,9 +40,6 @@ final class OverpaymentCreditAuditor
 
             return $partitions[$key] ??= new CreditPoolPartition($workspaceId, $companyId, $currency);
         };
-        $live = InvoiceStatus::live();
-        $charged = InvoiceStatus::charged();
-
         // Ownership of each invoice's company, resolved once. A company that is
         // missing or belongs to another workspace cannot own a pool.
         $companyWorkspace = [];
@@ -48,96 +49,34 @@ final class OverpaymentCreditAuditor
 
         // Funding: settled money over each live invoice's total. Per invoice,
         // because overpayment is `max(0, settled - total)` of *that* invoice.
-        $invoices = DB::table('client_invoices')
+        // Loaded a bounded batch at a time - the invoices, then that batch's
+        // payments and credit lines in one query each - so the query count
+        // grows with the number of batches, not of invoices.
+        $batches = DB::table('client_invoices')
             ->select(['id', 'workspace_id', 'client_company_id', 'currency', 'status', 'total_amount'])
             ->orderBy('id')
-            ->lazy(500);
-        foreach ($invoices as $invoice) {
-            $workspaceId = self::key($invoice->workspace_id);
-            $companyId = self::whole($invoice->client_company_id);
-            $currency = (string) $invoice->currency;
-            $status = (string) $invoice->status;
-            $payments = DB::table('client_invoice_payments')
-                ->where('client_invoice_id', $invoice->id)
-                ->get(['workspace_id', 'status', 'amount', 'refunded_amount', 'currency']);
-            $credits = DB::table('client_invoice_lines')
-                ->where('client_invoice_id', $invoice->id)
+            ->lazy(self::BATCH)
+            ->chunk(self::BATCH);
+        foreach ($batches as $batch) {
+            $ids = $batch->pluck('id')->all();
+            $paymentsByInvoice = DB::table('client_invoice_payments')
+                ->whereIn('client_invoice_id', $ids)
+                ->get(['client_invoice_id', 'workspace_id', 'status', 'amount', 'refunded_amount', 'currency'])
+                ->groupBy('client_invoice_id');
+            $creditsByInvoice = DB::table('client_invoice_lines')
+                ->whereIn('client_invoice_id', $ids)
                 ->where('type', 'credit')
-                ->get(['workspace_id', 'total_amount']);
-            if ($payments->isEmpty() && $credits->isEmpty()) {
-                continue;
-            }
+                ->get(['client_invoice_id', 'workspace_id', 'total_amount'])
+                ->groupBy('client_invoice_id');
 
-            $pool = $partition($workspaceId, $companyId, $currency);
-            if ($companyId === null || ($companyWorkspace[$companyId] ?? null) !== $workspaceId) {
-                $pool->flag('invoice_company_not_in_workspace');
-            }
-            if (InvoiceStatus::tryFrom($status) === null) {
-                $pool->flag('unreadable_invoice_status');
-
-                continue;
-            }
-            $total = self::whole($invoice->total_amount);
-            if ($total === null) {
-                $pool->flag('unreadable_amount');
-
-                continue;
-            }
-
-            $settled = 0;
-            foreach ($payments as $payment) {
-                if (self::whole($payment->workspace_id) !== $workspaceId) {
-                    $pool->flag('payment_in_another_workspace');
-
-                    continue;
-                }
-                $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
-                if ($paymentStatus === null) {
-                    $pool->flag('unreadable_payment_status');
-
-                    continue;
-                }
-                if ($paymentStatus !== InvoicePaymentStatus::Succeeded) {
-                    continue;
-                }
-                if ((string) $payment->currency !== $currency) {
-                    $pool->flag('payment_currency_differs_from_invoice');
-
-                    continue;
-                }
-                $amount = self::whole($payment->amount);
-                $refunded = self::whole($payment->refunded_amount);
-                if ($amount === null || $refunded === null) {
-                    $pool->flag('unreadable_amount');
-
-                    continue;
-                }
-                $settled += $amount - $refunded;
-            }
-            if (in_array($status, $live, true)) {
-                $pool->fund(max(0, $settled - $total));
-            }
-
-            foreach ($credits as $credit) {
-                if (self::whole($credit->workspace_id) !== $workspaceId) {
-                    $pool->flag('credit_line_in_another_workspace');
-
-                    continue;
-                }
-                $creditAmount = self::whole($credit->total_amount);
-                if ($creditAmount === null) {
-                    $pool->flag('unreadable_amount');
-
-                    continue;
-                }
-                if ($creditAmount > 0) {
-                    $pool->flag('credit_line_with_positive_amount');
-
-                    continue;
-                }
-                if (in_array($status, $charged, true)) {
-                    $pool->consume(-$creditAmount);
-                }
+            foreach ($batch as $invoice) {
+                $this->fold(
+                    $invoice,
+                    $paymentsByInvoice->get($invoice->id, collect()),
+                    $creditsByInvoice->get($invoice->id, collect()),
+                    $companyWorkspace,
+                    $partition,
+                );
             }
         }
 
@@ -145,6 +84,99 @@ final class OverpaymentCreditAuditor
         usort($result, fn (CreditPoolPartition $a, CreditPoolPartition $b): int => [$a->workspaceId, $a->companyId, $a->currency] <=> [$b->workspaceId, $b->companyId, $b->currency]);
 
         return $result;
+    }
+
+    /**
+     * One invoice's funding and consumption, folded into its pool.
+     *
+     * @param  Collection<int, \stdClass>  $payments
+     * @param  Collection<int, \stdClass>  $credits
+     * @param  array<int, int>  $companyWorkspace
+     * @param  callable(int, ?int, string): CreditPoolPartition  $partition
+     */
+    private function fold(\stdClass $invoice, Collection $payments, Collection $credits, array $companyWorkspace, callable $partition): void
+    {
+        $live = InvoiceStatus::live();
+        $charged = InvoiceStatus::charged();
+        $workspaceId = self::key($invoice->workspace_id);
+        $companyId = self::whole($invoice->client_company_id);
+        $currency = (string) $invoice->currency;
+        $status = (string) $invoice->status;
+        if ($payments->isEmpty() && $credits->isEmpty()) {
+            return;
+        }
+
+        $pool = $partition($workspaceId, $companyId, $currency);
+        if ($companyId === null || ($companyWorkspace[$companyId] ?? null) !== $workspaceId) {
+            $pool->flag('invoice_company_not_in_workspace');
+        }
+        if (InvoiceStatus::tryFrom($status) === null) {
+            $pool->flag('unreadable_invoice_status');
+
+            return;
+        }
+        $total = self::whole($invoice->total_amount);
+        if ($total === null) {
+            $pool->flag('unreadable_amount');
+
+            return;
+        }
+
+        $settled = 0;
+        foreach ($payments as $payment) {
+            if (self::whole($payment->workspace_id) !== $workspaceId) {
+                $pool->flag('payment_in_another_workspace');
+
+                continue;
+            }
+            $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
+            if ($paymentStatus === null) {
+                $pool->flag('unreadable_payment_status');
+
+                continue;
+            }
+            if ($paymentStatus !== InvoicePaymentStatus::Succeeded) {
+                continue;
+            }
+            if ((string) $payment->currency !== $currency) {
+                $pool->flag('payment_currency_differs_from_invoice');
+
+                continue;
+            }
+            $amount = self::whole($payment->amount);
+            $refunded = self::whole($payment->refunded_amount);
+            if ($amount === null || $refunded === null) {
+                $pool->flag('unreadable_amount');
+
+                continue;
+            }
+            $settled += $amount - $refunded;
+        }
+        if (in_array($status, $live, true)) {
+            $pool->fund(max(0, $settled - $total));
+        }
+
+        foreach ($credits as $credit) {
+            if (self::whole($credit->workspace_id) !== $workspaceId) {
+                $pool->flag('credit_line_in_another_workspace');
+
+                continue;
+            }
+            $creditAmount = self::whole($credit->total_amount);
+            if ($creditAmount === null) {
+                $pool->flag('unreadable_amount');
+
+                continue;
+            }
+            if ($creditAmount > 0) {
+                $pool->flag('credit_line_with_positive_amount');
+
+                continue;
+            }
+            if (in_array($status, $charged, true)) {
+                $pool->consume(-$creditAmount);
+            }
+        }
     }
 
     /**
