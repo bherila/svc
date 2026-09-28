@@ -32,8 +32,10 @@ final class InvoiceHoursStatementRows
             ? self::period($statement->retainerStart, $statement->retainerEnd)
             : 'the next period';
 
-        if ($statement->isCorrection()) {
-            return self::correction($statement, $work, $next, (string) $statement->retainerSoldBy);
+        // A correction: see InvoiceHoursStatement::isCorrection().
+        $soldBy = $statement->retainerSoldBy;
+        if ($soldBy !== null) {
+            return self::correction($statement, $work, $next, $soldBy);
         }
 
         $sections = [];

@@ -234,6 +234,41 @@ final class InvoiceHoursStatementTest extends TestCase
         ], $sections[4]['rows']);
     }
 
+    public function test_a_quiet_correction_prints_only_its_core_rows_as_lists(): void
+    {
+        $figures = $this->figures();
+        foreach (['openingExpiredHours', 'subcontractorHours', 'deferredAppliedHours', 'recarriedSettledHours', 'deferredBilledOnTerminationHours'] as $key) {
+            $figures[$key] = 0.004;
+        }
+        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'retainerSoldBy' => 'SYN-1', 'poolRemainingHours' => 1.0]));
+
+        foreach ($sections as $section) {
+            $this->assertTrue(array_is_list($section['rows']), $section['title']);
+            $this->assertNotContains(null, $section['rows'], $section['title']);
+        }
+        $this->assertCount(3, $sections[1]['rows']);
+        $this->assertSame(
+            ['Retainer hours for February 2026', 'Unused hours rolled in from earlier periods', 'Hours owed from earlier periods', 'Available before this correction\'s work'],
+            array_column(array_slice($sections[0]['rows'], 0, 4), 'label'),
+        );
+        $this->assertCount(5, $sections[0]['rows']);
+        $this->assertSame('note', $sections[0]['rows'][4]['kind']);
+        $this->assertSame(
+            ['Hours worked in January 2026', 'Applied to the February 2026 pool', 'Billed at the hourly rate'],
+            array_column($sections[1]['rows'], 'label'),
+        );
+        $this->assertSame(
+            ['Deferred work waiting for free capacity (1 entry)', 'Earlier deferred work still to settle'],
+            array_column($sections[4]['rows'], 'label'),
+        );
+        // A row missing from the middle still leaves a list behind it.
+        $gap = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'retainerSoldBy' => 'SYN-1', 'deferredAppliedHours' => 3.0]));
+        $this->assertTrue(array_is_list($gap[1]['rows']));
+        $this->assertSame('Deferred work applied to free capacity (2 entries)', $gap[1]['rows'][3]['label']);
+        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'retainerSoldBy' => 'SYN-1', 'poolRemainingHours' => 1.0, 'deferredBacklogHours' => 0.0]));
+        $this->assertSame([['label' => 'Earlier deferred work still to settle', 'hours' => '1.25', 'kind' => 'row']], $sections[4]['rows']);
+    }
+
     /**
      * A correction snapshotted before the remaining figure was recorded still
      * prints as a correction, without a figure nobody measured; and with no
