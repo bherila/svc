@@ -413,7 +413,9 @@ kill switch, each rechecked before a receipt is replayed. REST is
   moves it, and a stale one is refused with a conflict before anything is
   written. Re-read and decide again.
 - `reason` is required (at most 500 characters) and kept in the client history.
-- Omitted fields are unchanged; an explicit `null` reference clears it.
+- Name at least one of `method`, `reference` and `received_on`; the published
+  schema and the tool input schema both require it. Omitted fields are
+  unchanged; an explicit `null` reference clears it.
   `received_on` has the same `Y-m-d`, workspace-calendar two-year window as
   recording, and `method` the same 40-character bound as its column.
 - Amount, currency, status, refunded amount, the invoice and processor fields

@@ -10,13 +10,16 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Mcp\AgentMcpInputSchemaFactory;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpToolCatalog;
 use App\Services\Mcp\AgentMcpWriteTools;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -248,6 +251,37 @@ final class AgentPaymentCorrectionTest extends TestCase
 
         $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $before);
         $this->assertNotSame($before, $after);
+    }
+
+    /**
+     * The contract says what the service says: a correction names at least one
+     * field. A body carrying only the version and a reason is refused by the
+     * published schema, and by the MCP tool's input schema inherited from it,
+     * rather than being advertised as valid and then refused with a 422.
+     */
+    public function test_the_published_schemas_require_a_field_to_correct(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        $request = AgentApiResponseSchemaCatalog::requestForOperation('payments.correct');
+        $tool = collect(app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)))
+            ->firstWhere('name', 'payments.correct');
+        $this->assertNotNull($tool);
+        $input = app(AgentMcpInputSchemaFactory::class)->for($tool);
+        $validator = new SchemaValidator;
+        $version = str_repeat('a', 64);
+        $base = ['expected_version' => $version, 'reason' => 'Synthetic'];
+        $tooling = ['workspace_id' => (string) str()->uuid(), 'payment_id' => (string) str()->uuid(), 'idempotency_key' => 'synthetic'];
+
+        foreach (['REST body' => [$request, []], 'MCP input' => [$input, $tooling]] as $label => [$schema, $extra]) {
+            $this->assertNotSame([], $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra])), $schema), $label.': nothing to correct');
+            foreach (['method' => 'ach', 'reference' => null, 'received_on' => '2026-08-01'] as $field => $value) {
+                $this->assertSame(
+                    [],
+                    $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra, $field => $value])), $schema),
+                    $label.': '.$field,
+                );
+            }
+        }
     }
 
     /** @return array<string, mixed> */
