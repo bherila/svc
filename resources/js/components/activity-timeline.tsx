@@ -261,11 +261,11 @@ function ActivityRow({ activity }: { activity: FormattedActivity }) {
                 </time>
             </div>
             {activity.subtitle && (
-                <p className="mt-1 text-sm text-slate-700">
+                <p className="mt-1 text-sm wrap-anywhere text-slate-700">
                     {activity.subtitle}
                 </p>
             )}
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm wrap-anywhere text-slate-500">
                 {activity.actor_name ? `By ${activity.actor_name}` : 'System'}
             </p>
         </li>

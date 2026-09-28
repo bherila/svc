@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
+import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
 const activities: CompanyActivity[] = [
     {
@@ -205,5 +206,37 @@ describe('a corrected payment', () => {
             ),
         ).toBeVisible();
         expect(screen.queryByRole('button')).toBeNull();
+    });
+});
+
+/**
+ * A correction records references, notes and reasons verbatim, and a
+ * reference is often one unbroken identifier. Each has to wrap inside the
+ * card rather than push the page open.
+ */
+describe('an oversized correction record', () => {
+    it('gives every unbreakable run somewhere to go', () => {
+        const unbroken = 'SYN'.padEnd(255, 'X');
+        const { container } = render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-oversized',
+                        action: 'invoice.payment_corrected',
+                        actor_name: 'Synthetic'.padEnd(120, 'Y'),
+                        payload: {
+                            changes: {
+                                reference: { old: unbroken, new: unbroken },
+                                notes: { old: null, new: 'N'.padEnd(121, 'N') },
+                            },
+                            reason: 'R'.padEnd(500, 'R'),
+                        },
+                        created_at: '2026-08-29T18:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 });
