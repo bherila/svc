@@ -1,0 +1,148 @@
+{
+    "stored": {
+        "version": 1,
+        "cadence": "quarterly",
+        "workStart": "2026-01-01",
+        "workEnd": "2026-03-31",
+        "retainerStart": "2026-04-01",
+        "retainerEnd": "2026-06-30",
+        "openingRetainerHours": 90,
+        "openingRolloverHours": 0,
+        "openingDeficitHours": 0,
+        "openingExpiredHours": 0,
+        "expiredWithinPeriodHours": 20,
+        "ordinaryHours": 40,
+        "ordinaryAppliedToWorkPool": 40,
+        "ordinaryAppliedToNextRetainer": 0,
+        "ordinaryBilledAtRate": 0,
+        "subcontractorHours": 0,
+        "deferredAppliedHours": 0,
+        "deferredAppliedEntries": 0,
+        "recarriedSettledHours": 0,
+        "deferredBilledOnTerminationHours": 0,
+        "catchUpBilledHours": 0,
+        "minimumAvailabilityHours": 0,
+        "minimumAvailabilityThresholdHours": 0,
+        "interimBilledHours": 0,
+        "rolledForwardHours": 15,
+        "expiringHours": 15,
+        "deficitCarriedForwardHours": 0,
+        "deferredBacklogHours": 0,
+        "deferredBacklogEntries": 0,
+        "recarriedRemainingHours": 0,
+        "nextRetainerHours": 90,
+        "retainerSoldBy": null
+    },
+    "rows": [
+        {
+            "title": "Opening pool: January – March 2026",
+            "rows": [
+                {
+                    "label": "Retainer hours for January – March 2026",
+                    "hours": "90.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours rolled in from earlier periods",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours owed from earlier periods",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Net hours available at the start of January – March 2026",
+                    "hours": "90.00",
+                    "kind": "total"
+                }
+            ]
+        },
+        {
+            "title": "Work reconciled on this invoice",
+            "rows": [
+                {
+                    "label": "Hours worked in January – March 2026",
+                    "hours": "40.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Applied to the January – March 2026 pool",
+                    "hours": "40.00",
+                    "kind": "detail"
+                },
+                {
+                    "label": "Billed at the hourly rate",
+                    "hours": "0.00",
+                    "kind": "detail"
+                }
+            ]
+        },
+        {
+            "title": "Catch-up billed at the hourly rate",
+            "rows": [
+                {
+                    "label": "Work beyond the available pool",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Total catch-up billed on this invoice",
+                    "hours": "0.00",
+                    "kind": "total"
+                }
+            ]
+        },
+        {
+            "title": "Carried forward",
+            "rows": [
+                {
+                    "label": "Unused hours that expired within January – March 2026",
+                    "hours": "20.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours rolling into April – June 2026",
+                    "hours": "15.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours expiring at the start of April – June 2026",
+                    "hours": "15.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours still owed, carried into April – June 2026",
+                    "hours": "0.00",
+                    "kind": "row"
+                }
+            ]
+        },
+        {
+            "title": "Closing position: April – June 2026",
+            "rows": [
+                {
+                    "label": "Retainer hours for April – June 2026",
+                    "hours": "90.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours rolled in",
+                    "hours": "15.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours owed carried in",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Net hours available at the start of April – June 2026",
+                    "hours": "105.00",
+                    "kind": "total"
+                }
+            ]
+        }
+    ]
+}
