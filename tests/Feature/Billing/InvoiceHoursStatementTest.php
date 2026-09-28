@@ -213,6 +213,29 @@ final class InvoiceHoursStatementTest extends TestCase
     }
 
     /**
+     * On termination the waiting deferred work is billed at the hourly rate.
+     * Those hours are paid on this invoice, so they are not a debt carried
+     * into a period that will never come.
+     */
+    public function test_deferred_work_billed_on_termination_is_not_carried_as_debt(): void
+    {
+        $this->agreement->forceFill(['ends_on' => '2026-01-31'])->save();
+        $this->entry('2026-01-05', 600);
+        $this->entry('2026-01-20', 180, deferred: true);
+
+        $invoice = $this->generate('2026-01');
+        $statement = $invoice->hoursStatement();
+
+        $this->assertInstanceOf(InvoiceHoursStatement::class, $statement);
+        $this->assertSame(10.0, $statement->ordinaryHours);
+        $this->assertSame(3.0, $statement->deferredBilledOnTerminationHours);
+        $this->assertSame(0.0, $statement->catchUpBilledHours);
+        $this->assertSame(0.0, $statement->deficitCarriedForwardHours);
+        $billed = (float) $invoice->lines->where('type', InvoiceLineType::AdditionalHours->value)->sum('hours');
+        $this->assertSame($billed, $statement->deferredBilledOnTerminationHours + $statement->catchUpBilledHours);
+    }
+
+    /**
      * Issued means frozen. Work logged later against the same month changes
      * what the ledger would now compute for it, and a statement recomputed at
      * render time would silently rewrite a document the client already holds.

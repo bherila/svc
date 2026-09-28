@@ -1023,18 +1023,23 @@ final class ClientInvoicingService
             // the draft. The same ledger as above, re-run now that this draft's
             // deferred work is linked, with this draft's own catch-up overlaid
             // exactly as the charge path overlays it - so the statement
-            // describes these lines and not the state before them.
+            // describes these lines and not the state before them. Deferred
+            // entries billed at the rate on termination are booked by the
+            // ledger as ordinary work, so the hours this draft charges for them
+            // are overlaid as settled beside its catch-up - otherwise work paid
+            // for here would read as debt carried into a period that never comes.
+            $deferred = $this->deferredFigures($invoice);
+            $settledHere = round($totalCatchupHours + $deferred['termination_at_rate'], 4);
             $finalBalances = $this->monthlyBalances(
                 $company,
                 $agreement,
                 $periodEnd,
                 $retainerMonthStart,
                 $terminationMonthKey,
-                $totalCatchupHours > 0 ? [$workMonthKey => $totalCatchupHours] : [],
+                $settledHere > 0 ? [$workMonthKey => $settledHere] : [],
             );
             $finalWork = $this->balanceForMonth($finalBalances, $workMonthKey);
             $finalNext = $this->balanceForMonth($finalBalances, $retainerMonthStart->format('Y-m'));
-            $deferred = $this->deferredFigures($invoice);
             $this->recordHoursStatement($invoice, new InvoiceHoursStatement(
                 cadence: BillingCadence::Monthly->value,
                 workStart: $periodStart->toDateString(),
@@ -1474,7 +1479,7 @@ final class ClientInvoicingService
      * and anything billed at rate on termination. The backlog is what the
      * allocator left waiting on this run.
      *
-     * @return array{applied: float, entries: int, settled: float, termination: float, backlog: float, backlog_entries: int, subcontractor: float}
+     * @return array{applied: float, entries: int, settled: float, termination: float, backlog: float, backlog_entries: int, subcontractor: float, termination_at_rate: float}
      */
     private function deferredFigures(ClientInvoice $invoice): array
     {
@@ -1485,6 +1490,9 @@ final class ClientInvoicingService
         $carriedBilled = 0.0;
 
         $subcontractorMinutes = 0;
+        // Deferred entries billed on termination at the agreement's rate: the
+        // capacity ledger reads these as ordinary work (drawsAsDeferred()).
+        $terminationAtRateMinutes = 0;
 
         $lines = $invoice->lines()
             ->where('workspace_id', $invoice->workspace_id)
@@ -1515,6 +1523,9 @@ final class ClientInvoicingService
                     $entries++;
                 } else {
                     $terminationMinutes += (int) $entry->minutes;
+                    if ($type === InvoiceLineType::AdditionalHours->value) {
+                        $terminationAtRateMinutes += (int) $entry->minutes;
+                    }
                 }
             }
         }
@@ -1527,6 +1538,7 @@ final class ClientInvoicingService
             'backlog' => round(array_sum(array_column($this->deferredSkipped, 'hours')), 4),
             'backlog_entries' => count($this->deferredSkipped),
             'subcontractor' => round($subcontractorMinutes / 60, 4),
+            'termination_at_rate' => round($terminationAtRateMinutes / 60, 4),
         ];
     }
 
