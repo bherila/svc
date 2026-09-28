@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -21,6 +22,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\TestCase;
 
@@ -321,6 +323,69 @@ final class InvoiceHoursStatementTest extends TestCase
 
         // Generated again, it is measured again.
         $this->assertNotNull($this->generate('2026-01')->fresh()?->hours_statement);
+    }
+
+    /**
+     * A client member granted one project reads the PDF under the same rule
+     * as the portal list and screen: an invoice carrying work of a project
+     * they were not granted is not theirs to open, so its itemised entries -
+     * project, date and hours - are never rendered for them. An invoice wholly
+     * within their grant still opens.
+     */
+    public function test_a_project_scoped_client_cannot_open_an_invoice_with_another_projects_work(): void
+    {
+        if (! Route::has('svc.billing.invoices.pdf')) {
+            require base_path('routes/billing.php');
+        }
+        $other = $this->syntheticProject($this->company, 'Statement other');
+        $granted = $this->adHocInvoice([$this->project]);
+        $mixed = $this->adHocInvoice([$this->project, $other]);
+        $viewer = $this->syntheticUser('Statement portal viewer');
+        $membership = ClientCompanyMembership::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'user_id' => $viewer->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS,
+        ]);
+        $membership->scopedProjects()->attach($this->project->id, ['workspace_id' => $this->workspace->id]);
+        $this->actingAs($viewer);
+
+        $this->get("/workspaces/{$this->workspace->public_id}/invoices/{$granted->public_id}/pdf")->assertOk();
+        $this->get("/portal/{$this->company->public_id}/invoices/{$granted->public_id}")->assertOk();
+
+        $this->assertContains(
+            $this->get("/workspaces/{$this->workspace->public_id}/invoices/{$mixed->public_id}/pdf")->status(),
+            [403, 404],
+        );
+        $this->get("/portal/{$this->company->public_id}/invoices/{$mixed->public_id}")->assertNotFound();
+    }
+
+    /**
+     * An issued, client-visible ad-hoc invoice with one line of approved time
+     * per project, attributed to that project.
+     *
+     * @param  list<ClientProject>  $projects
+     */
+    private function adHocInvoice(array $projects): ClientInvoice
+    {
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($this->workspace, $this->company, [
+            'currency' => 'USD', 'invoice_number' => 'SYN-SCOPE-'.str()->upper(str()->random(6)),
+        ], array_map(static fn (ClientProject $project): array => [
+            'type' => 'adjustment', 'description' => 'Synthetic scoped work', 'quantity' => 1,
+            'unit_amount' => 1000, 'client_project_id' => $project->id,
+        ], $projects));
+        foreach ($invoice->lines()->get() as $index => $line) {
+            $entry = ClientTimeEntry::query()->create([
+                'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+                'client_project_id' => $projects[$index]->id, 'user_id' => $this->member->id,
+                'worked_on' => '2026-01-10', 'minutes' => 60, 'description' => self::INTERNAL,
+                'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 15000, 'currency' => 'USD',
+            ]);
+            $line->timeEntries()->attach($entry->id, ['workspace_id' => $this->workspace->id]);
+        }
+        $issued = $service->issue($invoice, $this->workspace);
+        $issued->forceFill(['is_visible_to_client' => true])->save();
+
+        return $issued;
     }
 
     /** US Letter on every page, in both audiences, however long the appendix runs. */
