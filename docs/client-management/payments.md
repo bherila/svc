@@ -172,6 +172,46 @@ invoice — `received_on` is not an input to `refreshStatus()`, and that
 recomputation refuses an invoice carrying any payment of an unreadable status,
 so calling it would make correcting a date fail because of an unrelated row.
 
+## Correcting a payment's descriptive fields
+
+`InvoiceLifecycleService::correctPayment($payment, $changes, $reason,
+$expectedVersion, $workspace)` is the one audited correction for a payment's
+**descriptive** fields: `method`, `reference`, `notes` and `received_on`. They
+describe money rather than being it - none is an input to `refreshStatus()`, the
+credit pool or a reconciliation - so correcting one rewrites no financial fact.
+
+- **A closed allow-list** (`PaymentCorrection::FIELDS`). Amount, currency,
+  status, refunded amount, the invoice and processor or reconciliation fields
+  are refused by name, each message naming the operation that does change what
+  it represents. A column added later is refused until someone decides.
+- **Bounded as on the way in.** `method` is required text of at most 40
+  characters (its column); `reference` (255) and `notes` (10,000) are nullable
+  and a blank value clears them; `received_on` takes the same `YYYY-MM-DD`,
+  not-in-the-future, two-years-back window on the invoice's workspace calendar.
+- **A reason** is required, at most 500 characters.
+- **An optional expected version** - the opaque `AgentApiVersion` of the row as
+  the caller read it. Payments now carry `lock_version`, bumped by every
+  Eloquent write, so a correction prepared against a stale read is refused with
+  `PaymentVersionChanged` (a 409 to API callers).
+- **Same locking and scoping as the date correction:** the payment row, then its
+  invoice through a workspace-scoped locked query, in `LockResource` order.
+  `refreshStatus()` is not called, for the reason given above.
+- **No-op when nothing changes**; otherwise one `invoice.payment_corrected`
+  activity with `changes` (a before/after of only the changed fields) and the
+  `reason`, under a fresh occurrence. A note is recorded as a 120-character
+  excerpt on each side, because the activity payload is capped at 10,000 bytes
+  and a note may be that long by itself.
+
+`setPaymentReceivedOn()` is now this operation with one field and no reason:
+the date-only **Correct date** control on the invoice screen never asked for
+one. It keeps recording `invoice.payment_date_corrected` with its
+`previous_received_on`/`received_on` payload, so the activity feed and every
+earlier entry keep their meaning.
+
+The console door is `svc:billing:correct-payment` and the agent door is the
+`payments.correct` MCP tool (see [the MCP guide](../mcp.md)); the agent door does
+not offer `notes`, which agents cannot read.
+
 ## Payment Workflow
 
 Recording a payment is the main write the screen offers, through **Record
@@ -184,11 +224,12 @@ boundary and surfaced as above. An `Idempotency-Key` header, or an
 Recording a payment is a five-field form: amount, method, reference, the date
 the money arrived, and the invoice's own currency, which is not asked for.
 
-There is no edit or delete. A payment is corrected by transitioning its status
-or its refunded amount through `InvoiceLifecycleService`, which recomputes the
-invoice and records the corresponding activity — history is preserved rather
-than rewritten. The one exception is its date, which is a bookkeeping
-correction rather than a money one and has its own narrow path above. The console equivalent of recording one is:
+There is no edit or delete of money. A payment's value is corrected by
+transitioning its status or its refunded amount through
+`InvoiceLifecycleService`, which recomputes the invoice and records the
+corresponding activity — history is preserved rather than rewritten. Its
+descriptive fields are bookkeeping rather than money and have their own audited
+correction, above. The console equivalent of recording one is:
 
 ```
 php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \

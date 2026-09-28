@@ -170,7 +170,7 @@ Restart the client if it was already running. The MCP initialization response te
 compatible harnesses to call `context.get` before choosing a workspace, and exposes
 guided `log-time-across-projects` and `prepare-invoice-safely` prompts when the client
 supports MCP prompts. Access remains limited by the signed-in user's current SVC role
-and granted OAuth scopes. MCP can record money already received with the separately enabled `payments.record` capability; it cannot initiate a charge. Invoice results provide the browser payment URL when one is available.
+and granted OAuth scopes. MCP can record money already received with the separately enabled `payments.record` capability, and correct a recorded payment's method, reference or date with `payments.correct`; it cannot initiate a charge or change an amount. Invoice results provide the browser payment URL when one is available.
 
 Time-entry tools support listing and idempotent logging plus optimistic-locking
 updates and soft deletion. Updates and deletion are limited to authorized draft

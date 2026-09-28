@@ -4,11 +4,14 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
+use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\PaymentVersionChanged;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -525,6 +528,38 @@ class StripeWebhookTest extends TestCase
             'provider_payment_identifier' => 'pi_synthetic_billing',
             'status' => 'pending',
         ]);
+    }
+
+    /**
+     * Recording which provider event last touched a payment is a write to the
+     * row, and the one the webhook makes through the query builder - so it
+     * never reaches the model's revision hook. A correction prepared against
+     * the version read before the event must be refused like any other.
+     */
+    public function test_recording_a_provider_event_moves_the_payments_version(): void
+    {
+        [, $workspace, $company] = $this->tenant('event-version');
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, [
+            'invoice_number' => 'INV-EVENT-VERSION', 'currency' => 'USD',
+        ], [['type' => 'service', 'description' => 'Synthetic', 'quantity' => '1', 'unit_amount' => 1000, 'tax_amount' => 0]]);
+        $service->issue($invoice, $workspace);
+        $success = $this->payload($invoice->public_id, $workspace->public_id);
+        $this->webhookPost($success, $this->signature($success))->assertOk();
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $read = AgentApiVersion::for($payment);
+
+        // A refund of nothing: the lifecycle writes nothing, the event is recorded.
+        $refund = $this->eventPayload('evt_zero_refund', 'charge.refunded', [
+            'id' => 'ch_zero_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 0, 'currency' => 'usd',
+        ], time() + 60);
+        $this->webhookPost($refund, $this->signature($refund))->assertOk();
+
+        $fresh = $payment->fresh();
+        $this->assertSame('evt_zero_refund', $fresh?->provider_event_id);
+        $this->assertNotSame($read, AgentApiVersion::for($fresh ?? $payment));
+        $this->expectException(PaymentVersionChanged::class);
+        $service->correctPayment($payment, ['reference' => 'Synthetic'], 'Synthetic stale correction', $read, $workspace);
     }
 
     private function payload(?string $invoicePublicId = null, ?string $workspacePublicId = null, string $eventId = 'evt_synthetic_billing', string $paymentId = 'pi_synthetic_billing'): string

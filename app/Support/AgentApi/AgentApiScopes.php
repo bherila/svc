@@ -55,7 +55,7 @@ final class AgentApiScopes
             self::EXPENSES_READ => 'Read authorized expenses',
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
-            self::PAYMENTS_RECORD => 'Record money already received; never initiate a charge',
+            self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
             self::MCP_USE => 'Connect to SVC through MCP',
