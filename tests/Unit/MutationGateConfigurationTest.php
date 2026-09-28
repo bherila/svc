@@ -33,6 +33,11 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertStringContainsString('--min-covered-msi=82', $runner);
         $this->assertStringNotContainsString('--with-uncovered', $runner);
         $this->assertStringNotContainsString('--min-msi=', $runner);
+        // An agent shell swaps PHPUnit's output for a JSON line Infection
+        // cannot read, which counts every mutant as killed.
+        $this->assertMatchesRegularExpression('/^export PAO_DISABLE=1$/m', $runner);
+        $this->assertLessThan(strpos($runner, 'exec php'), strpos($runner, 'export PAO_DISABLE=1'));
+        $this->assertContains('@putenv PAO_DISABLE=1', $composer['scripts']['test:mutation']);
     }
 
     public function test_actions_match_the_application_scope_and_name_both_empty_results(): void
