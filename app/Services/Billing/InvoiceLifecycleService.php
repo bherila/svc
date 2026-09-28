@@ -193,6 +193,26 @@ final class InvoiceLifecycleService
     {
         return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
             $locked = $this->lockInvoice($invoice, $workspace);
+
+            // The credit pool's lock, straight after the invoice's and before
+            // this transaction's first ordinary read. Under REPEATABLE READ that
+            // first ordinary read fixes the snapshot every later ordinary read
+            // returns, and the credit ledger is built from ordinary reads - so
+            // when the workspace read below came first, a competing issue could
+            // spend the credit and commit, this one would then get the lock,
+            // and still see the credit unspent (`CreditSpendConcurrencyTest`).
+            // Taken here, a transaction this method owns starts its snapshot
+            // after the lock. A caller's transaction that has already read
+            // something has a snapshot nothing here can refresh, which is what
+            // the revision check inside `lockForSpending()` refuses on.
+            //
+            // Only for a draft: a charged invoice returns below without
+            // spending anything, and keeps its idempotent issue lock-free of
+            // the company.
+            $company = $locked->status === 'draft'
+                ? $this->overpaymentCreditService->lockForSpending((int) $locked->workspace_id, (int) $locked->client_company_id)
+                : null;
+
             // Re-read even when the caller supplied the authorized workspace.
             // A freshly-created model does not contain database defaults, so a
             // workspace whose timezone comes from the schema default otherwise
@@ -287,17 +307,15 @@ final class InvoiceLifecycleService
             //
             // The invoice row lock is not enough: two different drafts lock two
             // different rows, so both could read the same unconsumed pool. The
-            // company is what the pool belongs to, so that is what serializes.
-            $company = ClientCompany::query()
-                ->where('workspace_id', $locked->workspace_id)
-                ->whereKey($locked->client_company_id)
-                ->tap(Locks::forUpdate())
-                ->first();
+            // company is what the pool belongs to, so that is what serializes -
+            // locked at the top of this transaction, see above.
             if (! $company instanceof ClientCompany) {
                 throw new DomainException('The invoice client does not belong to this workspace.');
             }
             $locked->setRelation('clientCompany', $company);
-            $this->capOverpaymentCreditAtIssue($locked);
+            if ($this->capOverpaymentCreditAtIssue($locked)) {
+                $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);
+            }
 
             // Timestamps are persisted in UTC. Convert before Eloquent formats
             // the value (which otherwise drops the offset), then return to the
@@ -462,19 +480,25 @@ final class InvoiceLifecycleService
      * is the first moment the spend becomes real, and it is serialized by the
      * row lock taken above.
      */
-    private function capOverpaymentCreditAtIssue(ClientInvoice $invoice): void
+    /**
+     * Cap the draft's credit line at what the pool still holds.
+     *
+     * Returns whether the invoice leaves here still spending credit - the
+     * caller then records the pool change under the company lock it holds.
+     */
+    private function capOverpaymentCreditAtIssue(ClientInvoice $invoice): bool
     {
         $creditLine = $invoice->lines()
             ->where('type', InvoiceLineType::Credit->value)
             ->first();
 
         if (! $creditLine instanceof ClientInvoiceLine) {
-            return;
+            return false;
         }
 
         $company = $invoice->clientCompany;
         if (! $company instanceof ClientCompany) {
-            return;
+            return false;
         }
 
         $applied = abs((int) $creditLine->total_amount);
@@ -482,7 +506,7 @@ final class InvoiceLifecycleService
             ->availableCreditForCompany($company, (string) $invoice->currency) * 100);
 
         if ($applied <= $available) {
-            return;
+            return $applied > 0;
         }
 
         if ($available <= 0) {
@@ -496,6 +520,8 @@ final class InvoiceLifecycleService
 
         $invoice->refresh();
         $invoice->recalculateTotals();
+
+        return $available > 0;
     }
 
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
@@ -845,6 +871,13 @@ final class InvoiceLifecycleService
             if ($next === InvoicePaymentStatus::Refunded) {
                 $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
             }
+            // Leaving or entering `succeeded` changes the settled money the
+            // credit pool is derived from - a failure, dispute or refund can
+            // shrink it. Recorded under the company lock, after the payment,
+            // the invoice and the reconciliations above, so an issue spending
+            // credit concurrently either waits for this or refuses on the moved
+            // revision.
+            $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
             $previousInvoiceStatus = $invoice->status;
             $lockedPayment->forceFill([
                 'status' => $next->value,
@@ -1007,6 +1040,11 @@ final class InvoiceLifecycleService
                 ->whereKey($lockedPayment->client_invoice_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
+            // A refund changes the settled money the credit pool is derived
+            // from. Recorded under the company lock, after the payment and the
+            // invoice, so an issue spending credit concurrently either waits
+            // for this or refuses on the moved revision.
+            $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
             $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,

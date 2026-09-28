@@ -7,11 +7,14 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Services\Billing\Balances\OverpaymentLedger;
+use App\Support\Billing\CreditPoolChanged;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -37,6 +40,83 @@ class OverpaymentCreditService
         $ledger = $this->buildLedger($company, $currency);
 
         return $ledger->totalRemaining;
+    }
+
+    /**
+     * Lock a company's credit pool for spending, and refuse if this
+     * transaction's snapshot of it is stale.
+     *
+     * The company row lock serialises every writer that can shrink the pool,
+     * but the ledger is built from ordinary reads, and under REPEATABLE READ an
+     * ordinary read returns the snapshot fixed by the transaction's first one -
+     * which a lock taken later does not refresh. So the lock alone let a
+     * transaction wait for a competing issue to commit, take the lock, and
+     * still read the credit as unspent.
+     *
+     * `credit_revision` is advanced by every such writer under this same lock
+     * ({@see self::recordPoolChange()}). Read here twice: through the lock,
+     * which is a current read, and through an ordinary read, which is the
+     * snapshot - establishing it now if the transaction has none yet, in which
+     * case the two agree by construction. Equal, and no pool-shrinking write
+     * has committed since the snapshot, so the ordinary reads the ledger is
+     * built from are as current as the lock. Different, and nothing here can
+     * refresh the snapshot, so the spend is refused rather than guessed.
+     *
+     * Call it after the invoice lock and before anything is read through the
+     * snapshot that the ledger depends on; `issue()` takes it before its own
+     * first ordinary read, so a transaction it owns never refuses.
+     */
+    public function lockForSpending(int $workspaceId, int $companyId): ?ClientCompany
+    {
+        $company = ClientCompany::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereKey($companyId)
+            ->tap(Locks::forUpdate())
+            ->first();
+        if (! $company instanceof ClientCompany) {
+            return null;
+        }
+
+        $snapshot = DB::table('client_companies')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $companyId)
+            ->value('credit_revision');
+        if (! is_int($snapshot) && ! (is_string($snapshot) && ctype_digit($snapshot))) {
+            throw new RuntimeException('The company\'s credit revision could not be read.');
+        }
+        $snapshot = (int) $snapshot;
+        $current = $company->credit_revision;
+        if ($snapshot !== $current) {
+            throw new CreditPoolChanged($snapshot, $current);
+        }
+
+        return $company;
+    }
+
+    /**
+     * Record that this transaction changed what a company's credit pool holds.
+     *
+     * Every writer that can shrink the pool - spending credit at issue, a
+     * payment leaving `succeeded`, a refund growing - calls this in the same
+     * transaction as the change, after the locks it takes that rank before the
+     * company. Taking the company lock here (a no-op if the caller already
+     * holds it) is what makes a concurrent {@see self::lockForSpending()} wait
+     * for this transaction and then see the new revision.
+     *
+     * A builder write on purpose: it reaches no model hook, so it moves no
+     * agent-facing version and touches nothing but the counter.
+     */
+    public function recordPoolChange(int $workspaceId, int $companyId): void
+    {
+        ClientCompany::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereKey($companyId)
+            ->tap(Locks::forUpdate())
+            ->firstOrFail();
+        DB::table('client_companies')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $companyId)
+            ->update(['credit_revision' => DB::raw('credit_revision + 1')]);
     }
 
     /**

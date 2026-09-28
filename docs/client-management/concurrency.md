@@ -224,7 +224,7 @@ gets a follow-up rather than an inline fix.
 | `InvoiceLifecycleService::issue()` — only a draft may be issued | The invoice row lock taken by `lockInvoice()` at the top of the same transaction |
 | `InvoiceLifecycleService::issue()` — a row that claims a span states one, and its `invoice_kind` is readable | The same invoice row lock. The period, kind and interval-direction checks read the **locked** row and run before `$issueDate` and every mutation, so a concurrent `updateDraft()` cannot slip a boundary out from under them and a refusal leaves the draft byte-identical. Not backed by a constraint: both boundaries are nullable by design (#73) and stay that way, because an incomplete draft has charged nobody and must remain creatable. Covered by `UndatedPeriodIssueRefusalTest` |
 | `InvoiceLifecycleService::refreshStatus()` — a status nobody can read is neither rewritten nor valued at zero | The invoice row lock its three callers already hold, plus the payment row lock in `setPaymentStatus()` / `setRefundedAmount()`. It refuses a draft invoice, an unrecognised invoice status, and any payment row whose status is outside `InvoicePaymentStatus`; all three throw inside the payment transaction, so the insert or update rolls back. The repair path stays open because `setPaymentStatus()` writes its recognised replacement *before* recomputing. Covered by `PaymentStatusVocabularyTest` and `UndatedPeriodIssueRefusalTest` |
-| `InvoiceLifecycleService::issue()` — overpayment credit is not spent twice | The **company** row lock, taken deliberately after the invoice: two drafts lock two different invoice rows and would both read the same unconsumed pool |
+| `InvoiceLifecycleService::issue()` — overpayment credit is not spent twice | The **company** row lock, taken straight after the invoice lock and before `issue()`'s first ordinary read, plus the `credit_revision` check in `OverpaymentCreditService::lockForSpending()` — see [Spending overpayment credit](#spending-overpayment-credit). The lock alone was not enough: the ledger is built from ordinary reads, and a transaction whose snapshot predated a competing spend could wait for the lock and still read the credit as unspent. Covered by `CreditSpendConcurrencyTest` and, sequentially, `BillingTenantIsolationTest::test_two_drafts_cannot_both_spend_the_same_credit` |
 | `InvoiceLifecycleService::applyPayment()` — one payment per idempotency key | `payment_idempotency_unique` on `(workspace_id, idempotency_key)`. The constraint, not the lock, is what makes this absolute |
 | `InvoiceLifecycleService::applyPayment()` — payment does not overtake an automatic provider call | The invoice lock, then the automatic delivery claim lock. A claim newer than one hour refuses payment; an older ambiguous claim remains as audit evidence while the invoice workflow is cancelled and payment may proceed |
 | `InvoiceEmailService::record()` — one client delivery per workspace/idempotency key | `cied_idempotency_unique` on `(workspace_id, idempotency_key)`. Cross-invoice insert collisions reload the winner and return the same result or a bounded domain conflict; `InvoiceDeliveryConcurrencyTest` forces both MariaDB processes past the initial empty lookup before either insert |
@@ -271,6 +271,81 @@ in order rather than a new pair, and `LockOrderConformanceTest` records it.
 processes, each held after its guard and before its insert, in both orders:
 before the change both reached the insert and August was billed twice; now the
 second waits on the agreement and finds the first one's invoice.
+
+## Spending overpayment credit
+
+`issue()` spends credit: it caps the draft's credit line at what the company's
+pool still holds, then issues. The pool is derived, not stored — settled money
+over each live invoice's total, less the credit lines on charged invoices — and
+it is derived with ordinary reads. Under REPEATABLE READ an ordinary read returns
+the snapshot fixed by the transaction's *first* ordinary read, and taking a lock
+later does not refresh it. So before this section existed, the company lock
+serialised spenders without making them see each other: a transaction whose
+snapshot predated a competing spend waited for the lock, got it, read the credit
+as unspent, and spent it again. `CreditSpendConcurrencyTest` reproduced that on
+MariaDB 10.11 (`innodb_snapshot_isolation=OFF`) in both shapes below — 100.00 of
+credit consumed twice — before the change.
+
+**What serialises consumption.** The company row lock, as before. It ranks after
+invoices and payments, so it is taken after them: `issue()` takes it straight after
+the invoice lock; the payment writers after the payment, the invoice and the
+reconciliation rows they lock. Nothing locks an invoice or a payment after the
+company, and no lock is added beneath it.
+
+**Which reads are authoritative.** The locked invoice and the locked company row
+(a locking read is a current read). The ledger's ordinary reads are trusted only
+when `lockForSpending()` has shown the snapshot is not older than the last pool
+change: it reads `client_companies.credit_revision` once through the lock and
+once through the snapshot, and refuses with `CreditPoolChanged` when they differ.
+That refusal is the only defined outcome for a stale snapshot — it cannot be
+refreshed from inside the transaction — and it writes nothing, so the draft is
+exactly as reviewed and no delivery or notification is registered. A retry in a
+fresh transaction is always safe.
+
+Two shapes of stale snapshot, and what each now does:
+
+- **`issue()` owns its transaction.** The company is locked before its first
+  ordinary read, so the snapshot starts after any competitor has committed. The
+  revision check passes by construction and the existing cap applies unchanged.
+- **The caller's transaction already read something** — `generateDue()` plans
+  inside its transaction and then issues, and any caller can do the same. The
+  snapshot predates `issue()`; if a pool change committed after it, the issue
+  refuses. Before, it spent credit the snapshot still showed.
+
+**Which writers participate.** Every writer that can *shrink* available credit
+advances `credit_revision` through `recordPoolChange()`, in the same transaction
+as its change and under the company lock:
+
+| Writer | Pool effect | Participates |
+| --- | --- | --- |
+| `InvoiceLifecycleService::issue()` | Spends credit when it issues with a credit line | Yes, when a credit line survives the cap |
+| `InvoiceLifecycleService::setPaymentStatus()` (and the Stripe webhook, which calls it) | A payment leaving `succeeded` shrinks funding; entering it cannot create credit, because the total is capped | Yes, on every status change |
+| `InvoiceLifecycleService::setRefundedAmount()` (and the Stripe webhook) | A larger refund shrinks funding | Yes, on every change |
+| `InvoiceLifecycleService::applyPayment()` | A succeeded payment is capped at the balance, so it cannot create or remove credit | No |
+| `InvoiceLifecycleService::void()` | Releases credit a charged invoice spent (grows the pool); a paid invoice cannot be voided, so no funding is removed | No — growth only |
+| `InvoiceCorrectionService::correct()` | Credit lines are not correctable, and only an issued invoice with no payment attempt can be corrected, so neither side moves | No |
+| Draft regeneration (`applyCreditsToDraftInvoice()`) | Drafts do not consume | No |
+
+A writer that only *grows* the pool need not participate: a stale snapshot can
+then only under-state the credit, and the cap spends less than it could — the
+remainder stays in the pool for the next invoice, which is the cap's existing
+behaviour. The claim is therefore exactly this: **no participating shrink can be
+missed by a spend**. A new writer that can shrink the pool must call
+`recordPoolChange()`, or that claim no longer holds.
+
+**Credit sources today.** `applyPayment()` and `setPaymentStatus()` both cap a
+succeeded payment at the invoice, so the application cannot create new
+overpayment credit. The credit a pool holds is overpayment carried in from
+imported history, which is why the tests seed it as rows.
+
+**Auditing a pool.** `svc:billing:audit-overpayment-credit` compares funded with
+consumed per workspace, company and currency in integer minor units. The ledger
+clamps what remains at zero, so "no credit available" says nothing about whether
+credit was ever spent twice; the audit asks directly. A deficit is never offset
+by another pool's surplus, and a pool holding data the ledger cannot read is
+reported as unevaluable, with reasons, rather than as zero. A deficit is a
+current state to investigate, not proof of its cause, and the command repairs
+nothing.
 
 ## Adding a lock
 
