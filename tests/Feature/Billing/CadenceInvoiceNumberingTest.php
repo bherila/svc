@@ -110,6 +110,27 @@ final class CadenceInvoiceNumberingTest extends TestCase
         $this->assertSame('ATLA-202610-002', $invoice->invoice_number);
     }
 
+    /**
+     * A name with nothing to abbreviate still gets a prefix - and the next
+     * invoice reads it back and continues the same series.
+     */
+    public function test_a_name_with_no_latin_letters_still_opens_a_series_that_continues(): void
+    {
+        $company = $this->company('★ ★ ★', 'stars');
+        $agreement = $this->agreement($company, 'monthly');
+        $prefix = strtoupper(substr(str_replace('-', '', (string) $company->public_id), 0, 4));
+        $service = app(ClientInvoicingService::class);
+
+        $september = $service->generateInvoice($company, Carbon::parse('2026-08-01'), Carbon::parse('2026-08-31'), $agreement);
+        $september->forceFill(['status' => 'issued'])->save();
+        // Renamed since: the series, not the name, decides.
+        $company->forceFill(['name' => 'Stellar Works'])->save();
+        $october = $service->generateInvoice($company, Carbon::parse('2026-09-01'), Carbon::parse('2026-09-30'), $agreement);
+
+        $this->assertSame($prefix.'-202609-001', $september->invoice_number);
+        $this->assertSame($prefix.'-202610-001', $october->invoice_number);
+    }
+
     public function test_regenerating_the_draft_keeps_its_number(): void
     {
         $agreement = $this->agreement($this->company, 'monthly');

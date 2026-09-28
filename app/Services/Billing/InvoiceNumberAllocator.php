@@ -9,6 +9,7 @@ use App\Models\WorkspaceInvoiceCounter;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use LogicException;
 
 final class InvoiceNumberAllocator
@@ -60,7 +61,7 @@ final class InvoiceNumberAllocator
         $this->lockNumbering((int) $company->workspace_id);
 
         $prefix = $this->prefixFor($company);
-        $stem = ($prefix === '' ? '' : $prefix.'-').$issueMonth->format('Ym').'-';
+        $stem = $prefix.'-'.$issueMonth->format('Ym').'-';
 
         $highest = 0;
         $numbers = ClientInvoice::query()
@@ -95,9 +96,31 @@ final class InvoiceNumberAllocator
             }
         }
 
-        $alphanumeric = preg_replace('/[^A-Za-z0-9]/', '', (string) $company->name) ?? '';
+        return self::prefixFromName((string) $company->name, (string) $company->public_id);
+    }
 
-        return strtoupper(substr($alphanumeric, 0, 4));
+    /**
+     * A new client's prefix: never empty, and the same on every call.
+     *
+     * The first four letters and digits of the name after transliteration, so
+     * "Ångström Labs" is `ANGS` rather than losing its first letter. A name with
+     * none - one written entirely in a script `Str::ascii()` does not romanise,
+     * or in symbols - takes the first four of the company's public id instead.
+     * An empty prefix produced `202610-001`, which `prefixFor()` cannot read back
+     * as a series, so the client's next invoice started a different one. The
+     * public id rather than the row id: it is already the identifier this
+     * application shows outside the database, and it never changes.
+     */
+    public static function prefixFromName(string $name, string $publicId): string
+    {
+        foreach ([Str::ascii($name), $publicId] as $source) {
+            $prefix = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $source) ?? '', 0, 4));
+            if ($prefix !== '') {
+                return $prefix;
+            }
+        }
+
+        throw new LogicException('A client company with no public id cannot be given an invoice number prefix.');
     }
 
     /**
