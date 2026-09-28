@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
 use App\Support\Billing\BillingPeriod;
@@ -55,6 +56,21 @@ final class BillingScheduleService
             if (! $locked->is_active) {
                 return [];
             }
+
+            // The agreement too, before anything reads the periods. The schedule
+            // lock serialises this schedule against itself, but the other cadence
+            // generator - `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()`
+            // and the non-monthly path - locks the agreement and never sees this
+            // row. Without a lock in common, both could read "nothing covers this
+            // period" and both insert: `billing_schedule_service_period_unique`
+            // cannot reject the pair, because the other path writes a null
+            // schedule id. The registry ranks schedules before agreements, so
+            // this is an acquisition in order, not a new pair.
+            ClientAgreement::query()
+                ->where('workspace_id', $locked->workspace_id)
+                ->whereKey($locked->client_agreement_id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
 
             // Read before the loop, so a schedule that cannot bill anything
             // halts whether or not a period is due, and read through the same
