@@ -86,15 +86,28 @@ final class TimeEntryCapacityDateTest extends TestCase
         /** @var BelongsToMany<ClientInvoiceLine, ClientTimeEntry> $lines */
         $lines = (new ClientTimeEntry)->invoiceLines();
         $eagerLoads['invoiceLines']($lines);
-        $lineSql = $lines->toRawSql();
-        $this->assertStringContainsString('"client_invoice_lines"."workspace_id" = 42', $lineSql);
-        $this->assertStringContainsString('"client_invoice_line_time_entries"."workspace_id" = 42', $lineSql);
+        // Read off the builder's where clauses, not its SQL text: identifier
+        // quoting differs between SQLite and MariaDB.
+        $this->assertContains(['client_invoice_lines.workspace_id', 42], $this->equalities($lines->getQuery()->getQuery()->wheres));
+        $this->assertContains(['client_invoice_line_time_entries.workspace_id', 42], $this->equalities($lines->getQuery()->getQuery()->wheres));
 
         $nested = $lines->getQuery()->getEagerLoads();
         $this->assertArrayHasKey('invoice', $nested);
         $invoice = (new ClientInvoiceLine)->invoice();
         $nested['invoice']($invoice);
-        $this->assertStringContainsString('"client_invoices"."workspace_id" = 42', $invoice->toRawSql());
+        $this->assertContains(['client_invoices.workspace_id', 42], $this->equalities($invoice->getQuery()->getQuery()->wheres));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $wheres
+     * @return list<array{mixed, mixed}>
+     */
+    private function equalities(array $wheres): array
+    {
+        return array_values(array_map(
+            static fn (array $where): array => [$where['column'] ?? null, $where['value'] ?? null],
+            array_filter($wheres, static fn (array $where): bool => ($where['type'] ?? null) === 'Basic' && ($where['operator'] ?? null) === '='),
+        ));
     }
 
     private function entry(bool $deferred): ClientTimeEntry
