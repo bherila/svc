@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\BuildsDeferredBacklogHistory;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,7 @@ final class DeferredBacklogScenarioTest extends TestCase
 {
     use BuildsDeferredBacklogHistory;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
@@ -191,6 +193,31 @@ final class DeferredBacklogScenarioTest extends TestCase
         $many = $this->queriesDuringShow();
 
         $this->assertSame($few, $many, 'Twenty more lines must not cost twenty more queries');
+    }
+
+    /**
+     * A legacy pivot row pointing one of this workspace's deferred entries at
+     * another workspace's invoice line allocates nothing here, so the entry is
+     * still carried forward - and still reported as such.
+     */
+    public function test_a_foreign_workspaces_line_does_not_hide_carried_deferred_work(): void
+    {
+        $home = $this->backlogWorkspace;
+        $homeCompany = $this->backlogCompany;
+        $stray = ClientTimeEntry::query()->where('workspace_id', $home->id)
+            ->where('is_deferred', true)->whereDoesntHave('invoiceLines')->orderBy('id')->firstOrFail();
+
+        $this->buildDeferredBacklogHistory('atlas-foreign');
+        $foreignLine = $this->backlogInvoices['2026-09']->lines()->firstOrFail();
+        $this->writingLegacyCrossTenantRows(fn () => $foreignLine->timeEntries()->attach($stray->id, ['workspace_id' => $foreignLine->workspace_id]));
+
+        Artisan::call('svc:billing:rehearse-generation', [
+            '--workspace' => $home->public_id,
+            '--company' => $homeCompany->public_id,
+            '--show' => true,
+        ]);
+
+        $this->assertStringContainsString('Deferred work carried forward: 2950 min in 28 entries', Artisan::output());
     }
 
     public function test_the_rehearsal_names_only_a_company_of_its_own_workspace(): void

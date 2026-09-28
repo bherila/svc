@@ -219,7 +219,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
-    public function scopeDeferredOnlyOnceAllocated(Builder $query): Builder
+    protected function scopeDeferredOnlyOnceAllocated(Builder $query): Builder
     {
         return $query->where(
             fn (Builder $entry): Builder => $entry
@@ -230,12 +230,37 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
                 // another workspace's row decide whether this one's deferred
                 // time counts - and the totals it feeds are read as this
                 // workspace's own.
-                ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => $lines
-                    ->whereColumn('client_invoice_lines.workspace_id', 'client_time_entries.workspace_id')
-                    ->whereColumn('client_invoice_line_time_entries.workspace_id', 'client_time_entries.workspace_id')
-                    ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
-                        ->whereColumn('client_invoices.workspace_id', 'client_time_entries.workspace_id'))),
+                ->orWhereHas('invoiceLines', self::ownWorkspaceAllocation(...)),
         );
+    }
+
+    /**
+     * Work no line of its own workspace has allocated.
+     *
+     * The complement of the allocation {@see scopeDeferredOnlyOnceAllocated()}
+     * counts, by the same line, pivot and invoice predicates: a legacy pivot
+     * row pointing into another workspace must not hide this workspace's
+     * unbilled work.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    protected function scopeUnallocatedInOwnWorkspace(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('invoiceLines', self::ownWorkspaceAllocation(...));
+    }
+
+    /**
+     * @param  Builder<ClientInvoiceLine>  $lines
+     * @return Builder<ClientInvoiceLine>
+     */
+    private static function ownWorkspaceAllocation(Builder $lines): Builder
+    {
+        return $lines
+            ->whereColumn('client_invoice_lines.workspace_id', 'client_time_entries.workspace_id')
+            ->whereColumn('client_invoice_line_time_entries.workspace_id', 'client_time_entries.workspace_id')
+            ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                ->whereColumn('client_invoices.workspace_id', 'client_time_entries.workspace_id'));
     }
 
     /**

@@ -361,7 +361,7 @@ final class RehearseGenerationCommand extends Command
                 ->where('client_company_id', $company->id)
                 ->where('is_billable', true)
                 ->where('is_deferred', true)
-                ->unbilled()
+                ->unallocatedInOwnWorkspace()
                 ->retainerBillable()
                 ->forAgreementScope($agreement)
                 ->get(['id', 'minutes', 'worked_on']);
