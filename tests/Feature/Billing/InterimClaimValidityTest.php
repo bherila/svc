@@ -137,6 +137,30 @@ class InterimClaimValidityTest extends TestCase
         $this->assertCycleCloses($agreement, 10.0);
     }
 
+    /**
+     * An interim invoice of the cycle whose status nobody can read may have
+     * charged the client, so it is not left out of the claims: the draft is
+     * refused until it is classified, as `InvoiceStatus::hasChargedValue()`
+     * treats an unknown value everywhere else.
+     */
+    public function test_an_unreadable_interim_status_in_the_cycle_refuses_rather_than_counting_as_nothing(): void
+    {
+        $agreement = $this->legacyAgreement();
+        $this->worked('2024-01-10', 900);
+        $this->worked('2024-02-10', 900);
+        [$january, $february] = $this->drafts($agreement);
+        $this->issue($january);
+        DB::table('client_invoices')->where('id', $january->id)->update(['status' => 'settled']);
+        $before = $this->fingerprint($february);
+
+        $refusal = $this->refusal($february);
+
+        $this->assertFalse($refusal->regenerate);
+        $this->assertStringContainsString($january->invoice_number, $refusal->getMessage());
+        $this->assertStringContainsString('settled', $refusal->getMessage());
+        $this->assertSame($before, $this->fingerprint($february));
+    }
+
     public function test_a_charged_invoice_still_issues_idempotently(): void
     {
         $agreement = $this->legacyAgreement();

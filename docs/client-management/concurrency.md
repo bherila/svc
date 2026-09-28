@@ -402,6 +402,8 @@ time approved or changed after it is not seen by the check. Newly approved time
 can only make the check stricter; time removed after the snapshot is the
 remaining unproved case, and is not covered here.
 
+**Unreadable statuses fail closed.** An interim invoice of the cycle whose status is not one the application recognises may have charged the client, so it is not left out of the claims: the draft is refused until that status is classified, as `InvoiceStatus::hasChargedValue()` treats an unknown value everywhere else.
+
 **Scope.** Only drafts with an agreement and a complete, ordered period are
 checked; the period checks refuse the rest with their own repair advice,
 unchanged. The native period-retainer branch caps each month's claim by that

@@ -349,7 +349,8 @@ final class InterimOverageGenerator
     }
 
     /**
-     * Lock the charged interim claims of the cycle a draft belongs to.
+     * Lock the interim claims of the cycle a draft belongs to, and return the
+     * charged ones.
      *
      * The first half of the issue-time check, and deliberately separate from
      * the second: these are invoice rows, so they are locked here - after the
@@ -377,12 +378,26 @@ final class InterimOverageGenerator
                 $this->boundary($cycleWindow, 'cycle_start', $cycle->start->toDateString(), Unattributable::Include);
                 $this->boundary($cycleWindow, 'cycle_end', $cycle->end->toDateString(), Unattributable::Include);
             })
-            ->whereIn('status', InvoiceStatus::charged())
             ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->get();
 
-        return [$cycle, $claims];
+        // Classified here rather than filtered in SQL. A status nobody can
+        // read may have charged the client - `InvoiceStatus::hasChargedValue()`
+        // answers yes to it everywhere else - and leaving it out of the claims
+        // would let this draft charge the same overage again. Asked in PHP, too,
+        // because the connection collates case-insensitively.
+        $unreadable = $claims->first(fn (ClientInvoice $claim): bool => InvoiceStatus::tryFrom((string) $claim->status) === null);
+        if ($unreadable instanceof ClientInvoice) {
+            throw new InterimClaimRefused(
+                "Interim invoice {$unreadable->invoice_number} in this cycle carries the unrecognised status \"{$unreadable->status}\", "
+                .'so whether it has charged the client cannot be established and no further interim claim can be checked '
+                .'against it. Nothing was issued. Classify or correct that invoice\'s status first.',
+                false,
+            );
+        }
+
+        return [$cycle, $claims->filter(fn (ClientInvoice $claim): bool => in_array((string) $claim->status, InvoiceStatus::charged(), true))->values()];
     }
 
     /**
