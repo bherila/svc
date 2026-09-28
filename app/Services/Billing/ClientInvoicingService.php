@@ -844,11 +844,15 @@ final class ClientInvoicingService
             // month, so adding this range's work back is that position - the
             // same figure the statement prints as available before this work.
             $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            $rangeMinutes = 0;
+            foreach ($priorMonthEntries as $entry) {
+                $rangeMinutes += $entry->minutes;
+            }
             $availableBeforeRange = $retainerSoldBy === null ? null : round(
                 ($workMonthBalance->closing->unusedHours ?? 0.0)
                     + ($workMonthBalance->closing->remainingRollover ?? 0.0)
                     - ($workMonthBalance->closing->negativeBalance ?? 0.0)
-                    + ((int) $priorMonthEntries->sum('minutes')) / 60,
+                    + $rangeMinutes / 60,
                 4,
             );
             if ($availableBeforeRange !== null) {
