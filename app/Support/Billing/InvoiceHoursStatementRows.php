@@ -112,11 +112,14 @@ final class InvoiceHoursStatementRows
             ['label' => 'This invoice corrects work within '.$pool.'. It does not sell the '.$pool.' retainer and charges nothing for it; that was sold on invoice '.$soldBy.'.', 'hours' => '', 'kind' => 'note'],
         ]))];
 
-        // Both allocation pools are this one month's here, so what was drawn
-        // on it is their sum.
+        // A correction draws on its month's pool once (NextRetainerLending).
+        // A correction snapshotted before that was fixed recorded a second
+        // draw on the same pool, on a second line; it is shown as its lines
+        // are, rather than folded into the first.
         $sections[] = ['title' => 'Work reconciled on this correction: '.$work, 'rows' => array_values(array_filter([
             self::row('Hours worked in '.$work, $statement->ordinaryHours),
-            self::row('Applied to the '.$pool.' pool', $statement->ordinaryAppliedToWorkPool + $statement->ordinaryAppliedToNextRetainer, 'detail'),
+            self::row('Applied to the '.$pool.' pool', $statement->ordinaryAppliedToWorkPool, 'detail'),
+            self::optional('Applied to the '.$pool.' pool on a second line', $statement->ordinaryAppliedToNextRetainer, 'detail'),
             self::row('Billed at the hourly rate', $statement->ordinaryBilledAtRate, 'detail'),
             self::optional('Subcontractor hours billed separately at their own rate (not drawn on the pool)', $statement->subcontractorHours),
             self::optional(

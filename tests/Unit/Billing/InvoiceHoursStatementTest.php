@@ -220,7 +220,8 @@ final class InvoiceHoursStatementTest extends TestCase
         ], $sections[0]['rows']);
         $this->assertSame([
             ['label' => 'Hours worked in January 2026', 'hours' => '22.00', 'kind' => 'row'],
-            ['label' => 'Applied to the February 2026 pool', 'hours' => '20.00', 'kind' => 'detail'],
+            ['label' => 'Applied to the February 2026 pool', 'hours' => '10.00', 'kind' => 'detail'],
+            ['label' => 'Applied to the February 2026 pool on a second line', 'hours' => '10.00', 'kind' => 'detail'],
             ['label' => 'Billed at the hourly rate', 'hours' => '2.00', 'kind' => 'detail'],
             ['label' => 'Subcontractor hours billed separately at their own rate (not drawn on the pool)', 'hours' => '1.50', 'kind' => 'row'],
             ['label' => 'Deferred work applied to free capacity (2 entries)', 'hours' => '3.00', 'kind' => 'row'],
@@ -237,7 +238,7 @@ final class InvoiceHoursStatementTest extends TestCase
     public function test_a_quiet_correction_prints_only_its_core_rows_as_lists(): void
     {
         $figures = $this->figures();
-        foreach (['openingExpiredHours', 'subcontractorHours', 'deferredAppliedHours', 'recarriedSettledHours', 'deferredBilledOnTerminationHours'] as $key) {
+        foreach (['openingExpiredHours', 'ordinaryAppliedToNextRetainer', 'subcontractorHours', 'deferredAppliedHours', 'recarriedSettledHours', 'deferredBilledOnTerminationHours'] as $key) {
             $figures[$key] = 0.004;
         }
         $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'retainerSoldBy' => 'SYN-1', 'poolRemainingHours' => 1.0]));

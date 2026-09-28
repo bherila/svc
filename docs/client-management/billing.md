@@ -88,7 +88,10 @@ retainer being sold is lent to the reconciled month's overflow only net of debt
 that month could not absorb (`opening.remainingNegativeBalance`), because the
 ledger spends the next retainer on that older debt first; lending all of it
 let the lines claim hours the invoice's own opening balance recorded as owed
-(`CarriedDeficitCapacityTest`). Catch-up bills ordinary (non-deferred) time; approved expenses are billed at cost on the same invoice by `ExpenseInvoiceAllocations`; and deferred work never reaches a catch-up charge, directly or by leaving the next month short (`CatchUpBillsOrdinaryWorkAndExpensesTest`). For a
+(`CarriedDeficitCapacityTest`). It is lent only when it is another month: a work period ending
+inside its month (a correction range, a final period cut short by termination)
+derives "the month after" as the same month, and lending it again let one pool
+absorb the same overflow twice (`NextRetainerLending`, `CorrectionPoolDrawTest`). Catch-up bills ordinary (non-deferred) time; approved expenses are billed at cost on the same invoice by `ExpenseInvoiceAllocations`; and deferred work never reaches a catch-up charge, directly or by leaving the next month short (`CatchUpBillsOrdinaryWorkAndExpensesTest`). For a
 synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.
@@ -178,7 +181,9 @@ nor closes that period, so its statement has its own shape: the pool position
 for that period (naming the invoice that sold it, with a note that this one
 does not sell it again), the work this correction reconciles against it,
 catch-up billed, what remains in the pool afterwards (`poolRemainingHours`,
-from the same ledger), and any deferred work still waiting. There is no
+from the same ledger), and any deferred work still waiting. The work draws on
+that pool once; a correction snapshotted before that was so shows its second
+draw as the separate line it was. There is no
 opening/closing pair. `poolRemainingHours` is stored only for corrections, so
 ordinary statements keep exactly their stored shape
 (`InvoiceHoursStatementSnapshotTest`); a correction snapshotted before it

@@ -24,6 +24,7 @@ use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\NextRetainerLending;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\RetainerLineDescription;
 use App\Support\Concurrency\Locks;
@@ -840,13 +841,19 @@ final class ClientInvoicingService
             // the whole of it to this period's overflow let one pool of hours
             // be spent twice: the lines said the hours were left, while the
             // invoice's own opening balance recorded a debt.
-            $currentMonthCapacity = $isRetainerMonthPostTermination
-                ? 0.0
-                : max(0.0, $this->retainerCalculator->retainerHoursForMonth(
+            //
+            // And only when it is another month: see NextRetainerLending.
+            $currentMonthCapacity = NextRetainerLending::capacity(
+                $periodEnd,
+                $retainerMonthStart,
+                $isRetainerMonthPostTermination,
+                $isRetainerMonthPostTermination ? 0.0 : $this->retainerCalculator->retainerHoursForMonth(
                     $agreement,
                     $retainerMonthStart,
                     $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
-                ) - ($priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0));
+                ),
+                $priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0,
+            );
             // No minimum availability to maintain once the agreement has ended.
             $catchUpThreshold = $isRetainerMonthPostTermination ? 0.0 : $agreement->catch_up_threshold_hours;
 
