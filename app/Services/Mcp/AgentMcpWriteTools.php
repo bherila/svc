@@ -11,6 +11,7 @@ use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
+use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
@@ -64,6 +65,37 @@ final class AgentMcpWriteTools
             compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference'));
 
         return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
+    }
+
+    /**
+     * Correct a received payment's method, reference or date. Omitted fields
+     * are left alone; an explicit null reference clears it.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsCorrect(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request,
+        #[Schema(minLength: 1, maxLength: 40)] ?string $method = null,
+        #[Schema(maxLength: 255)] ?string $reference = null,
+        #[Schema(format: 'date')] ?string $received_on = null,
+    ): array {
+        $body = compact('expected_version', 'reason');
+        foreach (compact('method', 'reference', 'received_on') as $name => $value) {
+            if ($this->requestArguments->has($request, $name)) {
+                $body[$name] = $value;
+            }
+        }
+        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
+        $workspace = $this->workspace($context);
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        $ids = app(CorrectPaymentAction::class)->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $payment_id, $body);
+
+        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
     }
 
     public function forContext(McpRequestContext $context): self

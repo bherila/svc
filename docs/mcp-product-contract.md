@@ -43,7 +43,9 @@ that agent-assisted time approval does not arrive with agent-initiated invoice
 delivery attached. `payments.record` requires `payments:record`, workspace owner/admin
 permission, and both `AGENT_API_WRITES_ENABLED` and
 `AGENT_API_PAYMENT_WRITES_ENABLED`; the payment flag defaults to false. It records
-money already received and cannot initiate a charge. There is no generic CRUD tool.
+money already received and cannot initiate a charge. `payments.correct` carries the
+same gates and corrects only a recorded payment's method, reference or received
+date, with its version and a reason. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
 Every mutable representation contains an opaque `version`; updates and lifecycle
@@ -151,5 +153,8 @@ grants. Recording is owner/admin-only, default-disabled behind the payment and
 outer workflow flags, and requires an explicit invoice, amount, currency, payment
 date, method and idempotency key. This records an already completed receipt of
 money; it never starts a charge, refunds funds or edits a payment's status.
+Correcting a recorded payment's method, reference or received date uses the same
+grant and gates, requires the payment's version and a reason, and cannot touch
+amount, currency, status or refunds.
 Reference remains optional. Read responses follow invoice visibility and omit
 private finance reconciliation and processor identifiers.
