@@ -137,8 +137,81 @@ The portal payload is narrower than the operator's and should not be inferred
 from it. The controllers construct the props for their respective React pages.
 
 [InvoiceLineDetail](../../app/Support/Billing/InvoiceLineDetail.php) supplies the
-line itemization with operator and client visibility modes. Inspect those
+line itemization with operator and client visibility modes (see
+[the invoice document](#appendix-and-client-wording)). Inspect those
 payloads and their React pages when changing invoice display fields.
+
+## The invoice document
+
+`InvoiceDocumentService` renders the invoice PDF for both audiences - the
+client's copy (portal, client email) and the administrator's review copy
+snapshotted at issue - from `resources/views/invoices/show.blade.php`.
+
+- **US Letter, 8.5 x 11 in.** The renderer is given the page box in points
+  (`InvoiceDocumentService::US_LETTER_POINTS`, 612 x 792) and the template
+  states `@page { size: 8.5in 11in }`, so neither depends on a paper-name
+  table. `InvoiceHoursStatementTest::test_every_page_of_both_copies_is_us_letter`
+  reads every page's MediaBox back from generated PDFs of both audiences.
+- **Pages.** Page 1 is the invoice. A cadence invoice's hours statement starts
+  a page of its own, and the appendix of time entries another; both continue
+  onto as many pages as they need. A running header (invoice number, client,
+  and on the administrator copy a note that it includes internal descriptions)
+  and a footer with "Page N of M" repeat on every page, and a table that
+  crosses a page repeats its header row.
+
+### Hours statement
+
+A cadence invoice carries an `InvoiceHoursStatement`: the opening pool of the
+work period it reconciles (retainer hours, rollover in, deficit carried in,
+hours that expired at its start), the ordinary work and how it was placed
+(the period's own pool, the retainer being sold, the hourly rate), flat-hourly
+subcontractor hours billed separately at their own rate (on their own row, never
+counted against the pool), deferred
+work applied and re-carried deferred work settled, catch-up billed with the
+minimum-availability hours shown as their own row, what carries forward
+(unused hours rolling in or expiring, hours still owed, the deferred backlog
+still waiting, re-carried hours still to settle), and the closing position of
+the period the invoice sells - or, for a correction range inside a cycle an
+earlier invoice already sold, the same position labelled with that invoice's
+number and a note that this one does not sell the retainer again.
+`InvoiceHoursStatementRows` lays it out; its
+two net lines are arithmetic over the rows printed above them.
+
+**It comes from the computation that wrote the lines.** Both cadence
+generators build it inside the generating transaction, after every hour-bearing
+line is composed: the allocation plan they billed from, and the same capacity
+ledger re-run now that the draft's deferred work is linked, with the draft's
+own catch-up overlaid exactly as the catch-up path overlays it. Deferred
+figures are read back from the draft's own lines.
+
+**It is a snapshot, not a rendering.** It is stored as JSON in
+`client_invoices.hours_statement` and printed from there. The generators never
+touch an issued invoice, so the statement freezes with the lines it explains;
+recomputing it when the PDF is requested would let a later ledger change - late
+time for a closed month, a correction, an agreement edit - silently rewrite an
+invoice a client already holds (`InvoiceHoursStatementTest::test_an_issued_invoices_statement_does_not_move_when_the_ledger_does`).
+Invoices generated before the column existed, ad-hoc and interim invoices carry
+none and print without one; nothing backfills them from today's ledger.
+An operator may still replace a generated draft's lines by hand
+(`invoices.update_draft`, which accepts any draft); that withdraws the
+statement, so the edited draft prints none rather than one describing lines it
+no longer has, and the next regeneration measures it again.
+
+### Appendix and client wording
+
+The appendix lists every time entry on each line, with a per-line total, so it
+adds up to the hours the lines and the statement report.
+[InvoiceLineDetail](../../app/Support/Billing/InvoiceLineDetail.php) decides the
+wording per audience. The administrator copy prints the internal description,
+as it always has. The client copy never does: an entry visible to the client
+with a `client_visible_description` prints that text, and every other entry
+prints the neutral label `Professional services` (`InvoiceLineDetail::CLIENT_GENERIC_LABEL`).
+Such entries used to be left out of the client's appendix entirely; they are
+billed work, and an appendix that silently dropped them totalled fewer hours
+than the line above it.
+
+Line descriptions are stored on the invoice line and printed as they are. For
+lines built from time by the ad-hoc path, see issue #347.
 
 ## Billing Validation and Automation
 

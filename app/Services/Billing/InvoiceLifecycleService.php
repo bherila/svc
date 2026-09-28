@@ -139,6 +139,13 @@ final class InvoiceLifecycleService
                 'currency' => $currency,
                 ...$totals,
                 'balance_amount' => $totals['total_amount'],
+                // The hours statement explains the lines the generator wrote,
+                // and these are about to be replaced by hand. Editing a
+                // generated draft stays allowed - this is the operator's one
+                // edit path for any draft - so the statement is withdrawn
+                // rather than left describing lines that no longer exist; the
+                // next regeneration measures it again.
+                'hours_statement' => null,
             ];
             foreach (['due_date', 'notes'] as $attribute) {
                 if (array_key_exists($attribute, $attributes)) {

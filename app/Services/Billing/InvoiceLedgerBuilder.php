@@ -357,6 +357,36 @@ class InvoiceLedgerBuilder
     }
 
     /**
+     * The ledger rows that belong to one cycle, in order.
+     *
+     * The one reading of cycle membership: {@see self::summarizeLedgerForCycle()}
+     * totals these, and the invoice's hours statement reads the first and last
+     * of them, so the two cannot disagree about which months a cycle holds.
+     *
+     * @param  array<int, MonthSummary>  $ledger
+     * @return list<MonthSummary>
+     */
+    public function cycleSummaries(ClientAgreement $agreement, array $ledger, BillingCycle $cycle): array
+    {
+        $cycleMonthStart = $this->cycleMonthStartForLegacyMonthlyLedger($agreement, $cycle);
+        $cycleMonthEnd = $this->cycleMonthEndForLegacyMonthlyLedger($agreement, $cycle);
+        $cycleStartKey = $cycle->start->format('Y-m-d');
+
+        return array_values(array_filter($ledger, function (MonthSummary $summary) use ($cycleMonthStart, $cycleMonthEnd, $cycleStartKey): bool {
+            // For period-retainer rows, match by the owning cycle (boundary
+            // months can appear in adjacent cycles' rows).
+            if ($summary->cycleStart !== null) {
+                return $summary->cycleStart === $cycleStartKey;
+            }
+
+            // @infection-ignore-all Carbon reads a bare `Y-m` as the first of that month too; the suffix states the date rather than relying on that.
+            $monthStart = Carbon::parse($summary->yearMonth.'-01')->startOfDay();
+
+            return $monthStart->betweenIncluded($cycleMonthStart, $cycleMonthEnd);
+        }));
+    }
+
+    /**
      * @param  array<int, MonthSummary>  $ledger
      * @return array{
      *     retainer_hours: float,
@@ -372,22 +402,7 @@ class InvoiceLedgerBuilder
      */
     public function summarizeLedgerForCycle(ClientAgreement $agreement, array $ledger, BillingCycle $cycle): array
     {
-        $cycleMonthStart = $this->cycleMonthStartForLegacyMonthlyLedger($agreement, $cycle);
-        $cycleMonthEnd = $this->cycleMonthEndForLegacyMonthlyLedger($agreement, $cycle);
-        $cycleStartKey = $cycle->start->format('Y-m-d');
-        $cycleSummaries = collect($ledger)
-            ->filter(function (MonthSummary $summary) use ($cycleMonthStart, $cycleMonthEnd, $cycleStartKey): bool {
-                // For period-retainer rows, match by the owning cycle (boundary
-                // months can appear in adjacent cycles' rows).
-                if ($summary->cycleStart !== null) {
-                    return $summary->cycleStart === $cycleStartKey;
-                }
-
-                $monthStart = Carbon::parse($summary->yearMonth.'-01')->startOfDay();
-
-                return $monthStart->betweenIncluded($cycleMonthStart, $cycleMonthEnd);
-            })
-            ->values();
+        $cycleSummaries = collect($this->cycleSummaries($agreement, $ledger, $cycle));
 
         /** @var MonthSummary|null $first */
         $first = $cycleSummaries->first();

@@ -20,6 +20,7 @@ use App\Support\Billing\BillingCadenceLabel;
 use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\HoursQuantity;
+use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -628,14 +629,18 @@ final class ClientInvoicingService
      * The overlap guard does not catch it, because it compares service periods
      * and those genuinely do not overlap. A void invoice sold nothing, and the
      * invoice being refreshed is not competing with itself.
+     *
+     * Answered with the number of the invoice that sold it, or null: the
+     * number is what a correction's hours statement prints instead of
+     * implying it sells the retainer a second time.
      */
-    private function cycleAlreadySold(
+    private function cycleSoldBy(
         ClientCompany $company,
         ClientAgreement $agreement,
         Carbon $retainerMonthStart,
         ?ClientInvoice $invoice,
-    ): bool {
-        return $this->scopedInvoices($company)
+    ): ?string {
+        $number = $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
             // A null kind reads as cadence here exactly as it does in
             // `findRefreshableMonthlyInvoice()` and on the model. Excluding it
@@ -664,7 +669,10 @@ final class ClientInvoicingService
                     InvoiceLineType::RecurringItem->value,
                 ]);
             })
-            ->exists();
+            ->orderBy('id')
+            ->value('invoice_number');
+
+        return is_string($number) ? $number : null;
     }
 
     /**
@@ -942,7 +950,8 @@ final class ClientInvoicingService
             // see that: the periods genuinely do not overlap. Without this the
             // correction adds the retainer and every recurring item a second
             // time, on top of an invoice the client may already have paid.
-            $cycleAlreadySold = $this->cycleAlreadySold($company, $agreement, $retainerMonthStart, $invoice);
+            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            $cycleAlreadySold = $retainerSoldBy !== null;
 
             if (! $isRetainerMonthPostTermination && ! $cycleAlreadySold) {
                 $retainerMonthEnd = $retainerMonthStart->copy()->endOfMonth();
@@ -1009,6 +1018,61 @@ final class ClientInvoicingService
                 $priorMonthBalance->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
+
+            // The hours statement, measured once every hour-bearing line is on
+            // the draft. The same ledger as above, re-run now that this draft's
+            // deferred work is linked, with this draft's own catch-up overlaid
+            // exactly as the charge path overlays it - so the statement
+            // describes these lines and not the state before them. Deferred
+            // entries billed at the rate on termination are booked by the
+            // ledger as ordinary work, so the hours this draft charges for them
+            // are overlaid as settled beside its catch-up - otherwise work paid
+            // for here would read as debt carried into a period that never comes.
+            $deferred = $this->deferredFigures($invoice);
+            $settledHere = round($totalCatchupHours + $deferred['termination_at_rate'], 4);
+            $finalBalances = $this->monthlyBalances(
+                $company,
+                $agreement,
+                $periodEnd,
+                $retainerMonthStart,
+                $terminationMonthKey,
+                $settledHere > 0 ? [$workMonthKey => $settledHere] : [],
+            );
+            $finalWork = $this->balanceForMonth($finalBalances, $workMonthKey);
+            $finalNext = $this->balanceForMonth($finalBalances, $retainerMonthStart->format('Y-m'));
+            $this->recordHoursStatement($invoice, new InvoiceHoursStatement(
+                cadence: BillingCadence::Monthly->value,
+                workStart: $periodStart->toDateString(),
+                workEnd: $periodEnd->toDateString(),
+                retainerStart: $retainerMonthStart->toDateString(),
+                retainerEnd: $retainerMonthStart->copy()->endOfMonth()->toDateString(),
+                openingRetainerHours: $finalWork?->opening->retainerHours ?? 0.0,
+                openingRolloverHours: $finalWork?->opening->rolloverHours ?? 0.0,
+                openingDeficitHours: round(($finalWork?->opening->negativeOffset ?? 0.0) + ($finalWork?->opening->remainingNegativeBalance ?? 0.0), 4),
+                openingExpiredHours: $finalWork?->opening->expiredHours ?? 0.0,
+                expiredWithinPeriodHours: 0.0,
+                ordinaryHours: round($plan->getTotalHours(), 4),
+                ordinaryAppliedToWorkPool: round($plan->totalPriorMonthRetainerHours, 4),
+                ordinaryAppliedToNextRetainer: round($plan->totalCurrentMonthRetainerHours, 4),
+                ordinaryBilledAtRate: round($plan->totalCatchUpHours + $plan->totalBillableCatchupHours, 4),
+                subcontractorHours: $deferred['subcontractor'],
+                deferredAppliedHours: $deferred['applied'],
+                deferredAppliedEntries: $deferred['entries'],
+                recarriedSettledHours: $deferred['settled'],
+                deferredBilledOnTerminationHours: $deferred['termination'],
+                catchUpBilledHours: round($totalCatchupHours, 4),
+                minimumAvailabilityHours: round($bufferNeeded, 4),
+                minimumAvailabilityThresholdHours: round($catchUpThreshold, 4),
+                interimBilledHours: 0.0,
+                rolledForwardHours: $finalNext?->opening->rolloverHours ?? 0.0,
+                expiringHours: $finalNext?->opening->expiredHours ?? 0.0,
+                deficitCarriedForwardHours: $finalWork?->closing->negativeBalance ?? 0.0,
+                deferredBacklogHours: $deferred['backlog'],
+                deferredBacklogEntries: $deferred['backlog_entries'],
+                recarriedRemainingHours: $finalWork->recarriedDeferredHours ?? 0.0,
+                nextRetainerHours: round((float) $invoice->retainer_hours_included, 4),
+                retainerSoldBy: $retainerSoldBy,
+            ));
 
             // Credit is applied last so it lands against the final figure rather
             // than against a subtotal that later lines then increase.
@@ -1245,6 +1309,73 @@ final class ClientInvoicingService
                 $sortOrder,
             );
 
+            // The hours statement, from the same ledgers re-run now that this
+            // draft's deferred work is linked. This ledger does not read billed
+            // overage at all, so the draft's own charge and the interim charges
+            // are taken off the closing debt exactly as the stored balance
+            // below takes them off.
+            $finalWorkLedger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough(
+                $company,
+                $agreement,
+                $periodEnd,
+                (bool) $agreement->bill_overage_interim,
+            );
+            $workSummaries = $workCycle->end->lt($activeDate)
+                ? []
+                : $this->invoiceLedgerBuilder->cycleSummaries($agreement, $finalWorkLedger, $ledgerWorkCycle);
+            $finalCycleLedger = $workCycle->end->lt($activeDate)
+                ? $this->emptyCycleLedgerSummary()
+                : $this->invoiceLedgerBuilder->summarizeLedgerForCycle($agreement, $finalWorkLedger, $ledgerWorkCycle);
+            $firstWork = $workSummaries[0] ?? null;
+            $lastWork = $workSummaries === [] ? null : $workSummaries[count($workSummaries) - 1];
+            $nextSummaries = $this->invoiceLedgerBuilder->cycleSummaries(
+                $agreement,
+                $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $retainerEnd, false),
+                $ledgerRetainerPeriod,
+            );
+            $firstNext = $nextSummaries[0] ?? null;
+            $deferred = $this->deferredFigures($invoice);
+            $this->recordHoursStatement($invoice, new InvoiceHoursStatement(
+                cadence: $agreement->effectiveBillingCadence()->value,
+                workStart: $periodStart->toDateString(),
+                workEnd: $periodEnd->toDateString(),
+                retainerStart: $retainerStart->toDateString(),
+                retainerEnd: $retainerEnd->toDateString(),
+                openingRetainerHours: round((float) $finalCycleLedger['retainer_hours'], 4),
+                openingRolloverHours: round((float) $finalCycleLedger['starting_unused_hours'], 4),
+                openingDeficitHours: round((float) $finalCycleLedger['starting_negative_hours'], 4),
+                openingExpiredHours: $firstWork?->opening->expiredHours ?? 0.0,
+                // The cycle's later months expire hours of its own pool under
+                // the monthly rollover rule; the first month's expiry is the
+                // row above, and is about hours from before the cycle.
+                expiredWithinPeriodHours: round(array_sum(array_map(
+                    static fn (MonthSummary $summary): float => $summary->opening->expiredHours,
+                    array_slice($workSummaries, 1),
+                )), 4),
+                ordinaryHours: round($plan->getTotalHours(), 4),
+                ordinaryAppliedToWorkPool: round($plan->totalPriorMonthRetainerHours, 4),
+                ordinaryAppliedToNextRetainer: round($plan->totalCurrentMonthRetainerHours, 4),
+                ordinaryBilledAtRate: round($overageHours, 4),
+                subcontractorHours: $deferred['subcontractor'],
+                deferredAppliedHours: $deferred['applied'],
+                deferredAppliedEntries: $deferred['entries'],
+                recarriedSettledHours: $deferred['settled'],
+                deferredBilledOnTerminationHours: $deferred['termination'],
+                catchUpBilledHours: round($overageHours, 4),
+                minimumAvailabilityHours: 0.0,
+                minimumAvailabilityThresholdHours: 0.0,
+                interimBilledHours: round($interimBilledHours, 4),
+                rolledForwardHours: $firstNext?->opening->rolloverHours ?? 0.0,
+                expiringHours: $firstNext?->opening->expiredHours ?? 0.0,
+                deficitCarriedForwardHours: round(max(0.0, (float) $finalCycleLedger['negative_hours'] - $overageHours - $interimBilledHours), 4),
+                deferredBacklogHours: $deferred['backlog'],
+                deferredBacklogEntries: $deferred['backlog_entries'],
+                recarriedRemainingHours: $lastWork->recarriedDeferredHours ?? 0.0,
+                nextRetainerHours: round($retainerHours, 4),
+                // The non-monthly path always sells its cycle.
+                retainerSoldBy: null,
+            ));
+
             $invoice->update([
                 'retainer_hours_included' => $retainerHours,
                 'hours_worked' => $cycleLedger['hours_worked'],
@@ -1336,6 +1467,85 @@ final class ClientInvoicingService
             $this->invoiceLineComposer->addDeferredRetainerLine($invoice, $agreement, $result, $periodEnd, $sortOrder);
         }
         $this->deferredSkipped = $result->skipped;
+    }
+
+    /**
+     * The deferred and separately billed work this draft carries, read back
+     * from its own lines.
+     *
+     * Read from what was linked rather than from what the allocator returned,
+     * so the statement describes the lines the client is charged by: applied
+     * entries on the retainer draw, re-carried hours on their own line types,
+     * and anything billed at rate on termination. The backlog is what the
+     * allocator left waiting on this run.
+     *
+     * @return array{applied: float, entries: int, settled: float, termination: float, backlog: float, backlog_entries: int, subcontractor: float, termination_at_rate: float}
+     */
+    private function deferredFigures(ClientInvoice $invoice): array
+    {
+        $applied = 0;
+        $entries = 0;
+        $terminationMinutes = 0;
+        $settled = 0.0;
+        $carriedBilled = 0.0;
+
+        $subcontractorMinutes = 0;
+        // Deferred entries billed on termination at the agreement's rate: the
+        // capacity ledger reads these as ordinary work (drawsAsDeferred()).
+        $terminationAtRateMinutes = 0;
+
+        $lines = $invoice->lines()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->with(['timeEntries' => fn ($relation) => $relation
+                ->where('client_time_entries.workspace_id', $invoice->workspace_id)])
+            ->get();
+
+        foreach ($lines as $line) {
+            $type = (string) $line->type;
+            if ($type === InvoiceLineType::CarriedDeferredApplied->value) {
+                $settled += (float) $line->hours;
+            } elseif ($type === InvoiceLineType::CarriedDeferredBilled->value) {
+                $carriedBilled += (float) $line->hours;
+            }
+            foreach ($line->timeEntries as $entry) {
+                if (! $entry->is_deferred) {
+                    // Flat-hourly subcontractor time never draws on the pool:
+                    // it is billed on its own lines at its own rate, and the
+                    // statement says so beside the work that did draw.
+                    if ($type === InvoiceLineType::Subcontractor->value) {
+                        $subcontractorMinutes += (int) $entry->minutes;
+                    }
+
+                    continue;
+                }
+                if ($type === InvoiceLineType::PriorMonthRetainer->value) {
+                    $applied += (int) $entry->minutes;
+                    $entries++;
+                } else {
+                    $terminationMinutes += (int) $entry->minutes;
+                    if ($type === InvoiceLineType::AdditionalHours->value) {
+                        $terminationAtRateMinutes += (int) $entry->minutes;
+                    }
+                }
+            }
+        }
+
+        return [
+            'applied' => round($applied / 60, 4),
+            'entries' => $entries,
+            'settled' => round($settled, 4),
+            'termination' => round($terminationMinutes / 60 + $carriedBilled, 4),
+            'backlog' => round(array_sum(array_column($this->deferredSkipped, 'hours')), 4),
+            'backlog_entries' => count($this->deferredSkipped),
+            'subcontractor' => round($subcontractorMinutes / 60, 4),
+            'termination_at_rate' => round($terminationAtRateMinutes / 60, 4),
+        ];
+    }
+
+    /** Written on the draft with its lines; frozen with them when it is issued. */
+    private function recordHoursStatement(ClientInvoice $invoice, InvoiceHoursStatement $statement): void
+    {
+        $invoice->forceFill(['hours_statement' => $statement->toArray()])->save();
     }
 
     /**
