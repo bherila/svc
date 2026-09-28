@@ -176,6 +176,23 @@ final class DeferredBacklogScenarioTest extends TestCase
         $this->assertStringNotContainsString('! ATLA-202609-001', Artisan::output());
     }
 
+    /**
+     * `--show` reads a draft's lines and their time in a fixed number of
+     * queries, however many lines it has - not one query per line.
+     */
+    public function test_the_rehearsal_reads_a_drafts_lines_in_a_bounded_number_of_queries(): void
+    {
+        app(ClientInvoicingService::class)->generateAllInvoices($this->backlogCompany);
+        $draft = ClientInvoice::query()->where('status', 'draft')->sole();
+
+        $this->addAdjustments($draft, 2);
+        $few = $this->queriesDuringShow();
+        $this->addAdjustments($draft, 20);
+        $many = $this->queriesDuringShow();
+
+        $this->assertSame($few, $many, 'Twenty more lines must not cost twenty more queries');
+    }
+
     public function test_the_rehearsal_names_only_a_company_of_its_own_workspace(): void
     {
         $foreignSlug = 'atlas-elsewhere';
@@ -188,6 +205,33 @@ final class DeferredBacklogScenarioTest extends TestCase
             '--company' => $foreign->public_id,
             '--show' => true,
         ])->expectsOutputToContain('No client company in that workspace matches that public id.')->assertFailed();
+    }
+
+    private function addAdjustments(ClientInvoice $draft, int $count): void
+    {
+        for ($i = 0; $i < $count; $i++) {
+            $draft->lines()->create([
+                'workspace_id' => $draft->workspace_id, 'type' => 'adjustment', 'description' => 'Synthetic adjustment',
+                'quantity' => '1', 'unit_amount' => 100, 'tax_amount' => 0, 'total_amount' => 100, 'sort_order' => 50 + $i,
+            ]);
+        }
+    }
+
+    private function queriesDuringShow(): int
+    {
+        $count = 0;
+        DB::listen(function ($query) use (&$count): void {
+            $count++;
+        });
+        Artisan::call('svc:billing:rehearse-generation', [
+            '--workspace' => $this->backlogWorkspace->public_id,
+            '--company' => $this->backlogCompany->public_id,
+            '--show' => true,
+        ]);
+        $counted = $count;
+        $count = -1_000_000;
+
+        return $counted;
     }
 
     /** @param array<int, MonthSummary> $ledger */

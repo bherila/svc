@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\InvoiceLinePreview;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -242,6 +243,7 @@ final class RehearseGenerationCommand extends Command
         if ($invoices->isEmpty()) {
             $out[] = '  no draft would be created or refreshed';
         }
+        $preview = app(InvoiceLinePreview::class)->forInvoices((int) $company->workspace_id, $invoices);
 
         foreach ($invoices as $invoice) {
             $out[] = sprintf(
@@ -260,19 +262,9 @@ final class RehearseGenerationCommand extends Command
                 $this->hours($invoice->hours_billed_at_rate),
             );
 
-            $lines = ClientInvoiceLine::query()
-                ->where('workspace_id', $invoice->workspace_id)
-                ->where('client_invoice_id', $invoice->id)
-                ->orderBy('sort_order')
-                ->orderBy('id')
-                ->get();
-            foreach ($lines as $line) {
-                $linked = $line->timeEntries()
-                    ->where('client_time_entries.workspace_id', $invoice->workspace_id)
-                    ->wherePivot('workspace_id', $invoice->workspace_id)
-                    ->get(['client_time_entries.id', 'client_time_entries.minutes', 'client_time_entries.worked_on', 'client_time_entries.is_deferred']);
+            foreach ($preview[(int) $invoice->id] ?? [] as ['line' => $line, 'time' => $time]) {
                 $out[] = sprintf(
-                    '    %2d. %-20s %s | %s h | qty %s x %s = %s | linked %d min in %d entr%s%s%s',
+                    '    %2d. %-20s %s | %s h | qty %s x %s = %s | %s',
                     (int) $line->sort_order,
                     (string) $line->type,
                     (string) $line->description,
@@ -280,15 +272,7 @@ final class RehearseGenerationCommand extends Command
                     (string) $line->quantity,
                     $this->money((int) $line->unit_amount, (string) $invoice->currency),
                     $this->money((int) $line->total_amount, (string) $invoice->currency),
-                    (int) $linked->sum('minutes'),
-                    $linked->count(),
-                    $linked->count() === 1 ? 'y' : 'ies',
-                    $linked->isEmpty() ? '' : sprintf(
-                        ' worked %s..%s',
-                        (string) $linked->min(fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString()),
-                        (string) $linked->max(fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString()),
-                    ),
-                    $linked->where('is_deferred', true)->isEmpty() ? '' : sprintf(' (%d min deferred)', (int) $linked->where('is_deferred', true)->sum('minutes')),
+                    $time->describe(),
                 );
             }
         }
