@@ -192,6 +192,63 @@ final class InterimClaimConcurrencyTest extends TestCase
         }
     }
 
+    /**
+     * Time the claim's ledger never reads cannot refuse it. The agreement
+     * covers one project; an edit to another project's entry after the
+     * snapshot leaves the ledger - and so the claim - exactly as it was.
+     */
+    public function test_time_outside_the_agreements_scope_does_not_refuse_the_claim(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('Snapshot visibility under REPEATABLE READ is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('interim_race');
+        Artisan::call('migrate', ['--database' => 'interim_race', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('interim_race');
+        Schema::clearResolvedInstance('db.schema');
+        $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-interim-race-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        try {
+            [$workspace, $company, $agreement, $entries] = $this->cycle();
+            $agreement->forceFill(['client_project_id' => $entries[0]->client_project_id])->save();
+            $elsewhere = ClientProject::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic other project',
+            ]);
+            $unrelated = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $elsewhere->id,
+                'user_id' => $entries[0]->user_id, 'worked_on' => '2024-01-20', 'minutes' => 120, 'description' => 'Synthetic other work',
+                'is_billable' => true, 'is_deferred' => false, 'status' => 'approved', 'currency' => 'USD',
+            ]);
+            $february = app(InterimOverageGenerator::class)->generateInterimOverageInvoice($company, Carbon::parse('2024-02-01'), $agreement->fresh());
+            $this->assertSame('10.0000', (string) $february?->hours_billed_at_rate);
+
+            $issuer = $this->worker($workspace, $february, $paused, $release, ['mode' => 'outer-snapshot']);
+            $edit = $this->worker($workspace, null, null, null, ['mode' => 'reduce-time', 'entry' => $unrelated->id, 'minutes' => 60]);
+            $processes = [$issuer, $edit];
+            $issuer->start();
+            $this->awaitFile($issuer, $paused);
+            $edit->start();
+            $edit->wait();
+            $this->assertTrue(touch($release), 'Could not release the held issue.');
+            $issuer->wait();
+            $output = $issuer->getOutput().$issuer->getErrorOutput().$edit->getOutput().$edit->getErrorOutput();
+
+            $this->assertSame('success', $this->workerResult($issuer)['outcome'], 'Refused over time the claim does not read. '.$output);
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
     /** @return array{Workspace, ClientCompany, ClientAgreement, list<ClientTimeEntry>} */
     private function cycle(): array
     {

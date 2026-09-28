@@ -395,8 +395,8 @@ inside an invoice-locked body that ranks before invoices.
 
 **What is authoritative.** The charged claims, through the locking read, and
 the time the ledger is built from, through a fingerprint. `lockCycleClaims()`
-fingerprints the company's time entries from the agreement's first month to the
-cycle's end — every column the ledger's arithmetic reads, soft-deleted rows
+fingerprints the company's time entries in the agreement's scope (its project,
+when it names one) from the agreement's first month to the cycle's end — every column the ledger's arithmetic reads, soft-deleted rows
 included — with a locking read (time entries rank after invoices and before the
 company); `assertClaimIssuable()` fingerprints the same rows with an ordinary
 read after every lock. When `issue()` owns its transaction the two agree by

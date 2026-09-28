@@ -545,16 +545,22 @@ final class InterimOverageGenerator
     /**
      * The time entries a claim's ledger reads, reduced to one string.
      *
-     * The company's entries - soft-deleted ones too - from the agreement's
-     * first month to the end of the draft's cycle, with every column the
-     * ledger's arithmetic depends on. Read with a lock for the current value
+     * The company's entries in the agreement's scope - soft-deleted ones too,
+     * so a deletion after the snapshot shows as a difference - from the
+     * agreement's first month to the end of the draft's cycle, with every
+     * column the ledger's arithmetic depends on. Read with a lock for the current value
      * and without one for the snapshot's.
      */
     private function timeFingerprint(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, bool $locking): string
     {
-        $query = DB::table('client_time_entries')
+        $query = ClientTimeEntry::query()
+            ->withTrashed()
             ->where('workspace_id', $draft->workspace_id)
             ->where('client_company_id', $draft->client_company_id)
+            // The ledger's own scope: time it never reads cannot change the
+            // claim, and fingerprinting it would refuse issues - and lock rows
+            // - over unrelated work.
+            ->forAgreementScope($agreement)
             ->whereDate('worked_on', '>=', Carbon::parse((string) $agreement->starts_on)->startOfMonth()->toDateString())
             ->whereDate('worked_on', '<=', $cycle->end->toDateString())
             ->orderBy('id')
@@ -566,7 +572,7 @@ final class InterimOverageGenerator
             $query->tap(Locks::forUpdate());
         }
 
-        return hash('sha256', (string) json_encode($query->get()->map(fn (object $row): array => array_map(
+        return hash('sha256', (string) json_encode($query->toBase()->get()->map(fn (object $row): array => array_map(
             fn (mixed $value): string => $value === null ? "\0" : (is_scalar($value) ? (string) $value : ''),
             (array) $row,
         ))->all(), JSON_THROW_ON_ERROR));
