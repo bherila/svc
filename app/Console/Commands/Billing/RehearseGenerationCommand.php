@@ -75,6 +75,8 @@ final class RehearseGenerationCommand extends Command
         $created = 0;
         /** @var list<array{company: string, detail: string}> $failures */
         $failures = [];
+        /** @var list<string> $withoutAgreement */
+        $withoutAgreement = [];
 
         DB::beginTransaction();
 
@@ -100,6 +102,13 @@ final class RehearseGenerationCommand extends Command
                 // relying on exceptions alone let a company fail every period
                 // it attempted and still be reported as proof the run is safe.
                 foreach ($result['skipped'] as $skip) {
+                    // Nothing a cadence can bill: reported, and not a failure.
+                    if (($skip['reason_code'] ?? null) === ClientInvoicingService::SKIP_REASON_NO_AGREEMENT) {
+                        $withoutAgreement[] = $company->public_id;
+
+                        continue;
+                    }
+
                     if (! isset($skip['error'])) {
                         continue;
                     }
@@ -119,6 +128,10 @@ final class RehearseGenerationCommand extends Command
         }
 
         $this->components->twoColumnDetail('invoices a real run would create', (string) $created);
+        $this->components->twoColumnDetail('companies skipped with no billable agreement', (string) count($withoutAgreement));
+        foreach ($withoutAgreement as $companyPublicId) {
+            $this->line(sprintf('  skipped company %s - no agreement in force, ended, or starting within the month', $companyPublicId));
+        }
 
         $changed = [];
         foreach ($settledBefore as $id => $fingerprint) {

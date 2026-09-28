@@ -91,6 +91,14 @@ final class ClientInvoicingService
     public const SKIP_REASON_NOT_RECURRING = 'not_recurring_cadence';
 
     /**
+     * The company has no agreement a cadence could bill: none in force, none
+     * ended that may still owe a closing invoice, none starting within the
+     * month. Bulk generation walks every company, so this is a skip, not an
+     * error - a prospect or a one-off client is not a failed billing run.
+     */
+    public const SKIP_REASON_NO_AGREEMENT = 'no_billable_agreement';
+
+    /**
      * Deferred entries the most recent generation could not fit into remaining
      * retainer capacity.
      *
@@ -179,6 +187,14 @@ final class ClientInvoicingService
 
         $results = $this->emptyGenerationResults();
         $agreements = $this->agreementSelector->agreementsForInvoiceGeneration($company);
+
+        if ($agreements->isEmpty()) {
+            return $this->summarizeGenerationResults([], [], [[
+                'period' => 'all',
+                'reason_code' => self::SKIP_REASON_NO_AGREEMENT,
+                'reason' => 'No agreement is in force, ended, or starting within the month; there is nothing to generate.',
+            ]]);
+        }
 
         foreach ($agreements as $agreement) {
             $successorAgreement = $this->agreementSelector->successorAgreementForGeneration($agreements, $agreement);
