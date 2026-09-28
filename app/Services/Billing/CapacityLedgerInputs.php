@@ -21,6 +21,10 @@ use Illuminate\Support\Collection;
 final class CapacityLedgerInputs
 {
     /**
+     * The database half; {@see fold()} is the arithmetic and is unit-tested.
+     *
+     * @infection-ignore-all A tenant-scoped query over persisted invoice lines; it is exercised by the feature ledger tests (DeferredBacklogScenarioTest, DeferredCapacityPlacementTest), and the mutation lane deliberately runs unit tests only.
+     *
      * @param  Collection<int, ClientTimeEntry>  $entries  loaded withCapacityPlacement() and already limited to the ledger's end
      * @return array<string, array{ordinary: float, deferred: float, carried: float, carried_billed: float}> keyed by `Y-m`
      */

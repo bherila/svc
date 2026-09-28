@@ -91,6 +91,25 @@ final class RecarriedDeferredLedgerTest extends TestCase
         );
     }
 
+    public function test_lines_of_one_month_add_up_and_are_held_to_four_places(): void
+    {
+        $third = 1 / 3;
+        $inputs = CapacityLedgerInputs::fold(
+            [
+                ['month' => '2026-05', 'hours' => $third, 'deferred' => false],
+                ['month' => '2026-05', 'hours' => $third, 'deferred' => false],
+            ],
+            [
+                ['month' => '2026-05', 'hours' => $third, 'kind' => CarriedDeferredLine::Applied],
+                ['month' => '2026-05', 'hours' => $third, 'kind' => CarriedDeferredLine::Applied],
+                ['month' => '2026-05', 'hours' => 0.5, 'kind' => CarriedDeferredLine::BilledOnTermination],
+                ['month' => '2026-05', 'hours' => 0.25, 'kind' => CarriedDeferredLine::BilledOnTermination],
+            ],
+        );
+
+        $this->assertSame(['ordinary' => 0.6667, 'deferred' => 0.0, 'carried' => 0.6667, 'carried_billed' => 0.75], $inputs['2026-05']);
+    }
+
     public function test_the_carried_lines_are_recognised_by_type_and_description_only(): void
     {
         $this->assertSame('Carried deferred work applied to retainer (2:30)', CarriedDeferredLine::Applied->describe(2.5));
