@@ -19,6 +19,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PaymentCorrection;
+use App\Support\Billing\PaymentCorrectionOutcome;
 use App\Support\Billing\PaymentDateBounds;
 use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
@@ -1045,7 +1046,7 @@ final class InvoiceLifecycleService
             PaymentCorrection::parse(['received_on' => $receivedOn], null),
             null,
             $workspace,
-        );
+        )->payment;
     }
 
     /**
@@ -1099,6 +1100,24 @@ final class InvoiceLifecycleService
         ?string $expectedVersion = null,
         ?Workspace $workspace = null,
     ): ClientInvoicePayment {
+        return $this->correctPaymentReporting($payment, $changes, $reason, $expectedVersion, $workspace)->payment;
+    }
+
+    /**
+     * {@see self::correctPayment()}, reporting what it found on the locked row.
+     *
+     * For a caller that describes the correction - the console command - and
+     * must not describe it from a read it took before the lock.
+     *
+     * @param  array<array-key, mixed>  $changes
+     */
+    public function correctPaymentReporting(
+        ClientInvoicePayment $payment,
+        array $changes,
+        string $reason,
+        ?string $expectedVersion = null,
+        ?Workspace $workspace = null,
+    ): PaymentCorrectionOutcome {
         return $this->writePaymentCorrection(
             $payment,
             PaymentCorrection::parse($changes, $reason),
@@ -1119,8 +1138,8 @@ final class InvoiceLifecycleService
         PaymentCorrection $correction,
         ?string $expectedVersion,
         ?Workspace $workspace,
-    ): ClientInvoicePayment {
-        return DB::transaction(function () use ($payment, $correction, $expectedVersion, $workspace): ClientInvoicePayment {
+    ): PaymentCorrectionOutcome {
+        return DB::transaction(function () use ($payment, $correction, $expectedVersion, $workspace): PaymentCorrectionOutcome {
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
@@ -1156,6 +1175,7 @@ final class InvoiceLifecycleService
             if ($expectedVersion !== null && ! AgentApiVersion::matches($lockedPayment, $expectedVersion)) {
                 throw new PaymentVersionChanged;
             }
+            $lockedVersion = AgentApiVersion::for($lockedPayment);
 
             $bounded = $correction->changes;
             if (array_key_exists('received_on', $bounded)) {
@@ -1171,7 +1191,7 @@ final class InvoiceLifecycleService
                 'received_on' => $lockedPayment->received_on?->toDateString(),
             ], $bounded);
             if ($diff === []) {
-                return $lockedPayment;
+                return new PaymentCorrectionOutcome($lockedPayment, [], $lockedVersion);
             }
 
             $lockedPayment->forceFill(array_map(
@@ -1204,7 +1224,7 @@ final class InvoiceLifecycleService
             // is a shape the query-shape guard would have to carve an exception
             // for and the next reader would copy. There is also nothing to
             // re-read: the save above is the only write to this row.
-            return $lockedPayment;
+            return new PaymentCorrectionOutcome($lockedPayment, $diff, $lockedVersion);
         });
     }
 

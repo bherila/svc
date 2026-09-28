@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -338,6 +339,57 @@ final class PaymentCorrectionTest extends TestCase
         $this->assertSame(AgentApiVersion::for($payment), $result['version']);
         $this->assertUnchanged($payment);
         $this->assertSame(0, ClientCompanyActivity::query()->where('action', 'invoice.payment_corrected')->count());
+    }
+
+    /**
+     * The command reads the payment to find it, and the service locks it. A
+     * write landing between the two must be what the report describes: the
+     * diff is taken from the row as locked, and a dry run reports the version
+     * the row still has, not the one the command first read.
+     *
+     * The concurrent write is placed with a seam rather than timing: the first
+     * time the payment is read - the command's lookup - another writer updates
+     * it, exactly as a request committing in that window would.
+     *
+     * @return iterable<string, array{bool}>
+     */
+    public static function dryRunOrNot(): iterable
+    {
+        yield 'written' => [false];
+        yield 'dry run' => [true];
+    }
+
+    #[DataProvider('dryRunOrNot')]
+    public function test_the_command_reports_the_locked_row_not_its_own_earlier_read(bool $dryRun): void
+    {
+        [, $workspace, , $payment] = $this->recordedPayment();
+        $fired = false;
+        ClientInvoicePayment::retrieved(function (ClientInvoicePayment $read) use (&$fired, $payment): void {
+            if ($fired || $read->getKey() !== $payment->getKey()) {
+                return;
+            }
+            $fired = true;
+            ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)
+                ->update(['reference' => 'SYN-CONCURRENT', 'lock_version' => DB::raw('lock_version + 1')]);
+        });
+
+        $exit = Artisan::call('svc:billing:correct-payment', [
+            'payment' => $payment->public_id,
+            '--workspace' => $workspace->public_id,
+            '--reference' => 'SYN-REF-2',
+            '--reason' => 'Synthetic race',
+            '--dry-run' => $dryRun,
+            '--format' => 'json',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertTrue($fired);
+        $this->assertSame(0, $exit, $output);
+        $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(['reference' => ['old' => 'SYN-CONCURRENT', 'new' => 'SYN-REF-2']], $result['changes']);
+        $fresh = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->whereKey($payment->id)->sole();
+        $this->assertSame($dryRun ? 'SYN-CONCURRENT' : 'SYN-REF-2', $fresh->reference);
+        $this->assertSame(AgentApiVersion::for($fresh), $result['version']);
     }
 
     /** @return iterable<string, array{array<string, mixed>, string, int}> */

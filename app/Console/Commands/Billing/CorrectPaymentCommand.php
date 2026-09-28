@@ -7,7 +7,6 @@ use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
-use App\Support\Billing\PaymentCorrection;
 use DomainException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -79,19 +78,21 @@ class CorrectPaymentCommand extends Command
 
         $expected = $this->option('expected-version');
         $dryRun = (bool) $this->option('dry-run');
-        $before = $this->descriptive($payment);
 
+        // Reported from the row the service locked, never from the lookup
+        // above: another write can land between the two, and a report built
+        // from the earlier read would describe a change nobody made.
         DB::beginTransaction();
         try {
-            $corrected = $service->correctPayment(
+            $outcome = $service->correctPaymentReporting(
                 $payment,
                 $changes,
                 (string) $this->option('reason'),
                 is_string($expected) && $expected !== '' ? $expected : null,
                 $workspace,
             );
-            $after = $this->descriptive($corrected);
-            $version = AgentApiVersion::for($corrected);
+            // After a dry run the row is back to how it was locked.
+            $version = $dryRun ? $outcome->lockedVersion : AgentApiVersion::for($outcome->payment);
             $dryRun ? DB::rollBack() : DB::commit();
         } catch (DomainException $exception) {
             DB::rollBack();
@@ -104,7 +105,7 @@ class CorrectPaymentCommand extends Command
             throw $exception;
         }
 
-        $diff = PaymentCorrection::diff($before, $after);
+        $diff = $outcome->changes;
         $invoice = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
             ->whereKey($payment->client_invoice_id)
@@ -115,8 +116,7 @@ class CorrectPaymentCommand extends Command
             'dry_run' => $dryRun,
             'changed' => $diff !== [],
             'changes' => $diff,
-            // After a dry run this is the version the payment still has.
-            'version' => $dryRun ? AgentApiVersion::for($payment) : $version,
+            'version' => $version,
         ];
 
         if ($format === 'json') {
@@ -138,16 +138,5 @@ class CorrectPaymentCommand extends Command
         $this->components->twoColumnDetail('Version', $result['version']);
 
         return self::SUCCESS;
-    }
-
-    /** @return array<string, string|null> */
-    private function descriptive(ClientInvoicePayment $payment): array
-    {
-        return [
-            'method' => $payment->method,
-            'reference' => $payment->reference,
-            'notes' => $payment->notes,
-            'received_on' => $payment->received_on?->toDateString(),
-        ];
     }
 }
