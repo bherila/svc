@@ -13,6 +13,8 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
@@ -196,6 +198,39 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertStringContainsString(self::INTERNAL, $operator);
         $this->assertStringContainsString('Administrator copy', $operator);
         $this->assertStringNotContainsString('Administrator copy', $client);
+    }
+
+    /**
+     * An operator may still rewrite a generated draft's lines by hand - that is
+     * what `invoices.update_draft` is for, on any draft - but the statement was
+     * measured against the lines the generator wrote. Replaced lines take the
+     * statement with them: the draft prints none rather than a wrong one, and
+     * the next regeneration measures it again.
+     */
+    public function test_replacing_a_generated_drafts_lines_withdraws_its_statement(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
+        $this->entry('2026-01-12', 360);
+        $draft = $this->generate('2026-01');
+        $this->assertNotNull($draft->fresh()?->hours_statement);
+        $this->actingAsMcp($this->member, [AgentApiScopes::BILLING_WRITE]);
+
+        $this->withHeader('Idempotency-Key', 'synthetic-replace-lines')->patchJson(
+            "/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$draft->public_id}",
+            [
+                'expected_version' => AgentApiVersion::for($draft->fresh() ?? $draft),
+                'time_entry_ids' => [],
+                'manual_lines' => [['type' => 'adjustment', 'description' => 'Synthetic hand-written line', 'quantity' => '1', 'unit_amount' => 50000]],
+            ],
+        )->assertOk();
+
+        $edited = $draft->fresh();
+        $this->assertNull($edited?->hours_statement);
+        $html = app(InvoiceDocumentService::class)->html($edited ?? $draft, InvoiceLineDetail::CLIENT)->render();
+        $this->assertStringNotContainsString('Hours statement', $html);
+
+        // Generated again, it is measured again.
+        $this->assertNotNull($this->generate('2026-01')->fresh()?->hours_statement);
     }
 
     /** US Letter on every page, in both audiences, however long the appendix runs. */

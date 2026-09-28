@@ -187,6 +187,10 @@ time for a closed month, a correction, an agreement edit - silently rewrite an
 invoice a client already holds (`InvoiceHoursStatementTest::test_an_issued_invoices_statement_does_not_move_when_the_ledger_does`).
 Invoices generated before the column existed, ad-hoc and interim invoices carry
 none and print without one; nothing backfills them from today's ledger.
+An operator may still replace a generated draft's lines by hand
+(`invoices.update_draft`, which accepts any draft); that withdraws the
+statement, so the edited draft prints none rather than one describing lines it
+no longer has, and the next regeneration measures it again.
 
 ### Appendix and client wording
 
