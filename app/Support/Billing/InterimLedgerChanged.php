@@ -16,7 +16,7 @@ use DomainException;
  * refused instead. Nothing has been written; retrying in a fresh transaction
  * checks the claim against current time.
  */
-final class InterimLedgerChanged extends DomainException
+final class InterimLedgerChanged extends DomainException implements RetryableConflict
 {
     public function __construct()
     {

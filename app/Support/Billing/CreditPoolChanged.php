@@ -15,7 +15,7 @@ use DomainException;
  * starts after the lock, sees the spend or refund that caused this, and caps
  * the draft's credit line accordingly.
  */
-final class CreditPoolChanged extends DomainException
+final class CreditPoolChanged extends DomainException implements RetryableConflict
 {
     public function __construct(public readonly int $snapshotRevision, public readonly int $currentRevision)
     {
