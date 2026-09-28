@@ -360,7 +360,7 @@ final class InvoiceLifecycleService
             if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
                 // After every lock, so a transaction this method owns builds the
                 // ledger through a snapshot that starts after all of them.
-                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1]);
+                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimClaims[2]);
             }
             if ($this->capOverpaymentCreditAtIssue($locked)) {
                 $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);

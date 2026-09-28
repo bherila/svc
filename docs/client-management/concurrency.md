@@ -393,14 +393,22 @@ company, and only then is the ledger read. The order is agreement → invoice �
 cycle claims → company, which the registry already declares; nothing is locked
 inside an invoice-locked body that ranks before invoices.
 
-**What is authoritative.** The charged claims, through the locking read. The
-cumulative excess is built from ordinary reads of time; when `issue()` owns its
-transaction that snapshot starts after every lock and is current. A caller whose
-transaction has already read something — the agent API's `invoices.issue` runs
-inside its receipt transaction — reads time through that earlier snapshot, so
-time approved or changed after it is not seen by the check. Newly approved time
-can only make the check stricter; time removed after the snapshot is the
-remaining unproved case, and is not covered here.
+**What is authoritative.** The charged claims, through the locking read, and
+the time the ledger is built from, through a fingerprint. `lockCycleClaims()`
+fingerprints the company's time entries from the agreement's first month to the
+cycle's end — every column the ledger's arithmetic reads, soft-deleted rows
+included — with a locking read (time entries rank after invoices and before the
+company); `assertClaimIssuable()` fingerprints the same rows with an ordinary
+read after every lock. When `issue()` owns its transaction the two agree by
+construction. A caller whose transaction already read something — the agent
+API's `invoices.issue` runs inside its receipt transaction — may see time
+through a snapshot older than a committed change, and then the fingerprints
+differ and the issue is refused with the retryable `InterimLedgerChanged`,
+writing nothing (`InterimClaimConcurrencyTest::test_a_stale_time_snapshot_cannot_approve_an_interim_claim`
+cut January's time after such a snapshot; before this check February's 10-hour
+claim issued against 5 hours of excess). A time entry inserted into the range
+between the two reads can also make them differ; that refusal is conservative
+and a retry resolves it.
 
 **Unreadable statuses fail closed.** An interim invoice of the cycle whose status is not one the application recognises may have charged the client, so it is not left out of the claims: the draft is refused until that status is classified, as `InvoiceStatus::hasChargedValue()` treats an unknown value everywhere else.
 

@@ -13,6 +13,7 @@ use App\Services\Billing\Balances\MonthSummary;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InterimClaimRefused;
+use App\Support\Billing\InterimLedgerChanged;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -363,7 +364,12 @@ final class InterimOverageGenerator
      * Only for a draft whose service period is complete and in order; anything
      * else is refused by `issue()`'s own period checks before the claims matter.
      *
-     * @return array{BillingCycle, Collection<int, ClientInvoice>}
+     * It also takes the current fingerprint of the time the claim's ledger will
+     * be built from, with a locking read - time entries rank after invoices and
+     * before the company - so {@see self::assertClaimIssuable()} can tell whether
+     * the snapshot it reads that ledger through is current.
+     *
+     * @return array{BillingCycle, Collection<int, ClientInvoice>, string}
      */
     public function lockCycleClaims(ClientInvoice $draft, ClientAgreement $agreement): array
     {
@@ -397,7 +403,11 @@ final class InterimOverageGenerator
             );
         }
 
-        return [$cycle, $claims->filter(fn (ClientInvoice $claim): bool => in_array((string) $claim->status, InvoiceStatus::charged(), true))->values()];
+        return [
+            $cycle,
+            $claims->filter(fn (ClientInvoice $claim): bool => in_array((string) $claim->status, InvoiceStatus::charged(), true))->values(),
+            $this->timeFingerprint($draft, $agreement, $cycle, locking: true),
+        ];
     }
 
     /**
@@ -423,9 +433,20 @@ final class InterimOverageGenerator
      * uncharged interim drafts. The claim itself is never rewritten here.
      *
      * @param  Collection<int, ClientInvoice>  $claims  from {@see self::lockCycleClaims()}
+     * @param  string  $currentTime  the time fingerprint from {@see self::lockCycleClaims()}
      */
-    public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims): void
+    public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims, string $currentTime): void
     {
+        // The ledger below is built from ordinary reads. Compare the time it
+        // will read through this transaction's snapshot with the fingerprint
+        // taken under the lock: equal, and the snapshot shows current time -
+        // the rows are locked, so nothing can have changed them since; not
+        // equal, and a caller's older snapshot would check this claim against
+        // time that no longer exists.
+        if ($this->timeFingerprint($draft, $agreement, $cycle, locking: false) !== $currentTime) {
+            throw new InterimLedgerChanged;
+        }
+
         $draftEnd = Carbon::parse((string) $draft->service_period_end)->startOfDay();
         $draftStart = Carbon::parse((string) $draft->service_period_start)->startOfDay();
 
@@ -519,6 +540,36 @@ final class InterimOverageGenerator
             .'uncharged interim drafts; its time is then reconciled with the cycle.',
             false,
         );
+    }
+
+    /**
+     * The time entries a claim's ledger reads, reduced to one string.
+     *
+     * The company's entries - soft-deleted ones too - from the agreement's
+     * first month to the end of the draft's cycle, with every column the
+     * ledger's arithmetic depends on. Read with a lock for the current value
+     * and without one for the snapshot's.
+     */
+    private function timeFingerprint(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, bool $locking): string
+    {
+        $query = DB::table('client_time_entries')
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_company_id', $draft->client_company_id)
+            ->whereDate('worked_on', '>=', Carbon::parse((string) $agreement->starts_on)->startOfMonth()->toDateString())
+            ->whereDate('worked_on', '<=', $cycle->end->toDateString())
+            ->orderBy('id')
+            ->select([
+                'id', 'client_project_id', 'client_task_id', 'worked_on', 'minutes', 'status', 'is_billable',
+                'is_deferred', 'split_from_time_entry_id', 'subcontractor_billing_mode', 'deleted_at',
+            ]);
+        if ($locking) {
+            $query->tap(Locks::forUpdate());
+        }
+
+        return hash('sha256', (string) json_encode($query->get()->map(fn (object $row): array => array_map(
+            fn (mixed $value): string => $value === null ? "\0" : (is_scalar($value) ? (string) $value : ''),
+            (array) $row,
+        ))->all(), JSON_THROW_ON_ERROR));
     }
 
     /**

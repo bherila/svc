@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InterimOverageGenerator;
+use App\Support\Billing\InterimLedgerChanged;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -133,9 +134,99 @@ final class InterimClaimConcurrencyTest extends TestCase
         }
     }
 
-    private function worker(Workspace $workspace, ?ClientInvoice $invoice, ?string $paused, ?string $release): Process
+    /**
+     * A caller whose snapshot predates a time change cannot use it to approve
+     * a claim.
+     *
+     * The claim is checked against a ledger of time built from ordinary reads.
+     * Inside an outer transaction - the agent API's receipt transaction - those
+     * return a snapshot fixed before issue() ran; if time was cut after it, the
+     * stale ledger still shows the old excess. Here January is cut from 15 to
+     * 10 hours after the snapshot, which drops the cumulative excess through
+     * February from 10 to 5, and February's 10-hour claim must not issue.
+     */
+    public function test_a_stale_time_snapshot_cannot_approve_an_interim_claim(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('Snapshot visibility under REPEATABLE READ is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('interim_race');
+        Artisan::call('migrate', ['--database' => 'interim_race', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('interim_race');
+        Schema::clearResolvedInstance('db.schema');
+        $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-interim-race-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        try {
+            [$workspace, $company, $agreement, $entries] = $this->cycle();
+            $february = app(InterimOverageGenerator::class)->generateInterimOverageInvoice($company, Carbon::parse('2024-02-01'), $agreement->fresh());
+            $this->assertSame('10.0000', (string) $february?->hours_billed_at_rate);
+
+            $issuer = $this->worker($workspace, $february, $paused, $release, ['mode' => 'outer-snapshot']);
+            $cut = $this->worker($workspace, null, null, null, ['mode' => 'reduce-time', 'entry' => $entries[0]->id, 'minutes' => 600]);
+            $processes = [$issuer, $cut];
+            $issuer->start();
+            $this->awaitFile($issuer, $paused);
+            $cut->start();
+            $cut->wait();
+            $this->assertTrue(touch($release), 'Could not release the held issue.');
+            $issuer->wait();
+            $output = $issuer->getOutput().$issuer->getErrorOutput().$cut->getOutput().$cut->getErrorOutput();
+            $this->assertSame(['outcome' => 'success'], $this->workerResult($cut), $output);
+
+            DB::purge('interim_race');
+            $row = ClientInvoice::query()->where('workspace_id', $workspace->id)->findOrFail($february->id);
+            $this->assertSame('draft', $row->status, 'Ten hours charged against five of excess. '.$output);
+            $this->assertSame(['outcome' => 'refused', 'class' => InterimLedgerChanged::class], $this->workerResult($issuer), $output);
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    /** @return array{Workspace, ClientCompany, ClientAgreement, list<ClientTimeEntry>} */
+    private function cycle(): array
+    {
+        $workspace = Workspace::query()->create(['name' => 'Synthetic interim race', 'slug' => 'synthetic-interim-race']);
+        $user = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $company = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id, 'name' => 'Synthetic interim race client', 'slug' => 'synthetic-interim-race-client',
+        ]);
+        $project = ClientProject::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic interim race project',
+        ]);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic quarterly retainer',
+            'status' => 'active', 'currency' => 'USD', 'starts_on' => '2024-01-01', 'retainer_minutes' => 600,
+            'retainer_amount' => 150000, 'catch_up_threshold_minutes' => 0, 'hourly_rate_amount' => 20000,
+            'rollover_months' => 0, 'billing_cadence' => 'quarterly', 'bill_overage_interim' => true,
+        ])->fresh();
+        $entries = [];
+        foreach (['2024-01-10', '2024-02-10'] as $on) {
+            $entries[] = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+                'user_id' => $user->id, 'worked_on' => $on, 'minutes' => 900, 'description' => 'Synthetic work',
+                'is_billable' => true, 'is_deferred' => false, 'status' => 'approved', 'currency' => 'USD',
+            ]);
+        }
+
+        return [$workspace, $company, $agreement, $entries];
+    }
+
+    /** @param  array<string, int|string>  $extra */
+    private function worker(Workspace $workspace, ?ClientInvoice $invoice, ?string $paused, ?string $release, array $extra = []): Process
     {
         $input = base64_encode(json_encode([
+            ...$extra,
             'connection' => config('database.connections.'.DB::getDefaultConnection()),
             'workspace' => $workspace->id,
             'invoice' => $invoice?->id,
