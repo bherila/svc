@@ -18,6 +18,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsSyntheticExpenses;
@@ -143,6 +144,42 @@ final class InvoiceHoursStatementTest extends TestCase
 
         $deferredLine = $invoice->lines->first(fn ($line): bool => str_starts_with((string) $line->description, 'Deferred work items applied'));
         $this->assertSame((float) $deferredLine?->hours, $statement->deferredAppliedHours);
+    }
+
+    /**
+     * Flat-hourly subcontractor time is on the invoice and in the appendix but
+     * never draws on the pool. The statement accounts for it on its own row,
+     * so every hour itemised is an hour the statement names - and the pool
+     * figures are exactly what they would be without it.
+     */
+    public function test_separately_billed_subcontractor_hours_reconcile_with_the_appendix(): void
+    {
+        $this->entry('2026-01-05', 360);
+        $this->entry('2026-01-06', 60, deferred: true);
+        $this->entry('2026-01-07', 120)->forceFill([
+            'subcontractor_billing_mode' => SubcontractorBillingMode::FlatHourly->value,
+            'subcontractor_cost_amount' => 9000, 'subcontractor_cost_currency' => 'USD',
+        ])->save();
+
+        $invoice = $this->generate('2026-01');
+        $statement = $invoice->hoursStatement();
+
+        $this->assertInstanceOf(InvoiceHoursStatement::class, $statement);
+        $this->assertSame(6.0, $statement->ordinaryHours);
+        $this->assertSame(2.0, $statement->subcontractorHours);
+        $this->assertSame(1.0, $statement->deferredAppliedHours);
+        $this->assertSame(3.0, $statement->rolledForwardHours, 'Subcontractor time takes nothing from the pool');
+
+        $itemised = 0;
+        foreach (InvoiceLineDetail::forInvoice($invoice, InvoiceLineDetail::CLIENT) as $items) {
+            $itemised += array_sum(array_column($items, 'minutes'));
+        }
+        $this->assertSame(
+            round($itemised / 60, 4),
+            $statement->ordinaryHours + $statement->subcontractorHours + $statement->deferredAppliedHours,
+        );
+        $html = app(InvoiceDocumentService::class)->html($invoice, InvoiceLineDetail::CLIENT)->render();
+        $this->assertStringContainsString('Subcontractor hours billed separately at their own rate (not drawn on the pool)', $html);
     }
 
     /**

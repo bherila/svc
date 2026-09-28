@@ -58,6 +58,11 @@ final readonly class InvoiceHoursStatement
         public float $ordinaryAppliedToNextRetainer,
         /** ...of which billed at the hourly rate. */
         public float $ordinaryBilledAtRate,
+        /**
+         * Flat-hourly subcontractor time on this invoice, billed on its own
+         * lines at its own rate. Never drawn on the retainer pool.
+         */
+        public float $subcontractorHours,
         /** Deferred work this invoice applied to the period's free capacity. */
         public float $deferredAppliedHours,
         public int $deferredAppliedEntries,
@@ -119,6 +124,7 @@ final readonly class InvoiceHoursStatement
             'ordinaryAppliedToWorkPool' => $this->ordinaryAppliedToWorkPool,
             'ordinaryAppliedToNextRetainer' => $this->ordinaryAppliedToNextRetainer,
             'ordinaryBilledAtRate' => $this->ordinaryBilledAtRate,
+            'subcontractorHours' => $this->subcontractorHours,
             'deferredAppliedHours' => $this->deferredAppliedHours,
             'deferredAppliedEntries' => $this->deferredAppliedEntries,
             'recarriedSettledHours' => $this->recarriedSettledHours,
@@ -181,6 +187,7 @@ final readonly class InvoiceHoursStatement
             ordinaryAppliedToWorkPool: $hours('ordinaryAppliedToWorkPool'),
             ordinaryAppliedToNextRetainer: $hours('ordinaryAppliedToNextRetainer'),
             ordinaryBilledAtRate: $hours('ordinaryBilledAtRate'),
+            subcontractorHours: $hours('subcontractorHours'),
             deferredAppliedHours: $hours('deferredAppliedHours'),
             deferredAppliedEntries: $count('deferredAppliedEntries'),
             recarriedSettledHours: $hours('recarriedSettledHours'),

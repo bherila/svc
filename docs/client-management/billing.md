@@ -164,7 +164,9 @@ snapshotted at issue - from `resources/views/invoices/show.blade.php`.
 A cadence invoice carries an `InvoiceHoursStatement`: the opening pool of the
 work period it reconciles (retainer hours, rollover in, deficit carried in,
 hours that expired at its start), the ordinary work and how it was placed
-(the period's own pool, the retainer being sold, the hourly rate), deferred
+(the period's own pool, the retainer being sold, the hourly rate), flat-hourly
+subcontractor hours billed separately at their own rate (on their own row, never
+counted against the pool), deferred
 work applied and re-carried deferred work settled, catch-up billed with the
 minimum-availability hours shown as their own row, what carries forward
 (unused hours rolling in or expiring, hours still owed, the deferred backlog

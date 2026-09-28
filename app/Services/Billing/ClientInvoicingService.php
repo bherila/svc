@@ -1042,6 +1042,7 @@ final class ClientInvoicingService
                 ordinaryAppliedToWorkPool: round($plan->totalPriorMonthRetainerHours, 4),
                 ordinaryAppliedToNextRetainer: round($plan->totalCurrentMonthRetainerHours, 4),
                 ordinaryBilledAtRate: round($plan->totalCatchUpHours + $plan->totalBillableCatchupHours, 4),
+                subcontractorHours: $deferred['subcontractor'],
                 deferredAppliedHours: $deferred['applied'],
                 deferredAppliedEntries: $deferred['entries'],
                 recarriedSettledHours: $deferred['settled'],
@@ -1341,6 +1342,7 @@ final class ClientInvoicingService
                 ordinaryAppliedToWorkPool: round($plan->totalPriorMonthRetainerHours, 4),
                 ordinaryAppliedToNextRetainer: round($plan->totalCurrentMonthRetainerHours, 4),
                 ordinaryBilledAtRate: round($overageHours, 4),
+                subcontractorHours: $deferred['subcontractor'],
                 deferredAppliedHours: $deferred['applied'],
                 deferredAppliedEntries: $deferred['entries'],
                 recarriedSettledHours: $deferred['settled'],
@@ -1452,7 +1454,8 @@ final class ClientInvoicingService
     }
 
     /**
-     * The deferred work this draft carries, read back from its own lines.
+     * The deferred and separately billed work this draft carries, read back
+     * from its own lines.
      *
      * Read from what was linked rather than from what the allocator returned,
      * so the statement describes the lines the client is charged by: applied
@@ -1460,7 +1463,7 @@ final class ClientInvoicingService
      * and anything billed at rate on termination. The backlog is what the
      * allocator left waiting on this run.
      *
-     * @return array{applied: float, entries: int, settled: float, termination: float, backlog: float, backlog_entries: int}
+     * @return array{applied: float, entries: int, settled: float, termination: float, backlog: float, backlog_entries: int, subcontractor: float}
      */
     private function deferredFigures(ClientInvoice $invoice): array
     {
@@ -1470,11 +1473,12 @@ final class ClientInvoicingService
         $settled = 0.0;
         $carriedBilled = 0.0;
 
+        $subcontractorMinutes = 0;
+
         $lines = $invoice->lines()
             ->where('workspace_id', $invoice->workspace_id)
             ->with(['timeEntries' => fn ($relation) => $relation
-                ->where('client_time_entries.workspace_id', $invoice->workspace_id)
-                ->where('is_deferred', true)])
+                ->where('client_time_entries.workspace_id', $invoice->workspace_id)])
             ->get();
 
         foreach ($lines as $line) {
@@ -1485,6 +1489,16 @@ final class ClientInvoicingService
                 $carriedBilled += (float) $line->hours;
             }
             foreach ($line->timeEntries as $entry) {
+                if (! $entry->is_deferred) {
+                    // Flat-hourly subcontractor time never draws on the pool:
+                    // it is billed on its own lines at its own rate, and the
+                    // statement says so beside the work that did draw.
+                    if ($type === InvoiceLineType::Subcontractor->value) {
+                        $subcontractorMinutes += (int) $entry->minutes;
+                    }
+
+                    continue;
+                }
                 if ($type === InvoiceLineType::PriorMonthRetainer->value) {
                     $applied += (int) $entry->minutes;
                     $entries++;
@@ -1501,6 +1515,7 @@ final class ClientInvoicingService
             'termination' => round($terminationMinutes / 60 + $carriedBilled, 4),
             'backlog' => round(array_sum(array_column($this->deferredSkipped, 'hours')), 4),
             'backlog_entries' => count($this->deferredSkipped),
+            'subcontractor' => round($subcontractorMinutes / 60, 4),
         ];
     }
 

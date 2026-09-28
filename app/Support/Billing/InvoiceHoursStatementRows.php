@@ -48,6 +48,7 @@ final class InvoiceHoursStatementRows
             self::row('Applied to the '.$work.' pool', $statement->ordinaryAppliedToWorkPool, 'detail'),
             self::optional('Applied in advance to the '.$next.' retainer', $statement->ordinaryAppliedToNextRetainer, 'detail'),
             self::row('Billed at the hourly rate', $statement->ordinaryBilledAtRate, 'detail'),
+            self::optional('Subcontractor hours billed separately at their own rate (not drawn on the pool)', $statement->subcontractorHours),
             self::optional(
                 'Deferred work applied to free capacity ('.$statement->deferredAppliedEntries.' '.($statement->deferredAppliedEntries === 1 ? 'entry' : 'entries').')',
                 $statement->deferredAppliedHours,

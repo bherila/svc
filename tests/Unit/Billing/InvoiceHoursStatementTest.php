@@ -93,6 +93,7 @@ final class InvoiceHoursStatementTest extends TestCase
             ['label' => 'Applied to the January 2026 pool', 'hours' => '10.00', 'kind' => 'detail'],
             ['label' => 'Applied in advance to the February 2026 retainer', 'hours' => '10.00', 'kind' => 'detail'],
             ['label' => 'Billed at the hourly rate', 'hours' => '2.00', 'kind' => 'detail'],
+            ['label' => 'Subcontractor hours billed separately at their own rate (not drawn on the pool)', 'hours' => '1.50', 'kind' => 'row'],
             ['label' => 'Deferred work applied to free capacity (2 entries)', 'hours' => '3.00', 'kind' => 'row'],
             ['label' => 'Earlier deferred work settled from free capacity', 'hours' => '0.75', 'kind' => 'row'],
             ['label' => 'Deferred work billed at the hourly rate on termination', 'hours' => '1.00', 'kind' => 'row'],
@@ -224,7 +225,7 @@ final class InvoiceHoursStatementTest extends TestCase
     {
         $figures = $this->figures();
         if ($quiet) {
-            foreach (['openingExpiredHours', 'expiredWithinPeriodHours', 'ordinaryAppliedToNextRetainer', 'deferredAppliedHours', 'recarriedSettledHours',
+            foreach (['openingExpiredHours', 'expiredWithinPeriodHours', 'ordinaryAppliedToNextRetainer', 'subcontractorHours', 'deferredAppliedHours', 'recarriedSettledHours',
                 'deferredBilledOnTerminationHours', 'interimBilledHours', 'minimumAvailabilityHours', 'minimumAvailabilityThresholdHours',
                 'deferredBacklogHours', 'recarriedRemainingHours'] as $key) {
                 $figures[$key] = 0.004;
@@ -243,6 +244,7 @@ final class InvoiceHoursStatementTest extends TestCase
             'openingRetainerHours' => 10.0, 'openingRolloverHours' => 1.5, 'openingDeficitHours' => 2.25,
             'openingExpiredHours' => 0.5, 'expiredWithinPeriodHours' => 0.25,
             'ordinaryHours' => 22.0, 'ordinaryAppliedToWorkPool' => 10.0, 'ordinaryAppliedToNextRetainer' => 10.0, 'ordinaryBilledAtRate' => 2.0,
+            'subcontractorHours' => 1.5,
             'deferredAppliedHours' => 3.0, 'deferredAppliedEntries' => 2, 'recarriedSettledHours' => 0.75,
             'deferredBilledOnTerminationHours' => 1.0,
             'catchUpBilledHours' => 3.0, 'minimumAvailabilityHours' => 1.0, 'minimumAvailabilityThresholdHours' => 1.0,
