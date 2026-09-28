@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use LogicException;
 
 /**
  * @property int $id
@@ -235,6 +236,67 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
                     ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
                         ->whereColumn('client_invoices.workspace_id', 'client_time_entries.workspace_id'))),
         );
+    }
+
+    /**
+     * Eager-load what {@see capacityDate()} reads, inside one workspace.
+     *
+     * The same three-way tenant agreement {@see scopeDeferredOnlyOnceAllocated()}
+     * demands: a line, pivot or invoice of another workspace must not decide
+     * which of this workspace's months an hour is booked in.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithCapacityPlacement(Builder $query, int $workspaceId): Builder
+    {
+        return $query->with(['invoiceLines' => fn ($lines) => $lines
+            ->where('client_invoice_lines.workspace_id', $workspaceId)
+            ->where('client_invoice_line_time_entries.workspace_id', $workspaceId)
+            ->with(['invoice' => fn ($invoice) => $invoice->where('client_invoices.workspace_id', $workspaceId)]),
+        ]);
+    }
+
+    /**
+     * The day whose retainer capacity this work drew on.
+     *
+     * Ordinary work draws on the month it was done in. Deferred work does not:
+     * it waits, by agreement, until an invoice's pool has room, and it draws on
+     * *that* pool - the one the "Deferred work items applied to retainer" line
+     * names by its date. Booking it back in the month it was worked restated
+     * closed months after the fact: capacity that had already expired unused
+     * was spent a second time, so the pool the invoice actually used stayed
+     * available for the next month's work too; and where the old month had no
+     * room, a debt appeared that no invoice ever showed.
+     *
+     * The absorbing line's date, else its invoice's work-period end, else the
+     * day worked - and never earlier than the day worked. Requires
+     * {@see scopeWithCapacityPlacement()}: a lazy load would cross tenants.
+     */
+    public function capacityDate(): CarbonImmutable
+    {
+        $workedOn = $this->worked_on;
+        if (! $this->is_deferred) {
+            return $workedOn;
+        }
+
+        if (! $this->relationLoaded('invoiceLines')) {
+            throw new LogicException('Load time entries withCapacityPlacement() before reading their capacity date.');
+        }
+
+        $line = $this->invoiceLines->first();
+        if (! $line instanceof ClientInvoiceLine) {
+            return $workedOn;
+        }
+
+        $absorbedOn = $line->line_date ?? ($line->invoice instanceof ClientInvoice ? $line->invoice->service_period_end : null);
+        if ($absorbedOn === null) {
+            return $workedOn;
+        }
+
+        $absorbedOn = CarbonImmutable::parse($absorbedOn->toDateString());
+
+        return $absorbedOn->gt($workedOn) ? $absorbedOn : $workedOn;
     }
 
     /**

@@ -75,18 +75,24 @@ class InvoiceLedgerBuilder
         // would turn a data-integrity failure into a silent undercharge.
         $this->projectChainGuard->assertProjectChainsAgree($company, $companyEntries);
 
+        // Each hour is booked on the day whose capacity it drew on: the day
+        // worked, or - for deferred work - the day of the pool that absorbed
+        // it (see ClientTimeEntry::capacityDate()). Work absorbed after the
+        // ledger ends is not part of this ledger yet.
         $billableEntries = (clone $companyEntries)
             ->where('is_billable', true)
             ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
-            ->get();
+            ->withCapacityPlacement((int) $company->workspace_id)
+            ->get()
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($ledgerEnd));
 
         if ($agreement->retainer_hours !== null) {
             /** @var array<string, float> $hoursByDate */
             $hoursByDate = [];
             foreach ($billableEntries as $entry) {
-                $dateKey = Carbon::parse($entry->date_worked)->format('Y-m-d');
+                $dateKey = $entry->capacityDate()->format('Y-m-d');
                 $hoursByDate[$dateKey] = ($hoursByDate[$dateKey] ?? 0.0) + ((float) $entry->minutes_worked / 60);
             }
 
@@ -119,7 +125,7 @@ class InvoiceLedgerBuilder
         }
 
         $entriesByMonth = $billableEntries
-            ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
+            ->groupBy(fn (ClientTimeEntry $entry): string => $entry->capacityDate()->format('Y-m'));
         $months = [];
 
         $cursor = $calculationStart->copy();

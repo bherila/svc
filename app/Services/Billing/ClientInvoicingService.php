@@ -1449,8 +1449,13 @@ final class ClientInvoicingService
             ->retainerBillable()
             ->forAgreementScope($agreement)
             ->where('worked_on', '<=', $periodEnd->toDateString())
+            // Booked in the month whose pool it drew on, as InvoiceLedgerBuilder
+            // does: deferred work in the month that absorbed it, not the month
+            // it was worked. Absorbed after this period, it is not history yet.
+            ->withCapacityPlacement((int) $company->workspace_id)
             ->get()
-            ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse((string) $entry->worked_on)->format('Y-m'))
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($periodEnd))
+            ->groupBy(fn (ClientTimeEntry $entry): string => $entry->capacityDate()->format('Y-m'))
             ->map(fn ($group): int => (int) $group->sum('minutes'));
 
         $months = [];

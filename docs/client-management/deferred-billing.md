@@ -33,6 +33,12 @@ The flag is set only by admins (the portal API validates this). Clients cannot s
 
 Included entries are attached to a single `prior_month_retainer` invoice line titled *"Deferred work items applied to retainer (X:XX)"*. Skipped entries are exposed in the invoice detail payload as a "deferred to future invoice" note so admins can see what is pending.
 
+## Where applied deferred work is booked
+
+The capacity ledger (`InvoiceLedgerBuilder`, and the monthly generator's own `monthlyBalances()`) books an applied deferred entry on the date of the pool that absorbed it — the "Deferred work items applied to retainer" line's `line_date`, else its invoice's `service_period_end`, never earlier than the day worked — through `ClientTimeEntry::capacityDate()`. Ordinary work, and deferred work nothing has applied yet, are unaffected: the first is booked on the day worked, the second not at all.
+
+Booking it in the month it was *worked* disagreed with the invoice that applied it. Where that old month's unused capacity had already expired, the restatement spent the expired capacity instead, and the pool the invoice really used was handed out a second time to the next month's work; where the old month had no room, the ledger showed a debt from that month forward that no invoice ever stated. Totals only agreed when nothing expired in between. Pinned by `DeferredCapacityPlacementTest`.
+
 ## Termination path
 
 When generating a post-termination invoice (`isRetainerMonthPostTermination = true`), the allocator switches modes and selects all outstanding deferred entries that the agreement may invoice, without a capacity filter. Consultant and `retainer`-mode hours attach to an `additional_hours` line priced at `agreement.hourly_rate`; `flat_hourly` hours keep their snapshotted rate on separate `subcontractor` lines; `direct` hours remain tracked and unbilled because the subcontractor invoices the client. A project-scoped agreement collects only its project. This termination-only deferred-billing path does **not** increment `hours_billed_at_rate` — that counter tracks the regular catch-up/overage pool used by the cumulative balance snapshot, which is a separate concept. The dollar amount is captured entirely by the generated lines' totals.
