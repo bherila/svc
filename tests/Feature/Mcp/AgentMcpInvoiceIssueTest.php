@@ -494,6 +494,33 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->assertStringNotContainsString('pass payment to invoices.issue', (string) $init->json('result.instructions'));
     }
 
+    /**
+     * The invoice prompt is offered without invoices.issue, so it must not steer toward it.
+     *
+     * prepare-invoice-safely needs billing:write, not billing:deliver. The
+     * folded-payment advice lives in the server instructions, which are built
+     * from the tools this connection actually has.
+     */
+    public function test_a_connection_without_issue_is_not_told_to_fold_a_payment_into_it(): void
+    {
+        [$user] = $this->fixture();
+        $this->actingAsMcp($user, [
+            AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ, AgentApiScopes::TIME_READ,
+            AgentApiScopes::BILLING_READ, AgentApiScopes::BILLING_WRITE, AgentApiScopes::PAYMENTS_RECORD,
+        ]);
+        $init = $this->mcp($this->initializeMessage())->assertOk();
+        $session = (string) $init->headers->get('Mcp-Session-Id');
+        $this->assertNotContains('invoices.issue', $this->toolNames($session));
+        $this->assertContains('payments.record', $this->toolNames($session));
+        $this->assertStringNotContainsString('invoices.issue', (string) $init->json('result.instructions'));
+
+        $prompt = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'prompts/get', 'params' => ['name' => 'prepare-invoice-safely']], $session)
+            ->assertOk()->json('result.messages.0.content.text');
+        $this->assertIsString($prompt);
+        $this->assertStringContainsString('payments.record', $prompt);
+        $this->assertStringNotContainsString('invoices.issue', $prompt);
+    }
+
     private function assertNothingWritten(ClientInvoice $draft): void
     {
         $invoice = $draft->fresh();
