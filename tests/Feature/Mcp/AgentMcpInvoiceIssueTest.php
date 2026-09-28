@@ -532,6 +532,28 @@ final class AgentMcpInvoiceIssueTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    /**
+     * An invoice dated in the future cannot be issued yet, with or without a
+     * payment folded in - and the refused call records neither.
+     */
+    public function test_issue_with_payment_before_the_issue_date_refuses_and_writes_nothing(): void
+    {
+        Mail::fake();
+        [$user, $workspace, , $draft] = $this->fixture(automaticEmail: true);
+        $draft->forceFill(['issue_date' => now()->addDays(3)->toDateString()])->save();
+        $before = $draft->fresh()?->only(['status', 'issue_date', 'issued_at', 'paid_amount', 'balance_amount', 'automatic_delivery_status', 'is_visible_to_client']);
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+
+        $result = $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-early', $this->payment()));
+
+        $this->assertTrue(isset($result['error']) || ($result['result']['isError'] ?? false), json_encode($result));
+        $this->assertEquals($before, $draft->fresh()?->only(['status', 'issue_date', 'issued_at', 'paid_amount', 'balance_amount', 'automatic_delivery_status', 'is_visible_to_client']));
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->assertDatabaseMissing('agent_mutation_audits', ['operation' => 'payments.record', 'outcome' => 'success']);
+        Artisan::call('svc:billing:dispatch-invoice-emails');
+        Mail::assertNotSent(InvoiceMail::class);
+    }
+
     private function payment(): array
     {
         return ['amount' => 10000, 'currency' => 'USD', 'received_on' => now()->toDateString(), 'method' => 'Credit Card', 'reference' => 'synthetic-autopay-1'];

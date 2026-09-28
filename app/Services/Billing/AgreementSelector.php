@@ -57,6 +57,10 @@ final class AgreementSelector
      * cycle is billed in advance, so the invoice for a quarter that begins next
      * month is generated this month.
      *
+     * Empty rather than an exception: for a caller walking every company, a
+     * client with no agreement in force, ended or due within the month simply
+     * has nothing a cadence can bill. That is an answer, not a failure.
+     *
      * @return Collection<int, ClientAgreement>
      */
     public function agreementsForInvoiceGeneration(ClientCompany $company): Collection
@@ -64,7 +68,7 @@ final class AgreementSelector
         $now = $this->clock->now($company->workspace);
         $selectionCeiling = $now->addMonthNoOverflow()->endOfDay();
 
-        $agreements = $company->agreements()
+        return $company->agreements()
             ->where('workspace_id', $company->workspace_id)
             ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             // Every cadence bills its opening retainer in advance, monthly
@@ -75,12 +79,6 @@ final class AgreementSelector
             ->orderBy('starts_on')
             ->orderBy('id')
             ->get();
-
-        if ($agreements->isEmpty()) {
-            throw new RuntimeException('No agreement found for this client company.');
-        }
-
-        return $agreements;
     }
 
     /**

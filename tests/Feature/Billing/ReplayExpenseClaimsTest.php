@@ -54,6 +54,9 @@ final class ReplayExpenseClaimsTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-08-15'));
         try {
             app(ClientInvoicingService::class)->generateAllInvoices($company);
+            // September's invoice is generated in August but dated 1 September,
+            // and an invoice is not issued before its date.
+            Carbon::setTestNow(Carbon::parse('2026-09-01'));
             foreach (ClientInvoice::query()->where('workspace_id', $workspace->id)->get() as $invoice) {
                 app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
             }
@@ -67,7 +70,10 @@ final class ReplayExpenseClaimsTest extends TestCase
             if ($shape === 'expense-only') {
                 $this->assertSame(12500, $target->total_amount);
             }
+            // Issued on its own date, then back to the replay's vantage point.
+            Carbon::setTestNow(Carbon::parse((string) $target->issue_date?->toDateString()));
             app(InvoiceLifecycleService::class)->issue($target, $workspace);
+            Carbon::setTestNow(Carbon::parse('2026-09-15'));
             if ($shape === 'superseded') {
                 $duplicate = $target->replicate();
                 $duplicate->forceFill(['public_id' => (string) Str::uuid(), 'invoice_number' => 'SYN-SUPERSEDED', 'status' => 'draft', 'issued_at' => null, 'is_visible_to_client' => false])->save();

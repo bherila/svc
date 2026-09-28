@@ -10,7 +10,7 @@ use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\WorkspaceAuthorization;
-use Carbon\CarbonImmutable;
+use App\Support\WorkspaceClock;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -41,11 +41,15 @@ class BillingScheduleController extends Controller
             : redirect()->back()->with('status', 'Billing schedule created.');
     }
 
-    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service, WorkspaceAuthorization $authorization): JsonResponse|RedirectResponse
+    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service, WorkspaceAuthorization $authorization, WorkspaceClock $clock): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $schedule);
-        $invoices = $service->generateDue($schedule, CarbonImmutable::today());
+        // Due by the workspace's calendar, the one `issue()` dates against:
+        // UTC's "today" runs ahead of a workspace west of Greenwich every
+        // evening, and a period starting on that UTC date would be billed and
+        // then refused as issued before its own issue date.
+        $invoices = $service->generateDue($schedule, $clock->today($workspace));
 
         return request()->expectsJson()
             ? response()->json(['data' => $invoices])

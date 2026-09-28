@@ -18,6 +18,7 @@ use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
 use App\Support\Billing\CadenceOverageLineDescription;
+use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -89,6 +90,14 @@ final class ClientInvoicingService
 
     /** An agreement with no repeating cycle produces no cycle invoices. */
     public const SKIP_REASON_NOT_RECURRING = 'not_recurring_cadence';
+
+    /**
+     * The company has no agreement a cadence could bill: none in force, none
+     * ended that may still owe a closing invoice, none starting within the
+     * month. Bulk generation walks every company, so this is a skip, not an
+     * error - a prospect or a one-off client is not a failed billing run.
+     */
+    public const SKIP_REASON_NO_AGREEMENT = 'no_billable_agreement';
 
     /**
      * Deferred entries the most recent generation could not fit into remaining
@@ -179,6 +188,14 @@ final class ClientInvoicingService
 
         $results = $this->emptyGenerationResults();
         $agreements = $this->agreementSelector->agreementsForInvoiceGeneration($company);
+
+        if ($agreements->isEmpty()) {
+            return $this->summarizeGenerationResults([], [], [[
+                'period' => 'all',
+                'reason_code' => self::SKIP_REASON_NO_AGREEMENT,
+                'reason' => 'No agreement is in force, ended, or starting within the month; there is nothing to generate.',
+            ]]);
+        }
 
         foreach ($agreements as $agreement) {
             $successorAgreement = $this->agreementSelector->successorAgreementForGeneration($agreements, $agreement);
@@ -727,6 +744,8 @@ final class ClientInvoicingService
 
             $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
 
+            $this->releaseDraftForRebuild($invoice);
+
             $terminationDate = $this->agreementEnd($agreement);
             $terminationMonthKey = $terminationDate?->format('Y-m');
 
@@ -772,17 +791,20 @@ final class ClientInvoicingService
                 'invoice_kind' => InvoiceKind::CadencePeriod->value,
                 'cycle_start' => $retainerMonthStart,
                 'cycle_end' => $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
+                // Issued on the first day of the month it sells, whatever day
+                // somebody presses issue: `issue()` keeps a date the draft
+                // already carries and only falls back to today without one.
+                'issue_date' => $retainerMonthStart->copy()->startOfDay(),
             ];
 
             $wasCreated = ! $invoice instanceof ClientInvoice;
             if ($invoice instanceof ClientInvoice) {
                 $invoice->update($invoiceData);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
             } else {
                 $invoice = ClientInvoice::query()->create($invoiceData + [
                     'workspace_id' => $company->workspace_id,
                     'client_company_id' => $company->id,
-                    'invoice_number' => $this->invoiceNumberAllocator->next($company->workspace),
+                    'invoice_number' => $this->invoiceNumberAllocator->forIssueMonth($company, $retainerMonthStart),
                     'currency' => (string) $agreement->currency,
                     'subtotal_amount' => 0,
                     'tax_amount' => 0,
@@ -803,13 +825,20 @@ final class ClientInvoicingService
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
             // Prorated like the fee. Granting a whole month's pool against a
             // half month's charge understates every overage that follows.
+            //
+            // And net of debt the reconciled month could not absorb. When a
+            // carried deficit exceeds a month's retainer, the ledger spends the
+            // next retainer on that older debt before anything else, so lending
+            // the whole of it to this period's overflow let one pool of hours
+            // be spent twice: the lines said the hours were left, while the
+            // invoice's own opening balance recorded a debt.
             $currentMonthCapacity = $isRetainerMonthPostTermination
                 ? 0.0
-                : $this->retainerCalculator->retainerHoursForMonth(
+                : max(0.0, $this->retainerCalculator->retainerHoursForMonth(
                     $agreement,
                     $retainerMonthStart,
                     $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
-                );
+                ) - ($priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0));
             // No minimum availability to maintain once the agreement has ended.
             $catchUpThreshold = $isRetainerMonthPostTermination ? 0.0 : $agreement->catch_up_threshold_hours;
 
@@ -962,14 +991,22 @@ final class ClientInvoicingService
             }
             $this->invoiceLineComposer->addSubcontractorFlatHourlyLines($company, $invoice, $periodStart, $periodEnd, $sortOrder);
 
+            // Deferred work may take only what the reconciled month's pool has
+            // left after that month's own work - never the retainer being sold
+            // in advance. That pool belongs to next month's work: lending it to
+            // the backlog booked the backlog as this month's overage, which the
+            // ledger carries into next month as debt, so next month's work
+            // spilled into the month after and the minimum-availability rule
+            // then billed catch-up hours the backlog had caused. Deferred work
+            // is held precisely so that it never does either.
             $this->applyDeferredWork(
                 $company,
                 $invoice,
                 $agreement,
                 $periodEnd,
                 $isRetainerMonthPostTermination,
-                ($priorMonthCapacity - $plan->totalPriorMonthRetainerHours)
-                    + ($currentMonthCapacity - $plan->totalCurrentMonthRetainerHours),
+                max(0.0, $priorMonthCapacity - $plan->totalPriorMonthRetainerHours),
+                $priorMonthBalance->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 
@@ -1069,10 +1106,15 @@ final class ClientInvoicingService
                     'service_period_end' => $periodEnd,
                     'cycle_start' => $retainerStart,
                     'cycle_end' => $retainerEnd,
+                    'issue_date' => $retainerStart,
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'status' => 'draft',
                 ]);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
+                // A ledger the bulk walk measured before reaching this draft
+                // still counts the allocations just released; measure again.
+                if ($this->releaseDraftForRebuild($invoice)) {
+                    $ledger = null;
+                }
             } else {
                 $invoice = ClientInvoice::query()->create([
                     'workspace_id' => $company->workspace_id,
@@ -1080,7 +1122,7 @@ final class ClientInvoicingService
                     'client_agreement_id' => $agreement->id,
                     'service_period_start' => $periodStart,
                     'service_period_end' => $periodEnd,
-                    'invoice_number' => $this->invoiceNumberAllocator->next($company->workspace),
+                    'invoice_number' => $this->invoiceNumberAllocator->forIssueMonth($company, $retainerStart),
                     'currency' => (string) $agreement->currency,
                     'subtotal_amount' => 0,
                     'tax_amount' => 0,
@@ -1089,6 +1131,8 @@ final class ClientInvoicingService
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'cycle_start' => $retainerStart,
                     'cycle_end' => $retainerEnd,
+                    // As on the monthly path: dated the day the cycle it sells begins.
+                    'issue_date' => $retainerStart,
                 ]);
             }
 
@@ -1197,6 +1241,7 @@ final class ClientInvoicingService
                 $periodEnd,
                 false,
                 max(0.0, $cycleLedger['covered_hours'] - $plan->totalPriorMonthRetainerHours),
+                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $periodEnd->format('Y-m'))->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 
@@ -1221,6 +1266,27 @@ final class ClientInvoicingService
     }
 
     /**
+     * Release a draft being rebuilt, before anything is measured.
+     *
+     * The one step both cadence paths take ahead of their ledger. It reads
+     * every applied deferred entry in the month that absorbed it, and a draft's
+     * own are about to be released and re-decided: counted first, a rebuild
+     * that no longer had room for them kept balances for work it had just
+     * dropped. Reports whether a draft was released, so a caller holding a
+     * ledger measured earlier knows to measure again.
+     */
+    private function releaseDraftForRebuild(?ClientInvoice $invoice): bool
+    {
+        if (! $invoice instanceof ClientInvoice) {
+            return false;
+        }
+
+        $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
+
+        return true;
+    }
+
+    /**
      * Bill deferred work, either against remaining capacity or in full.
      *
      * Deferred entries are never split and never trigger catch-up billing - the
@@ -1236,16 +1302,33 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         bool $isPostTermination,
         float $remainingCapacity,
+        float $carriedDeferredHours,
         int &$sortOrder,
     ): void {
+        // Re-carried deferred work - applied earlier beyond a month's free
+        // capacity, and carried forward again as a quantity by the ledger -
+        // is settled first, being the oldest. In whole minutes, as every
+        // other time line is; the ledger's four decimal places of an hour are
+        // finer than a minute, so the nearest minute is what it carries.
+        $carriedMinutes = (int) round($carriedDeferredHours * 60);
+
         if ($isPostTermination) {
             $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd, $agreement);
             if ($deferredToBill->isNotEmpty()) {
                 $this->invoiceLineComposer->addDeferredTerminationLine($invoice, $agreement, $deferredToBill, $sortOrder);
             }
+            if ($carriedMinutes > 0) {
+                $this->createCarriedDeferredLine($invoice, $agreement, CarriedDeferredLine::BilledOnTermination, $carriedMinutes, $periodEnd, $sortOrder);
+            }
             $this->deferredSkipped = [];
 
             return;
+        }
+
+        $appliedMinutes = min($carriedMinutes, (int) round($remainingCapacity * 60));
+        if ($appliedMinutes > 0) {
+            $this->createCarriedDeferredLine($invoice, $agreement, CarriedDeferredLine::Applied, $appliedMinutes, $periodEnd, $sortOrder);
+            $remainingCapacity -= $appliedMinutes / 60;
         }
 
         $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity, $agreement);
@@ -1253,6 +1336,42 @@ final class ClientInvoicingService
             $this->invoiceLineComposer->addDeferredRetainerLine($invoice, $agreement, $result, $periodEnd, $sortOrder);
         }
         $this->deferredSkipped = $result->skipped;
+    }
+
+    /**
+     * Settle re-carried deferred work: from spare capacity at no charge, or at
+     * the hourly rate on termination. It links no time - the entries stay on
+     * the invoice that first applied them - so it is a quantity, like the
+     * ledger's balance it draws down.
+     */
+    private function createCarriedDeferredLine(
+        ClientInvoice $invoice,
+        ClientAgreement $agreement,
+        CarriedDeferredLine $kind,
+        int $minutes,
+        Carbon $lineDate,
+        int &$sortOrder,
+    ): ClientInvoiceLine {
+        $hours = round($minutes / 60, 4);
+        $rateAmount = match ($kind) {
+            CarriedDeferredLine::Applied => 0,
+            CarriedDeferredLine::BilledOnTermination => $agreement->hourlyRateAmountOrFail(),
+        };
+
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => $kind->describe($hours),
+            'quantity' => $rateAmount === 0 ? '0' : HoursQuantity::decimal($hours),
+            'unit_amount' => $rateAmount,
+            'tax_amount' => 0,
+            'total_amount' => $rateAmount === 0 ? 0 : MoneyService::hourlyAmount($minutes, $rateAmount),
+            'type' => $kind->lineType()->value,
+            'hours' => $hours,
+            'line_date' => $lineDate,
+            'sort_order' => $sortOrder++,
+        ]);
     }
 
     /**
@@ -1431,7 +1550,7 @@ final class ClientInvoicingService
             ? $agreementStart
             : min($agreementStart, Carbon::parse((string) $earliestEntryDate)->startOfMonth());
 
-        $minutesByMonth = ClientTimeEntry::query()
+        $ledgerEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
@@ -1442,9 +1561,13 @@ final class ClientInvoicingService
             ->retainerBillable()
             ->forAgreementScope($agreement)
             ->where('worked_on', '<=', $periodEnd->toDateString())
+            // Booked in the month whose pool it drew on, as InvoiceLedgerBuilder
+            // does: deferred work in the month that absorbed it, not the month
+            // it was worked. Absorbed after this period, it is not history yet.
+            ->withCapacityPlacement($company->workspace_id)
             ->get()
-            ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse((string) $entry->worked_on)->format('Y-m'))
-            ->map(fn ($group): int => (int) $group->sum('minutes'));
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($periodEnd));
+        $hoursByMonth = (new CapacityLedgerInputs)->byMonth($company, $agreement, $ledgerEntries, $periodEnd);
 
         $months = [];
         $billedOveragesByMonth = $this->billedOverageLedger->hoursByMonthThrough($agreement, $periodEnd);
@@ -1483,7 +1606,7 @@ final class ClientInvoicingService
                         Carbon::parse($monthKey.'-01')->startOfDay(),
                         Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
                     ),
-                'hours_worked' => $isPreAgreement ? 0.0 : ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
+                ...CapacityLedgerInputs::monthRow($hoursByMonth, $monthKey, countsWork: ! $isPreAgreement),
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => $resetRollover,
             ];

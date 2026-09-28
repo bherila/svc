@@ -353,7 +353,23 @@ final class InvoiceLifecycleService
                 throw new DomainException($this->reversedPeriodRefusal($locked));
             }
 
-            $issueDate = $locked->issue_date ?? $this->clock->today($owningWorkspace);
+            // An invoice is issued on its issue date, not before it. The
+            // cadence generators write the first day of the cycle being sold
+            // and a run on 27 September creates October's draft, so without
+            // this it could be issued - made client-visible, stamped and
+            // scheduled for automatic delivery - days before the date printed
+            // on it. Compared as calendar dates in the workspace's own zone.
+            // A draft with no issue date is still issued today.
+            $today = $this->clock->today($owningWorkspace);
+            if ($locked->issue_date !== null && $today->toDateString() < $locked->issue_date->toDateString()) {
+                throw new DomainException(sprintf(
+                    'This invoice is dated %s and cannot be issued before then; it is %s in this workspace.',
+                    $locked->issue_date->toDateString(),
+                    $today->toDateString(),
+                ));
+            }
+
+            $issueDate = $locked->issue_date ?? $today;
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
                 throw new DomainException('The due date cannot precede the issue date.');
             }
@@ -1282,6 +1298,11 @@ final class InvoiceLifecycleService
     private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides): void
     {
         foreach ($lines as $index => $line) {
+            // Every manual door arrives here. A type the capacity ledger reads
+            // as money state is the generator's alone to write.
+            if (in_array($line['type'] ?? null, InvoiceLineType::systemOnlyValues(), true)) {
+                throw new DomainException('That line type is written only by invoice generation and cannot be added by hand.');
+            }
             $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
             $invoice->lines()->create([
                 'workspace_id' => $workspace->id,

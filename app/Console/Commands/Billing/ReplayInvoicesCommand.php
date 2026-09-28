@@ -1636,7 +1636,7 @@ final class ReplayInvoicesCommand extends Command
         // milestone takes a task's title, a time line takes the entry's, and a
         // recurring item takes its own - all user text, and a title that reads
         // like a generated one must not be treated as one.
-        $generated = ['retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'subcontractor'];
+        $generated = ['retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'carried_deferred_applied', 'carried_deferred_billed', 'subcontractor'];
         if (! in_array($type, $generated, true)) {
             return $description;
         }

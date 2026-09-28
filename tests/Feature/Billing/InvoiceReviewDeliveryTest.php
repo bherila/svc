@@ -332,6 +332,8 @@ final class InvoiceReviewDeliveryTest extends TestCase
         Mail::fake();
         Date::setTestNow('2026-03-07 15:00:00 UTC');
         [, $workspace, $company, $invoice] = $this->draft(timezone: 'America/New_York');
+        // Dated the day it is issued: an invoice may not be issued early.
+        $invoice->forceFill(['issue_date' => '2026-03-07'])->save();
         $company->forceFill([
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 1,

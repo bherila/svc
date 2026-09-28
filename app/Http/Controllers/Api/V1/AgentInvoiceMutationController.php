@@ -19,9 +19,11 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\InvoiceLineType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Validation\Rule;
 
 final class AgentInvoiceMutationController extends Controller
 {
@@ -182,7 +184,7 @@ final class AgentInvoiceMutationController extends Controller
             'manual_lines' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
             'manual_lines.*' => ['array:project_id,type,description,quantity,unit_amount,tax_amount'],
             'manual_lines.*.project_id' => ['nullable', 'uuid'],
-            'manual_lines.*.type' => ['required', 'string', 'max:40'],
+            'manual_lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
             'manual_lines.*.description' => ['required', 'string', 'max:10000'],
             'manual_lines.*.quantity' => ['required'],
             'manual_lines.*.unit_amount' => ['required', 'integer', 'min:0'],

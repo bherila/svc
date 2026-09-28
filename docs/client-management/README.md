@@ -82,7 +82,9 @@ a rolled-back transaction and compares every column and every line of every
 settled invoice before and after. Against production data it watched 25 settled
 invoices, found none altered, and reported the 4 invoices a real run would
 create. `SettledInvoicesUntouchedTest` holds the same property for every settled
-status, including void.
+status, including void. A company with no agreement in force, ended, or starting within
+the month is reported as skipped (`ClientInvoicingService::SKIP_REASON_NO_AGREEMENT`)
+rather than as a failed generation: it has nothing a cadence can bill.
 
 ### Where SVC deliberately differs
 
