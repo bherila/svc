@@ -743,14 +743,7 @@ final class ClientInvoicingService
 
             $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
 
-            // A draft being rebuilt lets go of its lines before anything is
-            // measured. The balances read every applied deferred entry in the
-            // month that absorbed it, and this draft's own are about to be
-            // released and re-decided - counted now, a rebuild that no longer
-            // has room for them recorded a debt for work it had just dropped.
-            if ($invoice instanceof ClientInvoice) {
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
-            }
+            $this->releaseDraftForRebuild($invoice);
 
             $terminationDate = $this->agreementEnd($agreement);
             $terminationMonthKey = $terminationDate?->format('Y-m');
@@ -1115,7 +1108,11 @@ final class ClientInvoicingService
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'status' => 'draft',
                 ]);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
+                // A ledger the bulk walk measured before reaching this draft
+                // still counts the allocations just released; measure again.
+                if ($this->releaseDraftForRebuild($invoice)) {
+                    $ledger = null;
+                }
             } else {
                 $invoice = ClientInvoice::query()->create([
                     'workspace_id' => $company->workspace_id,
@@ -1263,6 +1260,27 @@ final class ClientInvoicingService
 
             return $invoice->fresh(['lines']);
         });
+    }
+
+    /**
+     * Release a draft being rebuilt, before anything is measured.
+     *
+     * The one step both cadence paths take ahead of their ledger. It reads
+     * every applied deferred entry in the month that absorbed it, and a draft's
+     * own are about to be released and re-decided: counted first, a rebuild
+     * that no longer had room for them kept balances for work it had just
+     * dropped. Reports whether a draft was released, so a caller holding a
+     * ledger measured earlier knows to measure again.
+     */
+    private function releaseDraftForRebuild(?ClientInvoice $invoice): bool
+    {
+        if (! $invoice instanceof ClientInvoice) {
+            return false;
+        }
+
+        $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
+
+        return true;
     }
 
     /**
