@@ -11,7 +11,6 @@ use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLinePreview;
-use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -327,7 +326,7 @@ final class RehearseGenerationCommand extends Command
                 ->where('workspace_id', $company->workspace_id)
                 ->whereIn('client_invoice_id', $charged->pluck('id'))
                 ->where('type', InvoiceLineType::AdditionalHours->value)
-                ->get(['id', 'client_invoice_id', 'type', 'description', 'hours']);
+                ->get(['id', 'client_invoice_id', 'hours']);
             $linesLinkingDeferred = array_flip(DB::table('client_invoice_line_time_entries')
                 ->join('client_time_entries', 'client_time_entries.id', '=', 'client_invoice_line_time_entries.client_time_entry_id')
                 ->where('client_invoice_line_time_entries.workspace_id', $company->workspace_id)
@@ -343,10 +342,7 @@ final class RehearseGenerationCommand extends Command
                     ->where('client_invoice_id', $invoice->id)
                     ->map(static fn (ClientInvoiceLine $line): array => [
                         'hours' => (float) $line->hours,
-                        // Termination bills deferred work outside the figure,
-                        // whether it links the entries or re-carried hours.
-                        'links_deferred' => isset($linesLinkingDeferred[(int) $line->id])
-                            || CarriedDeferredLine::of((string) $line->type, (string) $line->description) === CarriedDeferredLine::BilledOnTermination,
+                        'links_deferred' => isset($linesLinkingDeferred[(int) $line->id]),
                     ]));
                 $recorded = $invoice->hours_billed_at_rate === null ? null : (float) $invoice->hours_billed_at_rate;
                 if (RecordedOverage::disagrees($recorded, $lineHours)) {

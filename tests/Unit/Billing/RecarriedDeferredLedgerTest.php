@@ -110,16 +110,21 @@ final class RecarriedDeferredLedgerTest extends TestCase
         $this->assertSame(['ordinary' => 0.6667, 'deferred' => 0.0, 'carried' => 0.6667, 'carried_billed' => 0.75], $inputs['2026-05']);
     }
 
-    public function test_the_carried_lines_are_recognised_by_type_and_description_only(): void
+    public function test_the_carried_lines_are_recognised_by_their_system_only_type_alone(): void
     {
         $this->assertSame('Carried deferred work applied to retainer (2:30)', CarriedDeferredLine::Applied->describe(2.5));
-        $this->assertSame(CarriedDeferredLine::Applied, CarriedDeferredLine::of('prior_month_retainer', 'Carried deferred work applied to retainer (2:30)'));
-        $this->assertSame(CarriedDeferredLine::BilledOnTermination, CarriedDeferredLine::of('additional_hours', CarriedDeferredLine::BilledOnTermination->describe(1.0)));
-        $this->assertSame(InvoiceLineType::PriorMonthRetainer, CarriedDeferredLine::Applied->lineType());
-        $this->assertSame(InvoiceLineType::AdditionalHours, CarriedDeferredLine::BilledOnTermination->lineType());
-        $this->assertNull(CarriedDeferredLine::of('additional_hours', 'Carried deferred work applied to retainer (2:30)'));
-        $this->assertNull(CarriedDeferredLine::of('prior_month_retainer', 'Carried deferred work applied to retainer'));
-        $this->assertNull(CarriedDeferredLine::of('prior_month_retainer', 'Deferred work items applied to retainer (2:30)'));
+        $this->assertSame(CarriedDeferredLine::Applied, CarriedDeferredLine::of('carried_deferred_applied'));
+        $this->assertSame(CarriedDeferredLine::BilledOnTermination, CarriedDeferredLine::of('carried_deferred_billed'));
+        $this->assertSame(InvoiceLineType::CarriedDeferredApplied, CarriedDeferredLine::Applied->lineType());
+        $this->assertSame(InvoiceLineType::CarriedDeferredBilled, CarriedDeferredLine::BilledOnTermination->lineType());
+        // The wording is display text: an ordinary type with the same words is not one.
+        $this->assertNull(CarriedDeferredLine::of('prior_month_retainer'));
+        $this->assertNull(CarriedDeferredLine::of('additional_hours'));
+        $this->assertSame(['carried_deferred_applied', 'carried_deferred_billed'], InvoiceLineType::systemOnlyValues());
+        foreach (InvoiceLineType::systemOnlyValues() as $type) {
+            $this->assertContains($type, InvoiceLineType::systemGeneratedValues(), 'Released when a draft is rebuilt');
+            $this->assertContains($type, InvoiceLineType::definingTheWorkPeriod());
+        }
     }
 
     public function test_the_inputs_split_ordinary_deferred_and_carried_hours_by_month(): void

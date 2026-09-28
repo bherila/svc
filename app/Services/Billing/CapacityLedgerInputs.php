@@ -7,7 +7,6 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
 use App\Support\Billing\CarriedDeferredLine;
-use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -33,17 +32,14 @@ final class CapacityLedgerInputs
         $lines = ClientInvoiceLine::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_agreement_id', $agreement->id)
-            ->whereIn('type', [InvoiceLineType::PriorMonthRetainer->value, InvoiceLineType::AdditionalHours->value])
-            ->where(fn ($query) => $query
-                ->where('description', 'like', CarriedDeferredLine::Applied->value.' (%')
-                ->orWhere('description', 'like', CarriedDeferredLine::BilledOnTermination->value.' (%'))
+            ->whereIn('type', [CarriedDeferredLine::Applied->lineType()->value, CarriedDeferredLine::BilledOnTermination->lineType()->value])
             ->whereNotNull('line_date')
             ->whereDate('line_date', '<=', $through->toDateString())
             ->whereHas('invoice', fn ($invoice) => $invoice
                 ->where('client_invoices.workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)
                 ->whereIn('status', InvoiceStatus::live()))
-            ->get(['type', 'description', 'hours', 'line_date']);
+            ->get(['type', 'hours', 'line_date']);
 
         return self::fold(
             $entries->map(fn (ClientTimeEntry $entry): array => [
@@ -54,7 +50,7 @@ final class CapacityLedgerInputs
             $lines->map(fn (ClientInvoiceLine $line): array => [
                 'month' => $line->line_date?->format('Y-m') ?? '',
                 'hours' => (float) $line->hours,
-                'kind' => CarriedDeferredLine::of((string) $line->type, (string) $line->description),
+                'kind' => CarriedDeferredLine::of((string) $line->type),
             ]),
         );
     }

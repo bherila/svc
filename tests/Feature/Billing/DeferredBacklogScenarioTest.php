@@ -121,7 +121,7 @@ final class DeferredBacklogScenarioTest extends TestCase
             return app(InvoiceLifecycleService::class)->issue($draft, $this->backlogWorkspace);
         };
         $carried = fn (ClientInvoice $invoice): float => (float) $invoice->lines()
-            ->where('description', 'like', 'Carried deferred work applied to retainer (%')->sum('hours');
+            ->where('type', 'carried_deferred_applied')->sum('hours');
 
         $october = $issue('2026-10-01');
         $this->assertSame(0.0, $carried($october), 'September left nothing free');
@@ -151,6 +151,28 @@ final class DeferredBacklogScenarioTest extends TestCase
             ->select('client_time_entry_id')->groupBy('client_time_entry_id')->havingRaw('count(*) > 1')->get()->count());
     }
 
+    /**
+     * The wording settles nothing. A line that merely reads like a settlement
+     * - even on this agreement, even issued - leaves the carried hours owed.
+     */
+    public function test_a_line_that_only_reads_like_a_settlement_settles_nothing(): void
+    {
+        $september = $this->backlogInvoices['2026-09'];
+        foreach (['prior_month_retainer' => 'Carried deferred work applied to retainer (9:15)', 'additional_hours' => 'Carried deferred work billed on agreement termination (9:15)'] as $type => $description) {
+            $september->lines()->create([
+                'workspace_id' => $september->workspace_id, 'client_agreement_id' => $september->client_agreement_id,
+                'type' => $type, 'description' => $description, 'quantity' => '0', 'unit_amount' => 0,
+                'tax_amount' => 0, 'total_amount' => 0, 'hours' => 9.25, 'line_date' => '2026-08-31', 'sort_order' => 20,
+            ]);
+        }
+
+        $ledger = app(InvoiceLedgerBuilder::class)->buildAgreementLedgerThrough(
+            $this->backlogCompany, $this->backlogAgreement, Carbon::parse('2026-09-30'),
+        );
+
+        $this->assertSame(9.25, round($this->month($ledger, '2026-09')->recarriedDeferredHours, 2));
+    }
+
     /** Ending the agreement bills the re-carried hours at rate; they never lapse. */
     public function test_termination_bills_re_carried_deferred_work_at_the_hourly_rate(): void
     {
@@ -159,8 +181,8 @@ final class DeferredBacklogScenarioTest extends TestCase
         app(ClientInvoicingService::class)->generateAllInvoices($this->backlogCompany);
 
         $line = ClientInvoice::query()->where('status', 'draft')->sole()->lines()
-            ->where('description', 'like', 'Carried deferred work billed on agreement termination (%')->sole();
-        $this->assertSame('additional_hours', $line->type);
+            ->where('type', 'carried_deferred_billed')->sole();
+        $this->assertSame('Carried deferred work billed on agreement termination (9:15)', $line->description);
         $this->assertSame(9.25, (float) $line->hours);
         $this->assertSame(346875, (int) $line->total_amount);
         $this->assertSame(0, $line->timeEntries()->count());
