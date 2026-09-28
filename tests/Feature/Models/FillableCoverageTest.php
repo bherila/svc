@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Models;
 
+use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
@@ -49,6 +50,9 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        ClientCompany::class => [
+            'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+        ],
         User::class => [
             'email_verified_at' => 'Set by the verification flow, never by user input.',
             'remember_token' => 'Managed by the auth guard.',
