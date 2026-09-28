@@ -30,8 +30,26 @@ final class OverpaymentCreditAuditor
     /** Invoices per batch; each batch costs three queries. */
     private const BATCH = 500;
 
-    /** @return list<CreditPoolPartition> */
+    /**
+     * Every pool with funding, spending or a problem.
+     *
+     * One read-only transaction around the whole scan. The invoices, their
+     * payments and their credit lines are separate queries, and as separate
+     * autocommit statements a write committing between them - an issue, a
+     * refund, a void - would be seen by the later reads and not the earlier,
+     * reporting a balance that existed at no moment. Inside one transaction
+     * REPEATABLE READ fixes a snapshot at the first read and every batch reads
+     * the same state. Nothing is written, so it commits nothing.
+     *
+     * @return list<CreditPoolPartition>
+     */
     public function partitions(): array
+    {
+        return DB::transaction(fn (): array => $this->scan());
+    }
+
+    /** @return list<CreditPoolPartition> */
+    private function scan(): array
     {
         /** @var array<string, CreditPoolPartition> $partitions */
         $partitions = [];
