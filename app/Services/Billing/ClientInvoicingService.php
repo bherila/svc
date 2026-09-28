@@ -629,14 +629,18 @@ final class ClientInvoicingService
      * The overlap guard does not catch it, because it compares service periods
      * and those genuinely do not overlap. A void invoice sold nothing, and the
      * invoice being refreshed is not competing with itself.
+     *
+     * Answered with the number of the invoice that sold it, or null: the
+     * number is what a correction's hours statement prints instead of
+     * implying it sells the retainer a second time.
      */
-    private function cycleAlreadySold(
+    private function cycleSoldBy(
         ClientCompany $company,
         ClientAgreement $agreement,
         Carbon $retainerMonthStart,
         ?ClientInvoice $invoice,
-    ): bool {
-        return $this->scopedInvoices($company)
+    ): ?string {
+        $number = $this->scopedInvoices($company)
             ->where('client_agreement_id', $agreement->id)
             // A null kind reads as cadence here exactly as it does in
             // `findRefreshableMonthlyInvoice()` and on the model. Excluding it
@@ -665,7 +669,10 @@ final class ClientInvoicingService
                     InvoiceLineType::RecurringItem->value,
                 ]);
             })
-            ->exists();
+            ->orderBy('id')
+            ->value('invoice_number');
+
+        return is_string($number) ? $number : null;
     }
 
     /**
@@ -943,7 +950,8 @@ final class ClientInvoicingService
             // see that: the periods genuinely do not overlap. Without this the
             // correction adds the retainer and every recurring item a second
             // time, on top of an invoice the client may already have paid.
-            $cycleAlreadySold = $this->cycleAlreadySold($company, $agreement, $retainerMonthStart, $invoice);
+            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            $cycleAlreadySold = $retainerSoldBy !== null;
 
             if (! $isRetainerMonthPostTermination && ! $cycleAlreadySold) {
                 $retainerMonthEnd = $retainerMonthStart->copy()->endOfMonth();
@@ -1058,6 +1066,7 @@ final class ClientInvoicingService
                 deferredBacklogEntries: $deferred['backlog_entries'],
                 recarriedRemainingHours: $finalWork->recarriedDeferredHours ?? 0.0,
                 nextRetainerHours: round((float) $invoice->retainer_hours_included, 4),
+                retainerSoldBy: $retainerSoldBy,
             ));
 
             // Credit is applied last so it lands against the final figure rather
@@ -1358,6 +1367,8 @@ final class ClientInvoicingService
                 deferredBacklogEntries: $deferred['backlog_entries'],
                 recarriedRemainingHours: $lastWork->recarriedDeferredHours ?? 0.0,
                 nextRetainerHours: round($retainerHours, 4),
+                // The non-monthly path always sells its cycle.
+                retainerSoldBy: null,
             ));
 
             $invoice->update([

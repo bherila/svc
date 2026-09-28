@@ -89,8 +89,14 @@ final readonly class InvoiceHoursStatement
         public int $deferredBacklogEntries,
         /** Deferred work applied earlier beyond free capacity, still to settle. */
         public float $recarriedRemainingHours,
-        /** The retainer this invoice sells for the next period. */
+        /** The retainer for the next period: sold by this invoice, or by the one below. */
         public float $nextRetainerHours,
+        /**
+         * The number of an earlier invoice that already sold the next period's
+         * retainer, when this one is a correction that does not sell it again.
+         * Null when this invoice sells it.
+         */
+        public ?string $retainerSoldBy = null,
     ) {}
 
     /** Where the work period's pool stood before any of this invoice's work. */
@@ -140,6 +146,7 @@ final readonly class InvoiceHoursStatement
             'deferredBacklogEntries' => $this->deferredBacklogEntries,
             'recarriedRemainingHours' => $this->recarriedRemainingHours,
             'nextRetainerHours' => $this->nextRetainerHours,
+            'retainerSoldBy' => $this->retainerSoldBy,
         ];
     }
 
@@ -203,6 +210,7 @@ final readonly class InvoiceHoursStatement
             deferredBacklogEntries: $count('deferredBacklogEntries'),
             recarriedRemainingHours: $hours('recarriedRemainingHours'),
             nextRetainerHours: $hours('nextRetainerHours'),
+            retainerSoldBy: $text('retainerSoldBy'),
         );
     }
 }

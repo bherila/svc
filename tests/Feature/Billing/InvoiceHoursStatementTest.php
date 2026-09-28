@@ -183,6 +183,36 @@ final class InvoiceHoursStatementTest extends TestCase
     }
 
     /**
+     * A correction range inside a month whose retainer an earlier invoice
+     * already sold charges no retainer. Its statement keeps the pool position
+     * - that is still where the client stands - but names the invoice that
+     * sold the retainer and never presents it as sold again.
+     */
+    public function test_a_correction_names_the_invoice_that_sold_the_retainer(): void
+    {
+        $this->entry('2026-01-12', 360);
+        $this->entry('2026-02-05', 120);
+        $ordinary = $this->generate('2026-01');
+        $this->assertNull($ordinary->hoursStatement()?->retainerSoldBy);
+
+        $correction = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company, Carbon::parse('2026-02-01'), Carbon::parse('2026-02-15'), $this->agreement,
+        );
+        $statement = $correction->hoursStatement();
+
+        $this->assertSame(0, $correction->lines()->where('type', InvoiceLineType::Retainer->value)->count());
+        $this->assertInstanceOf(InvoiceHoursStatement::class, $statement);
+        $this->assertSame($ordinary->invoice_number, $statement->retainerSoldBy);
+
+        foreach ([InvoiceLineDetail::CLIENT, InvoiceLineDetail::OPERATOR] as $audience) {
+            $html = app(InvoiceDocumentService::class)->html($correction, $audience)->render();
+            $this->assertStringContainsString('Retainer hours for February 2026, sold on invoice '.$ordinary->invoice_number, $html);
+            $this->assertStringContainsString('This invoice does not sell the February 2026 retainer and charges nothing for it', $html);
+            $this->assertStringNotContainsString('<td class="label">Retainer hours for February 2026</td>', $html);
+        }
+    }
+
+    /**
      * Issued means frozen. Work logged later against the same month changes
      * what the ledger would now compute for it, and a statement recomputed at
      * render time would silently rewrite a document the client already holds.

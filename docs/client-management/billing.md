@@ -171,7 +171,10 @@ work applied and re-carried deferred work settled, catch-up billed with the
 minimum-availability hours shown as their own row, what carries forward
 (unused hours rolling in or expiring, hours still owed, the deferred backlog
 still waiting, re-carried hours still to settle), and the closing position of
-the period the invoice sells. `InvoiceHoursStatementRows` lays it out; its
+the period the invoice sells - or, for a correction range inside a cycle an
+earlier invoice already sold, the same position labelled with that invoice's
+number and a note that this one does not sell the retainer again.
+`InvoiceHoursStatementRows` lays it out; its
 two net lines are arithmetic over the rows printed above them.
 
 **It comes from the computation that wrote the lines.** Both cadence

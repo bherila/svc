@@ -84,12 +84,25 @@ final class InvoiceHoursStatementRows
             self::optional('Earlier deferred work still to settle', $statement->recarriedRemainingHours),
         ]))];
 
-        $sections[] = ['title' => 'Closing position: '.$next, 'rows' => [
-            self::row('Retainer hours for '.$next, $statement->nextRetainerHours),
+        // A correction reconciles work inside a cycle an earlier invoice
+        // already sold. The pool position is the same either way; what must
+        // not be implied is that this invoice sells the retainer again.
+        $soldBy = $statement->retainerSoldBy;
+        // The one optional row is last, so filtering it out leaves a list.
+        $sections[] = ['title' => 'Closing position: '.$next, 'rows' => array_filter([
+            self::row(
+                $soldBy === null
+                    ? 'Retainer hours for '.$next
+                    : 'Retainer hours for '.$next.', sold on invoice '.$soldBy,
+                $statement->nextRetainerHours,
+            ),
             self::row('Unused hours rolled in', $statement->rolledForwardHours),
             self::row('Hours owed carried in', -$statement->deficitCarriedForwardHours),
             self::row('Net hours available at the start of '.$next, $statement->closingNetHours(), 'total'),
-        ]];
+            $soldBy === null
+                ? null
+                : ['label' => 'This invoice does not sell the '.$next.' retainer and charges nothing for it; it was sold on invoice '.$soldBy.'.', 'hours' => '', 'kind' => 'note'],
+        ])];
 
         return $sections;
     }

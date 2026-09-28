@@ -197,6 +197,23 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertSame('Closing position: the next period', $sections[4]['title']);
     }
 
+    public function test_a_correction_names_the_invoice_that_sold_the_retainer_it_does_not_resell(): void
+    {
+        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-202602-001']));
+
+        $this->assertSame([
+            ['label' => 'Retainer hours for February 2026, sold on invoice SYN-202602-001', 'hours' => '10.00', 'kind' => 'row'],
+            ['label' => 'Unused hours rolled in', 'hours' => '4.00', 'kind' => 'row'],
+            ['label' => 'Hours owed carried in', 'hours' => '-9.00', 'kind' => 'row'],
+            ['label' => 'Net hours available at the start of February 2026', 'hours' => '5.00', 'kind' => 'total'],
+            ['label' => 'This invoice does not sell the February 2026 retainer and charges nothing for it; it was sold on invoice SYN-202602-001.', 'hours' => '', 'kind' => 'note'],
+        ], $sections[4]['rows']);
+        $this->assertSame(
+            'SYN-202602-001',
+            InvoiceHoursStatement::fromArray(json_decode((string) json_encode((new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-202602-001']))->toArray()), true))?->retainerSoldBy,
+        );
+    }
+
     public function test_hours_print_to_two_places_without_a_negative_zero(): void
     {
         $this->assertSame('0.00', InvoiceHoursStatementRows::hours(-0.001));
