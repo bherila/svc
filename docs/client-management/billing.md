@@ -88,7 +88,7 @@ retainer being sold is lent to the reconciled month's overflow only net of debt
 that month could not absorb (`opening.remainingNegativeBalance`), because the
 ledger spends the next retainer on that older debt first; lending all of it
 let the lines claim hours the invoice's own opening balance recorded as owed
-(`CarriedDeficitCapacityTest`). For a
+(`CarriedDeficitCapacityTest`). Catch-up bills ordinary (non-deferred) time; approved expenses are billed at cost on the same invoice by `ExpenseInvoiceAllocations`; and deferred work never reaches a catch-up charge, directly or by leaving the next month short (`CatchUpBillsOrdinaryWorkAndExpensesTest`). For a
 synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.
