@@ -772,6 +772,10 @@ final class ClientInvoicingService
                 'invoice_kind' => InvoiceKind::CadencePeriod->value,
                 'cycle_start' => $retainerMonthStart,
                 'cycle_end' => $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
+                // Issued on the first day of the month it sells, whatever day
+                // somebody presses issue: `issue()` keeps a date the draft
+                // already carries and only falls back to today without one.
+                'issue_date' => $retainerMonthStart->copy()->startOfDay(),
             ];
 
             $wasCreated = ! $invoice instanceof ClientInvoice;
@@ -1069,6 +1073,7 @@ final class ClientInvoicingService
                     'service_period_end' => $periodEnd,
                     'cycle_start' => $retainerStart,
                     'cycle_end' => $retainerEnd,
+                    'issue_date' => $retainerStart,
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'status' => 'draft',
                 ]);
@@ -1089,6 +1094,8 @@ final class ClientInvoicingService
                     'invoice_kind' => InvoiceKind::CadencePeriod->value,
                     'cycle_start' => $retainerStart,
                     'cycle_end' => $retainerEnd,
+                    // As on the monthly path: dated the day the cycle it sells begins.
+                    'issue_date' => $retainerStart,
                 ]);
             }
 
