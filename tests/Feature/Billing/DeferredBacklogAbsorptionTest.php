@@ -111,6 +111,30 @@ final class DeferredBacklogAbsorptionTest extends TestCase
         $this->assertSame(0, $march->lines->where('type', InvoiceLineType::AdditionalHours->value)->count());
     }
 
+    /**
+     * Rebuilding a draft must not count the deferred work it is about to let
+     * go. January: 6 hours of work leave 4 free, and a 4-hour deferred entry is
+     * absorbed. Two more hours of January work turn up; on the rebuild only 2
+     * are free, so the deferred entry is released - and January closes with 2
+     * unused hours, not a 2-hour debt measured against the draft's old lines.
+     */
+    public function test_a_rebuilt_draft_measures_its_balances_without_the_deferred_work_it_releases(): void
+    {
+        $this->entry('2026-01-12', 360);
+        $deferred = $this->entry('2026-01-20', 240, deferred: true);
+
+        $first = $this->generate('2026-01');
+        $this->assertSame([$deferred->id], $this->deferredLine($first)?->timeEntries()->pluck('client_time_entries.id')->map(fn ($id): int => (int) $id)->all());
+
+        $this->entry('2026-01-25', 120);
+        $rebuilt = $this->generate('2026-01');
+
+        $this->assertSame($first->id, $rebuilt->id);
+        $this->assertNull($this->deferredLine($rebuilt));
+        $this->assertSame(2.0, (float) $rebuilt->unused_hours_balance);
+        $this->assertSame(0.0, (float) $rebuilt->negative_hours_balance);
+    }
+
     private function generate(string $workMonth): ClientInvoice
     {
         $start = Carbon::parse($workMonth.'-01');

@@ -743,6 +743,15 @@ final class ClientInvoicingService
 
             $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
 
+            // A draft being rebuilt lets go of its lines before anything is
+            // measured. The balances read every applied deferred entry in the
+            // month that absorbed it, and this draft's own are about to be
+            // released and re-decided - counted now, a rebuild that no longer
+            // has room for them recorded a debt for work it had just dropped.
+            if ($invoice instanceof ClientInvoice) {
+                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
+            }
+
             $terminationDate = $this->agreementEnd($agreement);
             $terminationMonthKey = $terminationDate?->format('Y-m');
 
@@ -797,7 +806,6 @@ final class ClientInvoicingService
             $wasCreated = ! $invoice instanceof ClientInvoice;
             if ($invoice instanceof ClientInvoice) {
                 $invoice->update($invoiceData);
-                $this->invoiceLineComposer->resetSystemGeneratedLines($invoice, preserveExpenseClaims: true);
             } else {
                 $invoice = ClientInvoice::query()->create($invoiceData + [
                     'workspace_id' => $company->workspace_id,
