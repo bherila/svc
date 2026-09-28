@@ -782,7 +782,7 @@ final class ClientInvoicingService
                 $invoice = ClientInvoice::query()->create($invoiceData + [
                     'workspace_id' => $company->workspace_id,
                     'client_company_id' => $company->id,
-                    'invoice_number' => $this->invoiceNumberAllocator->next($company->workspace),
+                    'invoice_number' => $this->invoiceNumberAllocator->forIssueMonth($company, $retainerMonthStart),
                     'currency' => (string) $agreement->currency,
                     'subtotal_amount' => 0,
                     'tax_amount' => 0,
@@ -1080,7 +1080,7 @@ final class ClientInvoicingService
                     'client_agreement_id' => $agreement->id,
                     'service_period_start' => $periodStart,
                     'service_period_end' => $periodEnd,
-                    'invoice_number' => $this->invoiceNumberAllocator->next($company->workspace),
+                    'invoice_number' => $this->invoiceNumberAllocator->forIssueMonth($company, $retainerStart),
                     'currency' => (string) $agreement->currency,
                     'subtotal_amount' => 0,
                     'tax_amount' => 0,

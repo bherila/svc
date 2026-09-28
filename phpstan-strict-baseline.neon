@@ -86,12 +86,6 @@ parameters:
 			path: app/Services/Billing/ClientInvoicingService.php
 
 		-
-			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceNumberAllocator\:\:next\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
-			identifier: argument.type
-			count: 2
-			path: app/Services/Billing/ClientInvoicingService.php
-
-		-
 			message: '#^Cannot call method format\(\) on Carbon\\CarbonImmutable\|null\.$#'
 			identifier: method.nonObject
 			count: 1

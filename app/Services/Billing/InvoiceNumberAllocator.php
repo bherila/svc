@@ -2,10 +2,12 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
 use App\Support\Concurrency\Locks;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -31,6 +33,71 @@ final class InvoiceNumberAllocator
         $counter->forceFill(['next_number' => $number + 1])->save();
 
         return 'SVC-'.str_pad((string) $number, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * `PREFIX-YYYYMM-NNN` for a cadence invoice, keyed to the month it sells.
+     *
+     * docs/client-management/cadence-billing.md#invoice-period states one rule
+     * for every cadence: the number names the first month of the retainer
+     * billed in advance, which is also the month the invoice is issued in. The
+     * cadence generators used to take the workspace counter instead, so an
+     * October invoice for a client whose every earlier invoice read
+     * `XXXX-2026MM-001` arrived as `SVC-00001`.
+     *
+     * The prefix is the one this client's invoices already carry, so a renamed
+     * company keeps its series; a client with none yet gets the first four
+     * letters and digits of its name. The sequence is counted across the whole
+     * workspace, because that is the scope of the `(workspace_id,
+     * invoice_number)` unique index a duplicate would hit - two clients whose
+     * names share a prefix take 001 and 002 of the same month.
+     *
+     * Taken under the same two locks as {@see next()}, so a concurrent cadence
+     * run cannot read the same highest sequence.
+     */
+    public function forIssueMonth(ClientCompany $company, CarbonInterface $issueMonth): string
+    {
+        $this->lockNumbering((int) $company->workspace_id);
+
+        $prefix = $this->prefixFor($company);
+        $stem = ($prefix === '' ? '' : $prefix.'-').$issueMonth->format('Ym').'-';
+
+        $highest = 0;
+        $numbers = ClientInvoice::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('invoice_number', 'like', $stem.'%')
+            ->pluck('invoice_number');
+        foreach ($numbers as $invoiceNumber) {
+            if (is_string($invoiceNumber) && preg_match('/^'.preg_quote($stem, '/').'(\d+)$/', $invoiceNumber, $matches) === 1) {
+                $highest = max($highest, (int) $matches[1]);
+            }
+        }
+
+        return $stem.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * The client's own series prefix, or one derived from its name.
+     *
+     * Read from this client's most recent issue-month number rather than
+     * re-derived every time, so the series survives a rename.
+     */
+    private function prefixFor(ClientCompany $company): string
+    {
+        $existing = ClientInvoice::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->orderByDesc('id')
+            ->pluck('invoice_number');
+        foreach ($existing as $invoiceNumber) {
+            if (is_string($invoiceNumber) && preg_match('/^([A-Z0-9]+)-\d{6}-\d{3,}$/', $invoiceNumber, $matches) === 1) {
+                return $matches[1];
+            }
+        }
+
+        $alphanumeric = preg_replace('/[^A-Za-z0-9]/', '', (string) $company->name) ?? '';
+
+        return strtoupper(substr($alphanumeric, 0, 4));
     }
 
     /**
