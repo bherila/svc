@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -11,11 +12,13 @@ use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
+use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\RecordPaymentAction;
 use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
@@ -303,10 +306,52 @@ final class AgentMcpWriteTools
         return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/discard", compact('expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
-    public function invoicesIssue(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/issue", compact('expected_version', 'confirm'), $idempotency_key);
+    /**
+     * Issue a draft, optionally recording money already received in the same transaction.
+     *
+     * @param  array<string, mixed>|null  $payment
+     * @return array<string, mixed>
+     */
+    public function invoicesIssue(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        ?array $payment = null,
+    ): array {
+        $context = $this->workspaceContext($workspace_id, 'billing:deliver');
+        $workspace = $this->workspace($context);
+        $flags = app(McpFeatureFlags::class);
+        // A payment folded into issue answers to the same kill switch as the
+        // payments.record tool; the action separately enforces its cutover,
+        // scope and role, and refuses before anything is written.
+        if ($payment !== null && ! $flags->enabledFor('payments.record', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(false))) {
+            throw new ToolCallException('Recording payments is not enabled for agents.');
+        }
+        $actor = User::query()->findOrFail($context->principal->subject->id);
+        // `payment` joins the body only when sent, so a plain issue hashes
+        // exactly as it did through the REST route before this migration.
+        $body = compact('expected_version', 'confirm') + ($payment !== null ? ['payment' => $payment] : []);
+        $ids = app(IssueInvoiceAction::class)->run(
+            $actor,
+            $workspace,
+            $context->principal->clientId,
+            $idempotency_key,
+            $invoice_id,
+            $body,
+            $context->principal->hasScope('payments:record'),
+        );
+        // A token that may read invoices gets the invoice exactly as
+        // invoices.get returns it. It is that read, so it answers to the read's
+        // scope and kill switch; otherwise the plain mutation shape is returned.
+        if ($context->principal->hasScope('billing:read')
+            && $flags->enabledFor('invoices.get', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(true))) {
+            return ['data' => app(AgentReadService::class)->invoice($context->principal->subject, $workspace, $ids[0])];
+        }
+        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0])->firstOrFail();
+
+        return ['data' => app(AgentInvoicePresenter::class)->mutation($workspace, $invoice)];
     }
 
     /** @param list<string> $recipients

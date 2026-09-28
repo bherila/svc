@@ -1,5 +1,15 @@
 # Overpayment Credits
 
+> **In SVC today.** This page was carried over from the predecessor, which
+> accepted overpayments. SVC does not: `applyPayment()` refuses a succeeded
+> payment above the balance and `setPaymentStatus()` one above the total, so the
+> application cannot create new credit. Existing credit is overpayment imported
+> from history. The ledger below still derives and spends it, and how spending is
+> serialised — including the `credit_revision` check at issue — is in
+> [concurrency.md](concurrency.md#spending-overpayment-credit). A paid invoice
+> cannot be voided. `svc:billing:audit-overpayment-credit` compares credit funded
+> with credit consumed.
+
 ## What it does
 
 When a client pays more than an invoice's remaining balance, the extra amount is **not** rejected. Instead it is kept on file as a credit and automatically applied to the next draft invoice(s) for that company. Credits never expire.
