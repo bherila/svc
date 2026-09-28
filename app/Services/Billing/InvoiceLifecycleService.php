@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -192,7 +193,33 @@ final class InvoiceLifecycleService
     public function issue(ClientInvoice $invoice, ?Workspace $workspace = null): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
+            // An interim overage invoice's claim is checked against the other
+            // claims of its agreement's cycle, and two interim invoices of one
+            // agreement must not be checked at the same time - each would pass
+            // against a cycle the other is about to change. The agreement is
+            // what they share, and it ranks before invoices, so it is locked
+            // first: from the caller's copy of the invoice, because nothing may
+            // be read or locked ahead of it, and then checked against the
+            // locked row below.
+            $agreement = $this->lockInterimAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
+            $interimClaims = null;
+            // Only a draft whose claim can be placed: one with an agreement and
+            // a complete, ordered period. Anything else is refused by the
+            // period checks below, with the refusal that names its repair.
+            if ($locked->status === 'draft'
+                && $locked->invoice_kind === InvoiceKind::InterimOverage->value
+                && $locked->client_agreement_id !== null
+                && $locked->service_period_start !== null
+                && $locked->service_period_end !== null
+                && ! $locked->service_period_start->gt($locked->service_period_end)) {
+                if (! $agreement instanceof ClientAgreement || $agreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                // The claims are invoice rows, so they are locked now, before
+                // the company.
+                $interimClaims = $this->interimOverageGenerator()->lockCycleClaims($locked, $agreement);
+            }
 
             // The credit pool's lock, straight after the invoice's and before
             // this transaction's first ordinary read. Under REPEATABLE READ that
@@ -313,6 +340,11 @@ final class InvoiceLifecycleService
                 throw new DomainException('The invoice client does not belong to this workspace.');
             }
             $locked->setRelation('clientCompany', $company);
+            if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
+                // After every lock, so a transaction this method owns builds the
+                // ledger through a snapshot that starts after all of them.
+                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1]);
+            }
             if ($this->capOverpaymentCreditAtIssue($locked)) {
                 $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);
             }
@@ -480,6 +512,33 @@ final class InvoiceLifecycleService
      * is the first moment the spend becomes real, and it is serialized by the
      * row lock taken above.
      */
+    /**
+     * Lock the agreement of an interim overage draft, before its invoice.
+     *
+     * Read from the caller's copy rather than the database, because any read
+     * here would come before the invoice lock - an ordinary one would fix this
+     * transaction's snapshot too early, and a locking one on the invoice would
+     * take it ahead of the agreement. `issue()` checks the locked invoice
+     * against what was locked here and refuses on any difference.
+     */
+    private function lockInterimAgreement(ClientInvoice $invoice): ?ClientAgreement
+    {
+        if ($invoice->invoice_kind !== InvoiceKind::InterimOverage->value || $invoice->client_agreement_id === null) {
+            return null;
+        }
+
+        return ClientAgreement::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_agreement_id)
+            ->tap(Locks::forUpdate())
+            ->first();
+    }
+
+    private function interimOverageGenerator(): InterimOverageGenerator
+    {
+        return app(InterimOverageGenerator::class);
+    }
+
     /**
      * Cap the draft's credit line at what the pool still holds.
      *

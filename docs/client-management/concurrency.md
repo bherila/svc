@@ -224,6 +224,7 @@ gets a follow-up rather than an inline fix.
 | `InvoiceLifecycleService::issue()` — only a draft may be issued | The invoice row lock taken by `lockInvoice()` at the top of the same transaction |
 | `InvoiceLifecycleService::issue()` — a row that claims a span states one, and its `invoice_kind` is readable | The same invoice row lock. The period, kind and interval-direction checks read the **locked** row and run before `$issueDate` and every mutation, so a concurrent `updateDraft()` cannot slip a boundary out from under them and a refusal leaves the draft byte-identical. Not backed by a constraint: both boundaries are nullable by design (#73) and stay that way, because an incomplete draft has charged nobody and must remain creatable. Covered by `UndatedPeriodIssueRefusalTest` |
 | `InvoiceLifecycleService::refreshStatus()` — a status nobody can read is neither rewritten nor valued at zero | The invoice row lock its three callers already hold, plus the payment row lock in `setPaymentStatus()` / `setRefundedAmount()`. It refuses a draft invoice, an unrecognised invoice status, and any payment row whose status is outside `InvoicePaymentStatus`; all three throw inside the payment transaction, so the insert or update rolls back. The repair path stays open because `setPaymentStatus()` writes its recognised replacement *before* recomputing. Covered by `PaymentStatusVocabularyTest` and `UndatedPeriodIssueRefusalTest` |
+| `InvoiceLifecycleService::issue()` — an interim claim never charges more than the cycle's cumulative excess | The **agreement** row lock, taken before the invoice from the caller's copy and checked against the locked invoice, then a locking read of the cycle's charged interim claims before the company — see [Issuing an interim overage claim](#issuing-an-interim-overage-claim). Refuses rather than recomputing the reviewed amount. Covered by `InterimClaimValidityTest` and `InterimClaimConcurrencyTest` |
 | `InvoiceLifecycleService::issue()` — overpayment credit is not spent twice | The **company** row lock, taken straight after the invoice lock and before `issue()`'s first ordinary read, plus the `credit_revision` check in `OverpaymentCreditService::lockForSpending()` — see [Spending overpayment credit](#spending-overpayment-credit). The lock alone was not enough: the ledger is built from ordinary reads, and a transaction whose snapshot predated a competing spend could wait for the lock and still read the credit as unspent. Covered by `CreditSpendConcurrencyTest` and, sequentially, `BillingTenantIsolationTest::test_two_drafts_cannot_both_spend_the_same_credit` |
 | `InvoiceLifecycleService::applyPayment()` — one payment per idempotency key | `payment_idempotency_unique` on `(workspace_id, idempotency_key)`. The constraint, not the lock, is what makes this absolute |
 | `InvoiceLifecycleService::applyPayment()` — payment does not overtake an automatic provider call | The invoice lock, then the automatic delivery claim lock. A claim newer than one hour refuses payment; an older ambiguous claim remains as audit evidence while the invoice workflow is cancelled and payment may proceed |
@@ -346,6 +347,67 @@ by another pool's surplus, and a pool holding data the ledger cannot read is
 reported as unevaluable, with reasons, rather than as zero. A deficit is a
 current state to investigate, not proof of its cause, and the command repairs
 nothing.
+
+## Issuing an interim overage claim
+
+An interim overage draft bills `cumulative excess through its month - interim
+hours already charged before it`. A draft is not a charge, so two drafts
+generated before either is issued each claim the overage the other covers.
+`InterimClaimValidityTest` reproduced it on the legacy monthly-terms branch
+(quarterly, interim billing, 10 retainer hours a month, 15 worked in each of
+January and February): the January draft claimed 5 hours, the February draft
+10, both issued in either order, and 15 hours were charged against 10 of
+excess. The cycle's closing invoice then recorded the 15 as "already billed" in
+a zero-value reconciliation line and corrected nothing.
+`InterimClaimConcurrencyTest` reproduced the same outcome with the two issues in
+separate MariaDB processes.
+
+**The invariant**, per agreement cycle: at the end of every month before the
+closing one, the hours on charged interim invoices ending on or before that month
+never exceed the cumulative excess through that month. `issue()` refuses a draft
+that would break it, through `InterimOverageGenerator::assertClaimIssuable()`.
+Cumulative excess never decreases through a cycle, so it is checked at the
+draft's month end and at the end of every charged claim that ends later.
+
+**Out-of-order issuance.** When the check fails, it is repeated at the figure a
+regeneration would target now. If that passes, the draft is stale — a claim
+before it was charged after it was generated — and the refusal
+(`InterimClaimRefused`, `regenerate: true`) says to regenerate it. If it fails
+too, a later month's claim has already charged this overage, and no regeneration
+of this month changes that: the refusal (`regenerate: false`) names the later
+invoice and says to discard the draft or close the cycle, which releases
+uncharged interim drafts. The reviewed amount is never rewritten at issue, and
+drafts are still not counted as charged, so an abandoned draft cannot cause
+underbilling. A draft that is stale in the other direction — its claim is now
+*smaller* than the cycle could bear, for example after an earlier interim was
+voided — is not refused: it cannot overcharge, and the cycle's closing invoice
+bills the remaining overage.
+
+**Serialisation and lock order.** Two interim issues of one agreement must not
+be checked at once. `issue()` locks the agreement first — from the caller's copy
+of the invoice, because nothing may be read or locked ahead of it — then the
+invoice, and refuses if the locked invoice names a different agreement. The
+cycle's charged interim claims are then locked (`lockCycleClaims()`, a current
+read, so a claim voided or charged a moment ago is seen as it is), then the
+company, and only then is the ledger read. The order is agreement → invoice →
+cycle claims → company, which the registry already declares; nothing is locked
+inside an invoice-locked body that ranks before invoices.
+
+**What is authoritative.** The charged claims, through the locking read. The
+cumulative excess is built from ordinary reads of time; when `issue()` owns its
+transaction that snapshot starts after every lock and is current. A caller whose
+transaction has already read something — the agent API's `invoices.issue` runs
+inside its receipt transaction — reads time through that earlier snapshot, so
+time approved or changed after it is not seen by the check. Newly approved time
+can only make the check stricter; time removed after the snapshot is the
+remaining unproved case, and is not covered here.
+
+**Scope.** Only drafts with an agreement and a complete, ordered period are
+checked; the period checks refuse the rest with their own repair advice,
+unchanged. The native period-retainer branch caps each month's claim by that
+month's own hours against a pool that already includes earlier months, so it
+does not produce the overcharge in the reproduced shape; it is covered by the
+same tests as regression coverage and must keep issuing both drafts.
 
 ## Adding a lock
 

@@ -12,6 +12,7 @@ use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
+use App\Support\Billing\InterimClaimRefused;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -345,6 +346,164 @@ final class InterimOverageGenerator
 
             return $invoice->fresh(['lines']);
         });
+    }
+
+    /**
+     * Lock the charged interim claims of the cycle a draft belongs to.
+     *
+     * The first half of the issue-time check, and deliberately separate from
+     * the second: these are invoice rows, so they are locked here - after the
+     * agreement and the draft, before `issue()` reaches the company - and the
+     * ledger the second half reads is built only after the company lock, so a
+     * transaction `issue()` owns reads it through a snapshot that starts after
+     * every lock. A locking read is a current read, so a claim charged or
+     * voided by a transaction that committed a moment ago is seen as it is now.
+     *
+     * Only for a draft whose service period is complete and in order; anything
+     * else is refused by `issue()`'s own period checks before the claims matter.
+     *
+     * @return array{BillingCycle, Collection<int, ClientInvoice>}
+     */
+    public function lockCycleClaims(ClientInvoice $draft, ClientAgreement $agreement): array
+    {
+        $cycle = $this->billingCycleResolver->cycleContaining($agreement, Carbon::parse((string) $draft->service_period_start)->startOfDay());
+        $claims = ClientInvoice::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_company_id', $draft->client_company_id)
+            ->where('client_agreement_id', $agreement->id)
+            ->where('invoice_kind', InvoiceKind::InterimOverage->value)
+            ->whereKeyNot($draft->id)
+            ->where(function (Builder $cycleWindow) use ($cycle): void {
+                $this->boundary($cycleWindow, 'cycle_start', $cycle->start->toDateString(), Unattributable::Include);
+                $this->boundary($cycleWindow, 'cycle_end', $cycle->end->toDateString(), Unattributable::Include);
+            })
+            ->whereIn('status', InvoiceStatus::charged())
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get();
+
+        return [$cycle, $claims];
+    }
+
+    /**
+     * Refuse to issue an interim draft whose claim the cycle can no longer bear.
+     *
+     * The invariant, per agreement cycle: at the end of every month before the
+     * closing one, the hours on charged interim invoices ending on or before
+     * that month never exceed the cumulative excess through that month. The
+     * generator keeps it for the claims charged when it runs - it bills
+     * `cumulative excess - charged hours before this month` - but a draft is
+     * not a charge, so two drafts generated before either is issued each claim
+     * the overage the other covers, and issuing both broke it.
+     *
+     * Cumulative excess never decreases through a cycle, so checking at this
+     * draft's month end and at the end of every charged claim that ends later
+     * checks every month the draft could affect.
+     *
+     * When it fails, the same check is repeated at the figure regenerating the
+     * draft would target now. If that passes, the draft is merely stale and the
+     * advice is to regenerate it. If it fails too, a later month's claim has
+     * already charged this overage - out of order - and regenerating cannot
+     * help; the draft should be discarded, or the cycle closed, which releases
+     * uncharged interim drafts. The claim itself is never rewritten here.
+     *
+     * @param  Collection<int, ClientInvoice>  $claims  from {@see self::lockCycleClaims()}
+     */
+    public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims): void
+    {
+        $draftEnd = Carbon::parse((string) $draft->service_period_end)->startOfDay();
+        $draftStart = Carbon::parse((string) $draft->service_period_start)->startOfDay();
+
+        /** @var list<array{ClientInvoice, Carbon, float}> $placed */
+        $placed = [];
+        foreach ($claims as $claim) {
+            if ($claim->cycle_start === null && $claim->cycle_end === null
+                && ($claim->service_period_start?->gt($cycle->end) === true || $claim->service_period_end?->lt($cycle->start) === true)) {
+                continue;
+            }
+            if ($claim->service_period_end === null) {
+                throw new InterimClaimRefused(
+                    "Interim invoice {$claim->invoice_number} is charged in this cycle but states no service-period end, "
+                    .'so which months its overage covers cannot be placed and no further interim claim can be checked '
+                    .'against it. Give it the period it billed before issuing another interim invoice for this agreement.',
+                    false,
+                );
+            }
+            $placed[] = [$claim, Carbon::parse($claim->service_period_end->toDateString())->startOfDay(), $claim->billedOverageHoursOrFail()];
+        }
+
+        $checkpoints = [$draftEnd->toDateString() => $draftEnd];
+        foreach ($placed as [, $end]) {
+            if ($end->gt($draftEnd)) {
+                $checkpoints[$end->toDateString()] = $end;
+            }
+        }
+        ksort($checkpoints);
+        $latest = end($checkpoints);
+
+        $company = $draft->clientCompany;
+        if (! $company instanceof ClientCompany) {
+            throw new LogicException('The draft must carry its locked company before its claim is checked.');
+        }
+        $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $latest, true);
+        $this->assertImmediateLedgerSupportsInterimOverage($agreement, $ledger, $cycle, $latest);
+        $excessThrough = fn (Carbon $end): float => $this->cumulativeInterimExcessHoursThrough($agreement, $ledger, $cycle, $end);
+
+        $violation = function (float $draftHours) use ($checkpoints, $placed, $excessThrough): ?array {
+            foreach ($checkpoints as $end) {
+                $charged = $draftHours;
+                foreach ($placed as [, $claimEnd, $hours]) {
+                    if ($claimEnd->lte($end)) {
+                        $charged += $hours;
+                    }
+                }
+                $excess = $excessThrough($end);
+                if (round($charged - $excess, 4) > 0.0) {
+                    return [$end, round($charged, 4), $excess];
+                }
+            }
+
+            return null;
+        };
+
+        $draftHours = $draft->billedOverageHoursOrFail();
+        $found = $violation($draftHours);
+        if ($found === null) {
+            return;
+        }
+
+        $chargedBefore = 0.0;
+        foreach ($placed as [, $claimEnd, $hours]) {
+            if ($claimEnd->lt($draftStart)) {
+                $chargedBefore += $hours;
+            }
+        }
+        $target = round(max(0.0, $excessThrough($draftEnd) - $chargedBefore), 4);
+        [$end, $charged, $excess] = $found;
+        $month = $end->format('F Y');
+
+        if ($violation($target) === null) {
+            throw new InterimClaimRefused(
+                "Interim invoice {$draft->invoice_number} claims {$draftHours} overage hours, but interim invoices charged "
+                ."since it was generated leave room for {$target} this month: issuing it would charge {$charged} hours "
+                ."against {$excess} of cumulative excess through {$month}. Nothing was issued. Regenerate this draft; it "
+                .'will be recomputed against what is now charged, and can then be issued.',
+                true,
+            );
+        }
+
+        $later = collect($placed)
+            ->filter(fn (array $entry): bool => $entry[1]->gt($draftEnd))
+            ->map(fn (array $entry): string => (string) $entry[0]->invoice_number)
+            ->implode(', ');
+        throw new InterimClaimRefused(
+            "Interim invoice {$draft->invoice_number} cannot be issued: a later interim invoice in this cycle ({$later}) "
+            ."has already charged the overage through {$month}, including the hours this draft claims, so issuing it "
+            ."would charge {$charged} hours against {$excess} of cumulative excess. Regenerating it would not change "
+            .'that. Nothing was issued. Discard this draft, or generate the cycle\'s closing invoice, which releases '
+            .'uncharged interim drafts; its time is then reconciled with the cycle.',
+            false,
+        );
     }
 
     /**
