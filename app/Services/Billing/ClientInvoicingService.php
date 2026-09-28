@@ -1072,6 +1072,14 @@ final class ClientInvoicingService
                 recarriedRemainingHours: $finalWork->recarriedDeferredHours ?? 0.0,
                 nextRetainerHours: round((float) $invoice->retainer_hours_included, 4),
                 retainerSoldBy: $retainerSoldBy,
+                // A correction's work month is the month whose retainer was
+                // already sold, so this is that pool after this correction.
+                poolRemainingHours: $retainerSoldBy === null ? null : round(
+                    ($finalWork->closing->unusedHours ?? 0.0)
+                        + ($finalWork->closing->remainingRollover ?? 0.0)
+                        - ($finalWork->closing->negativeBalance ?? 0.0),
+                    4,
+                ),
             ));
 
             // Credit is applied last so it lands against the final figure rather

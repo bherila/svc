@@ -97,7 +97,25 @@ final readonly class InvoiceHoursStatement
          * Null when this invoice sells it.
          */
         public ?string $retainerSoldBy = null,
+        /**
+         * For a correction only: what is left of the pool it reconciles
+         * against once its work is drawn - unused and rolled-in hours less any
+         * debt, from the same ledger. Null for an ordinary invoice, whose
+         * closing position says this, and for a correction snapshotted before
+         * the figure was recorded.
+         */
+        public ?float $poolRemainingHours = null,
     ) {}
+
+    /**
+     * Does this statement describe a correction inside a cycle an earlier
+     * invoice already sold? Such an invoice neither opens nor closes that
+     * period, so it is laid out around the pool it draws on instead.
+     */
+    public function isCorrection(): bool
+    {
+        return $this->retainerSoldBy !== null;
+    }
 
     /** Where the work period's pool stood before any of this invoice's work. */
     public function openingNetHours(): float
@@ -147,6 +165,9 @@ final readonly class InvoiceHoursStatement
             'recarriedRemainingHours' => $this->recarriedRemainingHours,
             'nextRetainerHours' => $this->nextRetainerHours,
             'retainerSoldBy' => $this->retainerSoldBy,
+            // Present only when recorded, so an ordinary invoice's stored
+            // statement keeps exactly the shape it always had.
+            ...($this->poolRemainingHours === null ? [] : ['poolRemainingHours' => $this->poolRemainingHours]),
         ];
     }
 
@@ -211,6 +232,9 @@ final readonly class InvoiceHoursStatement
             recarriedRemainingHours: $hours('recarriedRemainingHours'),
             nextRetainerHours: $hours('nextRetainerHours'),
             retainerSoldBy: $text('retainerSoldBy'),
+            poolRemainingHours: is_int($stored['poolRemainingHours'] ?? null) || is_float($stored['poolRemainingHours'] ?? null)
+                ? $hours('poolRemainingHours')
+                : null,
         );
     }
 }

@@ -197,21 +197,73 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertSame('Closing position: the next period', $sections[4]['title']);
     }
 
-    public function test_a_correction_names_the_invoice_that_sold_the_retainer_it_does_not_resell(): void
+    public function test_a_correction_is_laid_out_around_the_pool_it_draws_on(): void
     {
-        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-202602-001']));
+        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$this->figures(),
+            'retainerSoldBy' => 'SYN-202602-001', 'poolRemainingHours' => 0.5,
+        ]));
 
         $this->assertSame([
-            ['label' => 'Retainer hours for February 2026, sold on invoice SYN-202602-001', 'hours' => '10.00', 'kind' => 'row'],
-            ['label' => 'Unused hours rolled in', 'hours' => '4.00', 'kind' => 'row'],
-            ['label' => 'Hours owed carried in', 'hours' => '-9.00', 'kind' => 'row'],
-            ['label' => 'Net hours available at the start of February 2026', 'hours' => '5.00', 'kind' => 'total'],
-            ['label' => 'This invoice does not sell the February 2026 retainer and charges nothing for it; it was sold on invoice SYN-202602-001.', 'hours' => '', 'kind' => 'note'],
+            'Pool position for February 2026 (sold on invoice SYN-202602-001)',
+            'Work reconciled on this correction: January 2026',
+            'Catch-up billed at the hourly rate',
+            'Pool position after this correction',
+            'Carried forward',
+        ], array_column($sections, 'title'));
+        $this->assertSame([
+            ['label' => 'Retainer hours for February 2026', 'hours' => '10.00', 'kind' => 'row'],
+            ['label' => 'Unused hours rolled in from earlier periods', 'hours' => '1.50', 'kind' => 'row'],
+            ['label' => 'Hours owed from earlier periods', 'hours' => '-2.25', 'kind' => 'row'],
+            ['label' => 'Available before this correction\'s work', 'hours' => '9.25', 'kind' => 'total'],
+            ['label' => 'Unused hours that expired at the start of February 2026', 'hours' => '0.50', 'kind' => 'note'],
+            ['label' => 'This invoice corrects work within February 2026. It does not sell the February 2026 retainer and charges nothing for it; that was sold on invoice SYN-202602-001.', 'hours' => '', 'kind' => 'note'],
+        ], $sections[0]['rows']);
+        $this->assertSame([
+            ['label' => 'Hours worked in January 2026', 'hours' => '22.00', 'kind' => 'row'],
+            ['label' => 'Applied to the February 2026 pool', 'hours' => '20.00', 'kind' => 'detail'],
+            ['label' => 'Billed at the hourly rate', 'hours' => '2.00', 'kind' => 'detail'],
+            ['label' => 'Subcontractor hours billed separately at their own rate (not drawn on the pool)', 'hours' => '1.50', 'kind' => 'row'],
+            ['label' => 'Deferred work applied to free capacity (2 entries)', 'hours' => '3.00', 'kind' => 'row'],
+            ['label' => 'Earlier deferred work settled from free capacity', 'hours' => '0.75', 'kind' => 'row'],
+            ['label' => 'Deferred work billed at the hourly rate on termination', 'hours' => '1.00', 'kind' => 'row'],
+        ], $sections[1]['rows']);
+        $this->assertSame([['label' => 'Remaining in the February 2026 pool', 'hours' => '0.50', 'kind' => 'total']], $sections[3]['rows']);
+        $this->assertSame([
+            ['label' => 'Deferred work waiting for free capacity (1 entry)', 'hours' => '5.00', 'kind' => 'row'],
+            ['label' => 'Earlier deferred work still to settle', 'hours' => '1.25', 'kind' => 'row'],
         ], $sections[4]['rows']);
-        $this->assertSame(
-            'SYN-202602-001',
-            InvoiceHoursStatement::fromArray(json_decode((string) json_encode((new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-202602-001']))->toArray()), true))?->retainerSoldBy,
-        );
+    }
+
+    /**
+     * A correction snapshotted before the remaining figure was recorded still
+     * prints as a correction, without a figure nobody measured; and with no
+     * deferred work there is no carried-forward section to print.
+     */
+    public function test_an_older_correction_snapshot_still_renders(): void
+    {
+        $stored = (new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-202602-001']))->toArray();
+        $stored['deferredBacklogHours'] = 0.0;
+        $stored['recarriedRemainingHours'] = 0.0;
+        $this->assertArrayNotHasKey('poolRemainingHours', $stored);
+
+        $statement = InvoiceHoursStatement::fromArray(json_decode((string) json_encode($stored), true));
+
+        $this->assertNotNull($statement);
+        $this->assertNull($statement->poolRemainingHours);
+        $this->assertSame([
+            'Pool position for February 2026 (sold on invoice SYN-202602-001)',
+            'Work reconciled on this correction: January 2026',
+            'Catch-up billed at the hourly rate',
+        ], array_column(InvoiceHoursStatementRows::for($statement), 'title'));
+    }
+
+    public function test_the_remaining_pool_is_stored_only_for_a_correction(): void
+    {
+        $this->assertArrayNotHasKey('poolRemainingHours', $this->statement()->toArray());
+
+        $stored = (new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-1', 'poolRemainingHours' => 12]))->toArray();
+        $this->assertSame(12.0, InvoiceHoursStatement::fromArray(json_decode((string) json_encode($stored), true))?->poolRemainingHours);
+        $this->assertNull(InvoiceHoursStatement::fromArray([...$stored, 'poolRemainingHours' => '12'])?->poolRemainingHours);
     }
 
     public function test_hours_print_to_two_places_without_a_negative_zero(): void

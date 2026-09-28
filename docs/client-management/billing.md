@@ -171,9 +171,18 @@ work applied and re-carried deferred work settled, catch-up billed with the
 minimum-availability hours shown as their own row, what carries forward
 (unused hours rolling in or expiring, hours still owed, the deferred backlog
 still waiting, re-carried hours still to settle), and the closing position of
-the period the invoice sells - or, for a correction range inside a cycle an
-earlier invoice already sold, the same position labelled with that invoice's
-number and a note that this one does not sell the retainer again.
+the period the invoice sells.
+
+A correction range inside a cycle an earlier invoice already sold neither opens
+nor closes that period, so its statement has its own shape: the pool position
+for that period (naming the invoice that sold it, with a note that this one
+does not sell it again), the work this correction reconciles against it,
+catch-up billed, what remains in the pool afterwards (`poolRemainingHours`,
+from the same ledger), and any deferred work still waiting. There is no
+opening/closing pair. `poolRemainingHours` is stored only for corrections, so
+ordinary statements keep exactly their stored shape
+(`InvoiceHoursStatementSnapshotTest`); a correction snapshotted before it
+existed prints without that one figure.
 `InvoiceHoursStatementRows` lays it out; its
 two net lines are arithmetic over the rows printed above them.
 

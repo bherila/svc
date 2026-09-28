@@ -32,6 +32,10 @@ final class InvoiceHoursStatementRows
             ? self::period($statement->retainerStart, $statement->retainerEnd)
             : 'the next period';
 
+        if ($statement->isCorrection()) {
+            return self::correction($statement, $work, $next, (string) $statement->retainerSoldBy);
+        }
+
         $sections = [];
 
         // The one optional row is last, so filtering it out leaves a list.
@@ -58,19 +62,7 @@ final class InvoiceHoursStatementRows
             self::optional('Already billed in this cycle by interim invoices', $statement->interimBilledHours),
         ]))];
 
-        $sections[] = ['title' => 'Catch-up billed at the hourly rate', 'rows' => array_values(array_filter([
-            self::row('Work beyond the available pool', $statement->ordinaryBilledAtRate),
-            // Whenever the agreement keeps a minimum, even in a month that
-            // needed none of it: the zero is the answer to "was I charged for
-            // availability?".
-            round($statement->minimumAvailabilityThresholdHours, 2) > 0 || round($statement->minimumAvailabilityHours, 2) > 0
-                ? self::row(
-                    'Minimum availability: restores the agreement\'s '.self::hours($statement->minimumAvailabilityThresholdHours).'-hour minimum for '.$next,
-                    $statement->minimumAvailabilityHours,
-                )
-                : null,
-            self::row('Total catch-up billed on this invoice', $statement->catchUpBilledHours, 'total'),
-        ]))];
+        $sections[] = self::catchUp($statement, $next);
 
         $sections[] = ['title' => 'Carried forward', 'rows' => array_values(array_filter([
             self::optional('Unused hours that expired within '.$work, $statement->expiredWithinPeriodHours),
@@ -84,27 +76,97 @@ final class InvoiceHoursStatementRows
             self::optional('Earlier deferred work still to settle', $statement->recarriedRemainingHours),
         ]))];
 
-        // A correction reconciles work inside a cycle an earlier invoice
-        // already sold. The pool position is the same either way; what must
-        // not be implied is that this invoice sells the retainer again.
-        $soldBy = $statement->retainerSoldBy;
-        // The one optional row is last, so filtering it out leaves a list.
-        $sections[] = ['title' => 'Closing position: '.$next, 'rows' => array_filter([
-            self::row(
-                $soldBy === null
-                    ? 'Retainer hours for '.$next
-                    : 'Retainer hours for '.$next.', sold on invoice '.$soldBy,
-                $statement->nextRetainerHours,
-            ),
+        // Corrections never reach here (see correction()), so this invoice
+        // sells the next period's retainer.
+        $sections[] = ['title' => 'Closing position: '.$next, 'rows' => [
+            self::row('Retainer hours for '.$next, $statement->nextRetainerHours),
             self::row('Unused hours rolled in', $statement->rolledForwardHours),
             self::row('Hours owed carried in', -$statement->deficitCarriedForwardHours),
             self::row('Net hours available at the start of '.$next, $statement->closingNetHours(), 'total'),
-            $soldBy === null
-                ? null
-                : ['label' => 'This invoice does not sell the '.$next.' retainer and charges nothing for it; it was sold on invoice '.$soldBy.'.', 'hours' => '', 'kind' => 'note'],
-        ])];
+        ]];
 
         return $sections;
+    }
+
+    /**
+     * A correction reconciles work against a pool an earlier invoice already
+     * sold, in a period it neither opens nor closes. So it shows that pool as
+     * it stood before this work, the work, what was billed on top, and what
+     * the pool has left - never an opening and closing pair for a month the
+     * correction does not begin or end, nor a retainer it does not sell.
+     *
+     * @return list<array{title: string, rows: list<array{label: string, hours: string, kind: string}>}>
+     */
+    private static function correction(InvoiceHoursStatement $statement, string $work, string $pool, string $soldBy): array
+    {
+        $sections = [];
+
+        $sections[] = ['title' => 'Pool position for '.$pool.' (sold on invoice '.$soldBy.')', 'rows' => array_values(array_filter([
+            self::row('Retainer hours for '.$pool, $statement->openingRetainerHours),
+            self::row('Unused hours rolled in from earlier periods', $statement->openingRolloverHours),
+            self::row('Hours owed from earlier periods', -$statement->openingDeficitHours),
+            self::row('Available before this correction\'s work', $statement->openingNetHours(), 'total'),
+            self::optional('Unused hours that expired at the start of '.$pool, $statement->openingExpiredHours, 'note'),
+            ['label' => 'This invoice corrects work within '.$pool.'. It does not sell the '.$pool.' retainer and charges nothing for it; that was sold on invoice '.$soldBy.'.', 'hours' => '', 'kind' => 'note'],
+        ]))];
+
+        // Both allocation pools are this one month's here, so what was drawn
+        // on it is their sum.
+        $sections[] = ['title' => 'Work reconciled on this correction: '.$work, 'rows' => array_values(array_filter([
+            self::row('Hours worked in '.$work, $statement->ordinaryHours),
+            self::row('Applied to the '.$pool.' pool', $statement->ordinaryAppliedToWorkPool + $statement->ordinaryAppliedToNextRetainer, 'detail'),
+            self::row('Billed at the hourly rate', $statement->ordinaryBilledAtRate, 'detail'),
+            self::optional('Subcontractor hours billed separately at their own rate (not drawn on the pool)', $statement->subcontractorHours),
+            self::optional(
+                'Deferred work applied to free capacity ('.$statement->deferredAppliedEntries.' '.($statement->deferredAppliedEntries === 1 ? 'entry' : 'entries').')',
+                $statement->deferredAppliedHours,
+            ),
+            self::optional('Earlier deferred work settled from free capacity', $statement->recarriedSettledHours),
+            self::optional('Deferred work billed at the hourly rate on termination', $statement->deferredBilledOnTerminationHours),
+        ]))];
+
+        $sections[] = self::catchUp($statement, $pool);
+
+        if ($statement->poolRemainingHours !== null) {
+            $sections[] = ['title' => 'Pool position after this correction', 'rows' => [
+                self::row('Remaining in the '.$pool.' pool', $statement->poolRemainingHours, 'total'),
+            ]];
+        }
+
+        $carried = array_values(array_filter([
+            self::optional(
+                'Deferred work waiting for free capacity ('.$statement->deferredBacklogEntries.' '.($statement->deferredBacklogEntries === 1 ? 'entry' : 'entries').')',
+                $statement->deferredBacklogHours,
+            ),
+            self::optional('Earlier deferred work still to settle', $statement->recarriedRemainingHours),
+        ]));
+        if ($carried !== []) {
+            $sections[] = ['title' => 'Carried forward', 'rows' => $carried];
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Catch-up billed at the rate, with the minimum-availability hours apart.
+     *
+     * @return array{title: string, rows: list<array{label: string, hours: string, kind: string}>}
+     */
+    private static function catchUp(InvoiceHoursStatement $statement, string $next): array
+    {
+        return ['title' => 'Catch-up billed at the hourly rate', 'rows' => array_values(array_filter([
+            self::row('Work beyond the available pool', $statement->ordinaryBilledAtRate),
+            // Whenever the agreement keeps a minimum, even in a month that
+            // needed none of it: the zero is the answer to "was I charged for
+            // availability?".
+            round($statement->minimumAvailabilityThresholdHours, 2) > 0 || round($statement->minimumAvailabilityHours, 2) > 0
+                ? self::row(
+                    'Minimum availability: restores the agreement\'s '.self::hours($statement->minimumAvailabilityThresholdHours).'-hour minimum for '.$next,
+                    $statement->minimumAvailabilityHours,
+                )
+                : null,
+            self::row('Total catch-up billed on this invoice', $statement->catchUpBilledHours, 'total'),
+        ]))];
     }
 
     /** Hours to two places, which is what every other hour on the invoice shows. */

@@ -17,6 +17,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceHoursStatement;
+use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
@@ -207,11 +208,54 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertInstanceOf(InvoiceHoursStatement::class, $statement);
         $this->assertSame($ordinary->invoice_number, $statement->retainerSoldBy);
 
+        // What a correction does: work reconciled against a pool it neither
+        // opens nor closes. February's pool before this work, the work, what
+        // remains - measured by the same ledger after the correction's lines.
+        $this->assertSame(12.0, $statement->poolRemainingHours);
+        $number = $ordinary->invoice_number;
+        $this->assertSame([
+            [
+                'title' => 'Pool position for February 2026 (sold on invoice '.$number.')',
+                'rows' => [
+                    ['label' => 'Retainer hours for February 2026', 'hours' => '10.00', 'kind' => 'row'],
+                    ['label' => 'Unused hours rolled in from earlier periods', 'hours' => '4.00', 'kind' => 'row'],
+                    ['label' => 'Hours owed from earlier periods', 'hours' => '0.00', 'kind' => 'row'],
+                    ['label' => 'Available before this correction\'s work', 'hours' => '14.00', 'kind' => 'total'],
+                    ['label' => 'This invoice corrects work within February 2026. It does not sell the February 2026 retainer and charges nothing for it; that was sold on invoice '.$number.'.', 'hours' => '', 'kind' => 'note'],
+                ],
+            ],
+            [
+                'title' => 'Work reconciled on this correction: Feb 1, 2026 – Feb 15, 2026',
+                'rows' => [
+                    ['label' => 'Hours worked in Feb 1, 2026 – Feb 15, 2026', 'hours' => '2.00', 'kind' => 'row'],
+                    ['label' => 'Applied to the February 2026 pool', 'hours' => '2.00', 'kind' => 'detail'],
+                    ['label' => 'Billed at the hourly rate', 'hours' => '0.00', 'kind' => 'detail'],
+                ],
+            ],
+            [
+                'title' => 'Catch-up billed at the hourly rate',
+                'rows' => [
+                    ['label' => 'Work beyond the available pool', 'hours' => '0.00', 'kind' => 'row'],
+                    ['label' => 'Minimum availability: restores the agreement\'s 1.00-hour minimum for February 2026', 'hours' => '0.00', 'kind' => 'row'],
+                    ['label' => 'Total catch-up billed on this invoice', 'hours' => '0.00', 'kind' => 'total'],
+                ],
+            ],
+            [
+                'title' => 'Pool position after this correction',
+                'rows' => [
+                    ['label' => 'Remaining in the February 2026 pool', 'hours' => '12.00', 'kind' => 'total'],
+                ],
+            ],
+        ], InvoiceHoursStatementRows::for($statement));
+
         foreach ([InvoiceLineDetail::CLIENT, InvoiceLineDetail::OPERATOR] as $audience) {
             $html = app(InvoiceDocumentService::class)->html($correction, $audience)->render();
-            $this->assertStringContainsString('Retainer hours for February 2026, sold on invoice '.$ordinary->invoice_number, $html);
-            $this->assertStringContainsString('This invoice does not sell the February 2026 retainer and charges nothing for it', $html);
-            $this->assertStringNotContainsString('<td class="label">Retainer hours for February 2026</td>', $html);
+            $this->assertStringContainsString('Pool position for February 2026 (sold on invoice '.$number.')', $html);
+            $this->assertStringContainsString('For the work this correction reconciles and the pool it draws on.', $html);
+            $this->assertStringNotContainsString('retainer period that follows it', $html);
+            $this->assertStringNotContainsString('Opening pool', $html);
+            $this->assertStringNotContainsString('Closing position', $html);
+            $this->assertStringNotContainsString('Retainer hours for Feb 1, 2026 – Feb 15, 2026', $html);
         }
     }
 
