@@ -966,14 +966,21 @@ final class ClientInvoicingService
             }
             $this->invoiceLineComposer->addSubcontractorFlatHourlyLines($company, $invoice, $periodStart, $periodEnd, $sortOrder);
 
+            // Deferred work may take only what the reconciled month's pool has
+            // left after that month's own work - never the retainer being sold
+            // in advance. That pool belongs to next month's work: lending it to
+            // the backlog booked the backlog as this month's overage, which the
+            // ledger carries into next month as debt, so next month's work
+            // spilled into the month after and the minimum-availability rule
+            // then billed catch-up hours the backlog had caused. Deferred work
+            // is held precisely so that it never does either.
             $this->applyDeferredWork(
                 $company,
                 $invoice,
                 $agreement,
                 $periodEnd,
                 $isRetainerMonthPostTermination,
-                ($priorMonthCapacity - $plan->totalPriorMonthRetainerHours)
-                    + ($currentMonthCapacity - $plan->totalCurrentMonthRetainerHours),
+                max(0.0, $priorMonthCapacity - $plan->totalPriorMonthRetainerHours),
                 $sortOrder,
             );
 

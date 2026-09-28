@@ -2,7 +2,7 @@
 
 ## What it does
 
-Admins can flag any billable time entry as **deferred**. A deferred entry is completed work that should **not** be billed on the usual next invoice — it waits on the shelf until there is free retainer capacity in a future period.
+Admins can flag any billable time entry as **deferred**. A deferred entry is completed work that should **not** be billed on the usual next invoice — it waits on the shelf until there is free retainer capacity in a future period: capacity the month being reconciled did not use for its own work.
 
 Unlike regular entries, deferred entries:
 
@@ -26,7 +26,7 @@ The flag is set only by admins (the portal API validates this). Clients cannot s
 `App\Services\ClientManagement\DeferredBillingAllocator` runs after the normal time-entry splitter, at invoice generation time:
 
 1. Load all unbilled (`client_invoice_line_id IS NULL`), billable, `is_deferred_billing = true` entries with `date_worked <= period_end`.
-2. Compute `remainingCapacity = (priorMonthRetainerCapacity − priorAllocated) + (currentMonthRetainerCapacity − currentAllocated)`.
+2. Compute `remainingCapacity = max(0, priorMonthRetainerCapacity − priorAllocated)`: what the month being reconciled has left after its own work. The retainer the invoice sells in advance is **not** offered. It belongs to next month's work, and lending it to the backlog booked the backlog as this month's overage, which the ledger carries into next month as debt — so next month's work spilled into the month after, and the minimum-availability rule billed catch-up hours the backlog had caused. Pinned by `DeferredBacklogAbsorptionTest`.
 3. Sort candidates by `date_worked ASC, id ASC` (deterministic FIFO).
 4. Greedily include any candidate whose `hours <= remainingCapacity`, subtracting from remaining capacity each time.
 5. Skip candidates that don't fit. They stay unlinked and remain available to the next invoice.
