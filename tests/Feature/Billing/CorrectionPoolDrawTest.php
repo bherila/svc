@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineType;
@@ -166,6 +167,61 @@ final class CorrectionPoolDrawTest extends TestCase
             ['label' => 'Already drawn on the February 2026 pool before this correction\'s range', 'hours' => '-2.00', 'kind' => 'row'],
             InvoiceHoursStatementRows::for($second)[0]['rows'][3],
         );
+    }
+
+    /**
+     * The second of two corrections overflows only because the first already
+     * drew on the month's pool. It bills that overflow itself; the next
+     * ordinary invoice does not bill it again; and across all three invoices
+     * the hours billed at the rate are the true overflow, exactly once.
+     *
+     * No minimum availability here, so the only hours at the rate are overflow.
+     */
+    public function test_a_later_correction_bills_the_overflow_the_earlier_one_left_it(): void
+    {
+        $this->agreement->forceFill(['catch_up_threshold_minutes' => 0])->save();
+        $this->issue(ClientInvoice::query()->where('workspace_id', $this->workspace->id)->sole());
+        $this->entry('2026-02-05', 600);
+        $this->entry('2026-02-12', 360);
+
+        [$first, $firstStatement] = $this->correction('2026-02-01', '2026-02-10');
+        $this->issue($first);
+        [$second, $secondStatement] = $this->correction('2026-02-11', '2026-02-15');
+        $this->issue($second);
+
+        // February: 14 available, 16 worked across the two corrections.
+        foreach ([$firstStatement, $secondStatement] as $statement) {
+            // The statement and the allocation agree: what was applied is what
+            // the pool had, what was billed is the rest of the work, and the
+            // pool is left at what it had less what was drawn on it.
+            $available = (float) $statement->availableBeforeHours;
+            $this->assertSame(round(min($statement->ordinaryHours, max(0.0, $available)), 4), $statement->ordinaryAppliedToWorkPool);
+            $this->assertSame(round($statement->ordinaryHours - $statement->ordinaryAppliedToWorkPool, 4), $statement->catchUpBilledHours);
+            $this->assertSame(round($available - $statement->ordinaryAppliedToWorkPool, 4), $statement->poolRemainingHours);
+        }
+        $this->assertSame(14.0, $firstStatement->availableBeforeHours);
+        $this->assertSame(0.0, $firstStatement->catchUpBilledHours);
+        $this->assertSame(4.0, $secondStatement->availableBeforeHours);
+        $this->assertSame(4.0, $secondStatement->ordinaryAppliedToWorkPool);
+        $this->assertSame(2.0, $secondStatement->catchUpBilledHours, 'The overflow is billed where it happened');
+
+        // March: a full month of work against March's own pool.
+        $this->entry('2026-03-10', 600);
+        $this->travelTo(Carbon::parse('2026-04-02 12:00:00'));
+        $march = app(ClientInvoicingService::class)->generateInvoice(
+            $this->company, Carbon::parse('2026-03-01'), Carbon::parse('2026-03-31'), $this->agreement,
+        );
+
+        $this->assertSame(0.0, (float) $march->hours_billed_at_rate, 'February\'s overflow is not billed a second time');
+        $this->assertSame(
+            2.0,
+            (float) $first->fresh()?->hours_billed_at_rate + (float) $second->fresh()?->hours_billed_at_rate + (float) $march->hours_billed_at_rate,
+        );
+    }
+
+    private function issue(ClientInvoice $invoice): void
+    {
+        app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
     }
 
     /** @return array{ClientInvoice, InvoiceHoursStatement} */

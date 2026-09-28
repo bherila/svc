@@ -184,7 +184,10 @@ catch-up billed, what remains in the pool afterwards (`poolRemainingHours`,
 from the same ledger), and any deferred work still waiting. When earlier work
 in the month - an earlier correction's - already drew on the pool, the pool
 opens where that left it (`availableBeforeHours`, with a row saying how much was
-already drawn), so available less this correction's draw is what remains. The work draws on
+already drawn), so available less this correction's draw is what remains. The
+allocator offers the correction exactly that pool, so overflow a later
+correction causes is billed on it rather than surfacing as debt on the next
+month's invoice (`CorrectionPoolDrawTest`). The work draws on
 that pool once; a correction snapshotted before that was so shows its second
 draw as the separate line it was. There is no
 opening/closing pair. `poolRemainingHours` and `availableBeforeHours` are

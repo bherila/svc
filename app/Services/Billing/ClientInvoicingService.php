@@ -832,6 +832,28 @@ final class ClientInvoicingService
 
             $priorMonthBalance = $this->balanceForMonth($allBalances, $periodEnd->format('Y-m'));
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
+
+            // A correction reconciles work inside a month whose retainer an
+            // earlier invoice sold, and other work in that month - an earlier
+            // correction's - may already have drawn on the pool. Its own pool
+            // is therefore what was left immediately before its range, not the
+            // month's opening: offering the opening again let a later
+            // correction absorb overflow the pool no longer had, which then
+            // surfaced as debt on the next month's invoice. The ledger measured
+            // above books this range's work and every earlier draw in the
+            // month, so adding this range's work back is that position - the
+            // same figure the statement prints as available before this work.
+            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            $availableBeforeRange = $retainerSoldBy === null ? null : round(
+                ($workMonthBalance->closing->unusedHours ?? 0.0)
+                    + ($workMonthBalance->closing->remainingRollover ?? 0.0)
+                    - ($workMonthBalance->closing->negativeBalance ?? 0.0)
+                    + ((int) $priorMonthEntries->sum('minutes')) / 60,
+                4,
+            );
+            if ($availableBeforeRange !== null) {
+                $priorMonthCapacity = max(0.0, $availableBeforeRange);
+            }
             // Prorated like the fee. Granting a whole month's pool against a
             // half month's charge understates every overage that follows.
             //
@@ -957,7 +979,7 @@ final class ClientInvoicingService
             // see that: the periods genuinely do not overlap. Without this the
             // correction adds the retainer and every recurring item a second
             // time, on top of an invoice the client may already have paid.
-            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            // (Asked above, before the work was allocated: see there.)
             $cycleAlreadySold = $retainerSoldBy !== null;
 
             if (! $isRetainerMonthPostTermination && ! $cycleAlreadySold) {
@@ -1087,17 +1109,8 @@ final class ClientInvoicingService
                         - ($finalWork->closing->negativeBalance ?? 0.0),
                     4,
                 ),
-                // The ledger measured before this draft's lines already books
-                // this correction's own work and every earlier draw in the
-                // month; adding this work back leaves the pool as it stood
-                // immediately before this range.
-                availableBeforeHours: $retainerSoldBy === null ? null : round(
-                    ($workMonthBalance->closing->unusedHours ?? 0.0)
-                        + ($workMonthBalance->closing->remainingRollover ?? 0.0)
-                        - ($workMonthBalance->closing->negativeBalance ?? 0.0)
-                        + $plan->getTotalHours(),
-                    4,
-                ),
+                // The pool this correction's work was allocated against.
+                availableBeforeHours: $availableBeforeRange,
             ));
 
             // Credit is applied last so it lands against the final figure rather
