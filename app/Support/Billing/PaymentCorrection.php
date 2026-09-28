@@ -86,6 +86,7 @@ final readonly class PaymentCorrection
     public static function parse(array $changes, ?string $reason): self
     {
         foreach (array_keys($changes) as $field) {
+            // @infection-ignore-all An integer key prints and compares the same as its string: in_array() is strict against a list of strings either way, and concatenation stringifies it.
             $name = (string) $field;
             if (in_array($name, self::FIELDS, true)) {
                 continue;
