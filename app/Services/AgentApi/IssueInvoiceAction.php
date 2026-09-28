@@ -76,15 +76,23 @@ final class IssueInvoiceAction
                     'payment.method' => ['required_with:payment', 'string', 'max:64'],
                     'payment.reference' => ['nullable', 'string', 'max:255'],
                 ])->validate();
-                $invoice = $this->invoice($workspace, $invoiceId);
-                abort_unless(AgentApiVersion::matches($invoice, $data['expected_version']), 409, 'The invoice changed since it was read.');
-                if ($paying && $invoice->status !== 'draft') {
-                    // Issuing an already-charged invoice is a no-op, which
-                    // would turn this into a plain payment under the issue
-                    // tool's name. That is payments.record's job.
-                    throw new DomainException('Only a draft invoice can be issued with a payment. Record a payment on an issued invoice with payments.record.');
-                }
-                $issued = $this->invoices->issue($invoice, $workspace);
+                // Both checks are asked of the row issue() locks for the
+                // transition, not of this read: an invoice issued by another
+                // request in between would otherwise pass them here and then be
+                // returned by issue() as an idempotent no-op.
+                $issued = $this->invoices->issue(
+                    $this->invoice($workspace, $invoiceId),
+                    $workspace,
+                    function (ClientInvoice $locked) use ($data, $paying): void {
+                        abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice changed since it was read.');
+                        if ($paying && $locked->status !== 'draft') {
+                            // Issuing an already-charged invoice is a no-op, which
+                            // would turn this into a plain payment under the issue
+                            // tool's name. That is payments.record's job.
+                            throw new DomainException('Only a draft invoice can be issued with a payment. Record a payment on an issued invoice with payments.record.');
+                        }
+                    },
+                );
                 if (! $paying) {
                     return [$issued->public_id];
                 }

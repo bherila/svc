@@ -189,10 +189,21 @@ final class InvoiceLifecycleService
         });
     }
 
-    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null): ClientInvoice
+    /**
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked  a caller's precondition, asked of the
+     *                                                              locked row before anything else is decided
+     */
+    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoice
     {
-        return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $assertLocked): ClientInvoice {
             $locked = $this->lockInvoice($invoice, $workspace);
+            // A caller's check of version or status belongs on this row, not on
+            // the copy it read before asking: another request can issue the
+            // invoice in between, and the charged-status return below would
+            // then answer that caller as though its own transition had happened.
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
+            }
             // Re-read even when the caller supplied the authorized workspace.
             // A freshly-created model does not contain database defaults, so a
             // workspace whose timezone comes from the schema default otherwise

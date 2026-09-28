@@ -243,6 +243,39 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->assertSame('issued', $issued->fresh()->status);
     }
 
+    /**
+     * Another request issues the draft between the action's read and the
+     * transition's row lock.
+     *
+     * The one-shot listener issues the invoice through the lifecycle as soon as
+     * the action first reads it, which is exactly the window a concurrent issuer
+     * has. issue() then finds a charged row and returns it as a no-op, so a
+     * check made on the earlier read would let the payment through on an
+     * invoice this request never issued - past both expected_version and the
+     * draft-only rule.
+     */
+    public function test_the_draft_and_version_checks_are_made_on_the_locked_row(): void
+    {
+        [$user, $workspace, , $draft] = $this->fixture(automaticEmail: true);
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+        $arguments = $this->issueArguments($workspace, $draft, 'issue-raced', $this->payment());
+        $raced = false;
+        ClientInvoice::retrieved(function (ClientInvoice $invoice) use (&$raced, $workspace): void {
+            if ($raced || $invoice->status !== 'draft') {
+                return;
+            }
+            $raced = true;
+            app(InvoiceLifecycleService::class)->issue(ClientInvoice::query()->whereKey($invoice->id)->firstOrFail(), $workspace);
+        });
+
+        $result = $this->callTool($session, 'invoices.issue', $arguments);
+
+        $this->assertTrue($raced);
+        $this->assertTrue(isset($result['error']) || ($result['result']['isError'] ?? false), json_encode($result));
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->assertSame('conflict', AgentMutationAudit::query()->where('operation', 'invoices.issue')->latest('id')->value('error_category'));
+    }
+
     /** An owner of two workspaces cannot reach one workspace's draft through the other. */
     public function test_a_draft_in_another_workspace_is_not_found(): void
     {
