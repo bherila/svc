@@ -6,6 +6,7 @@ readonly class MonthSummary
 {
     /**
      * @param  string|null  $cycleStart  ISO date of the owning billing cycle's start. Set only by the period-retainer ledger; null for the legacy monthly-rollover ledger.
+     * @param  float  $recarriedDeferredHours  Deferred work applied beyond the free capacity of the month that applied it, carried forward again as a quantity (closing balance). See RolloverCalculator::calculateMultipleMonths().
      * @param  float  $billedOverageHours  Signed hours charged at the hourly rate against this month, from the invoices that settled it. Retainer hours are bought by the retainer fee; these are the ones bought on top of it, and without them the screen cannot say how many hours the client actually paid for.
      */
     public function __construct(
@@ -17,5 +18,6 @@ readonly class MonthSummary
         public bool $billExcessImmediately = false,
         public ?string $cycleStart = null,
         public float $billedOverageHours = 0.0,
+        public float $recarriedDeferredHours = 0.0,
     ) {}
 }

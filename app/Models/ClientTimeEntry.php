@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -322,6 +323,30 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         $absorbedOn = CarbonImmutable::parse($absorbedOn->toDateString());
 
         return $absorbedOn->gt($workedOn) ? $absorbedOn : $workedOn;
+    }
+
+    /**
+     * Does this applied work draw on the retainer as deferred work?
+     *
+     * Deferred work applied to a retainer line draws only on free capacity
+     * (see RolloverCalculator). Deferred work force-billed at the hourly rate
+     * on termination does not draw as deferred - it was paid for - and is
+     * booked as ordinary work, as it always was. Requires
+     * {@see scopeWithCapacityPlacement()}.
+     */
+    public function drawsAsDeferred(): bool
+    {
+        if (! $this->is_deferred) {
+            return false;
+        }
+
+        if (! $this->relationLoaded('invoiceLines')) {
+            throw new LogicException('Load time entries withCapacityPlacement() before reading how they draw.');
+        }
+
+        $line = $this->invoiceLines->first();
+
+        return $line instanceof ClientInvoiceLine && $line->type !== InvoiceLineType::AdditionalHours->value;
     }
 
     /**

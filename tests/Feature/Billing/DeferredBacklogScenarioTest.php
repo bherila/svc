@@ -7,6 +7,7 @@ use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\InvoiceLifecycleService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -19,14 +20,13 @@ use Tests\TestCase;
  * The October invoice for a client with nine paid months and a deferred
  * backlog, end to end. See {@see BuildsDeferredBacklogHistory} for the shape.
  *
- * Before these fixes the same history produced `SVC-00001`, undated, and a
- * capacity ledger whose debt dipped to 26.58 hours in June because deferred
- * work the paid June-September invoices applied was booked back in the months
- * it was worked. The debt that is left - 9.25 hours from the spring, rolled
- * forward every month since - is what the recorded history says: 98.67 hours
- * drawn through August against 90 hours of retainer and 9.42 billed. It is why
- * September's pool has 0.75 hours, why September's work borrows October's
- * retainer, and why no deferred work fits.
+ * Before these fixes the same history produced `SVC-00001`, undated, with
+ * September's work spilling into October's pool and 1.75 catch-up hours
+ * billed. The paid June-September invoices applied 10 deferred hours each
+ * when May had only 0.75 free; the ledger now draws deferred work only on
+ * free capacity and carries the 9.25-hour excess forward again instead of
+ * treating it as debt. September keeps its whole pool and nothing is billed
+ * at rate.
  */
 final class DeferredBacklogScenarioTest extends TestCase
 {
@@ -57,7 +57,8 @@ final class DeferredBacklogScenarioTest extends TestCase
         $this->assertSame('2026-09-01', $draft->service_period_start?->toDateString());
         $this->assertSame('2026-09-30', $draft->service_period_end?->toDateString());
         $this->assertSame('2026-10-01', $draft->cycle_start?->toDateString());
-        $this->assertSame(440625, (int) $draft->total_amount);
+        $this->assertSame(375000, (int) $draft->total_amount);
+        $this->assertSame(0.0, (float) $draft->hours_billed_at_rate, 'No catch-up: the over-applied deferred work is carried, not owed');
 
         $lines = $draft->lines()->orderBy('sort_order')->get()->map(fn ($line): array => [
             (string) $line->description,
@@ -65,9 +66,8 @@ final class DeferredBacklogScenarioTest extends TestCase
             (int) $line->total_amount,
         ])->all();
         $this->assertSame([
-            ['Work items applied to retainer (0:45 applied to September 2026 pool)', 45, 0],
-            ['Work items applied to retainer (10:00 applied to October 2026 pool)', 600, 0],
-            ['Catch-up hours for prior month overage and minimum availability', 45, 65625],
+            ['Work items applied to retainer (10:00 applied to September 2026 pool)', 600, 0],
+            ['Work items applied to retainer (1:30 applied to October 2026 pool)', 90, 0],
             ['Monthly Retainer (10:00 hours) - Oct 1, 2026 through Oct 31, 2026', 0, 375000],
         ], $lines);
 
@@ -82,7 +82,7 @@ final class DeferredBacklogScenarioTest extends TestCase
             ->count());
     }
 
-    public function test_the_ledger_carries_one_debt_rather_than_restating_old_months(): void
+    public function test_the_ledger_draws_deferred_work_only_on_free_capacity_and_carries_the_rest(): void
     {
         $ledger = app(InvoiceLedgerBuilder::class)->buildAgreementLedgerThrough(
             $this->backlogCompany, $this->backlogAgreement, Carbon::parse('2026-09-30'),
@@ -92,11 +92,78 @@ final class DeferredBacklogScenarioTest extends TestCase
             $closing[$month->yearMonth] = $this->signed($month);
         }
 
-        $this->assertSame(-9.25, round($closing['2026-05'], 2));
-        $this->assertSame(-9.25, round($closing['2026-06'], 2), 'Not the -26.58 of booking June-September absorption back in April-July');
-        $this->assertSame(-9.25, round($closing['2026-07'], 2));
-        $this->assertSame(-9.25, round($closing['2026-08'], 2));
-        $this->assertSame(0.75, round($this->month($ledger, '2026-09')->opening->totalAvailable, 2));
+        // April's ordinary debt (9 hours) is repaid by May's retainer. The
+        // deferred work the paid invoices applied draws only on what was free:
+        // 0.75 hours in May, the whole pool June-August. The 9.25 hours May
+        // could not hold are carried again, not owed and not forgiven.
+        $this->assertSame(-9.0, round($closing['2026-04'], 2));
+        foreach (['2026-05', '2026-06', '2026-07', '2026-08'] as $month) {
+            $this->assertSame(0.0, round($closing[$month], 2), $month);
+        }
+        $this->assertSame(9.25, round($this->month($ledger, '2026-05')->recarriedDeferredHours, 2));
+        $this->assertSame(9.25, round($this->month($ledger, '2026-09')->recarriedDeferredHours, 2));
+        $this->assertSame(10.0, round($this->month($ledger, '2026-09')->opening->totalAvailable, 2));
+    }
+
+    /**
+     * The re-carried 9.25 hours are applied by later months as they leave room
+     * - never more than a month has free, before any unapplied entry, and
+     * without linking any entry a second time.
+     */
+    public function test_re_carried_deferred_work_is_applied_later_only_from_free_capacity(): void
+    {
+        $service = app(ClientInvoicingService::class);
+        $issue = function (string $on) use ($service): ClientInvoice {
+            $service->generateAllInvoices($this->backlogCompany);
+            $draft = ClientInvoice::query()->where('workspace_id', $this->backlogWorkspace->id)->where('status', 'draft')->orderBy('id')->firstOrFail();
+            $this->travelTo(Carbon::parse($on.' 09:00:00'));
+
+            return app(InvoiceLifecycleService::class)->issue($draft, $this->backlogWorkspace);
+        };
+        $carried = fn (ClientInvoice $invoice): float => (float) $invoice->lines()
+            ->where('description', 'like', 'Carried deferred work applied to retainer (%')->sum('hours');
+
+        $october = $issue('2026-10-01');
+        $this->assertSame(0.0, $carried($october), 'September left nothing free');
+
+        // October: 2 hours of ordinary work against October's 8.5 left.
+        $this->backlogEntry('2026-10-14', 120);
+        $this->travelTo(Carbon::parse('2026-10-28 12:00:00'));
+        $november = $issue('2026-11-01');
+        $this->assertSame(6.5, $carried($november), 'Only what October left free');
+        $this->assertSame(0.0, (float) $november->hours_billed_at_rate);
+        $this->assertSame(0, $november->lines()->where('type', 'additional_hours')->count());
+
+        // A quiet November: the rest of the carried hours, then entries.
+        $this->travelTo(Carbon::parse('2026-11-28 12:00:00'));
+        $december = $issue('2026-12-01');
+        $this->assertSame(2.75, round($carried($december), 2), 'The remainder: 9.25 carried less 6.5 applied');
+        $deferredLine = $december->lines()->where('description', 'like', 'Deferred work items applied to retainer (%')->first();
+        $this->assertNotNull($deferredLine);
+        $this->assertLessThanOrEqual(10.0 - 2.75, (float) $deferredLine->hours);
+
+        $ledger = app(InvoiceLedgerBuilder::class)->buildAgreementLedgerThrough(
+            $this->backlogCompany, $this->backlogAgreement, Carbon::parse('2026-11-30'),
+        );
+        $this->assertSame(0.0, round($this->month($ledger, '2026-11')->recarriedDeferredHours, 2));
+        $this->assertGreaterThanOrEqual(0.0, $this->signed($this->month($ledger, '2026-11')), 'No month is pushed into debt');
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')
+            ->select('client_time_entry_id')->groupBy('client_time_entry_id')->havingRaw('count(*) > 1')->get()->count());
+    }
+
+    /** Ending the agreement bills the re-carried hours at rate; they never lapse. */
+    public function test_termination_bills_re_carried_deferred_work_at_the_hourly_rate(): void
+    {
+        $this->backlogAgreement->forceFill(['ends_on' => '2026-09-30'])->save();
+
+        app(ClientInvoicingService::class)->generateAllInvoices($this->backlogCompany);
+
+        $line = ClientInvoice::query()->where('status', 'draft')->sole()->lines()
+            ->where('description', 'like', 'Carried deferred work billed on agreement termination (%')->sole();
+        $this->assertSame('additional_hours', $line->type);
+        $this->assertSame(9.25, (float) $line->hours);
+        $this->assertSame(346875, (int) $line->total_amount);
+        $this->assertSame(0, $line->timeEntries()->count());
     }
 
     public function test_the_rehearsal_shows_the_october_draft_and_writes_nothing(): void
@@ -114,14 +181,13 @@ final class DeferredBacklogScenarioTest extends TestCase
         $this->assertSame($before, $this->everythingFingerprint(), 'The rehearsal must leave the database exactly as it found it');
         foreach ([
             'New ATLA-202610-001 [cadence_period, draft] issue 2026-10-01 | work 2026-09-01..2026-09-30 | sells 2026-10-01..2026-10-31',
-            'total USD 4,406.25',
-            'Work items applied to retainer (0:45 applied to September 2026 pool) | 0.75 h',
+            'total USD 3,750.00',
+            'Work items applied to retainer (10:00 applied to September 2026 pool) | 10.00 h',
             'linked 600 min in 1 entry worked 2026-09-15..2026-09-15',
-            'Catch-up hours for prior month overage and minimum availability | 1.75 h',
-            '= USD 656.25 | linked 45 min',
+            'Work items applied to retainer (1:30 applied to October 2026 pool) | 1.50 h',
             'Monthly Retainer (10:00 hours) - Oct 1, 2026 through Oct 31, 2026',
-            '2026-08 retainer 10.00 | worked 10.00 | billed overage 0.00 | opening available 0.75 | closing -9.25',
-            'Deferred work carried forward: 2950 min in 28 entries, worked 2026-04-24..2026-09-09',
+            '2026-08 retainer 10.00 | worked 10.00 | billed overage 0.00 | opening available 10.00 | closing 0.00',
+            'Deferred work carried forward: 3505 min (2950 min in 28 entries, worked 2026-04-24..2026-09-09; 555 min re-carried, applied earlier beyond free capacity)',
             'No settled invoice was touched',
         ] as $expected) {
             $this->assertStringContainsString($expected, $output);
@@ -217,7 +283,7 @@ final class DeferredBacklogScenarioTest extends TestCase
             '--show' => true,
         ]);
 
-        $this->assertStringContainsString('Deferred work carried forward: 2950 min in 28 entries', Artisan::output());
+        $this->assertStringContainsString('2950 min in 28 entries', Artisan::output());
     }
 
     public function test_the_rehearsal_names_only_a_company_of_its_own_workspace(): void

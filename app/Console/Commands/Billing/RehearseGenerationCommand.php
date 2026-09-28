@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLinePreview;
+use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -326,7 +327,7 @@ final class RehearseGenerationCommand extends Command
                 ->where('workspace_id', $company->workspace_id)
                 ->whereIn('client_invoice_id', $charged->pluck('id'))
                 ->where('type', InvoiceLineType::AdditionalHours->value)
-                ->get(['id', 'client_invoice_id', 'hours']);
+                ->get(['id', 'client_invoice_id', 'type', 'description', 'hours']);
             $linesLinkingDeferred = array_flip(DB::table('client_invoice_line_time_entries')
                 ->join('client_time_entries', 'client_time_entries.id', '=', 'client_invoice_line_time_entries.client_time_entry_id')
                 ->where('client_invoice_line_time_entries.workspace_id', $company->workspace_id)
@@ -342,7 +343,10 @@ final class RehearseGenerationCommand extends Command
                     ->where('client_invoice_id', $invoice->id)
                     ->map(static fn (ClientInvoiceLine $line): array => [
                         'hours' => (float) $line->hours,
-                        'links_deferred' => isset($linesLinkingDeferred[(int) $line->id]),
+                        // Termination bills deferred work outside the figure,
+                        // whether it links the entries or re-carried hours.
+                        'links_deferred' => isset($linesLinkingDeferred[(int) $line->id])
+                            || CarriedDeferredLine::of((string) $line->type, (string) $line->description) === CarriedDeferredLine::BilledOnTermination,
                     ]));
                 $recorded = $invoice->hours_billed_at_rate === null ? null : (float) $invoice->hours_billed_at_rate;
                 if (RecordedOverage::disagrees($recorded, $lineHours)) {
@@ -365,15 +369,21 @@ final class RehearseGenerationCommand extends Command
                 ->retainerBillable()
                 ->forAgreementScope($agreement)
                 ->get(['id', 'minutes', 'worked_on']);
-            $out[] = $backlog->isEmpty()
-                ? '  Deferred work carried forward: none'
-                : sprintf(
-                    '  Deferred work carried forward: %d min in %d entries, worked %s..%s',
+            // Deferred work applied beyond a month's free capacity stays on the
+            // invoice that applied it and is carried again as a quantity.
+            $recarriedMinutes = (int) round((($ledger === [] ? null : $ledger[array_key_last($ledger)])->recarriedDeferredHours ?? 0.0) * 60);
+            $out[] = sprintf(
+                '  Deferred work carried forward: %d min (%s; %s)',
+                (int) $backlog->sum('minutes') + $recarriedMinutes,
+                $backlog->isEmpty() ? 'no unapplied entries' : sprintf(
+                    '%d min in %d entries, worked %s..%s',
                     (int) $backlog->sum('minutes'),
                     $backlog->count(),
                     (string) $backlog->min(fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString()),
                     (string) $backlog->max(fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString()),
-                );
+                ),
+                sprintf('%d min re-carried, applied earlier beyond free capacity', $recarriedMinutes),
+            );
         }
 
         return $out;

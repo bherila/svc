@@ -124,8 +124,7 @@ class InvoiceLedgerBuilder
             );
         }
 
-        $entriesByMonth = $billableEntries
-            ->groupBy(fn (ClientTimeEntry $entry): string => $entry->capacityDate()->format('Y-m'));
+        $hoursByMonth = (new CapacityLedgerInputs)->byMonth($company, $agreement, $billableEntries, $ledgerEnd);
         $months = [];
 
         $cursor = $calculationStart->copy();
@@ -133,14 +132,13 @@ class InvoiceLedgerBuilder
             $monthStart = $cursor->copy()->startOfMonth();
             $monthEnd = $cursor->copy()->endOfMonth()->startOfDay();
             $monthKey = $monthStart->format('Y-m');
-            $monthEntries = $entriesByMonth->get($monthKey, collect());
             $isPreAgreement = $monthStart->lt($activeDate->copy()->startOfMonth());
             $months[] = [
                 'year_month' => $monthKey,
                 'retainer_hours' => $isPreAgreement
                     ? 0.0
                     : $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
-                'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
+                ...CapacityLedgerInputs::monthRow($hoursByMonth, $monthKey),
                 // @infection-ignore-all The month-to-query join is feature-tested against persisted invoices; the mutation lane deliberately excludes database tests.
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => false,
@@ -187,8 +185,8 @@ class InvoiceLedgerBuilder
      * history it can be checked against. The tests are the only exercise this
      * has.
      *
-     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>  $months
-     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>
+     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, deferred_hours?: float, carried_deferred_hours?: float, carried_deferred_billed_hours?: float, billed_overage_hours?: float, reset_rollover: bool}>  $months
+     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, deferred_hours?: float, carried_deferred_hours?: float, carried_deferred_billed_hours?: float, billed_overage_hours?: float, reset_rollover: bool}>
      */
     private function withOpeningRollover(ClientAgreement $agreement, array $months): array
     {

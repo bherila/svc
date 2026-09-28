@@ -110,6 +110,21 @@ final class TimeEntryCapacityDateTest extends TestCase
         ));
     }
 
+    public function test_only_deferred_work_applied_to_a_retainer_line_draws_as_deferred(): void
+    {
+        $retainerLine = (new ClientInvoiceLine)->setRawAttributes(['type' => 'prior_month_retainer', 'line_date' => '2026-03-31']);
+        $terminationLine = (new ClientInvoiceLine)->setRawAttributes(['type' => 'additional_hours', 'line_date' => '2026-03-31']);
+
+        // Ordinary work never needs its line to answer.
+        $this->assertFalse($this->entry(deferred: false)->drawsAsDeferred());
+        $this->assertTrue($this->entry(deferred: true)->setRelation('invoiceLines', collect([$retainerLine]))->drawsAsDeferred());
+        $this->assertFalse($this->entry(deferred: true)->setRelation('invoiceLines', collect([$terminationLine]))->drawsAsDeferred(), 'Billed at rate on termination');
+        $this->assertFalse($this->entry(deferred: true)->setRelation('invoiceLines', collect())->drawsAsDeferred());
+
+        $this->expectException(LogicException::class);
+        $this->entry(deferred: true)->drawsAsDeferred();
+    }
+
     private function entry(bool $deferred): ClientTimeEntry
     {
         return (new ClientTimeEntry)->setRawAttributes(['worked_on' => '2026-01-20', 'is_deferred' => $deferred ? 1 : 0]);

@@ -18,6 +18,7 @@ use App\Services\Billing\Balances\TimeEntryFragment;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
 use App\Support\Billing\CadenceOverageLineDescription;
+use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -1005,6 +1006,7 @@ final class ClientInvoicingService
                 $periodEnd,
                 $isRetainerMonthPostTermination,
                 max(0.0, $priorMonthCapacity - $plan->totalPriorMonthRetainerHours),
+                $priorMonthBalance->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 
@@ -1239,6 +1241,7 @@ final class ClientInvoicingService
                 $periodEnd,
                 false,
                 max(0.0, $cycleLedger['covered_hours'] - $plan->totalPriorMonthRetainerHours),
+                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $periodEnd->format('Y-m'))->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 
@@ -1299,16 +1302,33 @@ final class ClientInvoicingService
         Carbon $periodEnd,
         bool $isPostTermination,
         float $remainingCapacity,
+        float $carriedDeferredHours,
         int &$sortOrder,
     ): void {
+        // Re-carried deferred work - applied earlier beyond a month's free
+        // capacity, and carried forward again as a quantity by the ledger -
+        // is settled first, being the oldest. In whole minutes, as every
+        // other time line is; the ledger's four decimal places of an hour are
+        // finer than a minute, so the nearest minute is what it carries.
+        $carriedMinutes = (int) round($carriedDeferredHours * 60);
+
         if ($isPostTermination) {
             $deferredToBill = $this->deferredBillingAllocator->collectForTermination($company, $periodEnd, $agreement);
             if ($deferredToBill->isNotEmpty()) {
                 $this->invoiceLineComposer->addDeferredTerminationLine($invoice, $agreement, $deferredToBill, $sortOrder);
             }
+            if ($carriedMinutes > 0) {
+                $this->createCarriedDeferredLine($invoice, $agreement, CarriedDeferredLine::BilledOnTermination, $carriedMinutes, $periodEnd, $sortOrder);
+            }
             $this->deferredSkipped = [];
 
             return;
+        }
+
+        $appliedMinutes = min($carriedMinutes, (int) round($remainingCapacity * 60));
+        if ($appliedMinutes > 0) {
+            $this->createCarriedDeferredLine($invoice, $agreement, CarriedDeferredLine::Applied, $appliedMinutes, $periodEnd, $sortOrder);
+            $remainingCapacity -= $appliedMinutes / 60;
         }
 
         $result = $this->deferredBillingAllocator->allocate($company, $periodEnd, $remainingCapacity, $agreement);
@@ -1316,6 +1336,42 @@ final class ClientInvoicingService
             $this->invoiceLineComposer->addDeferredRetainerLine($invoice, $agreement, $result, $periodEnd, $sortOrder);
         }
         $this->deferredSkipped = $result->skipped;
+    }
+
+    /**
+     * Settle re-carried deferred work: from spare capacity at no charge, or at
+     * the hourly rate on termination. It links no time - the entries stay on
+     * the invoice that first applied them - so it is a quantity, like the
+     * ledger's balance it draws down.
+     */
+    private function createCarriedDeferredLine(
+        ClientInvoice $invoice,
+        ClientAgreement $agreement,
+        CarriedDeferredLine $kind,
+        int $minutes,
+        Carbon $lineDate,
+        int &$sortOrder,
+    ): ClientInvoiceLine {
+        $hours = round($minutes / 60, 4);
+        $rateAmount = match ($kind) {
+            CarriedDeferredLine::Applied => 0,
+            CarriedDeferredLine::BilledOnTermination => $agreement->hourlyRateAmountOrFail(),
+        };
+
+        return ClientInvoiceLine::query()->create([
+            'workspace_id' => $invoice->workspace_id,
+            'client_invoice_id' => $invoice->id,
+            'client_agreement_id' => $agreement->id,
+            'description' => $kind->describe($hours),
+            'quantity' => $rateAmount === 0 ? '0' : HoursQuantity::decimal($hours),
+            'unit_amount' => $rateAmount,
+            'tax_amount' => 0,
+            'total_amount' => $rateAmount === 0 ? 0 : MoneyService::hourlyAmount($minutes, $rateAmount),
+            'type' => $kind->lineType()->value,
+            'hours' => $hours,
+            'line_date' => $lineDate,
+            'sort_order' => $sortOrder++,
+        ]);
     }
 
     /**
@@ -1494,7 +1550,7 @@ final class ClientInvoicingService
             ? $agreementStart
             : min($agreementStart, Carbon::parse((string) $earliestEntryDate)->startOfMonth());
 
-        $minutesByMonth = ClientTimeEntry::query()
+        $ledgerEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('is_billable', true)
@@ -1510,9 +1566,8 @@ final class ClientInvoicingService
             // it was worked. Absorbed after this period, it is not history yet.
             ->withCapacityPlacement($company->workspace_id)
             ->get()
-            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($periodEnd))
-            ->groupBy(fn (ClientTimeEntry $entry): string => $entry->capacityDate()->format('Y-m'))
-            ->map(fn ($group): int => (int) $group->sum('minutes'));
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($periodEnd));
+        $hoursByMonth = (new CapacityLedgerInputs)->byMonth($company, $agreement, $ledgerEntries, $periodEnd);
 
         $months = [];
         $billedOveragesByMonth = $this->billedOverageLedger->hoursByMonthThrough($agreement, $periodEnd);
@@ -1551,7 +1606,7 @@ final class ClientInvoicingService
                         Carbon::parse($monthKey.'-01')->startOfDay(),
                         Carbon::parse($monthKey.'-01')->endOfMonth()->startOfDay(),
                     ),
-                'hours_worked' => $isPreAgreement ? 0.0 : ((int) ($minutesByMonth[$monthKey] ?? 0)) / 60,
+                ...CapacityLedgerInputs::monthRow($hoursByMonth, $monthKey, countsWork: ! $isPreAgreement),
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => $resetRollover,
             ];
