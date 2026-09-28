@@ -1482,7 +1482,7 @@ final class ClientInvoicingService
             // Booked in the month whose pool it drew on, as InvoiceLedgerBuilder
             // does: deferred work in the month that absorbed it, not the month
             // it was worked. Absorbed after this period, it is not history yet.
-            ->withCapacityPlacement((int) $company->workspace_id)
+            ->withCapacityPlacement($company->workspace_id)
             ->get()
             ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($periodEnd))
             ->groupBy(fn (ClientTimeEntry $entry): string => $entry->capacityDate()->format('Y-m'))

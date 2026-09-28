@@ -84,7 +84,7 @@ class InvoiceLedgerBuilder
             ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
-            ->withCapacityPlacement((int) $company->workspace_id)
+            ->withCapacityPlacement($company->workspace_id)
             ->get()
             ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($ledgerEnd));
 

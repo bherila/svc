@@ -248,7 +248,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
-    public function scopeWithCapacityPlacement(Builder $query, int $workspaceId): Builder
+    protected function scopeWithCapacityPlacement(Builder $query, int $workspaceId): Builder
     {
         return $query->with(['invoiceLines' => fn ($lines) => $lines
             ->where('client_invoice_lines.workspace_id', $workspaceId)
