@@ -40,6 +40,16 @@ final class CreditPoolPartition
         $this->problems[$reason] = ($this->problems[$reason] ?? 0) + 1;
     }
 
+    /**
+     * Whether this pool has anything to report: credit funded, credit spent,
+     * or a problem. An invoice paid exactly, or with only failed or pending
+     * attempts, touches none of those and is ordinary billing, not a pool.
+     */
+    public function hasActivity(): bool
+    {
+        return $this->funded > 0 || $this->consumed > 0 || $this->problems !== [];
+    }
+
     public function evaluable(): bool
     {
         return $this->problems === [];

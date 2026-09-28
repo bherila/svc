@@ -143,6 +143,28 @@ class AuditOverpaymentCreditCommandTest extends TestCase
         $this->assertArrayNotHasKey('pools', json_decode($json, true, flags: JSON_THROW_ON_ERROR));
     }
 
+    /**
+     * Ordinary billing is not a credit pool. An invoice paid exactly, or with
+     * only failed or pending attempts, funds nothing and spends nothing, and
+     * must not be counted among the pools the report says have activity.
+     */
+    public function test_invoices_with_no_credit_activity_are_not_pools(): void
+    {
+        $company = $this->company('ordinary');
+        $paid = $this->overpaid($company, 0);
+        DB::table('client_invoice_payments')->insert([
+            'public_id' => (string) str()->uuid(), 'workspace_id' => $company->workspace_id,
+            'client_invoice_id' => $paid->id, 'amount' => 5000, 'refunded_amount' => 0,
+            'currency' => 'USD', 'status' => 'failed', 'method' => 'manual', 'received_on' => '2024-02-01',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $report = $this->report(['--list' => true]);
+
+        $this->assertSame(0, $report['summary']['pools']);
+        $this->assertSame([], $report['pools']);
+    }
+
     public function test_it_writes_nothing(): void
     {
         $company = $this->company('readonly');

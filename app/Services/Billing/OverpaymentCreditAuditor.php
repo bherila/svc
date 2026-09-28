@@ -141,7 +141,7 @@ final class OverpaymentCreditAuditor
             }
         }
 
-        $result = array_values($partitions);
+        $result = array_values(array_filter($partitions, fn (CreditPoolPartition $pool): bool => $pool->hasActivity()));
         usort($result, fn (CreditPoolPartition $a, CreditPoolPartition $b): int => [$a->workspaceId, $a->companyId, $a->currency] <=> [$b->workspaceId, $b->companyId, $b->currency]);
 
         return $result;
