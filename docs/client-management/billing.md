@@ -83,7 +83,12 @@ to one hour capped at the period retainer's hours. Generation stops maintaining
 a future availability buffer after termination.
 
 The monthly catch-up path in `ClientInvoicingService` combines the allocation
-plan's uncovered work with the buffer needed for the remaining capacity. For a
+plan's uncovered work with the buffer needed for the remaining capacity. The
+retainer being sold is lent to the reconciled month's overflow only net of debt
+that month could not absorb (`opening.remainingNegativeBalance`), because the
+ledger spends the next retainer on that older debt first; lending all of it
+let the lines claim hours the invoice's own opening balance recorded as owed
+(`CarriedDeficitCapacityTest`). For a
 synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.

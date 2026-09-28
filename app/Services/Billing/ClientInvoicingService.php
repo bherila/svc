@@ -807,13 +807,20 @@ final class ClientInvoicingService
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
             // Prorated like the fee. Granting a whole month's pool against a
             // half month's charge understates every overage that follows.
+            //
+            // And net of debt the reconciled month could not absorb. When a
+            // carried deficit exceeds a month's retainer, the ledger spends the
+            // next retainer on that older debt before anything else, so lending
+            // the whole of it to this period's overflow let one pool of hours
+            // be spent twice: the lines said the hours were left, while the
+            // invoice's own opening balance recorded a debt.
             $currentMonthCapacity = $isRetainerMonthPostTermination
                 ? 0.0
-                : $this->retainerCalculator->retainerHoursForMonth(
+                : max(0.0, $this->retainerCalculator->retainerHoursForMonth(
                     $agreement,
                     $retainerMonthStart,
                     $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
-                );
+                ) - ($priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0));
             // No minimum availability to maintain once the agreement has ended.
             $catchUpThreshold = $isRetainerMonthPostTermination ? 0.0 : $agreement->catch_up_threshold_hours;
 
