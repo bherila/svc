@@ -293,9 +293,45 @@ final class InvoiceHoursStatementTest extends TestCase
         ], array_column(InvoiceHoursStatementRows::for($statement), 'title'));
     }
 
+    /**
+     * A later correction in a month opens where earlier work left the pool,
+     * and says how much of it was already drawn, so available less applied is
+     * what remains. An older snapshot without the figure prints the month's
+     * opening, as it did.
+     */
+    public function test_a_later_correction_opens_where_earlier_work_left_the_pool(): void
+    {
+        $figures = [...$this->figures(), 'retainerSoldBy' => 'SYN-1', 'openingExpiredHours' => 0.0];
+        $later = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'availableBeforeHours' => 6.25]));
+
+        $this->assertSame([
+            ['label' => 'Retainer hours for February 2026', 'hours' => '10.00', 'kind' => 'row'],
+            ['label' => 'Unused hours rolled in from earlier periods', 'hours' => '1.50', 'kind' => 'row'],
+            ['label' => 'Hours owed from earlier periods', 'hours' => '-2.25', 'kind' => 'row'],
+            ['label' => 'Already drawn on the February 2026 pool before this correction\'s range', 'hours' => '-3.00', 'kind' => 'row'],
+            ['label' => 'Available before this correction\'s work', 'hours' => '6.25', 'kind' => 'total'],
+        ], array_slice($later[0]['rows'], 0, 5));
+        $this->assertTrue(array_is_list($later[0]['rows']));
+
+        $first = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$figures, 'availableBeforeHours' => 9.25]));
+        $this->assertSame(
+            ['Retainer hours for February 2026', 'Unused hours rolled in from earlier periods', 'Hours owed from earlier periods', 'Available before this correction\'s work'],
+            array_column(array_slice($first[0]['rows'], 0, 4), 'label'),
+        );
+
+        $older = InvoiceHoursStatement::fromArray(json_decode((string) json_encode((new InvoiceHoursStatement(...$figures))->toArray()), true));
+        $this->assertNotNull($older);
+        $this->assertNull($older->availableBeforeHours);
+        $this->assertSame('9.25', InvoiceHoursStatementRows::for($older)[0]['rows'][3]['hours']);
+    }
+
     public function test_the_remaining_pool_is_stored_only_for_a_correction(): void
     {
         $this->assertArrayNotHasKey('poolRemainingHours', $this->statement()->toArray());
+        $this->assertArrayNotHasKey('availableBeforeHours', $this->statement()->toArray());
+        $before = (new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-1', 'availableBeforeHours' => 6]))->toArray();
+        $this->assertSame(6.0, InvoiceHoursStatement::fromArray(json_decode((string) json_encode($before), true))?->availableBeforeHours);
+        $this->assertNull(InvoiceHoursStatement::fromArray([...$before, 'availableBeforeHours' => '6'])?->availableBeforeHours);
 
         $stored = (new InvoiceHoursStatement(...[...$this->figures(), 'retainerSoldBy' => 'SYN-1', 'poolRemainingHours' => 12]))->toArray();
         $this->assertSame(12.0, InvoiceHoursStatement::fromArray(json_decode((string) json_encode($stored), true))?->poolRemainingHours);

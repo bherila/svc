@@ -181,13 +181,17 @@ nor closes that period, so its statement has its own shape: the pool position
 for that period (naming the invoice that sold it, with a note that this one
 does not sell it again), the work this correction reconciles against it,
 catch-up billed, what remains in the pool afterwards (`poolRemainingHours`,
-from the same ledger), and any deferred work still waiting. The work draws on
+from the same ledger), and any deferred work still waiting. When earlier work
+in the month - an earlier correction's - already drew on the pool, the pool
+opens where that left it (`availableBeforeHours`, with a row saying how much was
+already drawn), so available less this correction's draw is what remains. The work draws on
 that pool once; a correction snapshotted before that was so shows its second
 draw as the separate line it was. There is no
-opening/closing pair. `poolRemainingHours` is stored only for corrections, so
+opening/closing pair. `poolRemainingHours` and `availableBeforeHours` are
+stored only for corrections, so
 ordinary statements keep exactly their stored shape
-(`InvoiceHoursStatementSnapshotTest`); a correction snapshotted before it
-existed prints without that one figure.
+(`InvoiceHoursStatementSnapshotTest`); a correction snapshotted before they
+existed prints without the remaining figure and opens at the month's opening.
 `InvoiceHoursStatementRows` lays it out; its
 two net lines are arithmetic over the rows printed above them.
 

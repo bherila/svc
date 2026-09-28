@@ -1087,6 +1087,17 @@ final class ClientInvoicingService
                         - ($finalWork->closing->negativeBalance ?? 0.0),
                     4,
                 ),
+                // The ledger measured before this draft's lines already books
+                // this correction's own work and every earlier draw in the
+                // month; adding this work back leaves the pool as it stood
+                // immediately before this range.
+                availableBeforeHours: $retainerSoldBy === null ? null : round(
+                    ($workMonthBalance->closing->unusedHours ?? 0.0)
+                        + ($workMonthBalance->closing->remainingRollover ?? 0.0)
+                        - ($workMonthBalance->closing->negativeBalance ?? 0.0)
+                        + $plan->getTotalHours(),
+                    4,
+                ),
             ));
 
             // Credit is applied last so it lands against the final figure rather

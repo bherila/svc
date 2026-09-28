@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Support\Billing\InvoiceHoursStatement;
+use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineType;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -137,11 +138,41 @@ final class CorrectionPoolDrawTest extends TestCase
         $this->assertSame(1.0, $statement->catchUpBilledHours);
     }
 
+    /**
+     * Two corrections in one sold month. The second one's pool is what the
+     * first left, not the month's opening again - otherwise its statement
+     * shows 14 available, 2 applied and 10 remaining, which nothing on it
+     * explains.
+     */
+    public function test_a_second_correction_in_the_month_opens_where_the_first_left_the_pool(): void
+    {
+        $this->entry('2026-02-05', 120);
+        $this->entry('2026-02-12', 180);
+
+        $first = $this->correction('2026-02-01', '2026-02-10')[1];
+        $second = $this->correction('2026-02-11', '2026-02-15')[1];
+
+        foreach ([$first, $second] as $statement) {
+            $available = (float) InvoiceHoursStatementRows::for($statement)[0]['rows'][
+                array_search('Available before this correction\'s work', array_column(InvoiceHoursStatementRows::for($statement)[0]['rows'], 'label'), true)
+            ]['hours'];
+            $this->assertSame($statement->poolRemainingHours, round($available - $statement->ordinaryAppliedToWorkPool, 4));
+        }
+        $this->assertSame(14.0, $first->availableBeforeHours);
+        $this->assertSame(12.0, $first->poolRemainingHours);
+        $this->assertSame($first->poolRemainingHours, $second->availableBeforeHours);
+        $this->assertSame(9.0, $second->poolRemainingHours);
+        $this->assertSame(
+            ['label' => 'Already drawn on the February 2026 pool before this correction\'s range', 'hours' => '-2.00', 'kind' => 'row'],
+            InvoiceHoursStatementRows::for($second)[0]['rows'][3],
+        );
+    }
+
     /** @return array{ClientInvoice, InvoiceHoursStatement} */
-    private function correction(): array
+    private function correction(string $from = '2026-02-01', string $to = '2026-02-15'): array
     {
         $correction = app(ClientInvoicingService::class)->generateInvoice(
-            $this->company, Carbon::parse('2026-02-01'), Carbon::parse('2026-02-15'), $this->agreement,
+            $this->company, Carbon::parse($from), Carbon::parse($to), $this->agreement,
         );
         $statement = $correction->hoursStatement();
         $this->assertInstanceOf(InvoiceHoursStatement::class, $statement);

@@ -105,6 +105,14 @@ final readonly class InvoiceHoursStatement
          * the figure was recorded.
          */
         public ?float $poolRemainingHours = null,
+        /**
+         * For a correction only: the pool as it stood immediately before this
+         * correction's range - the month's opening less whatever work earlier
+         * in the month (an earlier correction's, say) had already drawn on it.
+         * Null for an ordinary invoice, whose period opens its own pool, and
+         * for a correction snapshotted before the figure was recorded.
+         */
+        public ?float $availableBeforeHours = null,
     ) {}
 
     /**
@@ -168,6 +176,7 @@ final readonly class InvoiceHoursStatement
             // Present only when recorded, so an ordinary invoice's stored
             // statement keeps exactly the shape it always had.
             ...($this->poolRemainingHours === null ? [] : ['poolRemainingHours' => $this->poolRemainingHours]),
+            ...($this->availableBeforeHours === null ? [] : ['availableBeforeHours' => $this->availableBeforeHours]),
         ];
     }
 
@@ -234,6 +243,9 @@ final readonly class InvoiceHoursStatement
             retainerSoldBy: $text('retainerSoldBy'),
             poolRemainingHours: is_int($stored['poolRemainingHours'] ?? null) || is_float($stored['poolRemainingHours'] ?? null)
                 ? $hours('poolRemainingHours')
+                : null,
+            availableBeforeHours: is_int($stored['availableBeforeHours'] ?? null) || is_float($stored['availableBeforeHours'] ?? null)
+                ? $hours('availableBeforeHours')
                 : null,
         );
     }

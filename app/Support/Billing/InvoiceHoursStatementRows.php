@@ -107,7 +107,16 @@ final class InvoiceHoursStatementRows
             self::row('Retainer hours for '.$pool, $statement->openingRetainerHours),
             self::row('Unused hours rolled in from earlier periods', $statement->openingRolloverHours),
             self::row('Hours owed from earlier periods', -$statement->openingDeficitHours),
-            self::row('Available before this correction\'s work', $statement->openingNetHours(), 'total'),
+            // Work earlier in the month - an earlier correction's - already
+            // drew on this pool; a snapshot from before this was recorded
+            // prints the month's opening, as it always did.
+            $statement->availableBeforeHours === null
+                ? null
+                : self::optional(
+                    'Already drawn on the '.$pool.' pool before this correction\'s range',
+                    $statement->availableBeforeHours - $statement->openingNetHours(),
+                ),
+            self::row('Available before this correction\'s work', $statement->availableBeforeHours ?? $statement->openingNetHours(), 'total'),
             self::optional('Unused hours that expired at the start of '.$pool, $statement->openingExpiredHours, 'note'),
             ['label' => 'This invoice corrects work within '.$pool.'. It does not sell the '.$pool.' retainer and charges nothing for it; that was sold on invoice '.$soldBy.'.', 'hours' => '', 'kind' => 'note'],
         ]))];
