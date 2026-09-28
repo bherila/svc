@@ -164,3 +164,46 @@ describe('a corrected payment date', () => {
         expect(screen.queryByText(/Received /)).toBeNull();
     });
 });
+
+/**
+ * The general payment correction carries a before/after of only the fields
+ * that changed and the reason it was made; both are the audit record, so both
+ * are shown without expanding system activity.
+ */
+describe('a corrected payment', () => {
+    it('shows each changed field, its dates as dates, and the reason', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-4',
+                        action: 'invoice.payment_corrected',
+                        actor_name: 'Synthetic Operator',
+                        payload: {
+                            amount: 4000,
+                            currency: 'USD',
+                            changes: {
+                                method: { old: 'wire', new: 'ach' },
+                                reference: { old: null, new: 'SYN-REF-1' },
+                                received_on: {
+                                    old: '2026-08-25',
+                                    new: '2026-08-18',
+                                },
+                            },
+                            reason: 'Synthetic bank statement reconciliation',
+                        },
+                        created_at: '2026-08-29T18:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByText('Payment corrected')).toBeVisible();
+        expect(
+            screen.getByText(
+                'method wire → ach, reference none → SYN-REF-1, received on Aug 25, 2026 → Aug 18, 2026 · Reason: Synthetic bank statement reconciliation',
+            ),
+        ).toBeVisible();
+        expect(screen.queryByRole('button')).toBeNull();
+    });
+});

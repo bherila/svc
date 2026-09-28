@@ -13,11 +13,14 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\PaymentCorrection;
 use App\Support\Billing\PaymentDateBounds;
+use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
@@ -1023,39 +1026,101 @@ final class InvoiceLifecycleService
     /**
      * Correct the date on an existing payment, and nothing else.
      *
-     * There is deliberately no payment-edit path in this application: a payment
-     * is corrected by transitioning its status or its refunded amount, so the
-     * history is preserved rather than rewritten. This does not weaken that,
-     * because a mistyped date is not a money correction. It moves no amount,
-     * changes no status, and cannot move an invoice's balance -
-     * {@see self::refreshStatus()} never reads this column. The only remedy for
-     * one today is to cancel the payment and record it again, which invents a
-     * cancellation that never happened and leaves it in the client's history.
+     * The long-standing date-only door, kept because the invoice screen's
+     * **Correct date** control and its `invoice.payment_date_corrected` history
+     * predate {@see self::correctPayment()}. It is now that operation with one
+     * field named and no reason asked for: the same row lock, the same scoped
+     * invoice lock, the same bound, the same no-op rule. What it keeps of its
+     * own is the activity it records - the action name and the
+     * `previous_received_on`/`received_on` payload the activity feed and every
+     * earlier entry already carry - so no history changes shape.
      *
-     * So the operation is constrained to the one column. Amount, currency,
-     * method, status and refunded amount are untouchable through here, the
-     * bound is the same one {@see self::applyPayment()} applies on the way in,
-     * and the write is scoped to the workspace like every other.
-     *
-     * The shape follows {@see self::setPaymentStatus()} and
-     * {@see self::setRefundedAmount()}, which are the comparable corrections:
-     * the payment row is locked first and the invoice through it, in the order
-     * {@see LockResource} declares, and the change
-     * is recorded as a `ClientCompanyActivity` carrying the date it replaced,
-     * with a fresh occurrence so each correction is its own event rather than a
-     * deduplicated repeat of the last one. Where the two left a choice, the
-     * conservative reading was taken: this column does not need the invoice
-     * lock, and it is taken anyway, so a correction cannot interleave with an
-     * operation already rewriting that invoice's payments.
-     *
-     * `refreshStatus()` is deliberately not called. It is not an input to this
-     * column, and it refuses to recompute an invoice carrying any payment of an
-     * unreadable status - so calling it here would make correcting a date fail
-     * because of an unrelated row, which is the one thing a repair must not do.
+     * `refreshStatus()` is deliberately not called, here or in the general
+     * operation. See {@see self::correctPayment()}.
      */
     public function setPaymentReceivedOn(ClientInvoicePayment $payment, string $receivedOn, ?Workspace $workspace = null): ClientInvoicePayment
     {
-        return DB::transaction(function () use ($payment, $receivedOn, $workspace): ClientInvoicePayment {
+        return $this->writePaymentCorrection(
+            $payment,
+            PaymentCorrection::parse(['received_on' => $receivedOn], null),
+            null,
+            $workspace,
+        );
+    }
+
+    /**
+     * Correct a payment's descriptive fields: method, reference, notes, date.
+     *
+     * One audited operation rather than one function per field, and limited to
+     * the fields that describe money rather than being it. There is still no
+     * payment-edit path for money: amount, currency, status, refunded amount,
+     * the invoice and the processor fields are refused by name, each pointing
+     * at the operation that changes what it represents while preserving the
+     * history - {@see self::setPaymentStatus()}, {@see self::setRefundedAmount()},
+     * or cancelling and recording again. {@see PaymentCorrection} is the
+     * allow-list and does the parsing before anything is locked.
+     *
+     * Each field is bounded exactly as it is on the way in: `method` is
+     * required text no longer than its column, `reference` and `notes` are
+     * nullable and length-bounded (blank clears them), and `received_on` goes
+     * through {@see self::receivedOn()} - `YYYY-MM-DD`, not in the future and
+     * not more than two years back, on the invoice's workspace calendar.
+     *
+     * A reason is required and recorded. `$expectedVersion` is the opaque
+     * {@see AgentApiVersion} of the payment as the caller read it; when given,
+     * a payment that has moved since - any write to the row bumps it - is
+     * refused with {@see PaymentVersionChanged} before anything is written.
+     *
+     * Locking follows {@see self::setPaymentStatus()} and
+     * {@see self::setRefundedAmount()}: the payment row, then the invoice
+     * through a workspace-scoped locked query, in the order {@see LockResource}
+     * declares. The invoice lock is not needed by these columns and is taken
+     * anyway, so a correction cannot interleave with an operation already
+     * rewriting that invoice's payments.
+     *
+     * A correction that changes nothing - every named field already reads that
+     * way - writes nothing and records nothing. Otherwise one
+     * `invoice.payment_corrected` activity is recorded with a before/after of
+     * only the fields that changed and the reason, under a fresh occurrence so
+     * each correction is its own event.
+     *
+     * `refreshStatus()` is deliberately not called. None of these columns is an
+     * input to it, and it refuses to recompute an invoice carrying any payment
+     * of an unreadable status - so calling it here would make a bookkeeping
+     * correction fail because of an unrelated row, which is the one thing a
+     * repair must not do.
+     *
+     * @param  array<array-key, mixed>  $changes
+     */
+    public function correctPayment(
+        ClientInvoicePayment $payment,
+        array $changes,
+        string $reason,
+        ?string $expectedVersion = null,
+        ?Workspace $workspace = null,
+    ): ClientInvoicePayment {
+        return $this->writePaymentCorrection(
+            $payment,
+            PaymentCorrection::parse($changes, $reason),
+            $expectedVersion,
+            $workspace,
+        );
+    }
+
+    /**
+     * The shared body of both correction doors.
+     *
+     * A correction without a reason can only have come from
+     * {@see self::setPaymentReceivedOn()}, whose door never asked for one; it
+     * is recorded under that door's own action and payload.
+     */
+    private function writePaymentCorrection(
+        ClientInvoicePayment $payment,
+        PaymentCorrection $correction,
+        ?string $expectedVersion,
+        ?Workspace $workspace,
+    ): ClientInvoicePayment {
+        return DB::transaction(function () use ($payment, $correction, $expectedVersion, $workspace): ClientInvoicePayment {
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
@@ -1085,22 +1150,52 @@ final class InvoiceLifecycleService
                 ->where('workspace_id', $lockedPayment->workspace_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
-            // The invoice's own workspace, not the caller's: the bound is a
-            // statement about which day it is where this money was received.
-            $next = $this->receivedOn($receivedOn, $invoice->workspace);
-            $previous = $lockedPayment->received_on?->toDateString();
-            if ($previous === $next) {
+
+            // Asked of the locked row, so a write that landed between the
+            // caller's read and this lock is seen rather than overwritten.
+            if ($expectedVersion !== null && ! AgentApiVersion::matches($lockedPayment, $expectedVersion)) {
+                throw new PaymentVersionChanged;
+            }
+
+            $bounded = $correction->changes;
+            if (array_key_exists('received_on', $bounded)) {
+                // The invoice's own workspace, not the caller's: the bound is a
+                // statement about which day it is where this money was received.
+                $bounded['received_on'] = $this->receivedOn($bounded['received_on'], $invoice->workspace);
+            }
+
+            $diff = PaymentCorrection::diff([
+                'method' => $lockedPayment->method,
+                'reference' => $lockedPayment->reference,
+                'notes' => $lockedPayment->notes,
+                'received_on' => $lockedPayment->received_on?->toDateString(),
+            ], $bounded);
+            if ($diff === []) {
                 return $lockedPayment;
             }
 
-            $lockedPayment->forceFill(['received_on' => $next])->save();
-            $this->recordPaymentActivity(
-                $invoice,
-                $lockedPayment,
-                'invoice.payment_date_corrected',
-                (string) Str::uuid(),
-                ['previous_received_on' => $previous, 'received_on' => $next],
-            );
+            $lockedPayment->forceFill(array_map(
+                static fn (array $change): ?string => $change['new'],
+                $diff,
+            ))->save();
+
+            if ($correction->reason === null) {
+                $this->recordPaymentActivity(
+                    $invoice,
+                    $lockedPayment,
+                    'invoice.payment_date_corrected',
+                    (string) Str::uuid(),
+                    ['previous_received_on' => $diff['received_on']['old'] ?? null, 'received_on' => $diff['received_on']['new'] ?? null],
+                );
+            } else {
+                $this->recordPaymentActivity(
+                    $invoice,
+                    $lockedPayment,
+                    'invoice.payment_corrected',
+                    (string) Str::uuid(),
+                    ['changes' => PaymentCorrection::forActivity($diff), 'reason' => $correction->reason],
+                );
+            }
 
             // The row this transaction locked, wrote and still holds, rather
             // than `refresh()`. That re-reads by primary key alone, which is a
@@ -1413,7 +1508,7 @@ final class InvoiceLifecycleService
         return $query->firstOrFail();
     }
 
-    /** @param array<string, int|string|null> $extra */
+    /** @param array<string, int|string|array<string, array{old: string|null, new: string|null}>|null> $extra */
     private function recordPaymentActivity(
         ClientInvoice $invoice,
         ClientInvoicePayment $payment,
