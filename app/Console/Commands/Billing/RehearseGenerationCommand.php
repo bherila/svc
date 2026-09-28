@@ -13,6 +13,7 @@ use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\RecordedOverage;
 use App\Support\WorkspaceClock;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -324,8 +325,9 @@ final class RehearseGenerationCommand extends Command
             }
 
             // Charged cadence invoices whose recorded overage disagrees with
-            // their charged hourly lines. The ledger reads only the recorded
-            // figure, so a mismatch here moves every later month.
+            // the hourly lines it represents (see RecordedOverage). The ledger
+            // reads only the recorded figure, so a mismatch moves every later
+            // month.
             $charged = ClientInvoice::query()
                 ->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)
@@ -334,14 +336,32 @@ final class RehearseGenerationCommand extends Command
                 ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
                 ->orderBy('service_period_end')
                 ->get();
+            // Two queries for every charged invoice of the agreement: its
+            // additional-hours lines, and which of them link deferred work.
+            $overageLines = ClientInvoiceLine::query()
+                ->where('workspace_id', $company->workspace_id)
+                ->whereIn('client_invoice_id', $charged->pluck('id'))
+                ->where('type', InvoiceLineType::AdditionalHours->value)
+                ->get(['id', 'client_invoice_id', 'hours']);
+            $linesLinkingDeferred = array_flip(DB::table('client_invoice_line_time_entries')
+                ->join('client_time_entries', 'client_time_entries.id', '=', 'client_invoice_line_time_entries.client_time_entry_id')
+                ->where('client_invoice_line_time_entries.workspace_id', $company->workspace_id)
+                ->where('client_time_entries.workspace_id', $company->workspace_id)
+                ->where('client_time_entries.is_deferred', true)
+                ->whereIn('client_invoice_line_time_entries.client_invoice_line_id', $overageLines->pluck('id'))
+                ->distinct()
+                ->pluck('client_invoice_line_time_entries.client_invoice_line_id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all());
             foreach ($charged as $invoice) {
-                $lineHours = (float) ClientInvoiceLine::query()
-                    ->where('workspace_id', $invoice->workspace_id)
+                $lineHours = RecordedOverage::chargedHours($overageLines
                     ->where('client_invoice_id', $invoice->id)
-                    ->where('type', InvoiceLineType::AdditionalHours->value)
-                    ->sum('hours');
+                    ->map(static fn (ClientInvoiceLine $line): array => [
+                        'hours' => (float) $line->hours,
+                        'links_deferred' => isset($linesLinkingDeferred[(int) $line->id]),
+                    ]));
                 $recorded = $invoice->hours_billed_at_rate === null ? null : (float) $invoice->hours_billed_at_rate;
-                if ($recorded === null || abs($recorded - $lineHours) > 0.0001) {
+                if (RecordedOverage::disagrees($recorded, $lineHours)) {
                     $out[] = sprintf(
                         '    ! %s (work %s): records %s h billed at rate, its additional-hours lines charge %s h',
                         $invoice->invoice_number,

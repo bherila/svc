@@ -147,6 +147,35 @@ final class DeferredBacklogScenarioTest extends TestCase
         );
     }
 
+    /**
+     * Deferred work force-billed on termination is charged at rate without
+     * drawing on the pool, so it is deliberately not in the recorded figure -
+     * and a correct invoice must not be flagged for it.
+     */
+    public function test_the_rehearsal_does_not_flag_deferred_work_billed_at_rate_on_termination(): void
+    {
+        $september = $this->backlogInvoices['2026-09'];
+        $line = $september->lines()->create([
+            'workspace_id' => $september->workspace_id,
+            'client_agreement_id' => $september->client_agreement_id,
+            'type' => 'additional_hours',
+            'description' => 'Deferred work items billed on agreement termination (2:00 @ $375.00/hr)',
+            'quantity' => '2', 'unit_amount' => 37500, 'tax_amount' => 0, 'total_amount' => 75000,
+            'hours' => 2, 'line_date' => '2026-08-31', 'sort_order' => 9,
+        ]);
+        $deferred = ClientTimeEntry::query()->where('workspace_id', $this->backlogWorkspace->id)
+            ->where('is_deferred', true)->whereDoesntHave('invoiceLines')->orderBy('id')->firstOrFail();
+        $line->timeEntries()->attach($deferred->id, ['workspace_id' => $september->workspace_id]);
+
+        Artisan::call('svc:billing:rehearse-generation', [
+            '--workspace' => $this->backlogWorkspace->public_id,
+            '--company' => $this->backlogCompany->public_id,
+            '--show' => true,
+        ]);
+
+        $this->assertStringNotContainsString('! ATLA-202609-001', Artisan::output());
+    }
+
     public function test_the_rehearsal_names_only_a_company_of_its_own_workspace(): void
     {
         $foreignSlug = 'atlas-elsewhere';
