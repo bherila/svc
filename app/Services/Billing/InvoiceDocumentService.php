@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineDetail;
 use Dompdf\Dompdf;
+use Dompdf\Frame;
 use Dompdf\Options;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
@@ -86,16 +87,36 @@ final class InvoiceDocumentService
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
     public function pdf(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT): string
     {
+        return $this->rendered($invoice, $audience)->output();
+    }
+
+    /**
+     * The laid-out document before it is serialised.
+     *
+     * `$onFrame` sees each box as the renderer paints it, with its position -
+     * the only way to show that nothing runs past the page edge, which the PDF
+     * bytes (compressed) and the HTML (not laid out) cannot.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     * @param  (callable(Frame): void)|null  $onFrame
+     */
+    public function rendered(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, ?callable $onFrame = null): Dompdf
+    {
         $options = new Options;
         $options->set('isRemoteEnabled', false);
         $options->set('isHtml5ParserEnabled', true);
         $dompdf = new Dompdf($options);
+        if ($onFrame !== null) {
+            $dompdf->setCallbacks([['event' => 'end_frame', 'f' => static function (Frame $frame) use ($onFrame): void {
+                $onFrame($frame);
+            }]]);
+        }
         $dompdf->loadHtml($this->html($invoice, $audience)->render());
         $dompdf->setPaper(self::US_LETTER_POINTS);
         $dompdf->render();
         $this->numberPages($dompdf);
 
-        return $dompdf->output();
+        return $dompdf;
     }
 
     /**

@@ -21,6 +21,7 @@ use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\Carbon;
+use Dompdf\Frame;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Tests\Concerns\BuildsSyntheticExpenses;
@@ -437,6 +438,37 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertSame(15.0, $statement->rolledForwardHours);
         $this->assertSame((float) $invoice->unused_hours_balance, $statement->rolledForwardHours + $statement->expiringHours);
         $this->assertSame((float) $invoice->retainer_hours_included, $statement->nextRetainerHours);
+    }
+
+    /**
+     * The running header holds the invoice number and client name beside the
+     * administrator label. Either can be one unbroken run; it must wrap inside
+     * its own cell rather than push the label, or anything else, off the page.
+     */
+    public function test_an_oversized_identity_stays_on_the_page_in_both_copies(): void
+    {
+        $this->company->forceFill(['name' => str_repeat('W', 120)])->save();
+        $this->entry('2026-01-12', 60);
+        $invoice = $this->generate('2026-01');
+        $invoice->forceFill(['invoice_number' => 'SYN-'.str_repeat('9', 60)])->save();
+
+        foreach ([InvoiceLineDetail::CLIENT, InvoiceLineDetail::OPERATOR] as $audience) {
+            $overflowing = [];
+            $painted = 0;
+            app(InvoiceDocumentService::class)->rendered($invoice->fresh() ?? $invoice, $audience, function (Frame $frame) use (&$overflowing, &$painted): void {
+                $painted++;
+                [$x, , $width] = $frame->get_border_box();
+                if ((float) $x + (float) $width > InvoiceDocumentService::US_LETTER_POINTS[2] + 0.5) {
+                    $overflowing[] = $frame->get_node()->nodeName.': '.mb_substr((string) $frame->get_node()->textContent, 0, 40);
+                }
+            });
+
+            $this->assertGreaterThan(0, $painted, 'The inspector saw the document being painted');
+
+            $this->assertSame([], $overflowing, $audience);
+        }
+        $html = app(InvoiceDocumentService::class)->html($invoice->fresh() ?? $invoice, InvoiceLineDetail::OPERATOR)->render();
+        $this->assertStringContainsString('Administrator copy: includes internal descriptions', $html);
     }
 
     public function test_an_invoice_without_a_statement_prints_without_one(): void

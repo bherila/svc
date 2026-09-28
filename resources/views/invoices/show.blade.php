@@ -12,8 +12,18 @@
            margins, so they never overlap the content. */
         .running-header { position: fixed; top: -0.5in; left: 0; right: 0; height: 0.3in; font-size: 9px; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
         .running-footer { position: fixed; bottom: -0.55in; left: 0; right: 0; height: 0.3in; font-size: 9px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 4px; }
-        .running-header table, .running-footer table { width: 100%; border-collapse: collapse; margin: 0; }
+        /* Fixed widths, so a long unbroken invoice number or client name wraps
+           inside its own cell instead of widening the table and pushing the
+           administrator label off the page. */
+        .running-header table, .running-footer table { width: 100%; border-collapse: collapse; margin: 0; table-layout: fixed; }
         .running-header td, .running-footer td { border: 0; padding: 0; background: none; }
+        .running-header .identity { width: 62%; } .running-header .audience { width: 38%; padding-left: 8px; }
+        /* Fixed chrome: at most two lines, clipped, so a very long identity
+           cannot grow down into the page body either. The full number and
+           name are on the first page. */
+        .running-header .clip { height: 26px; overflow: hidden; }
+        /* Somewhere for an unbroken identifier or name to break. */
+        .wrap { word-wrap: break-word; overflow-wrap: anywhere; }
         .masthead { width: 100%; border-collapse: collapse; border-bottom: 2px solid #111827; margin: 0 0 14px; }
         .masthead td { border: 0; padding: 0 0 12px; vertical-align: bottom; }
         h1 { margin: 0; font-size: 24px; }
@@ -52,8 +62,8 @@
 <body>
 <div class="running-header">
     <table><tr>
-        <td>Invoice {{ $invoice->invoice_number }} · {{ $invoice->clientCompany->name }}</td>
-        <td class="right">{{ $audience === \App\Support\Billing\InvoiceLineDetail::OPERATOR ? 'Administrator copy: includes internal descriptions' : '' }}</td>
+        <td class="identity wrap"><div class="clip">Invoice {{ $invoice->invoice_number }} · {{ $invoice->clientCompany->name }}</div></td>
+        <td class="audience right">{{ $audience === \App\Support\Billing\InvoiceLineDetail::OPERATOR ? 'Administrator copy: includes internal descriptions' : '' }}</td>
     </tr></table>
 </div>
 <div class="running-footer">
@@ -64,10 +74,10 @@
 </div>
 
 <table class="masthead"><tr>
-    <td><h1>Invoice</h1><div class="muted">{{ $invoice->invoice_number }}</div></td>
+    <td><h1>Invoice</h1><div class="muted wrap">{{ $invoice->invoice_number }}</div></td>
     <td class="right"><strong>{{ $statusLabel }}</strong><br>{{ $invoice->currency }}</td>
 </tr></table>
-<p><strong>Bill to:</strong> {{ $invoice->clientCompany->name }}</p>
+<p class="wrap"><strong>Bill to:</strong> {{ $invoice->clientCompany->name }}</p>
 <p class="muted">Issue date: {{ optional($invoice->issue_date)->format('Y-m-d') }} &nbsp; Due: {{ optional($invoice->due_date)->format('Y-m-d') }}</p>
 <p class="muted">Service period: {{ optional($invoice->service_period_start)->format('Y-m-d') }} – {{ optional($invoice->service_period_end)->format('Y-m-d') }}</p>
 <table>
