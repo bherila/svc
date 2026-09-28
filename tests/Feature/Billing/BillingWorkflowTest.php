@@ -1134,6 +1134,9 @@ class BillingWorkflowTest extends TestCase
                 // Far enough past the start to force several consecutive
                 // periods out of one run, whatever the cadence.
                 $through = CarbonImmutable::parse($start)->addMonthsNoOverflow($months * 4);
+                // Standing on the through-date: an invoice may not be issued
+                // before its issue date, which here is each period's start.
+                $this->travelTo($through->setTime(12, 0));
                 $invoices = app(BillingScheduleService::class)->generateDue($schedule, $through);
 
                 // Exactly five, not "at least four". The through-date is four
@@ -1173,6 +1176,32 @@ class BillingWorkflowTest extends TestCase
                 }
             }
         }
+    }
+
+    /**
+     * A schedule bills what is due on the workspace's calendar. At 03:00 UTC
+     * on 1 October it is still 30 September on the Pacific coast, and an
+     * October invoice billed then could not be issued - `issue()` refuses a
+     * date still in the future - so the whole run would fail.
+     */
+    public function test_the_schedule_bills_what_is_due_by_the_workspaces_calendar(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant('Pacific schedule');
+        $workspace->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+        $agreement = $this->agreementFor($workspace, $company, 'Pacific');
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'client_agreement_id' => $agreement->id, 'cadence' => 'monthly', 'next_run_on' => '2026-10-01',
+            'due_days' => 14, 'currency' => 'USD', 'line_template' => [$this->line()],
+        ]);
+        $url = route('svc.billing.schedules.generate', [$workspace, $schedule]);
+
+        $this->travelTo(CarbonImmutable::parse('2026-10-01 03:00:00 UTC'));
+        $this->actingAs($owner)->postJson($url)->assertOk()->assertJsonCount(0, 'data');
+
+        $this->travelTo(CarbonImmutable::parse('2026-10-01 20:00:00 UTC'));
+        $this->actingAs($owner)->postJson($url)->assertOk()->assertJsonCount(1, 'data');
+        $this->assertSame('2026-10-01', ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->sole()->issue_date?->toDateString());
     }
 
     /**
