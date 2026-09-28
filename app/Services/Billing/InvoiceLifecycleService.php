@@ -190,9 +190,13 @@ final class InvoiceLifecycleService
         });
     }
 
-    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null): ClientInvoice
+    /**
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked  a caller's precondition, asked of the
+     *                                                              locked row before anything else is decided
+     */
+    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoice
     {
-        return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $assertLocked): ClientInvoice {
             // An interim overage invoice's claim is checked against the other
             // claims of its agreement's cycle, and two interim invoices of one
             // agreement must not be checked at the same time - each would pass
@@ -203,6 +207,16 @@ final class InvoiceLifecycleService
             // locked row below.
             $agreement = $this->lockInterimAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
+            // A caller's check of version or status belongs on this row, not on
+            // the copy it read before asking: another request can issue the
+            // invoice in between, and the charged-status return below would
+            // then answer that caller as though its own transition had happened.
+            // Asked before the interim-claim and credit locks: a refusal here
+            // takes nothing further and releases the invoice lock with the
+            // transaction.
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
+            }
             $interimClaims = null;
             // Only a draft whose claim can be placed: one with an agreement and
             // a complete, ordered period. Anything else is refused by the
