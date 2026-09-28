@@ -3,6 +3,7 @@
 namespace App\Services\Billing;
 
 use App\Models\ClientInvoice;
+use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineDetail;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -21,6 +22,17 @@ use Illuminate\Support\Str;
  */
 final class InvoiceDocumentService
 {
+    /**
+     * US Letter, 8.5 x 11 in, in PDF points (72 to the inch).
+     *
+     * Given as a box rather than the name `letter`, so the page size is a fact
+     * this class states and a test can read back from the MediaBox, rather than
+     * whatever the renderer's paper table maps that name to.
+     *
+     * @var array{0: float, 1: float, 2: float, 3: float}
+     */
+    public const US_LETTER_POINTS = [0.0, 0.0, 612.0, 792.0];
+
     /** A stable, filesystem-safe name for this invoice's PDF. */
     public function filename(ClientInvoice $invoice): string
     {
@@ -34,6 +46,8 @@ final class InvoiceDocumentService
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
+
+        $detail = InvoiceLineDetail::forInvoice($invoice, $audience);
 
         return view('invoices.show', [
             'invoice' => $invoice,
@@ -56,7 +70,16 @@ final class InvoiceDocumentService
             // Keyed by line public id, and empty for a line with no work behind
             // it - the retainer being sold for the coming cycle is a charge, not
             // a record of hours, and has nothing to itemise.
-            'detail' => InvoiceLineDetail::forInvoice($invoice, $audience),
+            'detail' => $detail,
+            'audience' => $audience,
+            'genericLabelUsed' => $audience === InvoiceLineDetail::CLIENT && collect($detail)
+                ->flatten(1)
+                ->contains(static fn (array $item): bool => $item['description'] === InvoiceLineDetail::CLIENT_GENERIC_LABEL),
+            // The stored snapshot, laid out; never recomputed from the ledger,
+            // so an issued invoice's statement cannot move after it was sent.
+            'statement' => ($statement = $invoice->hoursStatement()) === null
+                ? []
+                : InvoiceHoursStatementRows::for($statement),
         ]);
     }
 
@@ -68,10 +91,43 @@ final class InvoiceDocumentService
         $options->set('isHtml5ParserEnabled', true);
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($this->html($invoice, $audience)->render());
-        $dompdf->setPaper('letter');
+        $dompdf->setPaper(self::US_LETTER_POINTS);
         $dompdf->render();
+        $this->numberPages($dompdf);
 
         return $dompdf->output();
+    }
+
+    /**
+     * "Page N of M" in the running footer of every page.
+     *
+     * Written onto the canvas after layout rather than through CSS: the total
+     * is only known once every page exists, and the renderer's `counter(pages)`
+     * prints zero. Right-aligned to the same margin as the footer rule.
+     */
+    private function numberPages(Dompdf $dompdf): void
+    {
+        $canvas = $dompdf->getCanvas();
+        $metrics = $dompdf->getFontMetrics();
+        $font = $metrics->getFont('DejaVu Sans');
+        // Bundled with the renderer, so always found; a document is still
+        // worth more unnumbered than not at all.
+        if ($font === null) {
+            return;
+        }
+        $size = 6.75;
+        // Measured with two-digit numbers, the widest a realistic document
+        // reaches, so the text ends at the margin once the numbers are filled in.
+        $width = $metrics->getTextWidth('Page 88 of 88', $font, $size);
+        $rightMargin = 0.75 * 72;
+        $canvas->page_text(
+            $canvas->get_width() - $rightMargin - $width,
+            $canvas->get_height() - 0.55 * 72 - 2,
+            'Page {PAGE_NUM} of {PAGE_COUNT}',
+            $font,
+            $size,
+            [0.42, 0.45, 0.5],
+        );
     }
 
     /** Mirror the sentence-case convention used for stored values in the UI. */
