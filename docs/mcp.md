@@ -373,7 +373,8 @@ the same client.
 at 100 using an opaque cursor. Portal readers see only payments on their visible
 issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld. References are withheld from portal readers.
 Private notes, processor identifiers and finance reconciliation records are never
-part of this response.
+part of this response. Each row carries an opaque `version`, which
+`payments.correct` requires.
 
 `payments.record` records money already received; it does not collect money,
 create a Stripe intent, issue a refund, or change an existing payment's status.
@@ -396,6 +397,49 @@ and roles; POST takes the key in `Idempotency-Key`. The separate finance API
 `/invoice-payments` lists reconciliation data and is not this recording endpoint.
 The CLI `svc:billing:payment` already records payments through the same lifecycle
 service. Browser URLs remain the route for initiating a customer payment.
+
+### Correcting a recorded payment
+
+`payments.correct` corrects a payment's **descriptive** fields - `method`,
+`reference` and `received_on` - and nothing else. It is gated exactly as
+`payments.record` is: the `payments:record` scope, an owner/admin, both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP
+kill switch, each rechecked before a receipt is replayed. REST is
+`PATCH /api/v1/workspaces/{workspace}/payments/{payment}` with the key in
+`Idempotency-Key`.
+
+- `expected_version` is required: the `version` a `payments.list` row carries.
+  Any write to the payment - a status change, a refund, another correction -
+  moves it, and a stale one is refused with a conflict before anything is
+  written. Re-read and decide again.
+- `reason` is required (at most 500 characters) and kept in the client history.
+- Omitted fields are unchanged; an explicit `null` reference clears it.
+  `received_on` has the same `Y-m-d`, workspace-calendar two-year window as
+  recording, and `method` the same 40-character bound as its column.
+- Amount, currency, status, refunded amount, the invoice and processor fields
+  are refused. Money is corrected by the operations that preserve history:
+  cancel and re-record, or record a refund.
+- `notes` is not offered to agents. `payments.list` never returns it, and a field
+  an agent cannot read back is one it cannot check its own write against; the
+  operator command below accepts it.
+- A correction that changes nothing records nothing. Otherwise one
+  `invoice.payment_corrected` activity records a before/after of only the fields
+  that changed, plus the reason.
+- The response is the corrected row exactly as `payments.list` returns it,
+  including its new `version`.
+
+Operators use the same service without tinker:
+
+```
+php artisan svc:billing:correct-payment <payment> --workspace=<workspace> \
+    [--method=<text>] [--reference=<text>] [--notes=<text>] \
+    [--received-on=YYYY-MM-DD] --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+```
+
+An option left out is left alone; one given empty (`--reference=`) clears it.
+`--dry-run` runs every check inside a transaction that is always rolled back.
+The output carries the payment's version for a following `--expected-version`.
 
 
 ### Issuing an invoice

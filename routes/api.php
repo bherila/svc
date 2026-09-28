@@ -88,6 +88,9 @@ Route::prefix('v1')
             ->middleware(CheckToken::using(AgentApiScopes::PAYMENTS_READ))->name('payments.index');
         Route::post('/workspaces/{workspace}/payments', [AgentPaymentController::class, 'store'])
             ->middleware([CheckToken::using(AgentApiScopes::PAYMENTS_RECORD), EnsureAgentWritesEnabled::class, EnsureAgentPaymentWritesEnabled::class])->name('payments.store');
+        Route::patch('/workspaces/{workspace}/payments/{payment}', [AgentPaymentController::class, 'update'])
+            ->whereUuid('payment')
+            ->middleware([CheckToken::using(AgentApiScopes::PAYMENTS_RECORD), EnsureAgentWritesEnabled::class, EnsureAgentPaymentWritesEnabled::class])->name('payments.update');
         Route::get('/workspaces/{workspace}/invoices', [AgentReadController::class, 'invoices'])
             ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
             ->name('invoices.index');

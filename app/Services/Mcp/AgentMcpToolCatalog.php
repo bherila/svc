@@ -70,6 +70,7 @@ final class AgentMcpToolCatalog
 
         if ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled')) {
             $definitions[] = new ToolDefinition('payments.record', 'Record received payment', 'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.', [$writes, 'paymentsRecord'], 'payments.record', false, false, true);
+            $definitions[] = new ToolDefinition('payments.correct', 'Correct received payment', 'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Idempotency key required. Owner/admin only. Never charges a customer or issues a refund.', [$writes, 'paymentsCorrect'], 'payments.correct', false, false, true);
         }
 
         return $definitions;
