@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Billing\InvoiceAdministratorNotificationService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use DomainException;
@@ -37,6 +38,7 @@ final class IssueInvoiceAction
         private readonly AgentMutationExecutor $mutations,
         private readonly InvoiceLifecycleService $invoices,
         private readonly AgentAccess $access,
+        private readonly InvoiceAdministratorNotificationService $administratorNotifications,
     ) {}
 
     /**
@@ -103,6 +105,9 @@ final class IssueInvoiceAction
                 $payment['idempotency_key'] = 'agent-payment:'.hash('sha256', json_encode([$user->id, $clientId, 'invoices.issue', $key], JSON_THROW_ON_ERROR));
                 $payment['status'] = 'succeeded';
                 $recorded = $this->invoices->applyPayment($issued, $payment, $workspace);
+                // issue() snapshotted the administrator's copy while the invoice
+                // was still unpaid, a state this transaction never commits.
+                $this->administratorNotifications->resnapshotIssued($this->invoice($workspace, $issued->public_id));
 
                 return [$issued->public_id, $recorded->public_id];
             },

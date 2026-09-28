@@ -113,6 +113,47 @@ final class InvoiceAdministratorNotificationService
         return $notification;
     }
 
+    /**
+     * Re-take the snapshot of a revision whose issue has not committed yet.
+     *
+     * For a caller that issues and changes the invoice again in the same
+     * transaction - issuing a draft together with the payment already received
+     * for it. The document registered at issue shows a state that never
+     * committed; the one that reaches the administrator must be the one that
+     * did. Only a notification nothing has tried to deliver is touched, so this
+     * cannot rewrite a document that was sent, and it adds no second email.
+     */
+    public function resnapshotIssued(ClientInvoice $invoice): void
+    {
+        $notification = ClientInvoiceAdministratorNotification::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->where('invoice_revision', $invoice->document_revision)
+            ->where('attempt_count', 0)
+            ->whereIn('status', ['pending', 'failed', 'missing_recipient'])
+            ->tap(Locks::forUpdate())
+            ->first();
+        if (! $notification instanceof ClientInvoiceAdministratorNotification) {
+            return;
+        }
+
+        $invoice->setRelation('workspace', Workspace::query()->whereKey($invoice->workspace_id)->firstOrFail());
+        $invoice->setRelation('clientCompany', ClientCompany::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_company_id)
+            ->firstOrFail());
+        try {
+            $notification->forceFill([
+                'pdf_filename' => $this->documents->filename($invoice),
+                'pdf_content_base64' => base64_encode($this->documents->pdf($invoice, InvoiceLineDetail::OPERATOR)),
+            ])->save();
+        } catch (Throwable) {
+            // Never leave the superseded document to be sent. Delivery renders
+            // an empty snapshot of the current revision when it claims it.
+            $notification->forceFill(['pdf_content_base64' => null])->save();
+        }
+    }
+
     /** Claim and deliver one committed notification. Safe to call repeatedly. */
     public function deliverRegistered(int $workspaceId, int $notificationId): void
     {

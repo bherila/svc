@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Mcp;
 
+use App\Mail\AdministratorInvoiceIssuedMail;
 use App\Mail\InvoiceMail;
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
@@ -14,7 +16,9 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\View;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
@@ -145,6 +149,75 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->assertArrayHasKey('error', $changed);
         $this->assertDatabaseCount('client_invoice_payments', 1);
         $this->assertSame($company->id, $invoice->client_company_id);
+    }
+
+    /**
+     * The administrator's copy is the paid document, not the unpaid one issue() rendered.
+     *
+     * issue() snapshots the PDF for the administrator notice inside the
+     * transaction, before the folded payment lands; the notice is sent after
+     * commit from the stored bytes. Each stored snapshot is recorded with the
+     * invoice state it was taken in, and the emailed bytes must be the one
+     * taken once the invoice was paid.
+     */
+    public function test_the_administrator_notice_carries_the_paid_document(): void
+    {
+        Mail::fake();
+        [$user, $workspace, , $draft] = $this->fixture();
+        $snapshots = [];
+        ClientInvoiceAdministratorNotification::saving(function (ClientInvoiceAdministratorNotification $notification) use (&$snapshots): void {
+            if ($notification->isDirty('pdf_content_base64') && $notification->pdf_content_base64 !== null) {
+                $state = DB::table('client_invoices')->where('id', $notification->client_invoice_id)->first(['status', 'balance_amount']);
+                $snapshots[$notification->pdf_content_base64] = [$state->status, (int) $state->balance_amount];
+            }
+        });
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+        $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-admin-copy', $this->payment()));
+
+        Mail::assertSent(AdministratorInvoiceIssuedMail::class, 1);
+        $mail = Mail::sent(AdministratorInvoiceIssuedMail::class)->sole();
+        $pdf = (fn (): string => $this->invoicePdf)->call($mail);
+        $this->assertSame(['paid', 0], $snapshots[base64_encode($pdf)] ?? null);
+    }
+
+    /** A plain issue keeps the snapshot it took at issue. */
+    public function test_a_plain_issue_sends_the_document_it_issued(): void
+    {
+        Mail::fake();
+        [$user, $workspace, , $draft] = $this->fixture();
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+        $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-admin-plain'));
+
+        Mail::assertSent(AdministratorInvoiceIssuedMail::class, 1);
+        $notification = ClientInvoiceAdministratorNotification::query()->where('client_invoice_id', $draft->id)->sole();
+        $this->assertSame('sent', $notification->status);
+        $this->assertSame(1, $notification->attempt_count);
+    }
+
+    /**
+     * If the paid document cannot be rendered, the unpaid one is not sent in its place.
+     *
+     * Issuing and paying still commit - a document failure never blocks
+     * issuance - and the notice is left for delivery to render from the
+     * committed invoice, which here fails again and is retried later.
+     */
+    public function test_a_failed_resnapshot_never_sends_the_unpaid_document(): void
+    {
+        Mail::fake();
+        [$user, $workspace, , $draft] = $this->fixture();
+        View::composer('invoices.show', function ($view): void {
+            if ($view->getData()['invoice']->status === 'paid') {
+                throw new \RuntimeException('Synthetic render failure.');
+            }
+        });
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+        $result = $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-admin-fail', $this->payment()));
+
+        $this->assertSame('paid', $result['result']['structuredContent']['data']['status'] ?? null, json_encode($result));
+        Mail::assertNotSent(AdministratorInvoiceIssuedMail::class);
+        $notification = ClientInvoiceAdministratorNotification::query()->where('client_invoice_id', $draft->id)->sole();
+        $this->assertNull($notification->pdf_content_base64);
+        $this->assertSame('failed', $notification->status);
     }
 
     /** The control for the test above: the fixture does schedule a delivery the dispatcher sends. */
