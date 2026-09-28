@@ -768,6 +768,61 @@ class InvoiceLedgerBuilderTest extends TestCase
         $this->assertSame(18.0, $secondCycle['hours_worked']);
     }
 
+    /**
+     * The rows of one cycle, as a list in ledger order - the first and last of
+     * them are what an invoice's hours statement opens and closes on.
+     */
+    public function test_cycle_summaries_are_the_cycles_own_rows_as_a_list(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2024-02-15',
+            'termination_date' => null,
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 0,
+            'initial_rollover_hours' => 0,
+            'retainer_hours' => null,
+            'billing_cadence' => BillingCadence::Quarterly->value,
+        ]);
+        $cycles = iterator_to_array((new BillingCycleResolver)->cyclesForAgreement($agreement, Carbon::parse('2024-08-14')));
+        $ledger = [];
+        foreach (['2024-02', '2024-03', '2024-04', '2024-05', '2024-06', '2024-07', '2024-08'] as $month) {
+            $ledger[] = $this->summary($month, retainerHours: 10.0);
+        }
+
+        $rows = (new InvoiceLedgerBuilder)->cycleSummaries($agreement, $ledger, $cycles[1]);
+
+        $this->assertTrue(array_is_list($rows));
+        // A mid-month anchor: May is the boundary month and belongs to the first cycle.
+        $this->assertSame(['2024-06', '2024-07', '2024-08'], array_map(static fn (MonthSummary $row): string => $row->yearMonth, $rows));
+    }
+
+    public function test_cycle_summaries_match_period_retainer_rows_by_their_owning_cycle(): void
+    {
+        $company = $this->company();
+        $agreement = $this->agreement($company, [
+            'active_date' => '2024-02-15',
+            'termination_date' => null,
+            'monthly_retainer_hours' => 10,
+            'rollover_months' => 0,
+            'initial_rollover_hours' => 0,
+            'retainer_hours' => null,
+            'billing_cadence' => BillingCadence::Quarterly->value,
+        ]);
+        $cycles = iterator_to_array((new BillingCycleResolver)->cyclesForAgreement($agreement, Carbon::parse('2024-08-14')));
+        $key = $cycles[1]->start->format('Y-m-d');
+        // A boundary month can appear under both cycles; ownership decides.
+        $ledger = [
+            $this->summary('2024-05', cycleStart: '2024-02-15'),
+            $this->summary('2024-05', cycleStart: $key),
+            $this->summary('2024-06', cycleStart: $key),
+        ];
+
+        $rows = (new InvoiceLedgerBuilder)->cycleSummaries($agreement, $ledger, $cycles[1]);
+
+        $this->assertSame([$ledger[1], $ledger[2]], $rows);
+    }
+
     public function test_summarize_legacy_monthly_ledger_moves_boundary_month_to_truncated_final_cycle(): void
     {
         $company = $this->company();

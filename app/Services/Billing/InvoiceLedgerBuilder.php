@@ -379,6 +379,7 @@ class InvoiceLedgerBuilder
                 return $summary->cycleStart === $cycleStartKey;
             }
 
+            // @infection-ignore-all Carbon reads a bare `Y-m` as the first of that month too; the suffix states the date rather than relying on that.
             $monthStart = Carbon::parse($summary->yearMonth.'-01')->startOfDay();
 
             return $monthStart->betweenIncluded($cycleMonthStart, $cycleMonthEnd);

@@ -108,7 +108,7 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertSame([
             ['label' => 'Unused hours that expired within January 2026', 'hours' => '0.25', 'kind' => 'row'],
             ['label' => 'Unused hours rolling into February 2026', 'hours' => '4.00', 'kind' => 'row'],
-            ['label' => 'Unused hours expiring at the start of February 2026', 'hours' => '0.00', 'kind' => 'row'],
+            ['label' => 'Unused hours expiring at the start of February 2026', 'hours' => '0.50', 'kind' => 'row'],
             ['label' => 'Hours still owed, carried into February 2026', 'hours' => '9.00', 'kind' => 'row'],
             ['label' => 'Deferred work waiting for free capacity (1 entry)', 'hours' => '5.00', 'kind' => 'row'],
             ['label' => 'Earlier deferred work still to settle', 'hours' => '1.25', 'kind' => 'row'],
@@ -122,9 +122,50 @@ final class InvoiceHoursStatementTest extends TestCase
         ], $sections[4]['rows']);
     }
 
+    public function test_the_net_positions_keep_the_ledgers_four_places(): void
+    {
+        $statement = new InvoiceHoursStatement(...[...$this->figures(),
+            'openingRetainerHours' => 10.33333, 'openingRolloverHours' => 0.00004, 'openingDeficitHours' => 0.0,
+            'nextRetainerHours' => 10.33333, 'rolledForwardHours' => 0.00004, 'deficitCarriedForwardHours' => 0.0,
+        ]);
+
+        $this->assertSame(10.3334, $statement->openingNetHours());
+        $this->assertSame(10.3334, $statement->closingNetHours());
+    }
+
+    /** An optional row prints once it would print as anything but zero. */
+    public function test_an_optional_row_prints_from_a_hundredth_of_an_hour(): void
+    {
+        $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$this->figures(), 'openingExpiredHours' => 0.04]));
+
+        $this->assertSame(
+            ['label' => 'Unused hours that expired at the start of January 2026', 'hours' => '0.04', 'kind' => 'note'],
+            $sections[0]['rows'][4],
+        );
+    }
+
+    /** A minimum smaller than an hour still prints, and so does a sliver of one. */
+    public function test_a_fractional_minimum_availability_still_prints(): void
+    {
+        foreach ([
+            ['minimumAvailabilityThresholdHours' => 0.04, 'minimumAvailabilityHours' => 0.0],
+            ['minimumAvailabilityThresholdHours' => 0.0, 'minimumAvailabilityHours' => 0.04],
+        ] as $figures) {
+            $sections = InvoiceHoursStatementRows::for(new InvoiceHoursStatement(...[...$this->figures(), ...$figures]));
+
+            $this->assertCount(3, $sections[2]['rows'], (string) json_encode($figures));
+            $this->assertStringStartsWith('Minimum availability', $sections[2]['rows'][1]['label']);
+        }
+    }
+
     public function test_a_quiet_period_prints_no_optional_rows(): void
     {
         $sections = InvoiceHoursStatementRows::for($this->statement(quiet: true));
+
+        foreach ($sections as $section) {
+            $this->assertTrue(array_is_list($section['rows']), $section['title']);
+            $this->assertNotContains(null, $section['rows'], $section['title']);
+        }
 
         $this->assertSame(
             ['Retainer hours for January 2026', 'Unused hours rolled in from earlier periods', 'Hours owed from earlier periods', 'Net hours available at the start of January 2026'],
@@ -206,7 +247,7 @@ final class InvoiceHoursStatementTest extends TestCase
             'deferredBilledOnTerminationHours' => 1.0,
             'catchUpBilledHours' => 3.0, 'minimumAvailabilityHours' => 1.0, 'minimumAvailabilityThresholdHours' => 1.0,
             'interimBilledHours' => 0.5,
-            'rolledForwardHours' => 4.0, 'expiringHours' => 0.0, 'deficitCarriedForwardHours' => 9.0,
+            'rolledForwardHours' => 4.0, 'expiringHours' => 0.5, 'deficitCarriedForwardHours' => 9.0,
             'deferredBacklogHours' => 5.0, 'deferredBacklogEntries' => 1, 'recarriedRemainingHours' => 1.25,
             'nextRetainerHours' => 10.0,
         ];

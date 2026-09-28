@@ -152,9 +152,11 @@ final readonly class InvoiceHoursStatement
         }
 
         $text = static fn (string $key): ?string => is_string($stored[$key] ?? null) ? $stored[$key] : null;
-        $hours = static fn (string $key): float => is_int($stored[$key] ?? null) || is_float($stored[$key] ?? null)
-            ? round((float) $stored[$key], 4)
-            : 0.0;
+        $hours = static function (string $key) use ($stored): float {
+            $value = $stored[$key] ?? null;
+
+            return is_int($value) || is_float($value) ? round($value, 4) : 0.0;
+        };
         $count = static fn (string $key): int => is_int($stored[$key] ?? null) ? $stored[$key] : 0;
 
         $cadence = $text('cadence');

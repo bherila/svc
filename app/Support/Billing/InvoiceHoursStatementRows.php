@@ -96,10 +96,9 @@ final class InvoiceHoursStatementRows
     /** Hours to two places, which is what every other hour on the invoice shows. */
     public static function hours(float $hours): string
     {
-        // Never "-0.00": a zero that prints with a sign reads as a debt.
-        $rounded = round($hours, 2);
-
-        return number_format($rounded === 0.0 ? 0.0 : $rounded, 2, '.', ',');
+        // number_format() rounds, and prints a rounded-away negative as
+        // "0.00" rather than "-0.00", which would read as a debt.
+        return number_format($hours, 2, '.', ',');
     }
 
     /**
