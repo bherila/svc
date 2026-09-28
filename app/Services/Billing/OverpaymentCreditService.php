@@ -62,11 +62,15 @@ class OverpaymentCreditService
      * built from are as current as the lock. Different, and nothing here can
      * refresh the snapshot, so the spend is refused rather than guessed.
      *
+     * `$verifySnapshot` is false for a caller that will spend nothing: it still
+     * gets the lock, and is not refused for a pool change it cannot be harmed
+     * by.
+     *
      * Call it after the invoice lock and before anything is read through the
      * snapshot that the ledger depends on; `issue()` takes it before its own
      * first ordinary read, so a transaction it owns never refuses.
      */
-    public function lockForSpending(int $workspaceId, int $companyId): ?ClientCompany
+    public function lockForSpending(int $workspaceId, int $companyId, bool $verifySnapshot = true): ?ClientCompany
     {
         $company = ClientCompany::query()
             ->where('workspace_id', $workspaceId)
@@ -75,6 +79,10 @@ class OverpaymentCreditService
             ->first();
         if (! $company instanceof ClientCompany) {
             return null;
+        }
+
+        if (! $verifySnapshot) {
+            return $company;
         }
 
         $snapshot = DB::table('client_companies')

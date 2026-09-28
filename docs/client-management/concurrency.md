@@ -298,7 +298,7 @@ company, and no lock is added beneath it.
 when `lockForSpending()` has shown the snapshot is not older than the last pool
 change: it reads `client_companies.credit_revision` once through the lock and
 once through the snapshot, and refuses with `CreditPoolChanged` when they differ.
-That refusal is the only defined outcome for a stale snapshot — it cannot be
+The revision is compared only when the draft carries credit to spend — known from a locking read of its own credit lines, taken after the invoice and before the company — so a draft spending nothing is never refused because another invoice of the company moved the pool. That refusal is the only defined outcome for a stale snapshot — it cannot be
 refreshed from inside the transaction — and it writes nothing, so the draft is
 exactly as reviewed and no delivery or notification is registered. A retry in a
 fresh transaction is always safe.

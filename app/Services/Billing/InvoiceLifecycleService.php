@@ -235,10 +235,27 @@ final class InvoiceLifecycleService
             //
             // Only for a draft: a charged invoice returns below without
             // spending anything, and keeps its idempotent issue lock-free of
-            // the company.
-            $company = $locked->status === 'draft'
-                ? $this->overpaymentCreditService->lockForSpending((int) $locked->workspace_id, (int) $locked->client_company_id)
-                : null;
+            // the company. And the revision is compared only when the draft
+            // carries credit to spend - known from a locking read of its own
+            // credit lines, which rank after the invoice and before the
+            // company, so asking takes nothing out of order and fixes no
+            // snapshot. A draft spending nothing is not refused because some
+            // other invoice of the company moved the pool.
+            $company = null;
+            if ($locked->status === 'draft') {
+                $spendsCredit = ClientInvoiceLine::query()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->where('client_invoice_id', $locked->id)
+                    ->where('type', InvoiceLineType::Credit->value)
+                    ->where('total_amount', '<', 0)
+                    ->tap(Locks::forUpdate())
+                    ->first(['id']) !== null;
+                $company = $this->overpaymentCreditService->lockForSpending(
+                    (int) $locked->workspace_id,
+                    (int) $locked->client_company_id,
+                    verifySnapshot: $spendsCredit,
+                );
+            }
 
             // Re-read even when the caller supplied the authorized workspace.
             // A freshly-created model does not contain database defaults, so a

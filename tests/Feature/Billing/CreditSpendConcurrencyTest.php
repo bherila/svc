@@ -149,6 +149,67 @@ final class CreditSpendConcurrencyTest extends TestCase
     }
 
     /**
+     * A draft that spends no credit is not refused because the pool moved.
+     *
+     * The revision check exists to stop a stale snapshot spending credit; an
+     * invoice with no credit line spends none, so a concurrent spend by
+     * another invoice of the same company - committed after this caller's
+     * snapshot, as in the agent API's receipt transaction - is not its
+     * business, and refusing it would fail unrelated work.
+     */
+    public function test_a_draft_spending_no_credit_issues_despite_a_concurrent_spend(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('Snapshot visibility under REPEATABLE READ is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('credit_race');
+        Artisan::call('migrate', ['--database' => 'credit_race', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('credit_race');
+        Schema::clearResolvedInstance('db.schema');
+        $server = $this->serverFacts();
+        $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-credit-race-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        try {
+            $workspace = Workspace::query()->create(['name' => 'Synthetic no-credit race', 'slug' => 'synthetic-no-credit-race']);
+            $workspace->memberships()->create(['user_id' => User::factory()->create()->id, 'role' => 'owner']);
+            $company = ClientCompany::query()->create([
+                'workspace_id' => $workspace->id, 'name' => 'Synthetic no-credit client', 'slug' => 'synthetic-no-credit-client',
+            ]);
+            $this->overpaidBy10000($company);
+            $plain = $this->draftWorth($company, 'SYNTH-NO-CREDIT', 50000);
+            $spender = $this->draftWorth($company, 'SYNTH-SPENDER', 50000);
+            app(OverpaymentCreditService::class)->applyCreditsToDraftInvoice($spender);
+            $this->assertSame(0, $this->creditOn($plain));
+
+            $held = $this->worker($workspace, $plain, 'outer-snapshot', $paused, $release);
+            $competitor = $this->worker($workspace, $spender, 'plain', null, null);
+            $processes = [$held, $competitor];
+            $held->start();
+            $this->awaitFile($held, $paused);
+            $competitor->start();
+            $competitor->wait();
+            $this->assertTrue(touch($release), 'Could not release the held issue.');
+            $held->wait();
+            $context = json_encode(['server' => $server], JSON_THROW_ON_ERROR).' '.$held->getOutput().$held->getErrorOutput().$competitor->getOutput();
+
+            $this->assertSame('success', $this->workerResult($competitor)['outcome'], $context);
+            $this->assertSame(['outcome' => 'success', 'status' => 'issued', 'total' => 50000], $this->workerResult($held), $context);
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    /**
      * The funding side of the same race: a refund that removes the credit,
      * committed after an outer transaction's snapshot and before its issue.
      *
