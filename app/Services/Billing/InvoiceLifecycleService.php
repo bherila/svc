@@ -1298,6 +1298,11 @@ final class InvoiceLifecycleService
     private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides): void
     {
         foreach ($lines as $index => $line) {
+            // Every manual door arrives here. A type the capacity ledger reads
+            // as money state is the generator's alone to write.
+            if (in_array($line['type'] ?? null, InvoiceLineType::systemOnlyValues(), true)) {
+                throw new DomainException('That line type is written only by invoice generation and cannot be added by hand.');
+            }
             $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
             $invoice->lines()->create([
                 'workspace_id' => $workspace->id,
