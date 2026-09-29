@@ -187,7 +187,12 @@ opens where that left it (`availableBeforeHours`, with a row saying how much was
 already drawn), so available less this correction's draw is what remains. The
 allocator offers the correction exactly that pool, so overflow a later
 correction causes is billed on it rather than surfacing as debt on the next
-month's invoice (`CorrectionPoolDrawTest`). The work draws on
+month's invoice (`CorrectionPoolDrawTest`). An earlier correction in the month
+that is still a draft counts too: its catch-up is overlaid on the ledger as
+though issued, since the billed-overage ledger reads only charged invoices and
+would otherwise leave the later correction to bill the same debt again. A range
+that runs to a mid-month termination date bills no minimum availability, since
+it sells no later month whose work could use it. The work draws on
 that pool once; a correction snapshotted before that was so shows its second
 draw as the separate line it was. There is no
 opening/closing pair. `poolRemainingHours` and `availableBeforeHours` are

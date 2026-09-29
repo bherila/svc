@@ -219,6 +219,49 @@ final class CorrectionPoolDrawTest extends TestCase
         );
     }
 
+    /**
+     * The first of two corrections is still a draft when the second is
+     * generated. The ledger books the first one's work but reads catch-up only
+     * from charged invoices, so without the draft's charge the second opened on
+     * a debt the first already bills: 16 hours against 14 billed 3 (2 over, 1
+     * to restore the minimum) and a further hour then billed 2 instead of 1.
+     */
+    public function test_a_later_correction_counts_what_an_earlier_draft_correction_already_bills(): void
+    {
+        $this->entry('2026-02-05', 960);
+        $this->entry('2026-02-12', 60);
+
+        [, $firstStatement] = $this->correction('2026-02-01', '2026-02-10');
+        [$second, $secondStatement] = $this->correction('2026-02-11', '2026-02-15');
+
+        $this->assertSame(3.0, $firstStatement->catchUpBilledHours);
+        $this->assertSame(1.0, $firstStatement->poolRemainingHours);
+        $this->assertSame(1.0, $secondStatement->availableBeforeHours, 'What the first draft leaves once it is paid');
+        $this->assertSame(1.0, $secondStatement->ordinaryAppliedToWorkPool);
+        $this->assertSame(1.0, $secondStatement->catchUpBilledHours, 'Only the minimum, not the first draft\'s overflow again');
+        $this->assertSame(1.0, (float) $second->hours_billed_at_rate);
+        $this->assertSame(1.0, $secondStatement->poolRemainingHours);
+    }
+
+    /**
+     * A final range that runs to a mid-month termination date sells no later
+     * month, so nothing can ever draw on a minimum-availability buffer: only
+     * the overflow is billed.
+     */
+    public function test_a_range_ending_at_termination_bills_no_minimum_availability(): void
+    {
+        $this->agreement->forceFill(['ends_on' => '2026-02-15'])->save();
+        $this->entry('2026-02-05', 1800);
+
+        [$correction, $statement] = $this->correction('2026-02-01', '2026-02-15');
+
+        $this->assertSame(0.0, $statement->minimumAvailabilityThresholdHours);
+        $this->assertSame(0.0, $statement->minimumAvailabilityHours);
+        $this->assertGreaterThan(0.0, $statement->ordinaryBilledAtRate);
+        $this->assertSame($statement->ordinaryBilledAtRate, $statement->catchUpBilledHours);
+        $this->assertSame($statement->ordinaryBilledAtRate, (float) $correction->hours_billed_at_rate);
+    }
+
     private function issue(ClientInvoice $invoice): void
     {
         app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
