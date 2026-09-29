@@ -243,10 +243,50 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     #[DataProvider('periodKinds')]
     public function test_a_complete_invoice_of_each_required_kind_still_issues(?string $kind): void
     {
-        $issued = app(InvoiceLifecycleService::class)
-            ->issue($this->draft($kind, '2024-01-01', '2024-01-31'), $this->workspace);
+        $draft = $this->draft($kind, '2024-01-01', '2024-01-31');
+        // An interim claim is placed against its agreement's cycle, and one
+        // naming none is refused (#342), so the complete interim names one.
+        if ($kind === 'interim_overage') {
+            $draft->forceFill(['client_agreement_id' => $this->agreement()->id])->save();
+        }
+
+        $issued = app(InvoiceLifecycleService::class)->issue($draft->refresh(), $this->workspace);
 
         $this->assertSame('issued', $issued->status);
+    }
+
+    /**
+     * #342: an interim naming no agreement is invisible to its real
+     * agreement's cycle-claim check, so the closing invoice could bill its
+     * hours again. Refused at issue, with the generated-row repair wording,
+     * and nothing about the draft changes.
+     */
+    public function test_a_complete_interim_naming_no_agreement_is_refused(): void
+    {
+        $draft = $this->draft('interim_overage', '2024-01-01', '2024-01-31');
+        $this->assertNull($draft->client_agreement_id);
+
+        $message = $this->refusalFor(app(InvoiceLifecycleService::class), $draft);
+
+        $this->assertStringContainsString('names no agreement, so it cannot be issued', $message);
+        $this->assertStringContainsString('manual invoice creation cannot repair it', $message);
+        $this->assertStringNotContainsString('Discard this draft and create it again', $message);
+
+        $fresh = $draft->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame('draft', $fresh->status);
+        $this->assertNull($fresh->issued_at);
+    }
+
+    /** The refusal is the transition's, not the row's: a charged one stays idempotent. */
+    public function test_an_already_charged_interim_naming_no_agreement_is_still_idempotent(): void
+    {
+        $invoice = $this->draft('interim_overage', '2024-01-01', '2024-01-31');
+        $invoice->forceFill(['status' => 'paid'])->save();
+
+        $returned = app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
+
+        $this->assertSame('paid', $returned->status);
     }
 
     public static function periodKinds(): iterable
