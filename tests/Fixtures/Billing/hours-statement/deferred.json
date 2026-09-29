@@ -1,0 +1,158 @@
+{
+    "stored": {
+        "version": 1,
+        "cadence": "monthly",
+        "workStart": "2026-01-01",
+        "workEnd": "2026-01-31",
+        "retainerStart": "2026-02-01",
+        "retainerEnd": "2026-02-28",
+        "openingRetainerHours": 10,
+        "openingRolloverHours": 0,
+        "openingDeficitHours": 0,
+        "openingExpiredHours": 0,
+        "expiredWithinPeriodHours": 0,
+        "ordinaryHours": 6,
+        "ordinaryAppliedToWorkPool": 6,
+        "ordinaryAppliedToNextRetainer": 0,
+        "ordinaryBilledAtRate": 0,
+        "subcontractorHours": 0,
+        "deferredAppliedHours": 3,
+        "deferredAppliedEntries": 1,
+        "recarriedSettledHours": 0,
+        "deferredBilledOnTerminationHours": 0,
+        "catchUpBilledHours": 0,
+        "minimumAvailabilityHours": 0,
+        "minimumAvailabilityThresholdHours": 1,
+        "interimBilledHours": 0,
+        "rolledForwardHours": 1,
+        "expiringHours": 0,
+        "deficitCarriedForwardHours": 0,
+        "deferredBacklogHours": 5,
+        "deferredBacklogEntries": 1,
+        "recarriedRemainingHours": 0,
+        "nextRetainerHours": 10,
+        "retainerSoldBy": null
+    },
+    "rows": [
+        {
+            "title": "Opening pool: January 2026",
+            "rows": [
+                {
+                    "label": "Retainer hours for January 2026",
+                    "hours": "10.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours rolled in from earlier periods",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours owed from earlier periods",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Net hours available at the start of January 2026",
+                    "hours": "10.00",
+                    "kind": "total"
+                }
+            ]
+        },
+        {
+            "title": "Work reconciled on this invoice",
+            "rows": [
+                {
+                    "label": "Hours worked in January 2026",
+                    "hours": "6.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Applied to the January 2026 pool",
+                    "hours": "6.00",
+                    "kind": "detail"
+                },
+                {
+                    "label": "Billed at the hourly rate",
+                    "hours": "0.00",
+                    "kind": "detail"
+                },
+                {
+                    "label": "Deferred work applied to free capacity (1 entry)",
+                    "hours": "3.00",
+                    "kind": "row"
+                }
+            ]
+        },
+        {
+            "title": "Catch-up billed at the hourly rate",
+            "rows": [
+                {
+                    "label": "Work beyond the available pool",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Minimum availability: restores the agreement's 1.00-hour minimum for February 2026",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Total catch-up billed on this invoice",
+                    "hours": "0.00",
+                    "kind": "total"
+                }
+            ]
+        },
+        {
+            "title": "Carried forward",
+            "rows": [
+                {
+                    "label": "Unused hours rolling into February 2026",
+                    "hours": "1.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours expiring at the start of February 2026",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours still owed, carried into February 2026",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Deferred work waiting for free capacity (1 entry)",
+                    "hours": "5.00",
+                    "kind": "row"
+                }
+            ]
+        },
+        {
+            "title": "Closing position: February 2026",
+            "rows": [
+                {
+                    "label": "Retainer hours for February 2026",
+                    "hours": "10.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Unused hours rolled in",
+                    "hours": "1.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Hours owed carried in",
+                    "hours": "0.00",
+                    "kind": "row"
+                },
+                {
+                    "label": "Net hours available at the start of February 2026",
+                    "hours": "11.00",
+                    "kind": "total"
+                }
+            ]
+        }
+    ]
+}

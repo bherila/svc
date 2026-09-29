@@ -106,7 +106,7 @@
 @if (! empty($statement))
     <div class="statement new-page">
         <h2>Hours statement</h2>
-        <p class="muted">For the work this invoice reconciles and the retainer period that follows it. All figures are hours.</p>
+        <p class="muted">{{ $statementIntro }}</p>
         @foreach ($statement as $section)
             <h3>{{ $section['title'] }}</h3>
             <table>

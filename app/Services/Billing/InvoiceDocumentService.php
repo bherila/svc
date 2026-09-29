@@ -81,6 +81,9 @@ final class InvoiceDocumentService
             'statement' => ($statement = $invoice->hoursStatement()) === null
                 ? []
                 : InvoiceHoursStatementRows::for($statement),
+            'statementIntro' => $statement?->isCorrection() === true
+                ? 'For the work this correction reconciles and the pool it draws on. All figures are hours.'
+                : 'For the work this invoice reconciles and the retainer period that follows it. All figures are hours.',
         ]);
     }
 

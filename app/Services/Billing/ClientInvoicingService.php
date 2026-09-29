@@ -24,6 +24,7 @@ use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\NextRetainerLending;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\RetainerLineDescription;
 use App\Support\Concurrency\Locks;
@@ -762,9 +763,25 @@ final class ClientInvoicingService
             $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
             $isRetainerMonthPostTermination = $terminationDate instanceof Carbon && $retainerMonthStart->gt($terminationDate);
 
-            $allBalances = $this->monthlyBalances($company, $agreement, $periodEnd, $retainerMonthStart, $terminationMonthKey);
-
             $workMonthKey = $periodEnd->format('Y-m');
+
+            // Asked before the ledger is measured: a correction's ledger also
+            // carries what earlier correction drafts in its month charge.
+            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+
+            // An earlier correction in the same month that is still a draft
+            // has its work booked by the ledger but not its catch-up, because
+            // the billed-overage ledger reads only charged invoices. Measured
+            // without it, this correction would open on the debt that draft
+            // already bills and charge it a second time once both are issued.
+            // Overlaid exactly as this draft's own catch-up is below.
+            $earlierDraftCharges = $retainerSoldBy === null
+                ? 0.0
+                : $this->earlierDraftChargesInMonth($company, $agreement, $periodStart, $invoice);
+            $earlierDraftOverlay = $earlierDraftCharges > 0 ? [$workMonthKey => $earlierDraftCharges] : [];
+
+            $allBalances = $this->monthlyBalances($company, $agreement, $periodEnd, $retainerMonthStart, $terminationMonthKey, $earlierDraftOverlay);
+
             $workMonthBalance = $this->balanceForMonth($allBalances, $workMonthKey);
             $currentMonthBalance = $this->balanceForMonth($allBalances, $retainerMonthStart->format('Y-m'))
                 ?? $this->openingMonthSummary($agreement, $retainerMonthStart->format('Y-m'));
@@ -831,6 +848,31 @@ final class ClientInvoicingService
 
             $priorMonthBalance = $this->balanceForMonth($allBalances, $periodEnd->format('Y-m'));
             $priorMonthCapacity = $priorMonthBalance?->opening->totalAvailable ?? 0.0;
+
+            // A correction reconciles work inside a month whose retainer an
+            // earlier invoice sold, and other work in that month - an earlier
+            // correction's - may already have drawn on the pool. Its own pool
+            // is therefore what was left immediately before its range, not the
+            // month's opening: offering the opening again let a later
+            // correction absorb overflow the pool no longer had, which then
+            // surfaced as debt on the next month's invoice. The ledger measured
+            // above books this range's work and every earlier draw in the
+            // month, so adding this range's work back is that position - the
+            // same figure the statement prints as available before this work.
+            $rangeMinutes = 0;
+            foreach ($priorMonthEntries as $entry) {
+                $rangeMinutes += $entry->minutes;
+            }
+            $availableBeforeRange = $retainerSoldBy === null ? null : round(
+                ($workMonthBalance->closing->unusedHours ?? 0.0)
+                    + ($workMonthBalance->closing->remainingRollover ?? 0.0)
+                    - ($workMonthBalance->closing->negativeBalance ?? 0.0)
+                    + $rangeMinutes / 60,
+                4,
+            );
+            if ($availableBeforeRange !== null) {
+                $priorMonthCapacity = max(0.0, $availableBeforeRange);
+            }
             // Prorated like the fee. Granting a whole month's pool against a
             // half month's charge understates every overage that follows.
             //
@@ -840,15 +882,28 @@ final class ClientInvoicingService
             // the whole of it to this period's overflow let one pool of hours
             // be spent twice: the lines said the hours were left, while the
             // invoice's own opening balance recorded a debt.
-            $currentMonthCapacity = $isRetainerMonthPostTermination
-                ? 0.0
-                : max(0.0, $this->retainerCalculator->retainerHoursForMonth(
+            //
+            // And only when it is another month: see NextRetainerLending.
+            $currentMonthCapacity = NextRetainerLending::capacity(
+                $periodEnd,
+                $retainerMonthStart,
+                $isRetainerMonthPostTermination,
+                $isRetainerMonthPostTermination ? 0.0 : $this->retainerCalculator->retainerHoursForMonth(
                     $agreement,
                     $retainerMonthStart,
                     $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
-                ) - ($priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0));
-            // No minimum availability to maintain once the agreement has ended.
-            $catchUpThreshold = $isRetainerMonthPostTermination ? 0.0 : $agreement->catch_up_threshold_hours;
+                ),
+                $priorMonthBalance?->opening->remainingNegativeBalance ?? 0.0,
+            );
+            // No minimum availability to maintain once the agreement has ended,
+            // and none either for work that runs to the termination date
+            // itself: a final range cut short mid-month sells no later month
+            // (its "month after" is its own), so no future work could ever
+            // draw on the buffer the threshold would bill.
+            $catchUpThreshold = $isRetainerMonthPostTermination
+                || ($terminationDate instanceof Carbon && $periodEnd->gte($terminationDate))
+                ? 0.0
+                : $agreement->catch_up_threshold_hours;
 
             $invoice->update(['hours_worked' => ((int) $priorMonthEntries->sum('minutes')) / 60]);
 
@@ -928,7 +983,7 @@ final class ClientInvoicingService
                     $periodEnd,
                     $retainerMonthStart,
                     $terminationMonthKey,
-                    [$workMonthKey => $totalCatchupHours],
+                    [$workMonthKey => round($totalCatchupHours + $earlierDraftCharges, 4)],
                 );
                 $chargedWorkMonth = $this->balanceForMonth($balancesAfterCharge, $workMonthKey);
                 $snapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $balancesAfterCharge);
@@ -950,7 +1005,7 @@ final class ClientInvoicingService
             // see that: the periods genuinely do not overlap. Without this the
             // correction adds the retainer and every recurring item a second
             // time, on top of an invoice the client may already have paid.
-            $retainerSoldBy = $this->cycleSoldBy($company, $agreement, $retainerMonthStart, $invoice);
+            // (Asked above, before the work was allocated: see there.)
             $cycleAlreadySold = $retainerSoldBy !== null;
 
             if (! $isRetainerMonthPostTermination && ! $cycleAlreadySold) {
@@ -1029,7 +1084,7 @@ final class ClientInvoicingService
             // are overlaid as settled beside its catch-up - otherwise work paid
             // for here would read as debt carried into a period that never comes.
             $deferred = $this->deferredFigures($invoice);
-            $settledHere = round($totalCatchupHours + $deferred['termination_at_rate'], 4);
+            $settledHere = round($totalCatchupHours + $deferred['termination_at_rate'] + $earlierDraftCharges, 4);
             $finalBalances = $this->monthlyBalances(
                 $company,
                 $agreement,
@@ -1072,6 +1127,16 @@ final class ClientInvoicingService
                 recarriedRemainingHours: $finalWork->recarriedDeferredHours ?? 0.0,
                 nextRetainerHours: round((float) $invoice->retainer_hours_included, 4),
                 retainerSoldBy: $retainerSoldBy,
+                // A correction's work month is the month whose retainer was
+                // already sold, so this is that pool after this correction.
+                poolRemainingHours: $retainerSoldBy === null ? null : round(
+                    ($finalWork->closing->unusedHours ?? 0.0)
+                        + ($finalWork->closing->remainingRollover ?? 0.0)
+                        - ($finalWork->closing->negativeBalance ?? 0.0),
+                    4,
+                ),
+                // The pool this correction's work was allocated against.
+                availableBeforeHours: $availableBeforeRange,
             ));
 
             // Credit is applied last so it lands against the final figure rather
@@ -1406,6 +1471,37 @@ final class ClientInvoicingService
      * dropped. Reports whether a draft was released, so a caller holding a
      * ledger measured earlier knows to measure again.
      */
+    /**
+     * Catch-up hours charged by earlier cadence drafts reconciling work in the
+     * same month as a correction, before its range begins.
+     *
+     * Issued invoices are already in the billed-overage ledger; only drafts are
+     * missing from it. Later ranges are excluded because the ledger is measured
+     * through this range's end, so their work is not booked here either.
+     *
+     * @infection-ignore-all The tenant, status, kind and date predicates need the feature database and are covered by CorrectionPoolDrawTest; the mutation lane runs unit tests only.
+     */
+    private function earlierDraftChargesInMonth(
+        ClientCompany $company,
+        ClientAgreement $agreement,
+        Carbon $periodStart,
+        ?ClientInvoice $invoice,
+    ): float {
+        $ownId = $invoice?->getKey();
+
+        return round((float) $this->scopedInvoices($company)
+            ->where('client_agreement_id', $agreement->id)
+            ->where(function (Builder $query): void {
+                $query->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
+            })
+            ->where('status', InvoiceStatus::Draft->value)
+            ->when($ownId !== null, fn (Builder $query): Builder => $query->whereKeyNot($ownId))
+            ->whereDate('service_period_end', '>=', $periodStart->copy()->startOfMonth()->toDateString())
+            ->whereDate('service_period_end', '<', $periodStart->toDateString())
+            ->sum('hours_billed_at_rate'), 4);
+    }
+
     private function releaseDraftForRebuild(?ClientInvoice $invoice): bool
     {
         if (! $invoice instanceof ClientInvoice) {

@@ -88,7 +88,10 @@ retainer being sold is lent to the reconciled month's overflow only net of debt
 that month could not absorb (`opening.remainingNegativeBalance`), because the
 ledger spends the next retainer on that older debt first; lending all of it
 let the lines claim hours the invoice's own opening balance recorded as owed
-(`CarriedDeficitCapacityTest`). Catch-up bills ordinary (non-deferred) time; approved expenses are billed at cost on the same invoice by `ExpenseInvoiceAllocations`; and deferred work never reaches a catch-up charge, directly or by leaving the next month short (`CatchUpBillsOrdinaryWorkAndExpensesTest`). For a
+(`CarriedDeficitCapacityTest`). It is lent only when it is another month: a work period ending
+inside its month (a correction range, a final period cut short by termination)
+derives "the month after" as the same month, and lending it again let one pool
+absorb the same overflow twice (`NextRetainerLending`, `CorrectionPoolDrawTest`). Catch-up bills ordinary (non-deferred) time; approved expenses are billed at cost on the same invoice by `ExpenseInvoiceAllocations`; and deferred work never reaches a catch-up charge, directly or by leaving the next month short (`CatchUpBillsOrdinaryWorkAndExpensesTest`). For a
 synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.
@@ -171,9 +174,32 @@ work applied and re-carried deferred work settled, catch-up billed with the
 minimum-availability hours shown as their own row, what carries forward
 (unused hours rolling in or expiring, hours still owed, the deferred backlog
 still waiting, re-carried hours still to settle), and the closing position of
-the period the invoice sells - or, for a correction range inside a cycle an
-earlier invoice already sold, the same position labelled with that invoice's
-number and a note that this one does not sell the retainer again.
+the period the invoice sells.
+
+A correction range inside a cycle an earlier invoice already sold neither opens
+nor closes that period, so its statement has its own shape: the pool position
+for that period (naming the invoice that sold it, with a note that this one
+does not sell it again), the work this correction reconciles against it,
+catch-up billed, what remains in the pool afterwards (`poolRemainingHours`,
+from the same ledger), and any deferred work still waiting. When earlier work
+in the month - an earlier correction's - already drew on the pool, the pool
+opens where that left it (`availableBeforeHours`, with a row saying how much was
+already drawn), so available less this correction's draw is what remains. The
+allocator offers the correction exactly that pool, so overflow a later
+correction causes is billed on it rather than surfacing as debt on the next
+month's invoice (`CorrectionPoolDrawTest`). An earlier correction in the month
+that is still a draft counts too: its catch-up is overlaid on the ledger as
+though issued, since the billed-overage ledger reads only charged invoices and
+would otherwise leave the later correction to bill the same debt again. A range
+that runs to a mid-month termination date bills no minimum availability, since
+it sells no later month whose work could use it. The work draws on
+that pool once; a correction snapshotted before that was so shows its second
+draw as the separate line it was. There is no
+opening/closing pair. `poolRemainingHours` and `availableBeforeHours` are
+stored only for corrections, so
+ordinary statements keep exactly their stored shape
+(`InvoiceHoursStatementSnapshotTest`); a correction snapshotted before they
+existed prints without the remaining figure and opens at the month's opening.
 `InvoiceHoursStatementRows` lays it out; its
 two net lines are arithmetic over the rows printed above them.
 
