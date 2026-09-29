@@ -253,6 +253,28 @@ final class EarlierDraftCatchUpTest extends TestCase
         }
     }
 
+    /**
+     * A backdated line widens the later invoice's period back into the earlier
+     * month. The guards compare periods by end, as the ledger places a charge,
+     * so the widening does not hide the draft February was sized against.
+     */
+    public function test_a_later_period_widened_backwards_keeps_the_dependency(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        ClientInvoice::query()->whereKey($february->id)->update(['service_period_start' => '2026-01-20']);
+
+        try {
+            $this->issue($february->fresh() ?? $february);
+            $this->fail('A widened February was issued ahead of the January draft it relies on');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $january->invoice_number, $refusal->getMessage());
+        }
+
+        $this->expectException(DomainException::class);
+        app(InvoiceLifecycleService::class)->discardDraft($january, $this->workspace, 'Synthetic discard');
+    }
+
     /** An earlier draft's catch-up that cannot be known is refused, not read as zero. */
     public function test_an_earlier_draft_with_unknown_catch_up_is_refused(): void
     {

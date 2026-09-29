@@ -36,10 +36,11 @@ final class DraftCatchUpDependencies
      * work month each settles: the same key the billed-overage ledger uses.
      *
      * Issued invoices are already in the billed-overage ledger, so only drafts
-     * are missing from it. A draft whose work ends on or after `$before` is
-     * excluded: the ledger is measured through the range being generated, and a
-     * later draft is rebuilt against this one, not the other way round. Void
-     * and deleted invoices charged nothing and are not counted.
+     * are missing from it. The window is the ledger's own: an invoice whose
+     * service period ends on or before `$through`, the end of the range being
+     * generated (BilledOverageLedger::window()), so a draft counts here exactly
+     * when its charge will count there once issued. A later draft is outside
+     * it. Void and deleted invoices charged nothing and are not counted.
      *
      * An unknown figure on a draft that carries an additional-hours line is
      * refused rather than read as zero, as it is on every billed-overage read:
@@ -50,12 +51,12 @@ final class DraftCatchUpDependencies
      *
      * @return array<string, float>
      */
-    public function chargesByMonthBefore(ClientAgreement $agreement, int $companyId, Carbon $before, ?int $excludeInvoiceId): array
+    public function chargesByMonthThrough(ClientAgreement $agreement, int $companyId, Carbon $through, ?int $excludeInvoiceId): array
     {
         $drafts = $this->cadenceInvoices((int) $agreement->workspace_id, $companyId, (int) $agreement->id)
             ->where('status', InvoiceStatus::Draft->value)
             ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
-            ->whereDate('service_period_end', '<', $before->toDateString())
+            ->whereDate('service_period_end', '<=', $through->toDateString())
             ->orderBy('service_period_end')
             ->orderBy('id')
             ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
@@ -90,14 +91,18 @@ final class DraftCatchUpDependencies
     public function assertIssuable(ClientInvoice $invoice): void
     {
         $agreement = $this->agreementOf($invoice);
-        if (! $agreement instanceof ClientAgreement || $invoice->service_period_start === null) {
+        if (! $agreement instanceof ClientAgreement || $invoice->service_period_end === null) {
             return;
         }
 
         $earlier = $this->cadenceInvoices((int) $invoice->workspace_id, (int) $invoice->client_company_id, (int) $agreement->id)
             ->where('status', InvoiceStatus::Draft->value)
             ->whereKeyNot($invoice->getKey())
-            ->whereDate('service_period_end', '<', $invoice->service_period_start->toDateString())
+            // Compared by end, as the ledger places a charge: a start widened
+            // backwards by a backdated line would hide the draft this was
+            // sized against, and an end widened forwards only makes this
+            // stricter.
+            ->whereDate('service_period_end', '<', $invoice->service_period_end->toDateString())
             ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
             ->orderBy('service_period_end')
             ->value('invoice_number');
@@ -123,7 +128,11 @@ final class DraftCatchUpDependencies
         if (! $agreement instanceof ClientAgreement
             || $draft->service_period_end === null
             || ! $this->billingCatchUp(
-                ClientInvoice::query()->where('workspace_id', $draft->workspace_id)->whereKey($draft->getKey()),
+                // The current row, not the snapshot: the caller holds its
+                // lock, and a regeneration committed while it waited may
+                // have given this draft its catch-up.
+                ClientInvoice::query()->where('workspace_id', $draft->workspace_id)->whereKey($draft->getKey())
+                    ->tap(Locks::forUpdate()),
             )->exists()) {
             return;
         }
@@ -131,8 +140,8 @@ final class DraftCatchUpDependencies
         $later = $this->cadenceInvoices((int) $draft->workspace_id, (int) $draft->client_company_id, (int) $agreement->id)
             ->whereIn('status', InvoiceStatus::live())
             ->whereKeyNot($draft->getKey())
-            ->whereDate('service_period_start', '>', $draft->service_period_end->toDateString())
-            ->orderBy('service_period_start')
+            ->whereDate('service_period_end', '>', $draft->service_period_end->toDateString())
+            ->orderBy('service_period_end')
             // A locking read, which reads the current row rather than the
             // transaction's snapshot: a caller that read something before the
             // agreement lock (the agent API's authorisation does) would

@@ -777,10 +777,10 @@ final class ClientInvoicingService
             // work month, exactly as this draft's own catch-up is below.
             // Issuing this invoice before that draft, or discarding the draft
             // once this relies on it, is refused: see DraftCatchUpDependencies.
-            $earlierDraftOverlay = $this->draftCatchUpDependencies->chargesByMonthBefore(
+            $earlierDraftOverlay = $this->draftCatchUpDependencies->chargesByMonthThrough(
                 $agreement,
                 (int) $company->id,
-                $periodStart,
+                $periodEnd,
                 $invoice?->id,
             );
 

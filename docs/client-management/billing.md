@@ -103,8 +103,11 @@ work counted and its catch-up missed, and the next invoice would open on the
 debt that draft already bills and charge it again once both are issued. So
 generation overlays each earlier cadence draft's `hours_billed_at_rate` on the
 ledger in that draft's own work month, as though it were issued, exactly as it
-overlays the invoice's own catch-up. Only drafts whose work ends before the
-range being generated count, so a draft never counts a later one; a void or
+overlays the invoice's own catch-up. A draft counts when its service period
+ends on or before the end of the range being generated, which is the window the
+billed-overage ledger uses once it is issued, so a draft never counts a later
+one. The guards below compare invoices by that end too, so a period widened
+backwards by a backdated line does not hide a dependency; a void or
 deleted draft charged nothing and is not counted, and a draft whose
 `hours_billed_at_rate` is unknown (null) beside an additional-hours line is
 refused rather than read as zero.
