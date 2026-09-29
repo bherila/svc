@@ -221,6 +221,12 @@ final class InvoiceLifecycleService
             // be read or locked ahead of it, and then checked against the
             // locked row below.
             $agreement = $this->lockInterimAgreement($invoice);
+            // A monthly draft recording the catch-up it was sized against is
+            // checked against other invoices of its agreement, read with row
+            // locks. Those are serialised on the agreement - which generation
+            // and void hold while they change or read them - rather than left
+            // to meet in whatever order two issues reach each other's rows.
+            $basisAgreement = $invoice->catch_up_basis === null ? null : $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             // A caller's check of version or status belongs on this row, not on
             // the copy it read before asking: another request can issue the
@@ -248,6 +254,20 @@ final class InvoiceLifecycleService
                 // The claims are invoice rows, so they are locked now, before
                 // the company.
                 $interimClaims = $this->interimOverageGenerator()->lockCycleClaims($locked, $agreement);
+            }
+
+            // A monthly invoice records the earlier catch-up it was sized
+            // against; one of those charges moving since - an earlier draft
+            // regenerated, created or voided - leaves it billing the wrong
+            // debt. Measured with locking reads of other invoice rows, which
+            // rank with this one and before the credit lines, and read nothing
+            // that fixes the snapshot the credit check below relies on.
+            if ($locked->status === InvoiceStatus::Draft->value && $locked->catch_up_basis !== null) {
+                if (! $basisAgreement instanceof ClientAgreement
+                    || $basisAgreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                $this->draftCatchUpDependencies->assertSizedAgainstCurrentCharges($locked);
             }
 
             // The credit pool's lock, straight after the invoice's and before
@@ -600,12 +620,25 @@ final class InvoiceLifecycleService
      */
     private function lockCadenceAgreement(ClientInvoice $invoice): void
     {
-        if (! in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value], true)
-            || $invoice->client_agreement_id === null) {
-            return;
+        if (in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value], true)) {
+            $this->lockAgreementOf($invoice);
+        }
+    }
+
+    /**
+     * Lock an invoice's agreement, before its invoice, from the caller's copy.
+     *
+     * Every kind with an agreement, since the billed-overage ledger reads them
+     * all: voiding an issued one asks which later invoices were sized against
+     * it, and monthly generation holds this lock while it records that.
+     */
+    private function lockAgreementOf(ClientInvoice $invoice): ?ClientAgreement
+    {
+        if ($invoice->client_agreement_id === null) {
+            return null;
         }
 
-        ClientAgreement::query()
+        return ClientAgreement::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->whereKey($invoice->client_agreement_id)
             ->tap(Locks::forUpdate())
@@ -629,15 +662,7 @@ final class InvoiceLifecycleService
 
     private function lockInterimAgreement(ClientInvoice $invoice): ?ClientAgreement
     {
-        if ($invoice->invoice_kind !== InvoiceKind::InterimOverage->value || $invoice->client_agreement_id === null) {
-            return null;
-        }
-
-        return ClientAgreement::query()
-            ->where('workspace_id', $invoice->workspace_id)
-            ->whereKey($invoice->client_agreement_id)
-            ->tap(Locks::forUpdate())
-            ->first();
+        return $invoice->invoice_kind === InvoiceKind::InterimOverage->value ? $this->lockAgreementOf($invoice) : null;
     }
 
     private function interimOverageGenerator(): InterimOverageGenerator
@@ -692,7 +717,7 @@ final class InvoiceLifecycleService
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
-            $this->lockCadenceAgreement($invoice);
+            $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
 
             if ($locked->status === 'void') {
@@ -742,9 +767,13 @@ final class InvoiceLifecycleService
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
             }
 
+            $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
             if ($locked->status === InvoiceStatus::Draft->value) {
-                $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
                 $this->draftCatchUpDependencies->assertDiscardable($locked);
+            } else {
+                // An issued invoice a later one was sized against: voiding it
+                // takes its charge out of the ledger that later one relied on.
+                $this->draftCatchUpDependencies->assertVoidable($locked);
             }
 
             $this->releaseAllocations($locked);

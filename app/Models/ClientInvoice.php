@@ -46,6 +46,7 @@ use RuntimeException;
  * @property numeric-string|null $starting_unused_hours
  * @property numeric-string|null $starting_negative_hours
  * @property array<string, mixed>|null $hours_statement
+ * @property array<string, mixed>|null $catch_up_basis
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
@@ -61,8 +62,10 @@ use RuntimeException;
     'starting_unused_hours', 'starting_negative_hours', 'automatic_delivery_status',
     'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
     'automatic_delivery_note',
+    // What a generated monthly invoice was sized against; see CatchUpBasis.
+    'catch_up_basis',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'hours_statement'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'hours_statement', 'catch_up_basis'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -86,6 +89,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'starting_unused_hours' => 'decimal:4',
             'starting_negative_hours' => 'decimal:4',
             'hours_statement' => 'array',
+            'catch_up_basis' => 'array',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
             'automatic_delivery_due_at' => 'datetime',

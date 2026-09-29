@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\Billing\CatchUpBasis;
 use App\Support\Billing\InvoiceHoursStatement;
 use Carbon\Carbon;
 use DomainException;
@@ -363,9 +364,233 @@ final class EarlierDraftCatchUpTest extends TestCase
         $this->assertSame(0.0, $statement->catchUpBilledHours);
     }
 
+    /**
+     * January regenerated to a larger charge after February was sized
+     * against the old one. February records what it was sized against, so
+     * once January is issued it is refused until it is regenerated, rather
+     * than issued on a debt that is no longer the one left.
+     */
+    public function test_a_later_draft_sized_against_an_older_earlier_charge_must_be_regenerated(): void
+    {
+        $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->entry('2026-01-20', 120);
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $this->assertNotSame(1.0, (float) $january->hours_billed_at_rate, 'The fixture moves January\'s charge');
+        $this->issue($january);
+
+        try {
+            $this->issue($february);
+            $this->fail('February was issued on the January charge it was sized against before January moved');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $january->invoice_number, $refusal->getMessage());
+            $this->assertStringContainsString('Regenerate this invoice', $refusal->getMessage());
+        }
+        $this->assertSame('draft', $february->fresh()?->status);
+
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->issue($february);
+        $this->assertSame('issued', $february->fresh()?->status);
+    }
+
+    /**
+     * February generated before January's invoice existed opened on
+     * January's whole debt. January then created and issued bills that debt
+     * too, so February, which never counted it, must be regenerated.
+     */
+    public function test_an_earlier_invoice_created_after_the_later_one_forces_its_regeneration(): void
+    {
+        [$february, $statement] = $this->month('2026-02-01', '2026-02-28');
+        $this->assertSame(1.0, $statement->catchUpBilledHours, 'With no January, February bills the minimum itself');
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $this->issue($january);
+
+        try {
+            $this->issue($february);
+            $this->fail('February was issued without the January charge created after it');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $january->invoice_number, $refusal->getMessage());
+        }
+
+        [$february, $statement] = $this->month('2026-02-01', '2026-02-28');
+        $this->assertSame(0.0, $statement->catchUpBilledHours, 'Regenerated, February bills nothing a second time');
+        $this->issue($february);
+        $this->assertSame('issued', $february->fresh()?->status);
+    }
+
+    /**
+     * January issued and February issued against its charge: voiding January
+     * would take the charge out of the ledger February relied on, leaving that
+     * debt billed by neither. Refused while February is live, issued or draft.
+     */
+    public function test_an_issued_invoice_a_later_invoice_relies_on_cannot_be_voided(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $this->issue($january);
+
+        foreach (['draft', 'issued'] as $februaryStatus) {
+            if ($februaryStatus === 'issued') {
+                $this->issue($february);
+            }
+            try {
+                $lifecycle->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+                $this->fail("January was voided under a {$februaryStatus} February sized against it");
+            } catch (DomainException $refusal) {
+                $this->assertStringContainsString((string) $february->invoice_number, $refusal->getMessage());
+            }
+            $this->assertSame('issued', $january->fresh()?->status);
+        }
+
+        // Voiding the dependent invoice first releases it.
+        $lifecycle->void($february->fresh() ?? $february, $this->workspace, 'Synthetic void');
+        $lifecycle->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /**
+     * An invoice generated before bases were recorded carries none. It issues,
+     * and the invoice it was sized against voids, exactly as before.
+     */
+    public function test_an_invoice_with_no_recorded_basis_is_treated_as_before(): void
+    {
+        $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->assertNotNull($february->fresh()?->catch_up_basis, 'Generation records the basis');
+        ClientInvoice::query()->whereKey($february->id)->update(['catch_up_basis' => null]);
+        $this->entry('2026-01-20', 120);
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $this->issue($january);
+
+        $this->issue($february->fresh() ?? $february);
+        $this->assertSame('issued', $february->fresh()?->status);
+
+        app(InvoiceLifecycleService::class)->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /** An issued invoice no later invoice was sized against still voids. */
+    public function test_an_issued_invoice_nothing_relies_on_can_be_voided(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $this->issue($january);
+
+        app(InvoiceLifecycleService::class)->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /**
+     * Another workspace's charged invoice naming this agreement is neither
+     * recorded in the basis nor able to move it, and another workspace's
+     * invoice recording this one's id cannot block its void.
+     */
+    public function test_another_tenants_invoices_neither_enter_the_basis_nor_block_a_void(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-catch-up-basis']);
+        $foreign = fn (array $attributes): ClientInvoice => $this->writingLegacyCrossTenantRows(
+            fn (): ClientInvoice => ClientInvoice::query()->create($attributes + [
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $this->agreement->id,
+                'invoice_number' => 'X-'.uniqid(),
+                'currency' => 'USD',
+                'invoice_kind' => 'cadence_period',
+                'service_period_start' => '2026-01-01',
+                'service_period_end' => '2026-01-31',
+                'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            ]),
+        );
+        $foreignCharge = $foreign(['status' => 'issued', 'hours_billed_at_rate' => 5]);
+
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->assertSame(0.0, CatchUpBasis::fromArray($february->fresh()?->catch_up_basis)?->hoursFrom((int) $foreignCharge->id));
+
+        // Moving it afterwards does not refuse February either.
+        ClientInvoice::query()->whereKey($foreignCharge->id)->update(['hours_billed_at_rate' => 7]);
+        $this->issue($january);
+        $this->issue($february);
+        $this->assertSame('issued', $february->fresh()?->status);
+
+        [$march] = $this->monthOnApril();
+        $this->issue($march);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $lifecycle->void($march->fresh() ?? $march, $this->workspace, 'Synthetic void');
+        $lifecycle->void($february->fresh() ?? $february, $this->workspace, 'Synthetic void');
+        $foreign([
+            'status' => 'issued',
+            'service_period_start' => '2026-03-01',
+            'service_period_end' => '2026-03-31',
+            'hours_billed_at_rate' => 0,
+            'catch_up_basis' => CatchUpBasis::of('2026-02-28', [
+                ['id' => (int) $january->id, 'number' => (string) $january->invoice_number, 'hours' => 1.0],
+            ])->toArray(),
+        ]);
+
+        $lifecycle->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /**
+     * Issuing a draft that records a basis takes the agreement lock first -
+     * the one generation and void hold - so two issues re-reading each
+     * other's rows are serialised rather than left to deadlock, and reads
+     * the basis rows with locks before the company, whose lock must precede
+     * the transaction's first ordinary read.
+     */
+    public function test_issuing_a_draft_with_a_basis_locks_its_agreement_first(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->issue($january);
+        $selects = [];
+        DB::listen(function (QueryExecuted $query) use (&$selects): void {
+            if (preg_match('/^select .* from ["`]?(client_agreements|client_invoices|client_companies)["`]?/i', $query->sql, $match) === 1) {
+                $selects[] = $match[1];
+            }
+        });
+
+        $this->issue($february);
+
+        $this->assertSame('client_agreements', $selects[0] ?? null);
+        $company = array_search('client_companies', $selects, true);
+        $this->assertIsInt($company);
+        $this->assertGreaterThanOrEqual(3, count(array_filter(
+            array_slice($selects, 0, $company),
+            static fn (string $table): bool => $table === 'client_invoices',
+        )), 'The invoice and the basis rows are read before the company');
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
+    }
+
+    /**
+     * Re-measured at issue, an earlier draft whose figure has become unknown
+     * beside the additional-hours line it bills is refused, not read as zero.
+     */
+    public function test_an_earlier_draft_with_unknown_catch_up_is_refused_at_issue(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        ClientInvoice::query()->whereKey($january->id)->update(['hours_billed_at_rate' => null]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage("Draft invoice {$january->invoice_number} records no billed-overage hours");
+
+        $this->issue($february);
+    }
+
     private function issue(ClientInvoice $invoice): void
     {
         app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
+    }
+
+    /** @return array{ClientInvoice, InvoiceHoursStatement} */
+    private function monthOnApril(): array
+    {
+        $this->travelTo(Carbon::parse('2026-04-02 12:00:00'));
+
+        return $this->month('2026-03-01', '2026-03-31');
     }
 
     /** @return array{ClientInvoice, InvoiceHoursStatement} */

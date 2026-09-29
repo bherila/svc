@@ -777,7 +777,15 @@ final class ClientInvoicingService
             // work month, exactly as this draft's own catch-up is below.
             // Issuing this invoice before that draft, or discarding the draft
             // once this relies on it, is refused: see DraftCatchUpDependencies.
-            $earlierDraftOverlay = $this->draftCatchUpDependencies->chargesByMonthThrough(
+            //
+            // Every earlier charge this invoice is sized against - the issued
+            // ones the ledger reads and the drafts overlaid - is recorded on
+            // it, so that issuing it refuses once any has moved and an issued
+            // one it relies on cannot be voided under it.
+            [
+                'overlay' => $earlierDraftOverlay,
+                'basis' => $catchUpBasis,
+            ] = $this->draftCatchUpDependencies->sizingThrough(
                 $agreement,
                 (int) $company->id,
                 $periodEnd,
@@ -816,6 +824,7 @@ final class ClientInvoicingService
                 'starting_unused_hours' => $cumulativeSnapshot['unused'],
                 'starting_negative_hours' => $cumulativeSnapshot['negative'],
                 'hours_billed_at_rate' => 0,
+                'catch_up_basis' => $catchUpBasis->toArray(),
                 'status' => 'draft',
                 'invoice_kind' => InvoiceKind::CadencePeriod->value,
                 'cycle_start' => $retainerMonthStart,
@@ -1454,6 +1463,10 @@ final class ClientInvoicingService
                 'starting_unused_hours' => $cycleLedger['starting_unused_hours'],
                 'starting_negative_hours' => $cycleLedger['starting_negative_hours'],
                 'hours_billed_at_rate' => $overageHours,
+                // This path does not measure the billed-overage ledger, so it
+                // records no basis; a draft first generated monthly, before a
+                // cadence change, does not keep one it was not rebuilt against.
+                'catch_up_basis' => null,
             ]);
 
             $this->expenseAllocations->rebuild($invoice, $periodEnd->toDateString());
