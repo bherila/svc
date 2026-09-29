@@ -46,6 +46,7 @@ final class InvoiceLifecycleService
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?InvoiceAdministratorNotificationService $administratorNotifications = null,
+        private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
     ) {}
 
     /**
@@ -184,6 +185,7 @@ final class InvoiceLifecycleService
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only a draft invoice can be discarded.');
             }
+            $this->draftCatchUpDependencies->assertDiscardable($locked);
 
             $this->releaseAllocations($locked);
             $locked->forceFill([
@@ -379,6 +381,11 @@ final class InvoiceLifecycleService
                     $today->toDateString(),
                 ));
             }
+
+            // A monthly invoice generated while an earlier month was still a
+            // draft counted that draft's catch-up as charged. Issued first, it
+            // would rely on a charge that could still be discarded.
+            $this->draftCatchUpDependencies->assertIssuable($locked);
 
             $issueDate = $locked->issue_date ?? $today;
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
@@ -691,6 +698,10 @@ final class InvoiceLifecycleService
                 ->exists();
             if ($hasPendingPayments) {
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
+            }
+
+            if ($locked->status === InvoiceStatus::Draft->value) {
+                $this->draftCatchUpDependencies->assertDiscardable($locked);
             }
 
             $this->releaseAllocations($locked);

@@ -105,10 +105,19 @@ generation overlays each earlier cadence draft's `hours_billed_at_rate` on the
 ledger in that draft's own work month, as though it were issued, exactly as it
 overlays the invoice's own catch-up. Only drafts whose work ends before the
 range being generated count, so a draft never counts a later one; a void or
-deleted draft charged nothing and is not counted. The overlay is read when a
-draft is generated, so changing an earlier draft's charge afterwards leaves the
-later draft sized against the old figure until it is regenerated
-(`EarlierDraftCatchUpTest`).
+deleted draft charged nothing and is not counted, and a draft whose
+`hours_billed_at_rate` is unknown (null) beside an additional-hours line is
+refused rather than read as zero.
+
+The later invoice then relies on a charge nobody has made yet, so
+`DraftCatchUpDependencies` makes the lifecycle keep the order. A monthly cadence
+invoice cannot be issued while an earlier cadence draft of its agreement still
+bills catch-up. That draft cannot be discarded or voided while a later live
+invoice of the agreement exists: discard the later one first, then regenerate
+it. The overlay is read when a draft is generated, so regenerating an earlier
+draft to a different charge leaves the later draft sized against the old figure
+until it too is regenerated, as a change to the earlier month's work already
+does (`EarlierDraftCatchUpTest`).
 
 ## Invoice Line Items
 

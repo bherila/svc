@@ -142,6 +142,7 @@ final class ClientInvoicingService
         ?ClientActivityRecorder $activities = null,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ExpenseInvoiceAllocations $expenseAllocations = new ExpenseInvoiceAllocations,
+        private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -774,7 +775,14 @@ final class ClientInvoicingService
             // would open on the debt that draft already bills and charge it a
             // second time once both are issued. Overlaid in each draft's own
             // work month, exactly as this draft's own catch-up is below.
-            $earlierDraftOverlay = $this->earlierDraftChargesByMonth($company, $agreement, $periodStart, $invoice);
+            // Issuing this invoice before that draft, or discarding the draft
+            // once this relies on it, is refused: see DraftCatchUpDependencies.
+            $earlierDraftOverlay = $this->draftCatchUpDependencies->chargesByMonthBefore(
+                $agreement,
+                (int) $company->id,
+                $periodStart,
+                $invoice?->id,
+            );
 
             $allBalances = $this->monthlyBalances($company, $agreement, $periodEnd, $retainerMonthStart, $terminationMonthKey, $earlierDraftOverlay);
 
@@ -1455,54 +1463,6 @@ final class ClientInvoicingService
 
             return $invoice->fresh(['lines']);
         });
-    }
-
-    /**
-     * Catch-up hours charged by earlier cadence drafts, keyed by the YYYY-MM
-     * work month each settles - the same key the billed-overage ledger uses.
-     *
-     * Issued invoices are already in the billed-overage ledger; only drafts are
-     * missing from it. A draft whose work ends on or after this range begins is
-     * excluded: the ledger is measured through this range's end, and a later
-     * draft is rebuilt against this one, not the other way round. Void and
-     * deleted invoices charged nothing and are not counted.
-     *
-     * @infection-ignore-all The tenant, status, kind and date predicates need the feature database and are covered by CorrectionPoolDrawTest and EarlierDraftCatchUpTest; the mutation lane runs unit tests only.
-     *
-     * @return array<string, float>
-     */
-    private function earlierDraftChargesByMonth(
-        ClientCompany $company,
-        ClientAgreement $agreement,
-        Carbon $periodStart,
-        ?ClientInvoice $invoice,
-    ): array {
-        $ownId = $invoice?->getKey();
-
-        $drafts = $this->scopedInvoices($company)
-            ->where('client_agreement_id', $agreement->id)
-            ->where(function (Builder $query): void {
-                $query->whereNull('invoice_kind')
-                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value);
-            })
-            ->where('status', InvoiceStatus::Draft->value)
-            ->when($ownId !== null, fn (Builder $query): Builder => $query->whereKeyNot($ownId))
-            ->whereDate('service_period_end', '<', $periodStart->toDateString())
-            ->where('hours_billed_at_rate', '>', 0)
-            ->orderBy('service_period_end')
-            ->orderBy('id')
-            ->get(['service_period_end', 'hours_billed_at_rate']);
-
-        $byMonth = [];
-        foreach ($drafts as $draft) {
-            if ($draft->service_period_end === null) {
-                continue;
-            }
-            $month = $draft->service_period_end->format('Y-m');
-            $byMonth[$month] = round(($byMonth[$month] ?? 0.0) + (float) $draft->hours_billed_at_rate, 4);
-        }
-
-        return $byMonth;
     }
 
     /**

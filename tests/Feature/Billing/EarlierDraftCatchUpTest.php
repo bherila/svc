@@ -13,8 +13,10 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceHoursStatement;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsSyntheticExpenses;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -36,6 +38,7 @@ final class EarlierDraftCatchUpTest extends TestCase
 {
     use BuildsSyntheticExpenses;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private Workspace $workspace;
 
@@ -142,6 +145,99 @@ final class EarlierDraftCatchUpTest extends TestCase
 
         $this->assertSame(1.0, $statement->catchUpBilledHours);
         $this->assertSame(1.0, (float) $january->hours_billed_at_rate);
+    }
+
+    /**
+     * February was sized against January's charge, so it cannot be issued
+     * while that charge could still be discarded.
+     */
+    public function test_the_later_invoice_cannot_be_issued_before_the_draft_it_relies_on(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+
+        try {
+            $this->issue($february);
+            $this->fail('February was issued ahead of the January draft it relies on');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $january->invoice_number, $refusal->getMessage());
+        }
+        $this->assertSame('draft', $february->fresh()?->status);
+
+        $this->issue($january);
+        $this->issue($february);
+        $this->assertSame('issued', $february->fresh()?->status);
+    }
+
+    /** Nor can the draft a later invoice relies on be discarded or voided under it. */
+    public function test_the_draft_a_later_invoice_relies_on_cannot_be_discarded(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        foreach ([
+            fn () => $lifecycle->discardDraft($january, $this->workspace, 'Synthetic discard'),
+            fn () => $lifecycle->void($january, $this->workspace, 'Synthetic void'),
+        ] as $discard) {
+            try {
+                $discard();
+                $this->fail('The January draft was discarded under February');
+            } catch (DomainException $refusal) {
+                $this->assertStringContainsString((string) $february->invoice_number, $refusal->getMessage());
+            }
+            $this->assertSame('draft', $january->fresh()?->status);
+        }
+
+        // Discarding the dependent invoice first releases it; February is then
+        // rebuilt without the charge and bills the minimum itself.
+        $lifecycle->discardDraft($february, $this->workspace, 'Synthetic discard');
+        $lifecycle->discardDraft($january, $this->workspace, 'Synthetic discard');
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /** An earlier draft's catch-up that cannot be known is refused, not read as zero. */
+    public function test_an_earlier_draft_with_unknown_catch_up_is_refused(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        ClientInvoice::query()->whereKey($january->id)->update(['hours_billed_at_rate' => null]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage((string) $january->invoice_number);
+
+        app(ClientInvoicingService::class)->generateInvoice(
+            $this->company, Carbon::parse('2026-02-01'), Carbon::parse('2026-02-28'), $this->agreement,
+        );
+    }
+
+    /**
+     * A malformed row naming this company and agreement under another
+     * workspace cannot lend its catch-up to this ledger.
+     */
+    public function test_another_tenants_draft_is_not_counted(): void
+    {
+        $this->month('2026-01-01', '2026-01-31');
+        $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-earlier-draft']);
+        // Unstorable since #113; written with enforcement suspended so the
+        // overlay query's own scoping stays the subject of the test.
+        $this->writingLegacyCrossTenantRows(fn (): ClientInvoice => ClientInvoice::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $this->agreement->id,
+            'invoice_number' => 'X-'.uniqid(),
+            'status' => 'draft',
+            'currency' => 'USD',
+            'invoice_kind' => 'cadence_period',
+            'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31',
+            'hours_billed_at_rate' => 5,
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]));
+
+        [, $statement] = $this->month('2026-02-01', '2026-02-28');
+
+        $this->assertSame(1.0, $statement->ordinaryAppliedToWorkPool, 'Only this tenant\'s January hour');
+        $this->assertSame(0.0, $statement->catchUpBilledHours);
     }
 
     private function issue(ClientInvoice $invoice): void
