@@ -14,7 +14,9 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoiceHoursStatement;
 use Carbon\Carbon;
 use DomainException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -215,6 +217,32 @@ final class EarlierDraftCatchUpTest extends TestCase
 
         $this->expectException(DomainException::class);
         app(InvoiceLifecycleService::class)->discardDraft($january, $this->workspace, 'Synthetic discard');
+    }
+
+    /**
+     * Discarding or voiding a cadence draft takes the agreement lock that
+     * monthly generation holds while it reads which earlier drafts to count,
+     * and takes it before the invoice's, as every path ranks them. Otherwise a
+     * generation could count a draft that a concurrent discard then voids
+     * without seeing the later invoice it produced.
+     */
+    public function test_discarding_a_cadence_draft_locks_its_agreement_first(): void
+    {
+        foreach (['discardDraft', 'void'] as $operation) {
+            [$january] = $this->month('2026-01-01', '2026-01-31');
+            $tables = [];
+            DB::listen(function (QueryExecuted $query) use (&$tables): void {
+                if (preg_match('/^select .* from ["`]?(client_agreements|client_invoices)["`]?/i', $query->sql, $match) === 1) {
+                    $tables[] = $match[1];
+                }
+            });
+
+            app(InvoiceLifecycleService::class)->{$operation}($january, $this->workspace, 'Synthetic discard');
+
+            $this->assertSame('client_agreements', $tables[0] ?? null, $operation.' reads the invoice before locking the agreement');
+            $this->assertSame('void', $january->fresh()?->status);
+            DB::getEventDispatcher()->forget(QueryExecuted::class);
+        }
     }
 
     /** An earlier draft's catch-up that cannot be known is refused, not read as zero. */
