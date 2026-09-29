@@ -15,6 +15,7 @@ use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
 use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
+use Tests\Feature\Billing\InvoiceHoursStatementTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoiceReviewDeliveryTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
@@ -207,6 +208,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
+        'client_invoices.hours_statement => covered_by:Tests\Feature\Billing\InvoiceHoursStatementTest::test_an_invoice_without_a_statement_prints_without_one',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
@@ -326,6 +328,14 @@ final class NullSemanticsRegistryTest extends TestCase
      */
     private const REGISTRY = [
         'client_invoices' => [
+            // Null for every invoice that sells no retainer and every one
+            // generated before the statement existed: the document prints
+            // without a statement rather than computing one from today's
+            // ledger, which would rewrite what an issued invoice says.
+            'hours_statement' => [
+                'covered_by' => InvoiceHoursStatementTest::class,
+                'method' => 'test_an_invoice_without_a_statement_prints_without_one',
+            ],
             // Opt-out is represented by the whole automatic-delivery snapshot
             // remaining absent. The cited test issues before enabling the
             // company setting and checks every field independently; enabling

@@ -42,6 +42,19 @@ php artisan client-management:create-time-entry acme-inc "Deferred implementatio
 
 If `--project` is omitted, the command uses the client's only project. When a client has zero or multiple projects, pass `--project=<id|slug|exact name>`. Defaults are billable `true`, deferred billing `false`, and category `Software Development`.
 
+## Rehearse Generation
+
+Runs `generateAllInvoices()` for every client of a workspace inside a transaction that is always rolled back, and fails if any issued, paid or void invoice would change. Nothing is written.
+
+```bash
+php artisan svc:billing:rehearse-generation --workspace=<workspace public id>
+php artisan svc:billing:rehearse-generation --workspace=<workspace public id> --company=<company public id> --show
+```
+
+`--company` narrows the run to one client of that workspace (a company of another workspace is refused). `--show` prints, before the rollback, every draft the run would create or refresh: number, kind, issue date, work period, the cycle it sells and totals, then each line with its hours, amount, the minutes of time it links and the dates that time was worked (and how much of it is deferred). For each agreement it adds the capacity ledger for the last twelve months (charged invoices only, so this run's drafts are not yet in it — it is what they were sized against), flags any charged cadence invoice whose recorded `hours_billed_at_rate` disagrees with the additional-hours lines that figure represents — every one except those linking deferred work, which termination bills at rate without touching the figure (`RecordedOverage`; the ledger reads only the recorded figure), and totals the deferred work still carried forward. `--show` prints client billing detail: read it on the host, do not paste it into an issue.
+
+A company with no agreement in force, ended, or starting within the month is listed as skipped, not failed.
+
 ## Migrate Legacy Cadence Invoices
 
 One-off, idempotent migration of legacy `period == cycle` cadence invoices to the prior-period layout. Dry-run by default; pass `--apply` to write.

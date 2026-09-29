@@ -227,9 +227,13 @@ final class ClientInvoicingServiceTest extends TestCase
 
         app(ClientInvoicingService::class)->generateAllInvoices($this->company);
 
+        // Cadence numbers are keyed to the month each invoice sells, so "no
+        // hole" means no month's sequence starts anywhere but 001.
         $numbers = ClientInvoice::query()->orderBy('id')->pluck('invoice_number')->all();
         $this->assertNotEmpty($numbers);
-        $this->assertSame(['SVC-00001'], array_slice($numbers, 0, 1));
+        foreach ($numbers as $number) {
+            $this->assertMatchesRegularExpression('/^ORCH-\d{6}-001$/', (string) $number);
+        }
     }
 
     /**

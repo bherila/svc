@@ -191,7 +191,12 @@ class RolloverCalculator
      * clears accumulated unused hours at the first post-termination month but
      * deliberately preserves unbilled negative hours.
      *
-     * @param  array<int, array{year_month?: string, retainer_hours?: float, hours_worked?: float, billed_overage_hours?: float, reset_rollover?: bool}>  $months
+     * `hours_worked` is ordinary work. `deferred_hours` is deferred work an
+     * invoice applied in the month, and `carried_deferred_hours` re-carried
+     * deferred work it applied; both draw only on what ordinary work left
+     * free, and the rest is carried forward again in `recarriedDeferredHours`.
+     *
+     * @param  array<int, array{year_month?: string, retainer_hours?: float, hours_worked?: float, deferred_hours?: float, carried_deferred_hours?: float, carried_deferred_billed_hours?: float, billed_overage_hours?: float, reset_rollover?: bool}>  $months
      * @param  int  $rolloverMonths  Number of months hours can roll over
      * @param  bool  $billExcessImmediately  Whether to bill excess hours immediately or carry them forward as negative balance.
      *                                       MonthSummary::closing->excessHours is populated only when this is true.
@@ -201,6 +206,7 @@ class RolloverCalculator
     {
         $results = [];
         $unusedByMonth = []; // Track unused hours by month for rollover calculation
+        $recarried = 0.0;
 
         foreach ($months as $index => $month) {
             $retainerHours = $month['retainer_hours'] ?? 0.0;
@@ -238,6 +244,27 @@ class RolloverCalculator
                     $previousNegativeBalance = $prevSummary->closing->negativeBalance;
                 }
             }
+
+            // Deferred work draws only on capacity this month's ordinary work
+            // left free. What an invoice applied beyond that neither becomes
+            // debt nor is written off: it is carried forward again, as a
+            // quantity, until a later invoice applies it from free capacity
+            // (`carried_deferred_hours`) or bills it on termination
+            // (`carried_deferred_billed_hours`).
+            $free = max(0.0, $this->calculateOpeningBalance(
+                $retainerHours,
+                $previousMonthsUnused,
+                $rolloverMonths,
+                $previousNegativeBalance,
+            )->totalAvailable - $hoursWorked);
+            $carriedApplied = max(0.0, $month['carried_deferred_hours'] ?? 0.0);
+            $claimed = max(0.0, $month['deferred_hours'] ?? 0.0) + $carriedApplied;
+            $drawn = min($claimed, $free);
+            $recarried = $this->ledgerHours(max(
+                0.0,
+                $recarried - $carriedApplied - max(0.0, $month['carried_deferred_billed_hours'] ?? 0.0) + $claimed - $drawn,
+            ));
+            $hoursWorked += $drawn;
 
             $summary = $this->calculateMonthSummary(
                 $retainerHours,
@@ -291,6 +318,7 @@ class RolloverCalculator
                 // on top of it are two different facts about the same month,
                 // and only the caller can say which of them it needs.
                 billedOverageHours: $this->ledgerHours($billedOverage),
+                recarriedDeferredHours: $recarried,
             );
 
             // Deduct used rollover hours from the history stack (FIFO)

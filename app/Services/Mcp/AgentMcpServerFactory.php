@@ -382,6 +382,9 @@ final class AgentMcpServerFactory
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, or void.';
         }
+        if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
+            $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';
+        }
 
         $promptGuidance = [];
         if ($this->hasTools($available, ['context.get', 'projects.list', 'time_entries.log'])) {
@@ -401,6 +404,10 @@ final class AgentMcpServerFactory
             ? ''
             : ' Use the '.implode(' and ', $promptGuidance).' prompts for complete guided workflows when the client exposes MCP prompts.';
 
-        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.'.$prompts;
+        $payments = isset($available['payments.record'])
+            ? 'Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data, project mutations, or file uploads through MCP.'
+            : 'Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.';
+
+        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. '.$payments.$prompts;
     }
 }

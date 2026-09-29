@@ -42,6 +42,7 @@ const actionTitles: Record<string, string> = {
     'invoice.payment_disputed': 'Payment disputed',
     'invoice.payment_refunded': 'Payment refunded',
     'invoice.payment_date_corrected': 'Payment date corrected',
+    'invoice.payment_corrected': 'Payment corrected',
     'payment_method.added': 'Payment method added',
     'payment_method.removed': 'Payment method removed',
     'payment_method.default_changed': 'Default payment method changed',
@@ -69,6 +70,9 @@ const meaningfulActions = new Set([
     // all is that the change is recorded, and an audit record hidden behind
     // "show system activity" is not one.
     'invoice.payment_date_corrected',
+    // The general correction of a payment's method, reference, notes or date,
+    // for the same reason: the recorded before/after and reason are the audit.
+    'invoice.payment_corrected',
     'payment_method.added',
     'payment_method.removed',
     'payment_method.default_changed',
@@ -107,10 +111,54 @@ function titleFor(action: string): string {
     );
 }
 
+/**
+ * Every changed field with its before and after, then the reason.
+ *
+ * Dates read as dates and an empty side reads as "none" rather than "null":
+ * this is the audit record of a correction, so it is written for a person.
+ */
+function paymentCorrectionSubtitle(
+    payload: Record<string, unknown>,
+): string | undefined {
+    const changes =
+        payload.changes &&
+        typeof payload.changes === 'object' &&
+        !Array.isArray(payload.changes)
+            ? (payload.changes as Record<string, unknown>)
+            : {};
+    const side = (field: string, value: unknown): string => {
+        if (typeof value !== 'string' || value === '') {
+            return 'none';
+        }
+
+        return field === 'received_on' ? formatDay(value) : value;
+    };
+    const parts = Object.entries(changes).flatMap(([field, change]) =>
+        change && typeof change === 'object' && 'new' in change
+            ? [
+                  `${field.replaceAll('_', ' ')} ${side(field, (change as { old?: unknown }).old)} → ${side(field, change.new)}`,
+              ]
+            : [],
+    );
+    const reason =
+        typeof payload.reason === 'string' && payload.reason !== ''
+            ? `Reason: ${payload.reason}`
+            : null;
+    const text = [parts.join(', '), reason]
+        .filter((part): part is string => !!part)
+        .join(' · ');
+
+    return text === '' ? undefined : text;
+}
+
 function subtitleFor(
     payload: Record<string, unknown>,
     action: string,
 ): string | undefined {
+    if (action === 'invoice.payment_corrected') {
+        return paymentCorrectionSubtitle(payload);
+    }
+
     const imported = payload.external_payload;
     const displayPayload =
         imported && typeof imported === 'object' && !Array.isArray(imported)
@@ -213,11 +261,11 @@ function ActivityRow({ activity }: { activity: FormattedActivity }) {
                 </time>
             </div>
             {activity.subtitle && (
-                <p className="mt-1 text-sm text-slate-700">
+                <p className="mt-1 text-sm wrap-anywhere text-slate-700">
                     {activity.subtitle}
                 </p>
             )}
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm wrap-anywhere text-slate-500">
                 {activity.actor_name ? `By ${activity.actor_name}` : 'System'}
             </p>
         </li>

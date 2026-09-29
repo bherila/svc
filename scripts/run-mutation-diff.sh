@@ -14,6 +14,14 @@ export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0=diff.renames
 export GIT_CONFIG_VALUE_0=false
 
+# Infection reads PHPUnit's ordinary output. Inside a coding agent's shell
+# (CLAUDECODE, AI_AGENT, CODEX_* and the rest `laravel/agent-detector` knows),
+# `laravel/pao` replaces that output with a one-line JSON summary Infection
+# cannot parse, and every mutant is then counted as killed - a gate that
+# passes locally at 100% while CI fails it at 40%. Disable it for this run
+# only; every agent the detector knows is covered by the one switch.
+export PAO_DISABLE=1
+
 exec php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
     --configuration=infection.diff.json5 \
     --git-diff-lines \

@@ -23,12 +23,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $automatic_invoice_email_enabled
  * @property int|null $automatic_invoice_email_delay_days
  * @property bool $is_active
+ * @property int $credit_revision
  */
 #[Fillable([
     'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
     'automatic_invoice_email_delay_days', 'is_active',
 ])]
-#[Hidden(['id', 'workspace_id'])]
+#[Hidden(['id', 'workspace_id', 'credit_revision'])]
 class ClientCompany extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
@@ -37,6 +38,7 @@ class ClientCompany extends Model implements WorkspaceOwned
     {
         return [
             'is_active' => 'boolean',
+            'credit_revision' => 'integer',
             'automatic_invoice_email_enabled' => 'boolean',
             'automatic_invoice_email_delay_days' => 'integer',
         ];

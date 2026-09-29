@@ -125,6 +125,7 @@ final class AgentMcpContractTest extends TestCase
             'invoices.update_draft' => ['billing:write'],
             'invoices.void' => ['billing:deliver'],
             'operations.summary' => ['identity:read'],
+            'payments.correct' => ['payments:record'],
             'payments.list' => ['payments:read'],
             'payments.record' => ['payments:record'],
             'projects.get' => ['projects:read'],

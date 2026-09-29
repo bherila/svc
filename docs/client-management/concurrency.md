@@ -224,13 +224,15 @@ gets a follow-up rather than an inline fix.
 | `InvoiceLifecycleService::issue()` — only a draft may be issued | The invoice row lock taken by `lockInvoice()` at the top of the same transaction |
 | `InvoiceLifecycleService::issue()` — a row that claims a span states one, and its `invoice_kind` is readable | The same invoice row lock. The period, kind and interval-direction checks read the **locked** row and run before `$issueDate` and every mutation, so a concurrent `updateDraft()` cannot slip a boundary out from under them and a refusal leaves the draft byte-identical. Not backed by a constraint: both boundaries are nullable by design (#73) and stay that way, because an incomplete draft has charged nobody and must remain creatable. Covered by `UndatedPeriodIssueRefusalTest` |
 | `InvoiceLifecycleService::refreshStatus()` — a status nobody can read is neither rewritten nor valued at zero | The invoice row lock its three callers already hold, plus the payment row lock in `setPaymentStatus()` / `setRefundedAmount()`. It refuses a draft invoice, an unrecognised invoice status, and any payment row whose status is outside `InvoicePaymentStatus`; all three throw inside the payment transaction, so the insert or update rolls back. The repair path stays open because `setPaymentStatus()` writes its recognised replacement *before* recomputing. Covered by `PaymentStatusVocabularyTest` and `UndatedPeriodIssueRefusalTest` |
-| `InvoiceLifecycleService::issue()` — overpayment credit is not spent twice | The **company** row lock, taken deliberately after the invoice: two drafts lock two different invoice rows and would both read the same unconsumed pool |
+| `InvoiceLifecycleService::issue()` — an interim claim never charges more than the cycle's cumulative excess | The **agreement** row lock, taken before the invoice from the caller's copy and checked against the locked invoice, then a locking read of the cycle's charged interim claims before the company — see [Issuing an interim overage claim](#issuing-an-interim-overage-claim). Refuses rather than recomputing the reviewed amount. Covered by `InterimClaimValidityTest` and `InterimClaimConcurrencyTest` |
+| `InvoiceLifecycleService::issue()` — overpayment credit is not spent twice | The **company** row lock, taken straight after the invoice lock and before `issue()`'s first ordinary read, plus the `credit_revision` check in `OverpaymentCreditService::lockForSpending()` — see [Spending overpayment credit](#spending-overpayment-credit). The lock alone was not enough: the ledger is built from ordinary reads, and a transaction whose snapshot predated a competing spend could wait for the lock and still read the credit as unspent. Covered by `CreditSpendConcurrencyTest` and, sequentially, `BillingTenantIsolationTest::test_two_drafts_cannot_both_spend_the_same_credit` |
 | `InvoiceLifecycleService::applyPayment()` — one payment per idempotency key | `payment_idempotency_unique` on `(workspace_id, idempotency_key)`. The constraint, not the lock, is what makes this absolute |
 | `InvoiceLifecycleService::applyPayment()` — payment does not overtake an automatic provider call | The invoice lock, then the automatic delivery claim lock. A claim newer than one hour refuses payment; an older ambiguous claim remains as audit evidence while the invoice workflow is cancelled and payment may proceed |
 | `InvoiceEmailService::record()` — one client delivery per workspace/idempotency key | `cied_idempotency_unique` on `(workspace_id, idempotency_key)`. Cross-invoice insert collisions reload the winner and return the same result or a bounded domain conflict; `InvoiceDeliveryConcurrencyTest` forces both MariaDB processes past the initial empty lookup before either insert |
+| `InvoiceDeliveryStatusService::record()` — a later provider event never overwrites a more severe one | The delivery row lock, and the severity comparison reads the status from the **locked** row. The provider retries and batches independently, so a hard bounce and a late `delivered` for one message can arrive together; read unlocked, both saw no status and the second write won. Covered by `InvoiceDeliveryStatusConcurrencyTest` (two MariaDB processes, the bounce held after its comparison) |
 | `InvoiceLifecycleService::void()` / `releaseAllocations()` — released time is re-approved, not left invoiced | The invoice row lock, then the time-entry rows before they are rewritten |
-| `InvoiceNumberAllocator::next()` — the next number is not handed out twice | The workspace row lock, then the counter row; and `(workspace_id, invoice_number)` unique behind both |
-| `BillingScheduleService::generateDue()` — a period is not billed twice **by this schedule** | The schedule row lock, plus the application guard in `BillingPeriodCollisionResolver`. `billing_schedule_service_period_unique` **does not** carry this: a unique index does not constrain a null, so it never covered the unlinked case. Since #219/#224 the guard matches the tenant and the *overlapping* period first and reads ownership only to decide whose invoice it is — a null `client_billing_schedule_id` means *unclaimed* rather than no match, narrowed to this agreement and, for unlinked rows only, to the kinds `InvoiceKind::cycleGuardExclusions()` allows to block. Every non-null id is resolved against the invoice's own workspace and client, so lineage that dangles, crosses tenants or contradicts itself is refused rather than read as someone else's; so is a row attributable to nobody when any other agreement or active schedule could own it, one of this schedule's own invoices that states no complete period, and one carrying a status no enum case matches (unknown statuses fail closed, matching `InvoiceStatus::isSettledValue()`). Complete and incomplete periods are fetched by one query and classified by one set of ownership rules — a missing boundary reads as unbounded in that direction, and only candidates that could overlap *this* period are considered at all. A **known** void clears before any of that unless it covers the period exactly, so voiding stays the documented way out. Serialised against itself by the lock; **not** against the other generator — see the gap below. Covered by `BillingWorkflowTest::test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again`, `::test_an_invoice_owned_by_another_schedule_does_not_block_this_one`, `::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule`, `::test_another_agreements_unlinked_invoice_does_not_block_this_schedule`, `::test_an_invoice_naming_a_schedule_that_does_not_exist_is_refused`, `::test_an_invoice_naming_another_clients_schedule_is_refused`, `::test_an_invoice_naming_another_companys_agreement_is_refused`, `::test_an_invoice_whose_schedule_and_agreement_disagree_is_refused`, `::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it`, `::test_an_invoice_containing_the_period_is_refused_rather_than_billed_again` and `::test_an_invoice_of_this_schedule_with_no_period_end_is_refused`, `::test_an_unrecognised_status_refuses_rather_than_clearing`, `::test_a_voided_overlap_clears_even_with_dangling_lineage`, `::test_a_periodless_invoice_that_cannot_reach_this_period_does_not_halt_it` and `::test_consecutive_periods_are_adjacent_for_every_cadence_and_awkward_start` (the adjacency the overlap refusal rests on). `::test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule` (a draft has claimed the period without billing it, so the schedule stops rather than advancing past it). `ScheduleGenerationPreflightTest::assertPredictionMatchesTheRun()` asserts the pre-deployment preflight and this run agree in both directions |
+| `InvoiceNumberAllocator::next()` / `forIssueMonth()` — the next number is not handed out twice | The workspace row lock, then the counter row; and `(workspace_id, invoice_number)` unique behind both. `forIssueMonth()` reads the highest `PREFIX-YYYYMM-NNN` sequence under the same two locks, so two cadence runs in one workspace are serialised before either reads it |
+| `BillingScheduleService::generateDue()` — a period is not billed twice, by this schedule or by the agreement's own cadence path | The schedule row lock, then the agreement row lock, plus the application guard in `BillingPeriodCollisionResolver`. `billing_schedule_service_period_unique` **does not** carry this: a unique index does not constrain a null, so it never covered the unlinked case. Since #219/#224 the guard matches the tenant and the *overlapping* period first and reads ownership only to decide whose invoice it is — a null `client_billing_schedule_id` means *unclaimed* rather than no match, narrowed to this agreement and, for unlinked rows only, to the kinds `InvoiceKind::cycleGuardExclusions()` allows to block. Every non-null id is resolved against the invoice's own workspace and client, so lineage that dangles, crosses tenants or contradicts itself is refused rather than read as someone else's; so is a row attributable to nobody when any other agreement or active schedule could own it, one of this schedule's own invoices that states no complete period, and one carrying a status no enum case matches (unknown statuses fail closed, matching `InvoiceStatus::isSettledValue()`). Complete and incomplete periods are fetched by one query and classified by one set of ownership rules — a missing boundary reads as unbounded in that direction, and only candidates that could overlap *this* period are considered at all. A **known** void clears before any of that unless it covers the period exactly, so voiding stays the documented way out. Serialised against itself by the schedule lock, and against the other cadence generator by the **agreement** row lock it takes next — see below. Covered by `BillingWorkflowTest::test_an_unlinked_invoice_stops_a_schedule_billing_its_period_again`, `::test_an_invoice_owned_by_another_schedule_does_not_block_this_one`, `::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule`, `::test_another_agreements_unlinked_invoice_does_not_block_this_schedule`, `::test_an_invoice_naming_a_schedule_that_does_not_exist_is_refused`, `::test_an_invoice_naming_another_clients_schedule_is_refused`, `::test_an_invoice_naming_another_companys_agreement_is_refused`, `::test_an_invoice_whose_schedule_and_agreement_disagree_is_refused`, `::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it`, `::test_an_invoice_containing_the_period_is_refused_rather_than_billed_again` and `::test_an_invoice_of_this_schedule_with_no_period_end_is_refused`, `::test_an_unrecognised_status_refuses_rather_than_clearing`, `::test_a_voided_overlap_clears_even_with_dangling_lineage`, `::test_a_periodless_invoice_that_cannot_reach_this_period_does_not_halt_it` and `::test_consecutive_periods_are_adjacent_for_every_cadence_and_awkward_start` (the adjacency the overlap refusal rests on). `::test_a_pending_draft_for_the_period_neither_bills_it_nor_advances_the_schedule` (a draft has claimed the period without billing it, so the schedule stops rather than advancing past it). `ScheduleGenerationPreflightTest::assertPredictionMatchesTheRun()` asserts the pre-deployment preflight and this run agree in both directions |
 | `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` — one cadence invoice per period | The agreement row lock, taken first because the invoice rows it guards against may not exist yet |
 | `InterimOverageGenerator::generateInterimOverageInvoice()` — no interim after the cycle is charged, no duplicate interim draft | The agreement row lock, then the candidate invoice rows under it. On the create path it then takes the numbering rows through `InvoiceNumberAllocator::lockNumbering()` **before** recombining fragments, so this path reaches `client_time_entries` after `workspaces` and `workspace_invoice_counters` like every cadence path (#222) |
 | `InterimOverageGenerator::releaseUnchargedInterimClaims()` — only an unsettled draft is stripped | Locks the drafts, then **re-reads each one and re-checks its status** before rewriting. The cadence path holds the agreement and `issue()` holds the invoice and the company, so nothing else stops an operator issuing a draft between the read and the delete |
@@ -247,30 +249,175 @@ gets a follow-up rather than an inline fix.
 | `WorkspaceExpenses::discard()` — an invoiced expense is not withdrawn | The same lock, and `ExpenseStatus::hasBeenInvoicedValue()`, which answers yes to a status it does not recognise |
 | `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
 
-### Known gap: the two cadence generators do not exclude each other
+### The two cadence generators exclude each other on the agreement
 
-Two paths can create a cadence invoice for one agreement and period, and they
-lock **different rows**:
+Two paths can create a cadence invoice for one agreement and period:
 
-- `BillingScheduleService::generateDue()` locks the `client_billing_schedules`
-  row.
-- `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` locks the
-  `client_agreements` row.
+- `BillingScheduleService::generateDue()`
+- `ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod()` and the
+  non-monthly cadence path
 
-Neither lock is visible to the other, so both transactions can read "no invoice
-covers this period" and both can insert. `billing_schedule_service_period_unique`
-does not reject the pair either: the schedule path writes its own id and the
-other writes null, so the two rows differ on the first column of the index — and
-a unique index does not constrain a null in any case.
+They used to lock **different rows** — the schedule and the agreement — so
+neither lock was visible to the other, both transactions could read "no invoice
+covers this period", and both could insert. `billing_schedule_service_period_unique`
+does not reject the pair: the schedule path writes its own id and the other
+writes null, and a unique index does not constrain a null in any case.
 
-Each guard is sound against a concurrent copy of *itself*, which is what the
-application guard and the row lock are for, and that is the race #219 was filed
-about. This is the other one, and it is recorded here rather than fixed inline
-because closing it means choosing a single lock object for both generators —
-the agreement is the obvious candidate, and taking it in `generateDue()` puts a
-new acquisition into `LockOrderConformanceTest`'s ordering. That belongs in its
-own change with its own reproduction, per the rule above this table.
+`generateDue()` now takes the agreement row lock immediately after the schedule
+lock and before anything reads a period, so the two generators serialise on one
+row and the second reads what the first wrote. The registry already ranks
+`client_billing_schedules` before `client_agreements`, so this is an acquisition
+in order rather than a new pair, and `LockOrderConformanceTest` records it.
+`CadenceGeneratorConcurrencyTest` runs the two generators in separate MariaDB
+processes, each held after its guard and before its insert, in both orders:
+before the change both reached the insert and August was billed twice; now the
+second waits on the agreement and finds the first one's invoice.
 
+## Spending overpayment credit
+
+`issue()` spends credit: it caps the draft's credit line at what the company's
+pool still holds, then issues. The pool is derived, not stored — settled money
+over each live invoice's total, less the credit lines on charged invoices — and
+it is derived with ordinary reads. Under REPEATABLE READ an ordinary read returns
+the snapshot fixed by the transaction's *first* ordinary read, and taking a lock
+later does not refresh it. So before this section existed, the company lock
+serialised spenders without making them see each other: a transaction whose
+snapshot predated a competing spend waited for the lock, got it, read the credit
+as unspent, and spent it again. `CreditSpendConcurrencyTest` reproduced that on
+MariaDB 10.11 (`innodb_snapshot_isolation=OFF`) in both shapes below — 100.00 of
+credit consumed twice — before the change.
+
+**What serialises consumption.** The company row lock, as before. It ranks after
+invoices and payments, so it is taken after them: `issue()` takes it straight after
+the invoice lock; the payment writers after the payment, the invoice and the
+reconciliation rows they lock. Nothing locks an invoice or a payment after the
+company, and no lock is added beneath it.
+
+**Which reads are authoritative.** The locked invoice and the locked company row
+(a locking read is a current read). The ledger's ordinary reads are trusted only
+when `lockForSpending()` has shown the snapshot is not older than the last pool
+change: it reads `client_companies.credit_revision` once through the lock and
+once through the snapshot, and refuses with `CreditPoolChanged` when they differ.
+The revision is compared only when the draft carries credit to spend — known from a locking read of its own credit lines, taken after the invoice and before the company — so a draft spending nothing is never refused because another invoice of the company moved the pool. That refusal is the only defined outcome for a stale snapshot — it cannot be
+refreshed from inside the transaction — and it writes nothing, so the draft is
+exactly as reviewed and no delivery or notification is registered. A retry in a
+fresh transaction is always safe.
+
+Two shapes of stale snapshot, and what each now does:
+
+- **`issue()` owns its transaction.** The company is locked before its first
+  ordinary read, so the snapshot starts after any competitor has committed. The
+  revision check passes by construction and the existing cap applies unchanged.
+- **The caller's transaction already read something** — `generateDue()` plans
+  inside its transaction and then issues, and any caller can do the same. The
+  snapshot predates `issue()`; if a pool change committed after it, the issue
+  refuses. Before, it spent credit the snapshot still showed.
+
+**Which writers participate.** Every writer that can *shrink* available credit
+advances `credit_revision` through `recordPoolChange()`, in the same transaction
+as its change and under the company lock:
+
+| Writer | Pool effect | Participates |
+| --- | --- | --- |
+| `InvoiceLifecycleService::issue()` | Spends credit when it issues with a credit line | Yes, when a credit line survives the cap |
+| `InvoiceLifecycleService::setPaymentStatus()` (and the Stripe webhook, which calls it) | A payment leaving `succeeded` shrinks funding; entering it cannot create credit, because the total is capped | Yes, on every status change |
+| `InvoiceLifecycleService::setRefundedAmount()` (and the Stripe webhook) | A larger refund shrinks funding | Yes, on every change |
+| `InvoiceLifecycleService::applyPayment()` | A succeeded payment is capped at the balance, so it cannot create or remove credit | No |
+| `InvoiceLifecycleService::void()` | Releases credit a charged invoice spent (grows the pool); a paid invoice cannot be voided, so no funding is removed | No — growth only |
+| `InvoiceCorrectionService::correct()` | Credit lines are not correctable, and only an issued invoice with no payment attempt can be corrected, so neither side moves | No |
+| Draft regeneration (`applyCreditsToDraftInvoice()`) | Drafts do not consume | No |
+
+A writer that only *grows* the pool need not participate: a stale snapshot can
+then only under-state the credit, and the cap spends less than it could — the
+remainder stays in the pool for the next invoice, which is the cap's existing
+behaviour. The claim is therefore exactly this: **no participating shrink can be
+missed by a spend**. A new writer that can shrink the pool must call
+`recordPoolChange()`, or that claim no longer holds.
+
+**Credit sources today.** `applyPayment()` and `setPaymentStatus()` both cap a
+succeeded payment at the invoice, so the application cannot create new
+overpayment credit. The credit a pool holds is overpayment carried in from
+imported history, which is why the tests seed it as rows.
+
+**Auditing a pool.** `svc:billing:audit-overpayment-credit` compares funded with
+consumed per workspace, company and currency in integer minor units. The ledger
+clamps what remains at zero, so "no credit available" says nothing about whether
+credit was ever spent twice; the audit asks directly. A deficit is never offset
+by another pool's surplus, and a pool holding data the ledger cannot read is
+reported as unevaluable, with reasons, rather than as zero. A deficit is a
+current state to investigate, not proof of its cause, and the command repairs
+nothing.
+
+## Issuing an interim overage claim
+
+An interim overage draft bills `cumulative excess through its month - interim
+hours already charged before it`. A draft is not a charge, so two drafts
+generated before either is issued each claim the overage the other covers.
+`InterimClaimValidityTest` reproduced it on the legacy monthly-terms branch
+(quarterly, interim billing, 10 retainer hours a month, 15 worked in each of
+January and February): the January draft claimed 5 hours, the February draft
+10, both issued in either order, and 15 hours were charged against 10 of
+excess. The cycle's closing invoice then recorded the 15 as "already billed" in
+a zero-value reconciliation line and corrected nothing.
+`InterimClaimConcurrencyTest` reproduced the same outcome with the two issues in
+separate MariaDB processes.
+
+**The invariant**, per agreement cycle: at the end of every month before the
+closing one, the hours on charged interim invoices ending on or before that month
+never exceed the cumulative excess through that month. `issue()` refuses a draft
+that would break it, through `InterimOverageGenerator::assertClaimIssuable()`.
+Cumulative excess never decreases through a cycle, so it is checked at the
+draft's month end and at the end of every charged claim that ends later.
+
+**Out-of-order issuance.** When the check fails, it is repeated at the figure a
+regeneration would target now. If that passes, the draft is stale — a claim
+before it was charged after it was generated — and the refusal
+(`InterimClaimRefused`, `regenerate: true`) says to regenerate it. If it fails
+too, a later month's claim has already charged this overage, and no regeneration
+of this month changes that: the refusal (`regenerate: false`) names the later
+invoice and says to discard the draft or close the cycle, which releases
+uncharged interim drafts. The reviewed amount is never rewritten at issue, and
+drafts are still not counted as charged, so an abandoned draft cannot cause
+underbilling. A draft that is stale in the other direction — its claim is now
+*smaller* than the cycle could bear, for example after an earlier interim was
+voided — is not refused: it cannot overcharge, and the cycle's closing invoice
+bills the remaining overage.
+
+**Serialisation and lock order.** Two interim issues of one agreement must not
+be checked at once. `issue()` locks the agreement first — from the caller's copy
+of the invoice, because nothing may be read or locked ahead of it — then the
+invoice, and refuses if the locked invoice names a different agreement. The
+cycle's charged interim claims are then locked (`lockCycleClaims()`, a current
+read, so a claim voided or charged a moment ago is seen as it is), then the
+company, and only then is the ledger read. The order is agreement → invoice →
+cycle claims → company, which the registry already declares; nothing is locked
+inside an invoice-locked body that ranks before invoices.
+
+**What is authoritative.** The charged claims, through the locking read, and
+the time the ledger is built from, through a fingerprint. `lockCycleClaims()`
+fingerprints the company's time entries in the agreement's scope (its project,
+when it names one) from the agreement's first month to the cycle's end — every column the ledger's arithmetic reads, soft-deleted rows
+included — with a locking read (time entries rank after invoices and before the
+company); `assertClaimIssuable()` fingerprints the same rows with an ordinary
+read after every lock. When `issue()` owns its transaction the two agree by
+construction. A caller whose transaction already read something — the agent
+API's `invoices.issue` runs inside its receipt transaction — may see time
+through a snapshot older than a committed change, and then the fingerprints
+differ and the issue is refused with the retryable `InterimLedgerChanged`,
+writing nothing (`InterimClaimConcurrencyTest::test_a_stale_time_snapshot_cannot_approve_an_interim_claim`
+cut January's time after such a snapshot; before this check February's 10-hour
+claim issued against 5 hours of excess). A time entry inserted into the range
+between the two reads can also make them differ; that refusal is conservative
+and a retry resolves it.
+
+**Unreadable statuses fail closed.** An interim invoice of the cycle whose status is not one the application recognises may have charged the client, so it is not left out of the claims: the draft is refused until that status is classified, as `InvoiceStatus::hasChargedValue()` treats an unknown value everywhere else.
+
+**Scope.** Only drafts with an agreement and a complete, ordered period are
+checked; the period checks refuse the rest with their own repair advice,
+unchanged. The native period-retainer branch caps each month's claim by that
+month's own hours against a pool that already includes earlier months, so it
+does not produce the overcharge in the reproduced shape; it is covered by the
+same tests as regression coverage and must keep issuing both drafts.
 
 ## Adding a lock
 

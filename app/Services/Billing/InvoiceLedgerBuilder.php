@@ -75,18 +75,24 @@ class InvoiceLedgerBuilder
         // would turn a data-integrity failure into a silent undercharge.
         $this->projectChainGuard->assertProjectChainsAgree($company, $companyEntries);
 
+        // Each hour is booked on the day whose capacity it drew on: the day
+        // worked, or - for deferred work - the day of the pool that absorbed
+        // it (see ClientTimeEntry::capacityDate()). Work absorbed after the
+        // ledger ends is not part of this ledger yet.
         $billableEntries = (clone $companyEntries)
             ->where('is_billable', true)
             ->deferredOnlyOnceAllocated()
             ->retainerBillable()
             ->forAgreementScope($agreement)
-            ->get();
+            ->withCapacityPlacement($company->workspace_id)
+            ->get()
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->capacityDate()->lte($ledgerEnd));
 
         if ($agreement->retainer_hours !== null) {
             /** @var array<string, float> $hoursByDate */
             $hoursByDate = [];
             foreach ($billableEntries as $entry) {
-                $dateKey = Carbon::parse($entry->date_worked)->format('Y-m-d');
+                $dateKey = $entry->capacityDate()->format('Y-m-d');
                 $hoursByDate[$dateKey] = ($hoursByDate[$dateKey] ?? 0.0) + ((float) $entry->minutes_worked / 60);
             }
 
@@ -118,8 +124,7 @@ class InvoiceLedgerBuilder
             );
         }
 
-        $entriesByMonth = $billableEntries
-            ->groupBy(fn (ClientTimeEntry $entry): string => Carbon::parse($entry->date_worked)->format('Y-m'));
+        $hoursByMonth = (new CapacityLedgerInputs)->byMonth($company, $agreement, $billableEntries, $ledgerEnd);
         $months = [];
 
         $cursor = $calculationStart->copy();
@@ -127,14 +132,13 @@ class InvoiceLedgerBuilder
             $monthStart = $cursor->copy()->startOfMonth();
             $monthEnd = $cursor->copy()->endOfMonth()->startOfDay();
             $monthKey = $monthStart->format('Y-m');
-            $monthEntries = $entriesByMonth->get($monthKey, collect());
             $isPreAgreement = $monthStart->lt($activeDate->copy()->startOfMonth());
             $months[] = [
                 'year_month' => $monthKey,
                 'retainer_hours' => $isPreAgreement
                     ? 0.0
                     : $this->retainerCalculator->retainerHoursForMonth($ledgerAgreement, $monthStart, $monthEnd),
-                'hours_worked' => round($monthEntries->sum('minutes_worked') / 60, 4),
+                ...CapacityLedgerInputs::monthRow($hoursByMonth, $monthKey),
                 // @infection-ignore-all The month-to-query join is feature-tested against persisted invoices; the mutation lane deliberately excludes database tests.
                 'billed_overage_hours' => $billedOveragesByMonth[$monthKey] ?? 0.0,
                 'reset_rollover' => false,
@@ -181,8 +185,8 @@ class InvoiceLedgerBuilder
      * history it can be checked against. The tests are the only exercise this
      * has.
      *
-     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>  $months
-     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, billed_overage_hours?: float, reset_rollover: bool}>
+     * @param  non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, deferred_hours?: float, carried_deferred_hours?: float, carried_deferred_billed_hours?: float, billed_overage_hours?: float, reset_rollover: bool}>  $months
+     * @return non-empty-array<int, array{year_month: string, retainer_hours: float, hours_worked: float, deferred_hours?: float, carried_deferred_hours?: float, carried_deferred_billed_hours?: float, billed_overage_hours?: float, reset_rollover: bool}>
      */
     private function withOpeningRollover(ClientAgreement $agreement, array $months): array
     {
@@ -353,6 +357,36 @@ class InvoiceLedgerBuilder
     }
 
     /**
+     * The ledger rows that belong to one cycle, in order.
+     *
+     * The one reading of cycle membership: {@see self::summarizeLedgerForCycle()}
+     * totals these, and the invoice's hours statement reads the first and last
+     * of them, so the two cannot disagree about which months a cycle holds.
+     *
+     * @param  array<int, MonthSummary>  $ledger
+     * @return list<MonthSummary>
+     */
+    public function cycleSummaries(ClientAgreement $agreement, array $ledger, BillingCycle $cycle): array
+    {
+        $cycleMonthStart = $this->cycleMonthStartForLegacyMonthlyLedger($agreement, $cycle);
+        $cycleMonthEnd = $this->cycleMonthEndForLegacyMonthlyLedger($agreement, $cycle);
+        $cycleStartKey = $cycle->start->format('Y-m-d');
+
+        return array_values(array_filter($ledger, function (MonthSummary $summary) use ($cycleMonthStart, $cycleMonthEnd, $cycleStartKey): bool {
+            // For period-retainer rows, match by the owning cycle (boundary
+            // months can appear in adjacent cycles' rows).
+            if ($summary->cycleStart !== null) {
+                return $summary->cycleStart === $cycleStartKey;
+            }
+
+            // @infection-ignore-all Carbon reads a bare `Y-m` as the first of that month too; the suffix states the date rather than relying on that.
+            $monthStart = Carbon::parse($summary->yearMonth.'-01')->startOfDay();
+
+            return $monthStart->betweenIncluded($cycleMonthStart, $cycleMonthEnd);
+        }));
+    }
+
+    /**
      * @param  array<int, MonthSummary>  $ledger
      * @return array{
      *     retainer_hours: float,
@@ -368,22 +402,7 @@ class InvoiceLedgerBuilder
      */
     public function summarizeLedgerForCycle(ClientAgreement $agreement, array $ledger, BillingCycle $cycle): array
     {
-        $cycleMonthStart = $this->cycleMonthStartForLegacyMonthlyLedger($agreement, $cycle);
-        $cycleMonthEnd = $this->cycleMonthEndForLegacyMonthlyLedger($agreement, $cycle);
-        $cycleStartKey = $cycle->start->format('Y-m-d');
-        $cycleSummaries = collect($ledger)
-            ->filter(function (MonthSummary $summary) use ($cycleMonthStart, $cycleMonthEnd, $cycleStartKey): bool {
-                // For period-retainer rows, match by the owning cycle (boundary
-                // months can appear in adjacent cycles' rows).
-                if ($summary->cycleStart !== null) {
-                    return $summary->cycleStart === $cycleStartKey;
-                }
-
-                $monthStart = Carbon::parse($summary->yearMonth.'-01')->startOfDay();
-
-                return $monthStart->betweenIncluded($cycleMonthStart, $cycleMonthEnd);
-            })
-            ->values();
+        $cycleSummaries = collect($this->cycleSummaries($agreement, $ledger, $cycle));
 
         /** @var MonthSummary|null $first */
         $first = $cycleSummaries->first();

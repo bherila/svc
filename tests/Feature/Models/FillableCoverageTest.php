@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Models;
 
+use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -49,12 +51,18 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        ClientCompany::class => [
+            'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+        ],
         User::class => [
             'email_verified_at' => 'Set by the verification flow, never by user input.',
             'remember_token' => 'Managed by the auth guard.',
             'password' => 'Hashed and set explicitly so a plaintext value can never be assigned by accident.',
             'last_workspace_id' => 'Where this person was last working. An internal id written only by WorkspaceReturnPoint, after the navigation factory has authorized the workspace; a caller who could assign it could point someone at a tenant they were never admitted to.',
             'last_client_company_id' => 'The same, for the client. Both are revalidated against current access on the way out, but a value that can only be written after authorization is one fewer thing that has to be.',
+        ],
+        ClientInvoice::class => [
+            'hours_statement' => 'The hours statement the generator measured with the lines. Written only by ClientInvoicingService through forceFill in the generating transaction, and frozen at issue; a value assignable through the model could put figures on a client\'s invoice that no computation produced.',
         ],
         ClientInvoiceEmailDelivery::class => [
             'external_metadata' => 'Written only by the external importer, which inserts through the query builder rather than Eloquent.',

@@ -209,6 +209,10 @@ final class StripeWebhookService
             ->update([
                 'provider_event_created_at' => max(0, $providerCreatedAt),
                 'provider_event_id' => $eventId,
+                // A builder update never reaches IncrementsAgentRevision, so the
+                // revision a correction checks is moved here, as every write
+                // to the row must move it (PaymentRevisionWritersTest).
+                'lock_version' => DB::raw('lock_version + 1'),
                 'updated_at' => $this->clock->now(),
             ]);
     }

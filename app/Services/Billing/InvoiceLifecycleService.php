@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -12,11 +13,15 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\PaymentCorrection;
+use App\Support\Billing\PaymentCorrectionOutcome;
 use App\Support\Billing\PaymentDateBounds;
+use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
@@ -134,6 +139,13 @@ final class InvoiceLifecycleService
                 'currency' => $currency,
                 ...$totals,
                 'balance_amount' => $totals['total_amount'],
+                // The hours statement explains the lines the generator wrote,
+                // and these are about to be replaced by hand. Editing a
+                // generated draft stays allowed - this is the operator's one
+                // edit path for any draft - so the statement is withdrawn
+                // rather than left describing lines that no longer exist; the
+                // next regeneration measures it again.
+                'hours_statement' => null,
             ];
             foreach (['due_date', 'notes'] as $attribute) {
                 if (array_key_exists($attribute, $attributes)) {
@@ -189,10 +201,87 @@ final class InvoiceLifecycleService
         });
     }
 
-    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null): ClientInvoice
+    /**
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked  a caller's precondition, asked of the
+     *                                                              locked row before anything else is decided
+     */
+    public function issue(ClientInvoice $invoice, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoice
     {
-        return DB::transaction(function () use ($invoice, $workspace): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $assertLocked): ClientInvoice {
+            // An interim overage invoice's claim is checked against the other
+            // claims of its agreement's cycle, and two interim invoices of one
+            // agreement must not be checked at the same time - each would pass
+            // against a cycle the other is about to change. The agreement is
+            // what they share, and it ranks before invoices, so it is locked
+            // first: from the caller's copy of the invoice, because nothing may
+            // be read or locked ahead of it, and then checked against the
+            // locked row below.
+            $agreement = $this->lockInterimAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
+            // A caller's check of version or status belongs on this row, not on
+            // the copy it read before asking: another request can issue the
+            // invoice in between, and the charged-status return below would
+            // then answer that caller as though its own transition had happened.
+            // Asked before the interim-claim and credit locks: a refusal here
+            // takes nothing further and releases the invoice lock with the
+            // transaction.
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
+            }
+            $interimClaims = null;
+            // Only a draft whose claim can be placed: one with an agreement and
+            // a complete, ordered period. Anything else is refused by the
+            // period checks below, with the refusal that names its repair.
+            if ($locked->status === 'draft'
+                && $locked->invoice_kind === InvoiceKind::InterimOverage->value
+                && $locked->client_agreement_id !== null
+                && $locked->service_period_start !== null
+                && $locked->service_period_end !== null
+                && ! $locked->service_period_start->gt($locked->service_period_end)) {
+                if (! $agreement instanceof ClientAgreement || $agreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                // The claims are invoice rows, so they are locked now, before
+                // the company.
+                $interimClaims = $this->interimOverageGenerator()->lockCycleClaims($locked, $agreement);
+            }
+
+            // The credit pool's lock, straight after the invoice's and before
+            // this transaction's first ordinary read. Under REPEATABLE READ that
+            // first ordinary read fixes the snapshot every later ordinary read
+            // returns, and the credit ledger is built from ordinary reads - so
+            // when the workspace read below came first, a competing issue could
+            // spend the credit and commit, this one would then get the lock,
+            // and still see the credit unspent (`CreditSpendConcurrencyTest`).
+            // Taken here, a transaction this method owns starts its snapshot
+            // after the lock. A caller's transaction that has already read
+            // something has a snapshot nothing here can refresh, which is what
+            // the revision check inside `lockForSpending()` refuses on.
+            //
+            // Only for a draft: a charged invoice returns below without
+            // spending anything, and keeps its idempotent issue lock-free of
+            // the company. And the revision is compared only when the draft
+            // carries credit to spend - known from a locking read of its own
+            // credit lines, which rank after the invoice and before the
+            // company, so asking takes nothing out of order and fixes no
+            // snapshot. A draft spending nothing is not refused because some
+            // other invoice of the company moved the pool.
+            $company = null;
+            if ($locked->status === 'draft') {
+                $spendsCredit = ClientInvoiceLine::query()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->where('client_invoice_id', $locked->id)
+                    ->where('type', InvoiceLineType::Credit->value)
+                    ->where('total_amount', '<', 0)
+                    ->tap(Locks::forUpdate())
+                    ->first(['id']) !== null;
+                $company = $this->overpaymentCreditService->lockForSpending(
+                    (int) $locked->workspace_id,
+                    (int) $locked->client_company_id,
+                    verifySnapshot: $spendsCredit,
+                );
+            }
+
             // Re-read even when the caller supplied the authorized workspace.
             // A freshly-created model does not contain database defaults, so a
             // workspace whose timezone comes from the schema default otherwise
@@ -275,7 +364,23 @@ final class InvoiceLifecycleService
                 throw new DomainException($this->reversedPeriodRefusal($locked));
             }
 
-            $issueDate = $locked->issue_date ?? $this->clock->today($owningWorkspace);
+            // An invoice is issued on its issue date, not before it. The
+            // cadence generators write the first day of the cycle being sold
+            // and a run on 27 September creates October's draft, so without
+            // this it could be issued - made client-visible, stamped and
+            // scheduled for automatic delivery - days before the date printed
+            // on it. Compared as calendar dates in the workspace's own zone.
+            // A draft with no issue date is still issued today.
+            $today = $this->clock->today($owningWorkspace);
+            if ($locked->issue_date !== null && $today->toDateString() < $locked->issue_date->toDateString()) {
+                throw new DomainException(sprintf(
+                    'This invoice is dated %s and cannot be issued before then; it is %s in this workspace.',
+                    $locked->issue_date->toDateString(),
+                    $today->toDateString(),
+                ));
+            }
+
+            $issueDate = $locked->issue_date ?? $today;
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
                 throw new DomainException('The due date cannot precede the issue date.');
             }
@@ -287,17 +392,20 @@ final class InvoiceLifecycleService
             //
             // The invoice row lock is not enough: two different drafts lock two
             // different rows, so both could read the same unconsumed pool. The
-            // company is what the pool belongs to, so that is what serializes.
-            $company = ClientCompany::query()
-                ->where('workspace_id', $locked->workspace_id)
-                ->whereKey($locked->client_company_id)
-                ->tap(Locks::forUpdate())
-                ->first();
+            // company is what the pool belongs to, so that is what serializes -
+            // locked at the top of this transaction, see above.
             if (! $company instanceof ClientCompany) {
                 throw new DomainException('The invoice client does not belong to this workspace.');
             }
             $locked->setRelation('clientCompany', $company);
-            $this->capOverpaymentCreditAtIssue($locked);
+            if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
+                // After every lock, so a transaction this method owns builds the
+                // ledger through a snapshot that starts after all of them.
+                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimClaims[2]);
+            }
+            if ($this->capOverpaymentCreditAtIssue($locked)) {
+                $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);
+            }
 
             // Timestamps are persisted in UTC. Convert before Eloquent formats
             // the value (which otherwise drops the offset), then return to the
@@ -462,19 +570,52 @@ final class InvoiceLifecycleService
      * is the first moment the spend becomes real, and it is serialized by the
      * row lock taken above.
      */
-    private function capOverpaymentCreditAtIssue(ClientInvoice $invoice): void
+    /**
+     * Lock the agreement of an interim overage draft, before its invoice.
+     *
+     * Read from the caller's copy rather than the database, because any read
+     * here would come before the invoice lock - an ordinary one would fix this
+     * transaction's snapshot too early, and a locking one on the invoice would
+     * take it ahead of the agreement. `issue()` checks the locked invoice
+     * against what was locked here and refuses on any difference.
+     */
+    private function lockInterimAgreement(ClientInvoice $invoice): ?ClientAgreement
+    {
+        if ($invoice->invoice_kind !== InvoiceKind::InterimOverage->value || $invoice->client_agreement_id === null) {
+            return null;
+        }
+
+        return ClientAgreement::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_agreement_id)
+            ->tap(Locks::forUpdate())
+            ->first();
+    }
+
+    private function interimOverageGenerator(): InterimOverageGenerator
+    {
+        return app(InterimOverageGenerator::class);
+    }
+
+    /**
+     * Cap the draft's credit line at what the pool still holds.
+     *
+     * Returns whether the invoice leaves here still spending credit - the
+     * caller then records the pool change under the company lock it holds.
+     */
+    private function capOverpaymentCreditAtIssue(ClientInvoice $invoice): bool
     {
         $creditLine = $invoice->lines()
             ->where('type', InvoiceLineType::Credit->value)
             ->first();
 
         if (! $creditLine instanceof ClientInvoiceLine) {
-            return;
+            return false;
         }
 
         $company = $invoice->clientCompany;
         if (! $company instanceof ClientCompany) {
-            return;
+            return false;
         }
 
         $applied = abs((int) $creditLine->total_amount);
@@ -482,7 +623,7 @@ final class InvoiceLifecycleService
             ->availableCreditForCompany($company, (string) $invoice->currency) * 100);
 
         if ($applied <= $available) {
-            return;
+            return $applied > 0;
         }
 
         if ($available <= 0) {
@@ -496,6 +637,8 @@ final class InvoiceLifecycleService
 
         $invoice->refresh();
         $invoice->recalculateTotals();
+
+        return $available > 0;
     }
 
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
@@ -845,6 +988,13 @@ final class InvoiceLifecycleService
             if ($next === InvoicePaymentStatus::Refunded) {
                 $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
             }
+            // Leaving or entering `succeeded` changes the settled money the
+            // credit pool is derived from - a failure, dispute or refund can
+            // shrink it. Recorded under the company lock, after the payment,
+            // the invoice and the reconciliations above, so an issue spending
+            // credit concurrently either waits for this or refuses on the moved
+            // revision.
+            $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
             $previousInvoiceStatus = $invoice->status;
             $lockedPayment->forceFill([
                 'status' => $next->value,
@@ -884,39 +1034,119 @@ final class InvoiceLifecycleService
     /**
      * Correct the date on an existing payment, and nothing else.
      *
-     * There is deliberately no payment-edit path in this application: a payment
-     * is corrected by transitioning its status or its refunded amount, so the
-     * history is preserved rather than rewritten. This does not weaken that,
-     * because a mistyped date is not a money correction. It moves no amount,
-     * changes no status, and cannot move an invoice's balance -
-     * {@see self::refreshStatus()} never reads this column. The only remedy for
-     * one today is to cancel the payment and record it again, which invents a
-     * cancellation that never happened and leaves it in the client's history.
+     * The long-standing date-only door, kept because the invoice screen's
+     * **Correct date** control and its `invoice.payment_date_corrected` history
+     * predate {@see self::correctPayment()}. It is now that operation with one
+     * field named and no reason asked for: the same row lock, the same scoped
+     * invoice lock, the same bound, the same no-op rule. What it keeps of its
+     * own is the activity it records - the action name and the
+     * `previous_received_on`/`received_on` payload the activity feed and every
+     * earlier entry already carry - so no history changes shape.
      *
-     * So the operation is constrained to the one column. Amount, currency,
-     * method, status and refunded amount are untouchable through here, the
-     * bound is the same one {@see self::applyPayment()} applies on the way in,
-     * and the write is scoped to the workspace like every other.
-     *
-     * The shape follows {@see self::setPaymentStatus()} and
-     * {@see self::setRefundedAmount()}, which are the comparable corrections:
-     * the payment row is locked first and the invoice through it, in the order
-     * {@see LockResource} declares, and the change
-     * is recorded as a `ClientCompanyActivity` carrying the date it replaced,
-     * with a fresh occurrence so each correction is its own event rather than a
-     * deduplicated repeat of the last one. Where the two left a choice, the
-     * conservative reading was taken: this column does not need the invoice
-     * lock, and it is taken anyway, so a correction cannot interleave with an
-     * operation already rewriting that invoice's payments.
-     *
-     * `refreshStatus()` is deliberately not called. It is not an input to this
-     * column, and it refuses to recompute an invoice carrying any payment of an
-     * unreadable status - so calling it here would make correcting a date fail
-     * because of an unrelated row, which is the one thing a repair must not do.
+     * `refreshStatus()` is deliberately not called, here or in the general
+     * operation. See {@see self::correctPayment()}.
      */
     public function setPaymentReceivedOn(ClientInvoicePayment $payment, string $receivedOn, ?Workspace $workspace = null): ClientInvoicePayment
     {
-        return DB::transaction(function () use ($payment, $receivedOn, $workspace): ClientInvoicePayment {
+        return $this->writePaymentCorrection(
+            $payment,
+            PaymentCorrection::parse(['received_on' => $receivedOn], null),
+            null,
+            $workspace,
+        )->payment;
+    }
+
+    /**
+     * Correct a payment's descriptive fields: method, reference, notes, date.
+     *
+     * One audited operation rather than one function per field, and limited to
+     * the fields that describe money rather than being it. There is still no
+     * payment-edit path for money: amount, currency, status, refunded amount,
+     * the invoice and the processor fields are refused by name, each pointing
+     * at the operation that changes what it represents while preserving the
+     * history - {@see self::setPaymentStatus()}, {@see self::setRefundedAmount()},
+     * or cancelling and recording again. {@see PaymentCorrection} is the
+     * allow-list and does the parsing before anything is locked.
+     *
+     * Each field is bounded exactly as it is on the way in: `method` is
+     * required text no longer than its column, `reference` and `notes` are
+     * nullable and length-bounded (blank clears them), and `received_on` goes
+     * through {@see self::receivedOn()} - `YYYY-MM-DD`, not in the future and
+     * not more than two years back, on the invoice's workspace calendar.
+     *
+     * A reason is required and recorded. `$expectedVersion` is the opaque
+     * {@see AgentApiVersion} of the payment as the caller read it; when given,
+     * a payment that has moved since - any write to the row bumps it - is
+     * refused with {@see PaymentVersionChanged} before anything is written.
+     *
+     * Locking follows {@see self::setPaymentStatus()} and
+     * {@see self::setRefundedAmount()}: the payment row, then the invoice
+     * through a workspace-scoped locked query, in the order {@see LockResource}
+     * declares. The invoice lock is not needed by these columns and is taken
+     * anyway, so a correction cannot interleave with an operation already
+     * rewriting that invoice's payments.
+     *
+     * A correction that changes nothing - every named field already reads that
+     * way - writes nothing and records nothing. Otherwise one
+     * `invoice.payment_corrected` activity is recorded with a before/after of
+     * only the fields that changed and the reason, under a fresh occurrence so
+     * each correction is its own event.
+     *
+     * `refreshStatus()` is deliberately not called. None of these columns is an
+     * input to it, and it refuses to recompute an invoice carrying any payment
+     * of an unreadable status - so calling it here would make a bookkeeping
+     * correction fail because of an unrelated row, which is the one thing a
+     * repair must not do.
+     *
+     * @param  array<array-key, mixed>  $changes
+     */
+    public function correctPayment(
+        ClientInvoicePayment $payment,
+        array $changes,
+        string $reason,
+        ?string $expectedVersion = null,
+        ?Workspace $workspace = null,
+    ): ClientInvoicePayment {
+        return $this->correctPaymentReporting($payment, $changes, $reason, $expectedVersion, $workspace)->payment;
+    }
+
+    /**
+     * {@see self::correctPayment()}, reporting what it found on the locked row.
+     *
+     * For a caller that describes the correction - the console command - and
+     * must not describe it from a read it took before the lock.
+     *
+     * @param  array<array-key, mixed>  $changes
+     */
+    public function correctPaymentReporting(
+        ClientInvoicePayment $payment,
+        array $changes,
+        string $reason,
+        ?string $expectedVersion = null,
+        ?Workspace $workspace = null,
+    ): PaymentCorrectionOutcome {
+        return $this->writePaymentCorrection(
+            $payment,
+            PaymentCorrection::parse($changes, $reason),
+            $expectedVersion,
+            $workspace,
+        );
+    }
+
+    /**
+     * The shared body of both correction doors.
+     *
+     * A correction without a reason can only have come from
+     * {@see self::setPaymentReceivedOn()}, whose door never asked for one; it
+     * is recorded under that door's own action and payload.
+     */
+    private function writePaymentCorrection(
+        ClientInvoicePayment $payment,
+        PaymentCorrection $correction,
+        ?string $expectedVersion,
+        ?Workspace $workspace,
+    ): PaymentCorrectionOutcome {
+        return DB::transaction(function () use ($payment, $correction, $expectedVersion, $workspace): PaymentCorrectionOutcome {
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
@@ -946,22 +1176,53 @@ final class InvoiceLifecycleService
                 ->where('workspace_id', $lockedPayment->workspace_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
-            // The invoice's own workspace, not the caller's: the bound is a
-            // statement about which day it is where this money was received.
-            $next = $this->receivedOn($receivedOn, $invoice->workspace);
-            $previous = $lockedPayment->received_on?->toDateString();
-            if ($previous === $next) {
-                return $lockedPayment;
+
+            // Asked of the locked row, so a write that landed between the
+            // caller's read and this lock is seen rather than overwritten.
+            if ($expectedVersion !== null && ! AgentApiVersion::matches($lockedPayment, $expectedVersion)) {
+                throw new PaymentVersionChanged;
+            }
+            $lockedVersion = AgentApiVersion::for($lockedPayment);
+
+            $bounded = $correction->changes;
+            if (array_key_exists('received_on', $bounded)) {
+                // The invoice's own workspace, not the caller's: the bound is a
+                // statement about which day it is where this money was received.
+                $bounded['received_on'] = $this->receivedOn($bounded['received_on'], $invoice->workspace);
             }
 
-            $lockedPayment->forceFill(['received_on' => $next])->save();
-            $this->recordPaymentActivity(
-                $invoice,
-                $lockedPayment,
-                'invoice.payment_date_corrected',
-                (string) Str::uuid(),
-                ['previous_received_on' => $previous, 'received_on' => $next],
-            );
+            $diff = PaymentCorrection::diff([
+                'method' => $lockedPayment->method,
+                'reference' => $lockedPayment->reference,
+                'notes' => $lockedPayment->notes,
+                'received_on' => $lockedPayment->received_on?->toDateString(),
+            ], $bounded);
+            if ($diff === []) {
+                return new PaymentCorrectionOutcome($lockedPayment, [], $lockedVersion);
+            }
+
+            $lockedPayment->forceFill(array_map(
+                static fn (array $change): ?string => $change['new'],
+                $diff,
+            ))->save();
+
+            if ($correction->reason === null) {
+                $this->recordPaymentActivity(
+                    $invoice,
+                    $lockedPayment,
+                    'invoice.payment_date_corrected',
+                    (string) Str::uuid(),
+                    ['previous_received_on' => $diff['received_on']['old'] ?? null, 'received_on' => $diff['received_on']['new'] ?? null],
+                );
+            } else {
+                $this->recordPaymentActivity(
+                    $invoice,
+                    $lockedPayment,
+                    'invoice.payment_corrected',
+                    (string) Str::uuid(),
+                    ['changes' => PaymentCorrection::forActivity($diff), 'reason' => $correction->reason],
+                );
+            }
 
             // The row this transaction locked, wrote and still holds, rather
             // than `refresh()`. That re-reads by primary key alone, which is a
@@ -970,7 +1231,7 @@ final class InvoiceLifecycleService
             // is a shape the query-shape guard would have to carve an exception
             // for and the next reader would copy. There is also nothing to
             // re-read: the save above is the only write to this row.
-            return $lockedPayment;
+            return new PaymentCorrectionOutcome($lockedPayment, $diff, $lockedVersion);
         });
     }
 
@@ -1007,6 +1268,11 @@ final class InvoiceLifecycleService
                 ->whereKey($lockedPayment->client_invoice_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
+            // A refund changes the settled money the credit pool is derived
+            // from. Recorded under the company lock, after the payment and the
+            // invoice, so an issue spending credit concurrently either waits
+            // for this or refuses on the moved revision.
+            $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
             $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
@@ -1154,6 +1420,11 @@ final class InvoiceLifecycleService
     private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides): void
     {
         foreach ($lines as $index => $line) {
+            // Every manual door arrives here. A type the capacity ledger reads
+            // as money state is the generator's alone to write.
+            if (in_array($line['type'] ?? null, InvoiceLineType::systemOnlyValues(), true)) {
+                throw new DomainException('That line type is written only by invoice generation and cannot be added by hand.');
+            }
             $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
             $invoice->lines()->create([
                 'workspace_id' => $workspace->id,
@@ -1264,7 +1535,7 @@ final class InvoiceLifecycleService
         return $query->firstOrFail();
     }
 
-    /** @param array<string, int|string|null> $extra */
+    /** @param array<string, int|string|array<string, array{old: string|null, new: string|null}>|null> $extra */
     private function recordPaymentActivity(
         ClientInvoice $invoice,
         ClientInvoicePayment $payment,

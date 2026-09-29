@@ -160,7 +160,9 @@ registration for `time_entries.approve`. The six invoice registrations -
 `invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
 `invoices.issue`, `invoices.send`, and `invoices.void` - require *both* that
 flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
-registers `time_entries.approve` and no invoice tool. All seven still enter the
+registers `time_entries.approve` and no invoice tool. `invoices.issue` now runs
+through the tenant-scoped `IssueInvoiceAction` (see
+[Issuing an invoice](#issuing-an-invoice)); the other six still enter the
 versioned Agent API through `InternalAgentApiTransport`. They are disabled by
 default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
@@ -187,8 +189,9 @@ tools and the REST controller both use `AgentReadService`, the single
 tenant-scoped query/presentation boundary. Read tools and the direct
 task/draft-time write actions do not invoke controllers or internal HTTP
 routes, and no MCP capability exposes Eloquent models. The disabled legacy
-approval/invoice write registrations above are the explicit exception pending
-their migration; they must not be used as a pattern for new MCP work.
+approval/invoice write registrations above - every one except `invoices.issue` -
+are the explicit exception pending their migration; they must not be used as a
+pattern for new MCP work.
 
 `svc://context` is a bounded JSON resource equivalent to `context.get`; it is
 advertised and readable only with `identity:read`. The `agreement` resource
@@ -370,7 +373,8 @@ the same client.
 at 100 using an opaque cursor. Portal readers see only payments on their visible
 issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld. References are withheld from portal readers.
 Private notes, processor identifiers and finance reconciliation records are never
-part of this response.
+part of this response. Each row carries an opaque `version`, which
+`payments.correct` requires.
 
 `payments.record` records money already received; it does not collect money,
 create a Stripe intent, issue a refund, or change an existing payment's status.
@@ -394,6 +398,98 @@ and roles; POST takes the key in `Idempotency-Key`. The separate finance API
 The CLI `svc:billing:payment` already records payments through the same lifecycle
 service. Browser URLs remain the route for initiating a customer payment.
 
+### Correcting a recorded payment
+
+`payments.correct` corrects a payment's **descriptive** fields - `method`,
+`reference` and `received_on` - and nothing else. It is gated exactly as
+`payments.record` is: the `payments:record` scope, an owner/admin, both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP
+kill switch, each rechecked before a receipt is replayed. REST is
+`PATCH /api/v1/workspaces/{workspace}/payments/{payment}` with the key in
+`Idempotency-Key`.
+
+- `expected_version` is required: the `version` a `payments.list` row carries.
+  Any write to the payment - a status change, a refund, another correction -
+  moves it, and a stale one is refused with a conflict before anything is
+  written. Re-read and decide again.
+- `reason` is required (at most 500 characters) and kept in the client history.
+- Name at least one of `method`, `reference` and `received_on`; the published
+  schema and the tool input schema both require it. Omitted fields are
+  unchanged; an explicit `null` reference clears it.
+  `received_on` has the same `Y-m-d`, workspace-calendar two-year window as
+  recording, and `method` the same 40-character bound as its column.
+- Amount, currency, status, refunded amount, the invoice and processor fields
+  are refused. Money is corrected by the operations that preserve history:
+  cancel and re-record, or record a refund.
+- `notes` is not offered to agents. `payments.list` never returns it, and a field
+  an agent cannot read back is one it cannot check its own write against; the
+  operator command below accepts it.
+- A correction that changes nothing records nothing. Otherwise one
+  `invoice.payment_corrected` activity records a before/after of only the fields
+  that changed, plus the reason.
+- The response is the corrected row exactly as `payments.list` returns it,
+  including its new `version`.
+
+Operators use the same service without tinker:
+
+```
+php artisan svc:billing:correct-payment <payment> --workspace=<workspace> \
+    [--method=<text>] [--reference=<text>] [--notes=<text>] \
+    [--received-on=YYYY-MM-DD] --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+```
+
+An option left out is left alone; one given empty (`--reference=`) clears it.
+`--dry-run` runs every check inside a transaction that is always rolled back.
+The output carries the payment's version for a following `--expected-version`.
+
+
+### Issuing an invoice
+
+`invoices.issue` requires `billing:deliver`, a workspace owner/admin, both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_INVOICE_WRITES_ENABLED`, and the
+`invoices.issue` MCP kill switch. It takes the draft's current
+`expected_version` and `confirm: true`, and runs `IssueInvoiceAction`, the same
+tenant-scoped action the REST route now uses, inside `AgentMutationExecutor`:
+one receipt, one transaction, a digest-bound idempotency key, and a replay
+guard that rechecks both cutovers and the role. A plain issue hashes exactly as
+the REST route always has, so receipts written before the migration replay.
+
+Issuing never emails the client itself. If the client company has automatic
+invoice email enabled, `InvoiceLifecycleService::issue()` schedules a delivery
+for `svc:billing:dispatch-invoice-emails` to send after the company's
+configured delay, exactly as a browser issue does; otherwise nothing is
+scheduled. SVC's internal issued-invoice review notice to the workspace
+administrator is queued as it is for every issuance.
+
+The optional `payment` object (`amount` in minor units, `currency`,
+`received_on`, `method`, optional `reference`) records money already collected
+elsewhere - a card autopay, say - in the same transaction and under the same
+receipt, so the draft ends issued and paid (or partially paid) or is not
+changed at all. `applyPayment()` cancels the automatic delivery `issue()` just
+scheduled; because both happen in one transaction the dispatcher can never see
+a sendable, unpaid invoice for money already received. Doing it as
+`invoices.issue` followed by `payments.record` leaves exactly that window.
+
+The payment carries every gate `payments.record` has: the `payments:record`
+scope, `AGENT_API_PAYMENT_WRITES_ENABLED` (inside the outer cutover), the
+owner/admin role, and the `payments.record` MCP kill switch, each rechecked
+before a receipt is replayed. It never initiates a charge, refuses overpayment
+and currency mismatch, keeps `applyPayment()`'s idempotency semantics (its
+domain key is namespaced by caller, OAuth client, operation and key, so reusing
+a key with `payments.record` records a separate payment), and is audited as
+both `invoices.issue` and `payments.record`. Any refusal - a gate, a stale
+version, an overpayment - writes nothing. A payment is accepted only on a
+draft; an issued invoice takes `payments.record`. The option is folded into
+`invoices.issue` rather than `payments.record` because the consequential step
+is issuing, which already has the explicit-confirmation and version contract,
+and the response is the invoice.
+
+With `billing:read`, and while `invoices.get` is not switched off, the MCP
+response is the invoice exactly as `invoices.get` returns it; otherwise it is
+the plain mutation shape (`InvoiceIssueResponse`). REST returns the mutation
+shape. The REST route accepts the same `payment` object and applies the same
+gates.
 
 ## Legacy REST receipt cutover
 
