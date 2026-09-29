@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Billing;
 
+use App\Support\Billing\InvoiceLineType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreBillingScheduleRequest extends FormRequest
 {
@@ -24,7 +26,7 @@ class StoreBillingScheduleRequest extends FormRequest
             'currency' => ['required', 'regex:/^[A-Z]{3}$/'],
             'is_active' => ['sometimes', 'boolean'],
             'line_template' => ['required', 'array', 'min:1'],
-            'line_template.*.type' => ['required', 'string', 'max:40'],
+            'line_template.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
             'line_template.*.description' => ['required', 'string', 'max:10000'],
             'line_template.*.quantity' => ['required', 'regex:/^\d+(?:\.\d{1,4})?$/'],
             'line_template.*.unit_amount' => ['required', 'integer', 'min:0'],

@@ -61,6 +61,8 @@ final class DeliberateCorrections
         'prior_month_retainer',
         'prior_month_billable',
         'additional_hours',
+        'carried_deferred_applied',
+        'carried_deferred_billed',
     ];
 
     /**

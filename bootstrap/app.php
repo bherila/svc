@@ -2,6 +2,7 @@
 
 use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Auth\AuthenticationException;
@@ -84,6 +85,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 ]);
             }
 
-            return response()->json(['message' => $exception->getMessage()], 422);
+            // State moved under the request and nothing was written: the same
+            // request made again is checked against current state. 409 is what
+            // the agent contract means by "re-read and retry".
+            return response()->json(
+                ['message' => $exception->getMessage()],
+                $exception instanceof RetryableConflict ? 409 : 422,
+            );
         });
     })->create();

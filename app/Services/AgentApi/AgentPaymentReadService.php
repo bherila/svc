@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Support\AgentApi\AgentApiCursor;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
@@ -95,7 +96,7 @@ final class AgentPaymentReadService
     /** @return Builder<ClientInvoicePayment> */
     private function query(Workspace $workspace): Builder
     {
-        return ClientInvoicePayment::query()->select(['id', 'public_id', 'workspace_id', 'client_invoice_id', 'amount', 'refunded_amount', 'currency', 'received_on', 'method', 'reference', 'status'])->where('workspace_id', $workspace->id)
+        return ClientInvoicePayment::query()->select(['id', 'public_id', 'workspace_id', 'client_invoice_id', 'amount', 'refunded_amount', 'currency', 'received_on', 'method', 'reference', 'status', 'lock_version'])->where('workspace_id', $workspace->id)
             ->whereHas('invoice', fn (Builder $invoices) => $invoices->where('workspace_id', $workspace->id))
             ->with(['invoice' => fn ($invoices) => $invoices->where('workspace_id', $workspace->id)
                 ->select(['id', 'workspace_id', 'public_id'])]);
@@ -118,6 +119,9 @@ final class AgentPaymentReadService
             'method' => $payment->method,
             'reference' => $manager ? $payment->reference : null,
             'status' => $payment->status,
+            // The opaque revision payments.correct checks. Any write to the row
+            // moves it, so a correction made against a stale read is refused.
+            'version' => AgentApiVersion::for($payment),
         ];
     }
 }

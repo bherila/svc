@@ -80,6 +80,35 @@ final class RehearseGenerationTest extends TestCase
     }
 
     /**
+     * A prospect or one-off client with no agreement has nothing a cadence can
+     * bill. Reporting that as a failed generation made every rehearsal of a
+     * real workspace fail on companies that were never going to be invoiced.
+     */
+    public function test_a_company_without_an_agreement_is_skipped_rather_than_failed(): void
+    {
+        $this->settledHistory();
+        $prospect = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Prospect Only', 'slug' => 'prospect-only',
+        ]);
+        // A draft agreement is not one a cadence bills either.
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $prospect->id, 'title' => 'Proposed',
+            'status' => 'draft', 'currency' => 'USD', 'starts_on' => '2024-01-01',
+            'retainer_minutes' => 600, 'retainer_amount' => 150000, 'hourly_rate_amount' => 20000,
+        ]);
+
+        $results = app(ClientInvoicingService::class)->generateAllInvoices($prospect);
+        $this->assertSame([], $results['generated']);
+        $this->assertSame([ClientInvoicingService::SKIP_REASON_NO_AGREEMENT], array_column($results['skipped'], 'reason_code'));
+        $this->assertSame(0, ClientInvoice::query()->where('client_company_id', $prospect->id)->count());
+
+        $this->artisan('svc:billing:rehearse-generation', ['--workspace' => $this->workspace->public_id])
+            ->expectsOutputToContain('skipped company '.$prospect->public_id)
+            ->expectsOutputToContain('No settled invoice was touched')
+            ->assertSuccessful();
+    }
+
+    /**
      * And it has to be able to fail. A check that cannot report a problem is
      * indistinguishable from one that is not running.
      */

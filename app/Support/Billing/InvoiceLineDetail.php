@@ -4,6 +4,7 @@ namespace App\Support\Billing;
 
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
+use App\Models\ClientTimeEntry;
 
 /**
  * What is inside an invoice line.
@@ -18,22 +19,37 @@ use App\Models\ClientInvoiceLine;
  * ## Two audiences, and the difference is not cosmetic
  *
  * An operator sees every attached entry and its internal description. A client
- * sees only entries carrying a `client_visible_description`, and sees that text
- * rather than the internal one. This is the rule the portal's time sheet and
- * client home already follow, and it has to hold here too: the invoice PDF is
- * served to portal users, so an appendix built for an operator and handed to a
- * client would publish every internal note behind a bill.
+ * never sees an internal description: an entry that is visible to the client
+ * and carries a `client_visible_description` prints that text, and every other
+ * entry prints {@see self::CLIENT_GENERIC_LABEL}. This is the wording rule the
+ * portal's time sheet and client home already follow, and it has to hold here
+ * too: the invoice PDF is served to portal users, so an appendix built for an
+ * operator and handed to a client would publish every internal note behind a
+ * bill.
  *
- * Withheld rather than blanked. An entry with no client-visible description is
- * absent from the client's appendix entirely, so there is no row saying work
- * happened that the client is not being told about - which reads worse than
- * saying nothing.
+ * Labelled rather than withheld. An earlier version left such entries out of
+ * the client's appendix entirely, on the view that a row saying work happened
+ * without saying what reads worse than nothing. That stopped holding once the
+ * invoice carried an hours statement: every one of these entries is billed -
+ * it is on a line the client pays - and an appendix that silently drops some
+ * of them totals fewer hours than the statement and the line above it, which
+ * reads as an error in the bill. The date, the project and the hours are the
+ * client's to know; only the operator's wording is not.
  */
 final class InvoiceLineDetail
 {
     public const OPERATOR = 'operator';
 
     public const CLIENT = 'client';
+
+    /**
+     * What a client reads for billed work that has no wording written for them.
+     *
+     * Neutral on purpose: it says what kind of thing the hours were without
+     * implying anything about the work, and it is the same for every such entry
+     * so it cannot leak by varying.
+     */
+    public const CLIENT_GENERIC_LABEL = 'Professional services';
 
     /**
      * The work behind each line of an invoice, keyed by line public id.
@@ -58,15 +74,12 @@ final class InvoiceLineDetail
 
         $forClient = $audience === self::CLIENT;
 
-        $lines->load(['timeEntries' => function ($relation) use ($invoice, $forClient): void {
+        $lines->load(['timeEntries' => function ($relation) use ($invoice): void {
             // Workspace-scoped even through the pivot. The pivot carries a
             // workspace id of its own and the entries table is written by a
             // different slice, so a row migrated in from before the composite
             // keys can name an entry of another tenant.
             $relation->where('client_time_entries.workspace_id', $invoice->workspace_id)
-                ->when($forClient, fn ($query) => $query
-                    ->where('is_visible_to_client', true)
-                    ->whereNotNull('client_visible_description'))
                 ->with(['project' => fn ($project) => $project->where('workspace_id', $invoice->workspace_id)])
                 ->orderBy('worked_on')
                 ->orderBy('id');
@@ -94,18 +107,8 @@ final class InvoiceLineDetail
 
         foreach ($line->timeEntries as $entry) {
             $description = $forClient
-                ? $entry->client_visible_description
-                : $entry->description;
-
-            // The client's query already filters these out, and this says so a
-            // second time where the value is actually read. A cast to string
-            // was the alternative and the wrong one: it would turn "we have
-            // nothing to tell this client about this work" into a row with an
-            // empty description, which is the one outcome this class exists to
-            // avoid.
-            if ($description === null) {
-                continue;
-            }
+                ? self::clientWording($entry)
+                : (string) $entry->description;
 
             $items[] = [
                 'worked_on' => $entry->worked_on->toDateString(),
@@ -129,5 +132,18 @@ final class InvoiceLineDetail
         }
 
         return $items;
+    }
+
+    /**
+     * The client's wording for one entry: theirs when it was written for them,
+     * the generic label otherwise, and never the internal description.
+     */
+    private static function clientWording(ClientTimeEntry $entry): string
+    {
+        $written = $entry->client_visible_description;
+
+        return $entry->is_visible_to_client === true && is_string($written) && trim($written) !== ''
+            ? $written
+            : self::CLIENT_GENERIC_LABEL;
     }
 }

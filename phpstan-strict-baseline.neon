@@ -58,7 +58,7 @@ parameters:
 		-
 			message: '#^Cannot cast mixed to int\.$#'
 			identifier: cast.int
-			count: 3
+			count: 2
 			path: app/Services/Billing/ClientInvoicingService.php
 
 		-
@@ -81,12 +81,6 @@ parameters:
 
 		-
 			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\AllocationService\:\:recombineUnlinkedFragments\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
-			identifier: argument.type
-			count: 2
-			path: app/Services/Billing/ClientInvoicingService.php
-
-		-
-			message: '#^Parameter \#1 \$workspace of method App\\Services\\Billing\\InvoiceNumberAllocator\:\:next\(\) expects App\\Models\\Workspace, App\\Models\\Workspace\|null given\.$#'
 			identifier: argument.type
 			count: 2
 			path: app/Services/Billing/ClientInvoicingService.php
@@ -162,12 +156,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: app/Services/Billing/InvoiceFromTimeService.php
-
-		-
-			message: '#^Binary operation "/" between mixed and 60 results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: app/Services/Billing/InvoiceLedgerBuilder.php
 
 		-
 			message: '#^Cannot cast mixed to float\.$#'

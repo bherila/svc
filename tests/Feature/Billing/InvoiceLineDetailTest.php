@@ -109,11 +109,15 @@ class InvoiceLineDetailTest extends TestCase
         $detail = InvoiceLineDetail::forInvoice($invoice, InvoiceLineDetail::CLIENT);
         $items = $detail[$invoice->lines()->sole()->public_id] ?? [];
 
-        // One of the two entries carries a client-safe description. The other is
-        // withheld entirely rather than blanked: a row saying work happened that
-        // the client is not being told about reads worse than saying nothing.
-        $this->assertCount(1, $items);
-        $this->assertSame(self::CLIENT_SAFE, $items[0]['description']);
+        // One of the two entries carries a client-safe description. The other
+        // is billed work too, so it is itemised - its date and hours are the
+        // client's to see, and leaving it out would make the appendix total
+        // less than the line - under the neutral label, never its internal text.
+        $this->assertCount(2, $items);
+        $this->assertSame(
+            [InvoiceLineDetail::CLIENT_GENERIC_LABEL, self::CLIENT_SAFE],
+            array_column($items, 'description'),
+        );
 
         $encoded = json_encode($detail);
         $this->assertStringNotContainsString(self::INTERNAL, (string) $encoded);
@@ -182,13 +186,14 @@ class InvoiceLineDetailTest extends TestCase
     /**
      * Visibility is the operator's decision, and it is not the description.
      *
-     * An entry can carry a client-safe description and still be withheld - the
+     * An entry can carry a client-safe description and still be hidden - the
      * text was written, the decision to show it was not taken, or was taken
-     * back. The query asks for both, and this is the case that tells the two
-     * conditions apart: with only the description checked, an entry the
-     * operator has hidden appears on the client's copy of their own invoice.
+     * back. Both are asked, and this is the case that tells the two conditions
+     * apart: with only the description checked, wording the operator chose not
+     * to show appears on the client's copy of their own invoice. The hidden
+     * entry is still billed, so it is itemised under the neutral label.
      */
-    public function test_an_entry_hidden_from_the_client_is_withheld_even_with_a_safe_description(): void
+    public function test_an_entry_hidden_from_the_client_prints_the_neutral_label_even_with_a_safe_description(): void
     {
         [$workspace, $invoice] = $this->invoiceWithWork();
         $project = ClientProject::query()->where('workspace_id', $workspace->id)->sole();
@@ -213,7 +218,11 @@ class InvoiceLineDetailTest extends TestCase
         ];
 
         $this->assertStringNotContainsString('Written but not shown', (string) json_encode($items));
-        $this->assertSame([self::CLIENT_SAFE], array_column($items, 'description'));
+        $this->assertStringNotContainsString('Internal note on the hidden entry', (string) json_encode($items));
+        $this->assertSame(
+            [InvoiceLineDetail::CLIENT_GENERIC_LABEL, self::CLIENT_SAFE, InvoiceLineDetail::CLIENT_GENERIC_LABEL],
+            array_column($items, 'description'),
+        );
     }
 
     /**

@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\BillingRecordAccess;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
@@ -38,6 +39,7 @@ class InvoiceController extends Controller
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly AgentAccess $agentAccess,
         private readonly BillingRecordAccess $billingAccess,
+        private readonly PortalInvoiceQuery $portalInvoices,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse|RedirectResponse
@@ -462,6 +464,17 @@ class InvoiceController extends Controller
                 && in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)
                 && $invoice->clientCompany->portalUsers()->whereKey($request->user()->id)->exists(),
             403,
+        );
+        // And the same project rule the portal list and screen apply: a member
+        // granted some of a client's projects reads only invoices whose every
+        // attributed project is granted. Membership of the company alone would
+        // itemise another project's entries - project, date and hours - in
+        // the appendix of a document the portal itself withholds.
+        $viewer = $request->user();
+        abort_unless(
+            $viewer instanceof User
+                && $this->portalInvoices->visibleTo($invoice->clientCompany, $viewer)->whereKey($invoice->getKey())->exists(),
+            404,
         );
 
         return InvoiceLineDetail::CLIENT;

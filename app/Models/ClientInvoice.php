@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
@@ -44,6 +45,7 @@ use RuntimeException;
  * @property numeric-string|null $hours_billed_at_rate
  * @property numeric-string|null $starting_unused_hours
  * @property numeric-string|null $starting_negative_hours
+ * @property array<string, mixed>|null $hours_statement
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
@@ -60,7 +62,7 @@ use RuntimeException;
     'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
     'automatic_delivery_note',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'hours_statement'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -83,6 +85,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'hours_billed_at_rate' => 'decimal:4',
             'starting_unused_hours' => 'decimal:4',
             'starting_negative_hours' => 'decimal:4',
+            'hours_statement' => 'array',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
             'automatic_delivery_due_at' => 'datetime',
@@ -153,6 +156,16 @@ class ClientInvoice extends Model implements WorkspaceOwned
         // the invoice to draft and rebuilding its lines would rewrite what the
         // client has already paid against.
         return InvoiceStatus::isSettledValue($this->status);
+    }
+
+    /**
+     * The hours statement this invoice was generated with, if it has one.
+     *
+     * Read from the snapshot and never recomputed; see {@see InvoiceHoursStatement}.
+     */
+    public function hoursStatement(): ?InvoiceHoursStatement
+    {
+        return InvoiceHoursStatement::fromArray($this->hours_statement);
     }
 
     /** Classification, defaulting to the ordinary full-cycle invoice. */
