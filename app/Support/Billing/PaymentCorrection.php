@@ -2,6 +2,7 @@
 
 namespace App\Support\Billing;
 
+use App\Models\ClientInvoicePayment;
 use DomainException;
 
 /**
@@ -31,8 +32,6 @@ final readonly class PaymentCorrection
     public const array FIELDS = ['method', 'reference', 'notes', 'received_on'];
 
     /** The same bounds the recording form and the payments table apply. */
-    public const int METHOD_MAX_LENGTH = 40;
-
     public const int REFERENCE_MAX_LENGTH = 255;
 
     public const int NOTES_MAX_LENGTH = 10000;
@@ -180,8 +179,8 @@ final readonly class PaymentCorrection
             throw new DomainException('method is required and cannot be cleared.');
         }
         $method = trim($value);
-        if (mb_strlen($method) > self::METHOD_MAX_LENGTH) {
-            throw new DomainException('method may not be longer than '.self::METHOD_MAX_LENGTH.' characters.');
+        if (mb_strlen($method) > ClientInvoicePayment::METHOD_MAX_LENGTH) {
+            throw new DomainException('method may not be longer than '.ClientInvoicePayment::METHOD_MAX_LENGTH.' characters.');
         }
 
         return $method;

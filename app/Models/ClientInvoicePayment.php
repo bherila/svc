@@ -31,6 +31,13 @@ use Illuminate\Support\Carbon;
 #[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
+    /**
+     * The width of `client_invoice_payments.method`. Every rule that accepts a
+     * method uses it: SQLite ignores the width, MariaDB refuses or truncates
+     * anything longer (`PaymentMethodWidthTest`).
+     */
+    public const int METHOD_MAX_LENGTH = 40;
+
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected function casts(): array

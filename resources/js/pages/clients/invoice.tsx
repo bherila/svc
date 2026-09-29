@@ -40,6 +40,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import {
+    PAYMENT_METHOD_MAX_LENGTH,
     PAYMENT_METHOD_OTHER,
     PAYMENT_METHODS,
     predatesInvoiceIssue,
@@ -495,6 +496,7 @@ export default function ClientInvoiceDetail({
                                     <Input
                                         aria-label="Name of the payment method"
                                         placeholder="Name the method"
+                                        maxLength={PAYMENT_METHOD_MAX_LENGTH}
                                         value={otherMethod}
                                         onChange={(event) =>
                                             setOtherMethod(event.target.value)

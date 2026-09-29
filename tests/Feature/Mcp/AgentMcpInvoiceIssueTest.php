@@ -265,6 +265,8 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         yield 'overpayment' => [$none, ['payment' => ['amount' => 10001]]];
         yield 'currency mismatch' => [$none, ['payment' => ['currency' => 'EUR']]];
         yield 'future payment date' => [$none, ['payment' => ['received_on' => '2099-01-01']]];
+        // One past client_invoice_payments.method, which MariaDB would refuse or truncate.
+        yield 'payment method longer than its column' => [$none, ['payment' => ['method' => str_repeat('m', 41)]]];
         yield 'stale version' => [$none, ['expected_version' => str_repeat('0', 64)]];
         yield 'unconfirmed' => [$none, ['confirm' => false]];
     }
