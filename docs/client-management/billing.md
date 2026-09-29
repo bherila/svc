@@ -317,8 +317,12 @@ when it is created and whenever the draft is rebuilt) takes its description
 from the same client wording rule, `InvoiceLineDetail::clientWording()`: the
 entry's `client_visible_description` when it is visible to the client and has
 one, and `Professional services` otherwise - never the internal description,
-which a document sent to the client must not carry. An operator who wants
-other wording writes it on the entry, or edits the draft line.
+which a document sent to the client must not carry. The wording belongs to the
+entry: time-linked lines are derived and every rebuild writes them again, so
+different wording is written as the entry's client description. The operator's
+screens keep the internal notes in the line's appendix. A draft built before
+this rule that still prints an entry's internal note is refused at issue until
+it is saved again, which rebuilds its time lines.
 
 ## Billing Validation and Automation
 
