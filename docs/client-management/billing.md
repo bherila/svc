@@ -96,6 +96,20 @@ synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.
 
+That ledger books every month's work from the time entries but reads catch-up
+hours only from charged invoices. An earlier invoice that is still a draft -
+last month's, or an earlier correction's in the same month - therefore has its
+work counted and its catch-up missed, and the next invoice would open on the
+debt that draft already bills and charge it again once both are issued. So
+generation overlays each earlier cadence draft's `hours_billed_at_rate` on the
+ledger in that draft's own work month, as though it were issued, exactly as it
+overlays the invoice's own catch-up. Only drafts whose work ends before the
+range being generated count, so a draft never counts a later one; a void or
+deleted draft charged nothing and is not counted. The overlay is read when a
+draft is generated, so changing an earlier draft's charge afterwards leaves the
+later draft sized against the old figure until it is regenerated
+(`EarlierDraftCatchUpTest`).
+
 ## Invoice Line Items
 
 The persisted column is `client_invoice_lines.type`.
@@ -189,8 +203,9 @@ allocator offers the correction exactly that pool, so overflow a later
 correction causes is billed on it rather than surfacing as debt on the next
 month's invoice (`CorrectionPoolDrawTest`). An earlier correction in the month
 that is still a draft counts too: its catch-up is overlaid on the ledger as
-though issued, since the billed-overage ledger reads only charged invoices and
-would otherwise leave the later correction to bill the same debt again. A range
+though issued, as any earlier draft's is (see the minimum availability rule
+above), since the billed-overage ledger reads only charged invoices and would
+otherwise leave the later correction to bill the same debt again. A range
 that runs to a mid-month termination date bills no minimum availability, since
 it sells no later month whose work could use it. The work draws on
 that pool once; a correction snapshotted before that was so shows its second
