@@ -463,7 +463,8 @@ scheduled. SVC's internal issued-invoice review notice to the workspace
 administrator is queued as it is for every issuance.
 
 The optional `payment` object (`amount` in minor units, `currency`,
-`received_on`, `method`, optional `reference`) records money already collected
+`received_on`, `method` of at most 40 characters as on `payments.record`,
+optional `reference`) records money already collected
 elsewhere - a card autopay, say - in the same transaction and under the same
 receipt, so the draft ends issued and paid (or partially paid) or is not
 changed at all. `applyPayment()` cancels the automatic delivery `issue()` just

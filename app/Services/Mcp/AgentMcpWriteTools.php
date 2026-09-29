@@ -3,6 +3,7 @@
 namespace App\Services\Mcp;
 
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoicePayment;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -50,7 +51,7 @@ final class AgentMcpWriteTools
         #[Schema(minimum: 1)] int $amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
         #[Schema(format: 'date')] string $received_on,
-        #[Schema(minLength: 1, maxLength: 64)] string $method,
+        #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] string $method,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema(maxLength: 255)] ?string $reference = null,
     ): array {
@@ -80,7 +81,7 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 500)] string $reason,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         RequestContext $request,
-        #[Schema(minLength: 1, maxLength: 40)] ?string $method = null,
+        #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] ?string $method = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
         #[Schema(format: 'date')] ?string $received_on = null,
     ): array {

@@ -2,6 +2,7 @@
 
 namespace App\Support\Billing;
 
+use App\Models\ClientInvoicePayment;
 use DomainException;
 
 /**
@@ -31,7 +32,7 @@ final readonly class PaymentCorrection
     public const array FIELDS = ['method', 'reference', 'notes', 'received_on'];
 
     /** The same bounds the recording form and the payments table apply. */
-    public const int METHOD_MAX_LENGTH = 40;
+    public const int METHOD_MAX_LENGTH = ClientInvoicePayment::METHOD_MAX_LENGTH;
 
     public const int REFERENCE_MAX_LENGTH = 255;
 

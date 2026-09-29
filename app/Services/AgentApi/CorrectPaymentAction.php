@@ -45,7 +45,7 @@ final class CorrectPaymentAction
                     'body' => ['required', 'array:expected_version,reason,method,reference,received_on'],
                     'body.expected_version' => ['required', 'string', 'size:64'],
                     'body.reason' => ['required', 'string', 'max:500'],
-                    'body.method' => ['sometimes', 'required', 'string', 'max:40'],
+                    'body.method' => ['sometimes', 'required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
                     'body.reference' => ['sometimes', 'nullable', 'string', 'max:255'],
                     'body.received_on' => ['sometimes', 'required', 'date_format:Y-m-d'],
                 ])->validate()['body'];
