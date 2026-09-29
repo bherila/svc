@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Billing;
 
+use App\Models\ClientInvoicePayment;
 use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -27,7 +28,7 @@ class StorePaymentRequest extends FormRequest
             // the service, where every caller crosses; this is the cheap format
             // rule the browser gets a field error from.
             'received_on' => ['nullable', 'date_format:Y-m-d'],
-            'method' => ['required', 'string', 'max:40'],
+            'method' => ['required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:10000'],
             'status' => ['nullable', Rule::in(InvoicePaymentStatus::all())],

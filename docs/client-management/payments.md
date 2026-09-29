@@ -185,7 +185,9 @@ credit pool or a reconciliation - so correcting one rewrites no financial fact.
   are refused by name, each message naming the operation that does change what
   it represents. A column added later is refused until someone decides.
 - **Bounded as on the way in.** `method` is required text of at most 40
-  characters (its column); `reference` (255) and `notes` (10,000) are nullable
+  characters (its column, `ClientInvoicePayment::METHOD_MAX_LENGTH`, which the
+  browser form, `payments.record` and a payment folded into `invoices.issue`
+  all use, `PaymentMethodWidthTest`); `reference` (255) and `notes` (10,000) are nullable
   and a blank value clears them; `received_on` takes the same `YYYY-MM-DD`,
   not-in-the-future, two-years-back window on the invoice's workspace calendar.
 - **A reason** is required, at most 500 characters.

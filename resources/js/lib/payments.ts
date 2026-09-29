@@ -17,6 +17,9 @@ import { formatDay } from '@/lib/datetime';
  */
 export const PAYMENT_METHOD_OTHER = 'other';
 
+/** The width of `client_invoice_payments.method`; the server refuses more. */
+export const PAYMENT_METHOD_MAX_LENGTH = 40;
+
 export const PAYMENT_METHODS = [
     { value: 'bank_transfer', label: 'Bank transfer' },
     { value: 'wire', label: 'Wire' },

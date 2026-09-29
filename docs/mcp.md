@@ -384,7 +384,8 @@ The payment flag defaults to false and the outer flag remains the emergency stop
 The MCP catalog, REST route and capability inventory use the same cutover.
 
 Provide the invoice ID, positive integer amount in minor units, matching uppercase
-currency, actual `received_on` payment date (`Y-m-d`) and method explicitly; never
+currency, actual `received_on` payment date (`Y-m-d`) and method (at most 40
+characters, the width of its column) explicitly; never
 infer an amount or substitute the invoice date. Reference is optional (for example,
 cash need not have one). A mandatory idempotency key protects retries; reusing a
 key with another payload is refused. The existing service refuses overpayment and
@@ -463,7 +464,8 @@ scheduled. SVC's internal issued-invoice review notice to the workspace
 administrator is queued as it is for every issuance.
 
 The optional `payment` object (`amount` in minor units, `currency`,
-`received_on`, `method`, optional `reference`) records money already collected
+`received_on`, `method` of at most 40 characters as on `payments.record`,
+optional `reference`) records money already collected
 elsewhere - a card autopay, say - in the same transaction and under the same
 receipt, so the draft ends issued and paid (or partially paid) or is not
 changed at all. `applyPayment()` cancels the automatic delivery `issue()` just

@@ -948,6 +948,15 @@ final class InvoiceLifecycleService
                 throw new DomainException('Payment cannot exceed the invoice balance.');
             }
 
+            // Bounded here as well as by every caller's rule, after trimming
+            // as PaymentCorrection::method() does: the command line and any
+            // import reach this without a form, and a longer value is refused
+            // by MariaDB (or truncated) where SQLite stores it.
+            $method = $this->requiredString($data['method'] ?? null, 'method');
+            if (mb_strlen($method) > ClientInvoicePayment::METHOD_MAX_LENGTH) {
+                throw new DomainException('method may not be longer than '.ClientInvoicePayment::METHOD_MAX_LENGTH.' characters.');
+            }
+
             $payment = $locked->payments()->create([
                 'workspace_id' => $locked->workspace_id,
                 'status' => $status->value,
@@ -955,7 +964,7 @@ final class InvoiceLifecycleService
                 'refunded_amount' => 0,
                 'currency' => $currency,
                 'received_on' => $receivedOn,
-                'method' => $this->requiredString($data['method'] ?? null, 'method'),
+                'method' => $method,
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'provider' => $data['provider'] ?? null,

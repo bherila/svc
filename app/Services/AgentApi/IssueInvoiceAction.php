@@ -75,7 +75,7 @@ final class IssueInvoiceAction
                     'payment.amount' => ['required_with:payment', 'integer', 'min:1'],
                     'payment.currency' => ['required_with:payment', 'string', 'regex:/^[A-Z]{3}$/'],
                     'payment.received_on' => ['required_with:payment', 'date_format:Y-m-d'],
-                    'payment.method' => ['required_with:payment', 'string', 'max:64'],
+                    'payment.method' => ['required_with:payment', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
                     'payment.reference' => ['nullable', 'string', 'max:255'],
                 ])->validate();
                 // Both checks are asked of the row issue() locks for the
