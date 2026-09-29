@@ -384,7 +384,8 @@ The payment flag defaults to false and the outer flag remains the emergency stop
 The MCP catalog, REST route and capability inventory use the same cutover.
 
 Provide the invoice ID, positive integer amount in minor units, matching uppercase
-currency, actual `received_on` payment date (`Y-m-d`) and method explicitly; never
+currency, actual `received_on` payment date (`Y-m-d`) and method (at most 40
+characters, the width of its column) explicitly; never
 infer an amount or substitute the invoice date. Reference is optional (for example,
 cash need not have one). A mandatory idempotency key protects retries; reusing a
 key with another payload is refused. The existing service refuses overpayment and
