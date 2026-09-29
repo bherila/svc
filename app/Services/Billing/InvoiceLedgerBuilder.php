@@ -68,7 +68,7 @@ class InvoiceLedgerBuilder
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             // As dates: a Carbon bound binds as `Y-m-d H:i:s`, which a bare
-            // stored date sorts below on SQLite (StoresCalendarDates).
+            // stored date sorts below on SQLite (DateOnly).
             ->whereBetween('worked_on', [$activeDate->toDateString(), $ledgerEnd->toDateString()]);
 
         // Validate before applying the agreement's project scope. A malformed

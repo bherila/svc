@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
-use App\Models\Concerns\StoresCalendarDates;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\CarbonImmutable;
@@ -50,18 +50,12 @@ use LogicException;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes, StoresCalendarDates;
-
-    /** @return list<string> */
-    protected function calendarDates(): array
-    {
-        return ['worked_on'];
-    }
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
 
     protected function casts(): array
     {
         return [
-            'worked_on' => 'immutable_date',
+            'worked_on' => DateOnly::class,
             'minutes' => 'integer',
             'is_billable' => 'boolean',
             'is_deferred' => 'boolean',
