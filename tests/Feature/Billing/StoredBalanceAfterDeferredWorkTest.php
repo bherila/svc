@@ -78,6 +78,9 @@ final class StoredBalanceAfterDeferredWorkTest extends TestCase
         // deferred: 12 left, not the 18 measured before the deferred work.
         $this->assertSame(12.0, (float) $invoice->unused_hours_balance);
         $this->assertSame($statement->deficitCarriedForwardHours, (float) $invoice->negative_hours_balance);
+        // And the hours the row says it worked include the deferred work, so
+        // the row adds up: 30 - 10 owed - 8 worked leaves the 12.
+        $this->assertSame(8.0, (float) $invoice->hours_worked);
     }
 
     /**

@@ -1434,8 +1434,10 @@ final class ClientInvoicingService
 
             $invoice->update([
                 'retainer_hours_included' => $retainerHours,
-                'hours_worked' => $cycleLedger['hours_worked'],
-                'rollover_hours_used' => $cycleLedger['rollover_hours_used'],
+                // Every ledger figure on the row from the one measurement, so
+                // the hours worked and rollover used agree with the balances.
+                'hours_worked' => $finalCycleLedger['hours_worked'],
+                'rollover_hours_used' => $finalCycleLedger['rollover_hours_used'],
                 // Balances from the ledger re-run after this draft's deferred
                 // work was linked, as the statement is; the ledger measured
                 // before it read the pool that work drew on as unused (#353).
