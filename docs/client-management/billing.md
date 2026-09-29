@@ -114,10 +114,27 @@ The later invoice then relies on a charge nobody has made yet, so
 invoice cannot be issued while an earlier cadence draft of its agreement still
 bills catch-up. That draft cannot be discarded or voided while a later live
 invoice of the agreement exists: discard the later one first, then regenerate
-it. The overlay is read when a draft is generated, so regenerating an earlier
-draft to a different charge leaves the later draft sized against the old figure
-until it too is regenerated, as a change to the earlier month's work already
-does (`EarlierDraftCatchUpTest`).
+it. Whether an invoice was sized this way is read from the cadence its stored
+hours statement was generated under, so changing the agreement's cadence
+afterwards does not lift either guard.
+
+What the guards do not cover, accepted rather than fixed here:
+
+- **Regenerating the earlier draft after the later one was generated.** The
+  overlay is read when a draft is generated. If the earlier draft is created or
+  regenerated to a different charge afterwards, the later draft stays sized
+  against the old figure until it is regenerated too. A change to the earlier
+  month's work already leaves it stale in the same way, since the ledger reads
+  that work from time entries. Regenerate every later draft of the agreement
+  (`generateAllInvoices` rebuilds them in order) before issuing it.
+- **Voiding an issued invoice that a later issued invoice was sized against.**
+  Every later invoice has always read an issued invoice's charge from the ledger,
+  so this is not specific to drafts. The next invoice generated measures the
+  ledger without the voided charge.
+
+Both would need the dependency to be recorded at generation and re-checked at
+issue. That is worth building if these orders become routine rather than
+exceptional (`EarlierDraftCatchUpTest`).
 
 ## Invoice Line Items
 

@@ -122,7 +122,9 @@ final class DraftCatchUpDependencies
         $agreement = $this->monthlyAgreementOf($draft);
         if (! $agreement instanceof ClientAgreement
             || $draft->service_period_end === null
-            || ! $this->billingCatchUp(ClientInvoice::query()->whereKey($draft->getKey()))->exists()) {
+            || ! $this->billingCatchUp(
+                ClientInvoice::query()->where('workspace_id', $draft->workspace_id)->whereKey($draft->getKey()),
+            )->exists()) {
             return;
         }
 
@@ -162,6 +164,15 @@ final class DraftCatchUpDependencies
         });
     }
 
+    /**
+     * The agreement of a cadence invoice sized by the monthly generator.
+     *
+     * Asked of the invoice's own stored statement first: that records the
+     * cadence it was generated under, which an operator changing the
+     * agreement's cadence afterwards does not change. Only an invoice with no
+     * readable statement (hand-edited, or generated before statements existed)
+     * falls back to the agreement's current cadence.
+     */
     private function monthlyAgreementOf(ClientInvoice $invoice): ?ClientAgreement
     {
         if ($invoice->client_agreement_id === null
@@ -171,12 +182,19 @@ final class DraftCatchUpDependencies
 
         $agreement = ClientAgreement::query()
             ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
             ->whereKey($invoice->client_agreement_id)
             ->first();
+        if (! $agreement instanceof ClientAgreement) {
+            return null;
+        }
 
-        return $agreement instanceof ClientAgreement && $agreement->effectiveBillingCadence() === BillingCadence::Monthly
-            ? $agreement
-            : null;
+        $generatedUnder = $invoice->hoursStatement()?->cadence;
+        $monthly = $generatedUnder === null
+            ? $agreement->effectiveBillingCadence() === BillingCadence::Monthly
+            : $generatedUnder === BillingCadence::Monthly->value;
+
+        return $monthly ? $agreement : null;
     }
 
     /**

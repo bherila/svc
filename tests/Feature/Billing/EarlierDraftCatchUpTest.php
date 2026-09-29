@@ -196,6 +196,27 @@ final class EarlierDraftCatchUpTest extends TestCase
         $this->assertSame('void', $january->fresh()?->status);
     }
 
+    /**
+     * The dependency is a fact of how the invoices were generated, so changing
+     * the agreement's cadence afterwards does not lift either guard.
+     */
+    public function test_changing_the_agreement_cadence_keeps_the_dependency(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->agreement->forceFill(['billing_cadence' => 'quarterly'])->save();
+
+        try {
+            $this->issue($february);
+            $this->fail('February was issued ahead of the January draft once the cadence changed');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $january->invoice_number, $refusal->getMessage());
+        }
+
+        $this->expectException(DomainException::class);
+        app(InvoiceLifecycleService::class)->discardDraft($january, $this->workspace, 'Synthetic discard');
+    }
+
     /** An earlier draft's catch-up that cannot be known is refused, not read as zero. */
     public function test_an_earlier_draft_with_unknown_catch_up_is_refused(): void
     {
