@@ -46,6 +46,7 @@ final class InvoiceLifecycleService
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?InvoiceAdministratorNotificationService $administratorNotifications = null,
+        private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
     ) {}
 
     /**
@@ -180,10 +181,13 @@ final class InvoiceLifecycleService
     public function discardDraft(ClientInvoice $invoice, Workspace $workspace, string $reason): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
+            $this->lockCadenceAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only a draft invoice can be discarded.');
             }
+            $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
+            $this->draftCatchUpDependencies->assertDiscardable($locked);
 
             $this->releaseAllocations($locked);
             $locked->forceFill([
@@ -379,6 +383,11 @@ final class InvoiceLifecycleService
                     $today->toDateString(),
                 ));
             }
+
+            // A monthly invoice generated while an earlier month was still a
+            // draft counted that draft's catch-up as charged. Issued first, it
+            // would rely on a charge that could still be discarded.
+            $this->draftCatchUpDependencies->assertIssuable($locked);
 
             $issueDate = $locked->issue_date ?? $today;
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
@@ -579,6 +588,45 @@ final class InvoiceLifecycleService
      * take it ahead of the agreement. `issue()` checks the locked invoice
      * against what was locked here and refuses on any difference.
      */
+    /**
+     * Lock the agreement of a cadence invoice, before its invoice.
+     *
+     * Monthly generation holds this lock while it reads which earlier drafts'
+     * catch-up to count, so a draft being discarded or voided under that read
+     * waits for it and then sees the later invoice it produced
+     * (`DraftCatchUpDependencies::assertDiscardable()`). Read from the caller's
+     * copy for the same reason as `lockInterimAgreement()`, and checked
+     * against the locked invoice afterwards.
+     */
+    private function lockCadenceAgreement(ClientInvoice $invoice): void
+    {
+        if (! in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value], true)
+            || $invoice->client_agreement_id === null) {
+            return;
+        }
+
+        ClientAgreement::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_agreement_id)
+            ->tap(Locks::forUpdate())
+            ->first();
+    }
+
+    /**
+     * The agreement locked from the caller's copy is still the locked
+     * invoice's: its kind and agreement are what chose the lock.
+     */
+    private function assertLockedAgreementIsTheInvoices(ClientInvoice $callerCopy, ClientInvoice $locked): void
+    {
+        $agreementOf = static fn (ClientInvoice $invoice): ?int => $invoice->client_agreement_id === null
+            ? null
+            : (int) $invoice->client_agreement_id;
+        if ((string) $callerCopy->invoice_kind !== (string) $locked->invoice_kind
+            || $agreementOf($callerCopy) !== $agreementOf($locked)) {
+            throw new DomainException('This invoice changed after it was loaded. Reload it and try again.');
+        }
+    }
+
     private function lockInterimAgreement(ClientInvoice $invoice): ?ClientAgreement
     {
         if ($invoice->invoice_kind !== InvoiceKind::InterimOverage->value || $invoice->client_agreement_id === null) {
@@ -644,6 +692,7 @@ final class InvoiceLifecycleService
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
+            $this->lockCadenceAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
 
             if ($locked->status === 'void') {
@@ -691,6 +740,11 @@ final class InvoiceLifecycleService
                 ->exists();
             if ($hasPendingPayments) {
                 throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
+            }
+
+            if ($locked->status === InvoiceStatus::Draft->value) {
+                $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
+                $this->draftCatchUpDependencies->assertDiscardable($locked);
             }
 
             $this->releaseAllocations($locked);

@@ -96,6 +96,52 @@ synthetic example with a one-hour threshold, an opening net capacity of minus
 six hours needs seven catch-up hours to reach that threshold. The agreement's
 actual terms and the charged-overage ledger determine the real calculation.
 
+That ledger books every month's work from the time entries but reads catch-up
+hours only from charged invoices. An earlier invoice that is still a draft -
+last month's, or an earlier correction's in the same month - therefore has its
+work counted and its catch-up missed, and the next invoice would open on the
+debt that draft already bills and charge it again once both are issued. So
+generation overlays each earlier cadence draft's `hours_billed_at_rate` on the
+ledger in that draft's own work month, as though it were issued, exactly as it
+overlays the invoice's own catch-up. A draft counts when its service period
+ends on or before the end of the range being generated, which is the window the
+billed-overage ledger uses once it is issued, so a draft never counts a later
+one; invoices ending on the same day are ordered by id. The guards below use
+that same order, so a period widened backwards by a backdated line does not
+hide a dependency and two same-day drafts cannot each wait for the other; a
+void or
+deleted draft charged nothing and is not counted, and a draft whose
+`hours_billed_at_rate` is unknown (null) beside an additional-hours line is
+refused rather than read as zero.
+
+The later invoice then relies on a charge nobody has made yet, so
+`DraftCatchUpDependencies` makes the lifecycle keep the order. A cadence invoice
+cannot be issued while an earlier cadence draft of its agreement still bills
+catch-up. That draft cannot be discarded or voided while a later live invoice of
+the agreement exists: discard the later one first, then regenerate it. Both
+guards cover every cadence, not only monthly, because an agreement's cadence can
+change after its monthly drafts exist. Discarding and voiding take the agreement
+lock that generation holds while it reads the overlay, and read later invoices
+with a locking read, so neither can pass under a generation in progress.
+
+What the guards do not cover, accepted rather than fixed here:
+
+- **Regenerating the earlier draft after the later one was generated.** The
+  overlay is read when a draft is generated. If the earlier draft is created or
+  regenerated to a different charge afterwards, the later draft stays sized
+  against the old figure until it is regenerated too. A change to the earlier
+  month's work already leaves it stale in the same way, since the ledger reads
+  that work from time entries. Regenerate every later draft of the agreement
+  (`generateAllInvoices` rebuilds them in order) before issuing it.
+- **Voiding an issued invoice that a later issued invoice was sized against.**
+  Every later invoice has always read an issued invoice's charge from the ledger,
+  so this is not specific to drafts. The next invoice generated measures the
+  ledger without the voided charge.
+
+Both would need the dependency to be recorded at generation and re-checked at
+issue. That is worth building if these orders become routine rather than
+exceptional (`EarlierDraftCatchUpTest`).
+
 ## Invoice Line Items
 
 The persisted column is `client_invoice_lines.type`.
@@ -189,8 +235,9 @@ allocator offers the correction exactly that pool, so overflow a later
 correction causes is billed on it rather than surfacing as debt on the next
 month's invoice (`CorrectionPoolDrawTest`). An earlier correction in the month
 that is still a draft counts too: its catch-up is overlaid on the ledger as
-though issued, since the billed-overage ledger reads only charged invoices and
-would otherwise leave the later correction to bill the same debt again. A range
+though issued, as any earlier draft's is (see the minimum availability rule
+above), since the billed-overage ledger reads only charged invoices and would
+otherwise leave the later correction to bill the same debt again. A range
 that runs to a mid-month termination date bills no minimum availability, since
 it sells no later month whose work could use it. The work draws on
 that pool once; a correction snapshotted before that was so shows its second
