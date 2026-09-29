@@ -239,18 +239,39 @@ final class InvoiceLifecycleService
                 $assertLocked($locked);
             }
             $interimClaims = null;
-            // Only a draft whose claim can be placed: one with an agreement and
-            // a complete, ordered period. Anything else is refused below - by
-            // the period checks, or as an interim naming no agreement - with
-            // the refusal that names its repair.
-            if ($locked->status === 'draft'
+            // Only a draft whose claim can be placed: one with a complete,
+            // ordered period. Anything else is refused by the period checks
+            // below, with the refusal that names its repair.
+            if ($locked->status === InvoiceStatus::Draft->value
                 && $locked->invoice_kind === InvoiceKind::InterimOverage->value
-                && $locked->client_agreement_id !== null
                 && $locked->service_period_start !== null
                 && $locked->service_period_end !== null
                 && ! $locked->service_period_start->gt($locked->service_period_end)) {
-                if (! $agreement instanceof ClientAgreement || $agreement->id !== (int) $locked->client_agreement_id) {
+                // The claim, the cycle's claims and the cadence reconciliation
+                // are all found by agreement, so an interim not tied to its
+                // company's agreement is invisible to the real one, and the
+                // closing invoice can bill its hours again (#342). The
+                // generator never writes one; an import or a hand edit can.
+                // Refused before the credit and company locks, which a
+                // refusal has no use for.
+                if ($locked->client_agreement_id === null) {
+                    throw new DomainException($this->unplaceableInterimRefusal('names no agreement'));
+                }
+                if (! $agreement instanceof ClientAgreement) {
+                    // The caller's copy named this same agreement and no row
+                    // answered: it is missing, not moved, and a reload
+                    // cannot change that.
+                    if ((int) $invoice->client_agreement_id === (int) $locked->client_agreement_id) {
+                        throw new DomainException($this->unplaceableInterimRefusal('names an agreement that does not exist in this workspace'));
+                    }
+
                     throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                if ($agreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                if ((int) $agreement->client_company_id !== (int) $locked->client_company_id) {
+                    throw new DomainException($this->unplaceableInterimRefusal('names an agreement of a different client company'));
                 }
                 // The claims are invoice rows, so they are locked now, before
                 // the company.
@@ -387,18 +408,6 @@ final class InvoiceLifecycleService
                 && $locked->service_period_end !== null
                 && $locked->service_period_start->gt($locked->service_period_end)) {
                 throw new DomainException($this->reversedPeriodRefusal($locked));
-            }
-
-            // An interim overage invoice's claim, the cycle's claims and the
-            // cadence reconciliation are all found by agreement id, so one
-            // naming no agreement is invisible to its real agreement and the
-            // closing invoice can bill its hours again (#342). The generator
-            // never writes this shape; an import or a hand edit can. Refused
-            // here rather than at `createDraft()`, because a row that did not
-            // come through `createDraft()` still comes through this door.
-            if ($locked->invoice_kind === InvoiceKind::InterimOverage->value
-                && $locked->client_agreement_id === null) {
-                throw new DomainException($this->agreementlessInterimRefusal($locked));
             }
 
             // An invoice is issued on its issue date, not before it. The
@@ -585,12 +594,13 @@ final class InvoiceLifecycleService
             .$this->repairPath($invoice);
     }
 
-    private function agreementlessInterimRefusal(ClientInvoice $invoice): string
+    private function unplaceableInterimRefusal(string $problem): string
     {
-        return 'An interim_overage invoice names no agreement, so it cannot be issued. Its claim is checked '
-            .'against the other claims of its agreement\'s cycle, and one naming none is invisible to that '
-            .'check, so the closing invoice could bill the same hours again. '
-            .$this->repairPath($invoice);
+        return 'This interim_overage invoice '.$problem.', so it cannot be issued. Its claim is checked '
+            .'against the other claims of its agreement\'s cycle, and it would be invisible to that check, '
+            .'so the closing invoice could bill the same hours again. No operation here changes an existing '
+            .'invoice\'s agreement: discard this draft. Interim invoices are raised from their agreement by '
+            .'the overage generator, which bills the work under it if it is still owed.';
     }
 
     private function unsupportedKindRefusal(ClientInvoice $invoice): string
