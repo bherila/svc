@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
+use App\Support\Billing\CatchUpBasis;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -28,6 +29,13 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Only monthly generation overlays earlier drafts, but the ordering guards
  * cover every cadence invoice: see agreementOf().
+ *
+ * Order alone does not say which figure a later invoice relied on. Monthly
+ * generation therefore also records, on the invoice, every earlier charge it
+ * was sized against - issued and draft - as a CatchUpBasis. Issuing it
+ * re-measures that and refuses once any charge has moved, so an earlier draft
+ * regenerated or created after it forces it to be regenerated too; and an
+ * issued invoice that a live later one recorded cannot be voided under it.
  */
 final class DraftCatchUpDependencies
 {
@@ -53,25 +61,14 @@ final class DraftCatchUpDependencies
      */
     public function chargesByMonthThrough(ClientAgreement $agreement, int $companyId, Carbon $through, ?int $excludeInvoiceId): array
     {
-        $drafts = $this->cadenceInvoices((int) $agreement->workspace_id, $companyId, (int) $agreement->id)
-            ->where('status', InvoiceStatus::Draft->value)
-            ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
-            ->where(fn (Builder $query): Builder => $this->endingBefore($query, $through, $excludeInvoiceId))
+        $drafts = $this->earlierDrafts((int) $agreement->workspace_id, $companyId, (int) $agreement->id, $through, $excludeInvoiceId)
             ->orderBy('service_period_end')
             ->orderBy('id')
-            ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
             ->get(['id', 'invoice_number', 'service_period_end', 'hours_billed_at_rate']);
 
         $byMonth = [];
         foreach ($drafts as $draft) {
-            if ($draft->hours_billed_at_rate === null) {
-                throw new DomainException(
-                    "Draft invoice {$draft->invoice_number} records no billed-overage hours, so what it bills cannot "
-                    .'be known and a later invoice cannot be sized without risking a second charge for the same '
-                    .'hours. Regenerate or discard that draft first.',
-                );
-            }
-            $hours = (float) $draft->hours_billed_at_rate;
+            $hours = $this->draftHoursOrFail($draft);
             if ($hours === 0.0 || $draft->service_period_end === null) {
                 continue;
             }
@@ -80,6 +77,149 @@ final class DraftCatchUpDependencies
         }
 
         return $byMonth;
+    }
+
+    /**
+     * Every earlier charge a monthly invoice generated through `$through` is
+     * sized against, by invoice: each charged invoice in the billed-overage
+     * ledger's window (BilledOverageLedger::window(), repeated here so that it
+     * can be read with a lock) and each draft the overlay counts.
+     *
+     * `$current` reads through row locks, which return the current row rather
+     * than a transaction's snapshot and wait for a generation still writing
+     * one. `issue()` asks for it; a generation, which holds the agreement lock
+     * every other generation takes, does not need it.
+     *
+     * @infection-ignore-all The tenant, status and window predicates need the feature database and are covered by EarlierDraftCatchUpTest; the mutation lane runs unit tests only, and covers CatchUpBasis.
+     */
+    public function basisThrough(int $workspaceId, int $companyId, int $agreementId, Carbon $through, ?int $invoiceId, bool $current = false): CatchUpBasis
+    {
+        $charged = ClientInvoice::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('client_agreement_id', $agreementId)
+            ->whereIn('status', InvoiceStatus::charged())
+            ->where(function (Builder $window) use ($through): void {
+                $window->whereDate('service_period_end', '<=', $through->toDateString())
+                    ->orWhereNull('service_period_end');
+            })
+            ->when($invoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($invoiceId))
+            ->when($current, fn (Builder $query): Builder => $query->tap(Locks::forUpdate()))
+            ->orderBy('id')
+            ->get(['id', 'invoice_number', 'hours_billed_at_rate']);
+        $drafts = $this->earlierDrafts($workspaceId, $companyId, $agreementId, $through, $invoiceId)
+            ->when($current, fn (Builder $query): Builder => $query->tap(Locks::forUpdate()))
+            ->orderBy('id')
+            ->get(['id', 'invoice_number', 'hours_billed_at_rate']);
+
+        $charges = [];
+        foreach ($charged as $invoice) {
+            $charges[] = ['id' => (int) $invoice->id, 'number' => (string) $invoice->invoice_number, 'hours' => $invoice->billedOverageHoursOrFail()];
+        }
+        foreach ($drafts as $draft) {
+            $charges[] = ['id' => (int) $draft->id, 'number' => (string) $draft->invoice_number, 'hours' => $this->draftHoursOrFail($draft)];
+        }
+
+        return CatchUpBasis::of($through->toDateString(), $charges);
+    }
+
+    /**
+     * Refuse to issue a draft whose recorded basis no longer matches the
+     * earlier charges it was sized against.
+     *
+     * Measured again over the recorded window, through row locks: the rows
+     * this compares are other invoices of the agreement, and a stale read of
+     * one would let a later invoice through on a figure that has already
+     * moved. Called straight after the invoice's own lock, before anything of
+     * lower rank, so these locks keep the acquisition order and read nothing
+     * that fixes the transaction's snapshot.
+     *
+     * A draft with no recorded basis - generated before it was recorded, or
+     * by a path that does not measure the billed-overage ledger - is issued
+     * as it always was.
+     *
+     * @infection-ignore-all The window and lock need the feature database and are covered by EarlierDraftCatchUpTest; the comparison is CatchUpBasis's and is unit-tested there.
+     */
+    public function assertSizedAgainstCurrentCharges(ClientInvoice $invoice): void
+    {
+        if ($invoice->catch_up_basis === null || $invoice->client_agreement_id === null) {
+            return;
+        }
+
+        $recorded = CatchUpBasis::fromArray($invoice->catch_up_basis);
+        if (! $recorded instanceof CatchUpBasis) {
+            throw new DomainException(
+                "Invoice {$invoice->invoice_number} records the earlier catch-up it was sized against in a form "
+                .'that cannot be read. Regenerate it before issuing it.',
+            );
+        }
+
+        $current = $this->basisThrough(
+            (int) $invoice->workspace_id,
+            (int) $invoice->client_company_id,
+            (int) $invoice->client_agreement_id,
+            Carbon::parse($recorded->through),
+            (int) $invoice->id,
+            current: true,
+        );
+
+        $change = $recorded->firstChangeIn($current);
+        if ($change !== null) {
+            throw new DomainException(sprintf(
+                'Invoice %s was sized against %s catch-up hours charged by invoice %s, which now charges %s. '
+                .'Regenerate this invoice before issuing it, so that it bills the debt that is actually left.',
+                $invoice->invoice_number,
+                self::hours($change['recorded']),
+                $change['number'],
+                self::hours($change['current']),
+            ));
+        }
+    }
+
+    /**
+     * Refuse to void a charged invoice while a live later invoice recorded
+     * its catch-up as part of the basis it was sized against.
+     *
+     * Voided, the charge leaves the billed-overage ledger, and the debt it
+     * paid would then be billed by neither invoice. Only a recorded basis
+     * counts: a later invoice generated before bases were recorded is not
+     * known to rely on it, and voiding under it is allowed as it always was.
+     * So is one whose basis cannot be read, which says nothing either way.
+     * A locking read, after the agreement lock, for the reason given in
+     * assertDiscardable().
+     *
+     * @infection-ignore-all The predicates and lock need the feature database and are covered by EarlierDraftCatchUpTest; CatchUpBasis::hoursFrom() is unit-tested.
+     */
+    public function assertVoidable(ClientInvoice $invoice): void
+    {
+        if ($invoice->client_agreement_id === null) {
+            return;
+        }
+
+        $dependents = ClientInvoice::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->where('client_agreement_id', $invoice->client_agreement_id)
+            ->whereIn('status', InvoiceStatus::live())
+            ->whereKeyNot($invoice->getKey())
+            ->whereNotNull('catch_up_basis')
+            ->orderBy('service_period_end')
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get(['id', 'invoice_number', 'catch_up_basis']);
+
+        foreach ($dependents as $dependent) {
+            $hours = CatchUpBasis::fromArray($dependent->catch_up_basis)?->hoursFrom((int) $invoice->id) ?? 0.0;
+            if ($hours !== 0.0) {
+                throw new DomainException(sprintf(
+                    'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges; '
+                    .'voided, that debt would be billed by neither. Void or discard %s first. To change only this '
+                    .'invoice\'s wording or an operator-authored line, correct it in place instead, which keeps its charge.',
+                    $dependent->invoice_number,
+                    self::hours($hours),
+                    $dependent->invoice_number,
+                ));
+            }
+        }
     }
 
     /**
@@ -163,6 +303,43 @@ final class DraftCatchUpDependencies
                 .'Discard that invoice first, then discard this draft and regenerate it.',
             );
         }
+    }
+
+    /**
+     * Earlier cadence drafts that bill catch-up, as the overlay counts them.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    private function earlierDrafts(int $workspaceId, int $companyId, int $agreementId, Carbon $through, ?int $excludeInvoiceId): Builder
+    {
+        return $this->cadenceInvoices($workspaceId, $companyId, $agreementId)
+            ->where('status', InvoiceStatus::Draft->value)
+            ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
+            ->where(fn (Builder $query): Builder => $this->endingBefore($query, $through, $excludeInvoiceId))
+            ->where(fn (Builder $query): Builder => $this->billingCatchUp($query));
+    }
+
+    /**
+     * A draft's catch-up, refused when unknown: billingCatchUp() admits a
+     * null figure only beside an additional-hours line, so a null here is one
+     * that bills at the rate and cannot be read as zero.
+     */
+    private function draftHoursOrFail(ClientInvoice $draft): float
+    {
+        if ($draft->hours_billed_at_rate === null) {
+            throw new DomainException(
+                "Draft invoice {$draft->invoice_number} records no billed-overage hours, so what it bills cannot "
+                .'be known and a later invoice cannot be sized without risking a second charge for the same '
+                .'hours. Regenerate or discard that draft first.',
+            );
+        }
+
+        return (float) $draft->hours_billed_at_rate;
+    }
+
+    private static function hours(float $hours): string
+    {
+        return rtrim(rtrim(number_format($hours, 4, '.', ''), '0'), '.');
     }
 
     /**

@@ -124,23 +124,49 @@ change after its monthly drafts exist. Discarding and voiding take the agreement
 lock that generation holds while it reads the overlay, and read later invoices
 with a locking read, so neither can pass under a generation in progress.
 
-What the guards do not cover, accepted rather than fixed here:
+Order alone does not say which figure the later invoice relied on, so monthly
+generation also records it. `client_invoices.catch_up_basis` holds every earlier
+charge the invoice was sized against - each charged invoice of the agreement in
+the billed-overage ledger's window and each draft the overlay counted - by
+invoice, with its `hours_billed_at_rate` and the date the ledger was measured
+through (`CatchUpBasis`). Two guards read it:
 
-- **Regenerating the earlier draft after the later one was generated.** The
-  overlay is read when a draft is generated. If the earlier draft is created or
-  regenerated to a different charge afterwards, the later draft stays sized
-  against the old figure until it is regenerated too. A change to the earlier
-  month's work already leaves it stale in the same way, since the ledger reads
-  that work from time entries. Regenerate every later draft of the agreement
-  (`generateAllInvoices` rebuilds them in order) before issuing it.
-- **Voiding an issued invoice that a later issued invoice was sized against.**
-  Every later invoice has always read an issued invoice's charge from the ledger,
-  so this is not specific to drafts. The next invoice generated measures the
-  ledger without the voided charge.
+- **Issuing** measures the same window again, reading those rows with locks so
+  that a stale snapshot cannot pass, and refuses when any charge has moved
+  since: an earlier draft regenerated to a different figure, an earlier invoice
+  created after this one, or one voided. The refusal names the invoice that
+  moved and asks for this one to be regenerated, which re-sizes it against the
+  debt actually left. Regenerating the earlier draft is itself allowed - a time
+  entry change does it automatically - because the later draft cannot be issued
+  until it is rebuilt to match (`generateAllInvoices` rebuilds them in order).
+- **Voiding an issued invoice** is refused while a live later invoice - draft or
+  issued - recorded its charge: voided, the debt it paid would be billed by
+  neither. Void or discard the later invoice first. An invoice whose wording or
+  operator-authored lines are wrong can instead be corrected in place
+  ([Correction boundary](invoice-delivery.md#correction-boundary)), which keeps
+  its charge. Voiding takes the agreement lock generation holds for every
+  invoice with an agreement, not only cadence ones, since the ledger reads
+  every kind.
 
-Both would need the dependency to be recorded at generation and re-checked at
-issue. That is worth building if these orders become routine rather than
-exceptional (`EarlierDraftCatchUpTest`).
+Invoices generated before the column existed, and every kind the monthly
+generator does not write (the non-monthly path, which does not read the
+billed-overage ledger, clears it), record none: they issue and void exactly as
+they did before, under the ordering guards alone. A basis that cannot be read
+is refused at issue (regenerate the draft) and read as recording nothing at
+void (`EarlierDraftCatchUpTest`, `CatchUpBasisTest`).
+
+What remains accepted rather than fixed (see the concurrency guidance in
+`AGENTS.md`):
+
+- **An earlier draft whose charge moves after a later invoice is issued.**
+  The issue guard refuses a later invoice while an earlier draft still bills
+  catch-up, so this needs an earlier draft that billed nothing when the later
+  one was issued and is then regenerated to bill something - a late time entry
+  in an already-invoiced month, the staleness the ledger has always had for
+  work changed after a later invoice. Nothing re-checks issued invoices, and
+  guarding it would mean refusing to issue or regenerate the earlier month
+  while any later invoice is issued. Worth building if late time on invoiced
+  months becomes routine rather than exceptional.
 
 ## Invoice Line Items
 
