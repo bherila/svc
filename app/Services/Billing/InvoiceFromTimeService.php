@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
 use App\Support\Concurrency\Locks;
 use DomainException;
@@ -235,7 +236,7 @@ final class InvoiceFromTimeService
                     'workspace_id' => $workspace->id,
                     'client_project_id' => $entry->client_project_id,
                     'type' => $terms['type'],
-                    'description' => $entry->description,
+                    'description' => InvoiceLineDetail::clientWording($entry),
                     'quantity' => MoneyService::hoursForMinutes($entry->minutes),
                     'unit_amount' => $terms['unit_amount'],
                     'tax_amount' => 0,
@@ -307,7 +308,7 @@ final class InvoiceFromTimeService
             $lines[] = [
                 'client_project_id' => $entry->client_project_id,
                 'type' => $terms['type'],
-                'description' => $entry->description,
+                'description' => InvoiceLineDetail::clientWording($entry),
                 'quantity' => MoneyService::hoursForMinutes($entry->minutes),
                 'unit_amount' => $terms['unit_amount'],
                 'tax_amount' => 0,

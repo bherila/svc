@@ -311,8 +311,14 @@ Such entries used to be left out of the client's appendix entirely; they are
 billed work, and an appendix that silently dropped them totalled fewer hours
 than the line above it.
 
-Line descriptions are stored on the invoice line and printed as they are. For
-lines built from time by the ad-hoc path, see issue #347.
+Line descriptions are stored on the invoice line and printed as they are. A
+line the ad-hoc path builds from one time entry (`InvoiceFromTimeService`,
+when it is created and whenever the draft is rebuilt) takes its description
+from the same client wording rule, `InvoiceLineDetail::clientWording()`: the
+entry's `client_visible_description` when it is visible to the client and has
+one, and `Professional services` otherwise - never the internal description,
+which a document sent to the client must not carry. An operator who wants
+other wording writes it on the entry, or edits the draft line.
 
 ## Billing Validation and Automation
 

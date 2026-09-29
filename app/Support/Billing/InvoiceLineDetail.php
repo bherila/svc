@@ -135,10 +135,12 @@ final class InvoiceLineDetail
     }
 
     /**
-     * The client's wording for one entry: theirs when it was written for them,
-     * the generic label otherwise, and never the internal description.
+     * What a client reads for one time entry: its `client_visible_description`
+     * when it is visible to them and has one, and the neutral label otherwise;
+     * never the internal description. The appendix and every invoice line built from a single entry
+     * (`InvoiceFromTimeService`) use this one rule.
      */
-    private static function clientWording(ClientTimeEntry $entry): string
+    public static function clientWording(ClientTimeEntry $entry): string
     {
         $written = $entry->client_visible_description;
 
