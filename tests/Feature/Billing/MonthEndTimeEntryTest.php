@@ -4,11 +4,13 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceLineComposer;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +59,38 @@ final class MonthEndTimeEntryTest extends TestCase
             $entry->fresh()?->invoiceLines()->where('client_invoice_id', $invoice->id)->exists(),
             'The month-end entry is billed on its month\'s invoice',
         );
+    }
+
+    /**
+     * Both ends of a period whose bounds arrive as Carbon values, which bind
+     * as `Y-m-d H:i:s`: the query compares dates, so the first day is not
+     * lost where the last one used to be.
+     */
+    public function test_carbon_bounds_keep_the_first_and_last_day(): void
+    {
+        [$last, $company, $agreement] = $this->fixture();
+        $first = $last->replicate(['public_id']);
+        $first->forceFill(['worked_on' => '2026-01-01'])->save();
+        foreach ([$first, $last] as $entry) {
+            $entry->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+        }
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $company->workspace_id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'MONTH-END-1', 'status' => 'draft', 'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+        $sort = 1;
+
+        app(InvoiceLineComposer::class)->addSubcontractorFlatHourlyLines(
+            $company, $invoice, Carbon::parse('2026-01-01'), Carbon::parse('2026-01-31'), $sort,
+        );
+
+        foreach ([$first, $last] as $entry) {
+            $this->assertTrue(
+                $entry->fresh()?->invoiceLines()->where('client_invoice_id', $invoice->id)->exists(),
+                'Work on '.$entry->worked_on->toDateString().' is billed',
+            );
+        }
     }
 
     /** @return array{ClientTimeEntry, ClientCompany, ClientAgreement} */
