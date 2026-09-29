@@ -56,7 +56,7 @@ final class DraftCatchUpDependencies
         $drafts = $this->cadenceInvoices((int) $agreement->workspace_id, $companyId, (int) $agreement->id)
             ->where('status', InvoiceStatus::Draft->value)
             ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
-            ->whereDate('service_period_end', '<=', $through->toDateString())
+            ->where(fn (Builder $query): Builder => $this->endingBefore($query, $through, $excludeInvoiceId))
             ->orderBy('service_period_end')
             ->orderBy('id')
             ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
@@ -102,7 +102,11 @@ final class DraftCatchUpDependencies
             // backwards by a backdated line would hide the draft this was
             // sized against, and an end widened forwards only makes this
             // stricter.
-            ->whereDate('service_period_end', '<', $invoice->service_period_end->toDateString())
+            ->where(fn (Builder $query): Builder => $this->endingBefore(
+                $query,
+                Carbon::instance($invoice->service_period_end),
+                $invoice->id,
+            ))
             ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
             ->orderBy('service_period_end')
             ->value('invoice_number');
@@ -140,7 +144,11 @@ final class DraftCatchUpDependencies
         $later = $this->cadenceInvoices((int) $draft->workspace_id, (int) $draft->client_company_id, (int) $agreement->id)
             ->whereIn('status', InvoiceStatus::live())
             ->whereKeyNot($draft->getKey())
-            ->whereDate('service_period_end', '>', $draft->service_period_end->toDateString())
+            ->where(fn (Builder $query): Builder => $this->endingAfter(
+                $query,
+                Carbon::instance($draft->service_period_end),
+                $draft->id,
+            ))
             ->orderBy('service_period_end')
             // A locking read, which reads the current row rather than the
             // transaction's snapshot: a caller that read something before the
@@ -155,6 +163,46 @@ final class DraftCatchUpDependencies
                 .'Discard that invoice first, then discard this draft and regenerate it.',
             );
         }
+    }
+
+    /**
+     * Invoices ordered before one ending on `$end`: by the end of their service
+     * period, as the ledger places a charge, and by id between equal ends. The
+     * overlay and both guards use this one order, so a draft the overlay
+     * counts is exactly one the guards see, and two drafts ending on the same
+     * day can never each wait for the other. An invoice not yet written (no
+     * id) comes after every row ending on its end, as it will once created.
+     *
+     * @param  Builder<ClientInvoice>  $query
+     * @return Builder<ClientInvoice>
+     */
+    private function endingBefore(Builder $query, Carbon $end, ?int $id): Builder
+    {
+        return $query->where(function (Builder $query) use ($end, $id): void {
+            $query->whereDate('service_period_end', '<', $end->toDateString())
+                ->orWhere(function (Builder $tie) use ($end, $id): void {
+                    $tie->whereDate('service_period_end', '=', $end->toDateString())
+                        ->when($id !== null, fn (Builder $query): Builder => $query->where('id', '<', $id));
+                });
+        });
+    }
+
+    /**
+     * Invoices ordered after one ending on `$end`, in the order of
+     * endingBefore().
+     *
+     * @param  Builder<ClientInvoice>  $query
+     * @return Builder<ClientInvoice>
+     */
+    private function endingAfter(Builder $query, Carbon $end, int $id): Builder
+    {
+        return $query->where(function (Builder $query) use ($end, $id): void {
+            $query->whereDate('service_period_end', '>', $end->toDateString())
+                ->orWhere(function (Builder $tie) use ($end, $id): void {
+                    $tie->whereDate('service_period_end', '=', $end->toDateString())
+                        ->where('id', '>', $id);
+                });
+        });
     }
 
     /**

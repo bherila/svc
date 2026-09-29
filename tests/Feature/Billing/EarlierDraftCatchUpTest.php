@@ -275,6 +275,50 @@ final class EarlierDraftCatchUpTest extends TestCase
         app(InvoiceLifecycleService::class)->discardDraft($january, $this->workspace, 'Synthetic discard');
     }
 
+    /**
+     * A draft ending on the same day as February, with no start to trip the
+     * overlap guard, is counted by February's overlay. The guards order equal
+     * ends by id exactly as the overlay does, so they see it too - and the two
+     * cannot each wait for the other.
+     */
+    public function test_a_draft_ending_with_the_later_invoice_keeps_the_dependency(): void
+    {
+        $this->month('2026-01-01', '2026-01-31');
+        $this->issue(ClientInvoice::query()->where('workspace_id', $this->workspace->id)->sole());
+        $sameEnd = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_company_id' => $this->company->id,
+            'client_agreement_id' => $this->agreement->id,
+            'invoice_number' => 'SAME-END-1',
+            'status' => 'draft',
+            'currency' => 'USD',
+            'invoice_kind' => 'cadence_period',
+            'service_period_end' => '2026-02-28',
+            'hours_billed_at_rate' => 2,
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+        ]);
+
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+
+        try {
+            $this->issue($february);
+            $this->fail('February was issued ahead of the same-end draft its overlay counted');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('SAME-END-1', $refusal->getMessage());
+        }
+        try {
+            app(InvoiceLifecycleService::class)->discardDraft($sameEnd, $this->workspace, 'Synthetic discard');
+            $this->fail('The same-end draft was discarded under February');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString((string) $february->invoice_number, $refusal->getMessage());
+        }
+
+        // February, the later of the two, can always be discarded first.
+        app(InvoiceLifecycleService::class)->discardDraft($february, $this->workspace, 'Synthetic discard');
+        app(InvoiceLifecycleService::class)->discardDraft($sameEnd, $this->workspace, 'Synthetic discard');
+        $this->assertSame('void', $sameEnd->fresh()?->status);
+    }
+
     /** An earlier draft's catch-up that cannot be known is refused, not read as zero. */
     public function test_an_earlier_draft_with_unknown_catch_up_is_refused(): void
     {
