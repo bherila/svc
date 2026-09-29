@@ -54,6 +54,25 @@ final class AgentPaymentsTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'outcome' => 'replay']);
     }
 
+    /**
+     * `method` is bounded by `client_invoice_payments.method`, not beyond it:
+     * SQLite stores any length, so only the rule stands between a longer value
+     * and a MariaDB error or silent truncation.
+     */
+    #[DataProvider('transports')]
+    public function test_the_method_is_bounded_by_its_column(string $transport): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $payload = $this->payload($invoice);
+
+        // Over MCP the tool's input schema refuses it before the action runs.
+        $this->record($transport, $user, $workspace, [...$payload, 'method' => str_repeat('m', 41)], 'synthetic-long', 422, reachesTheAction: $transport === 'rest');
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+
+        $this->record($transport, $user, $workspace, [...$payload, 'method' => str_repeat('m', 40)], 'synthetic-width');
+        $this->assertSame(str_repeat('m', 40), ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole()->method);
+    }
+
     #[DataProvider('transports')]
     public function test_retry_can_switch_transports_when_optional_reference_was_omitted(string $firstTransport): void
     {
@@ -96,6 +115,7 @@ final class AgentPaymentsTest extends TestCase
         yield 'ambiguous date' => [['received_on' => '09/01/2026'], 422];
         yield 'missing date' => [['received_on' => null], 422];
         yield 'missing method' => [['method' => null], 422];
+        yield 'method longer than its column' => [['method' => str_repeat('m', 41)], 422];
         yield 'future' => [['received_on' => '2099-01-01'], 422];
         yield 'too old' => [['received_on' => '2000-01-01'], 422];
         yield 'provider forbidden' => [['provider' => 'stripe'], 422];
@@ -393,7 +413,7 @@ final class AgentPaymentsTest extends TestCase
         return '/api/v1/workspaces/'.$workspace->public_id.'/payments';
     }
 
-    private function record(string $transport, User $user, Workspace $workspace, array $payload, string $key, int $expected = 201): mixed
+    private function record(string $transport, User $user, Workspace $workspace, array $payload, string $key, int $expected = 201, bool $reachesTheAction = true): mixed
     {
         $this->actingAsMcp($user, ['mcp:use', 'payments:record']);
         if ($transport === 'rest') {
@@ -411,6 +431,9 @@ final class AgentPaymentsTest extends TestCase
         ], $headers)->assertOk()->json();
         if ($expected !== 201) {
             $this->assertArrayHasKey('error', $result, json_encode($result));
+            if (! $reachesTheAction) {
+                return null;
+            }
             $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail();
             $this->assertSame('failed', $audit->outcome);
 

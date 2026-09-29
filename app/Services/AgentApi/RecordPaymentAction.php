@@ -38,7 +38,7 @@ final class RecordPaymentAction
                     'payment.amount' => ['required', 'integer', 'min:1'],
                     'payment.currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/'],
                     'payment.received_on' => ['required', 'date_format:Y-m-d'],
-                    'payment.method' => ['required', 'string', 'max:64'],
+                    'payment.method' => ['required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
                     'payment.reference' => ['nullable', 'string', 'max:255'],
                 ])->validate()['payment'];
                 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)

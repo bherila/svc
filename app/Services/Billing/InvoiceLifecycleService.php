@@ -15,6 +15,7 @@ use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
@@ -408,6 +409,17 @@ final class InvoiceLifecycleService
             // draft counted that draft's catch-up as charged. Issued first, it
             // would rely on a charge that could still be discarded.
             $this->draftCatchUpDependencies->assertIssuable($locked);
+
+            // An ad-hoc draft built from time before its lines took the
+            // client's wording still prints an internal note (#347).
+            if ($locked->invoice_kind === InvoiceKind::AdHoc->value
+                && ($leaking = InvoiceLineDetail::lineCarryingAnInternalNote($locked)) instanceof ClientInvoiceLine) {
+                throw new DomainException(sprintf(
+                    'Line %d of this draft prints the internal note of the time it bills, which the client must not read. '
+                    .'Save the draft again to rebuild its time lines with the client\'s wording, then issue it.',
+                    (int) $leaking->sort_order + 1,
+                ));
+            }
 
             $issueDate = $locked->issue_date ?? $today;
             if ($locked->due_date !== null && $locked->due_date->lt($issueDate)) {
@@ -948,6 +960,15 @@ final class InvoiceLifecycleService
                 throw new DomainException('Payment cannot exceed the invoice balance.');
             }
 
+            // Bounded here as well as by every caller's rule, after trimming
+            // as PaymentCorrection::method() does: the command line and any
+            // import reach this without a form, and a longer value is refused
+            // by MariaDB (or truncated) where SQLite stores it.
+            $method = $this->requiredString($data['method'] ?? null, 'method');
+            if (mb_strlen($method) > ClientInvoicePayment::METHOD_MAX_LENGTH) {
+                throw new DomainException('method may not be longer than '.ClientInvoicePayment::METHOD_MAX_LENGTH.' characters.');
+            }
+
             $payment = $locked->payments()->create([
                 'workspace_id' => $locked->workspace_id,
                 'status' => $status->value,
@@ -955,7 +976,7 @@ final class InvoiceLifecycleService
                 'refunded_amount' => 0,
                 'currency' => $currency,
                 'received_on' => $receivedOn,
-                'method' => $this->requiredString($data['method'] ?? null, 'method'),
+                'method' => $method,
                 'reference' => $data['reference'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'provider' => $data['provider'] ?? null,

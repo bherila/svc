@@ -135,15 +135,50 @@ final class InvoiceLineDetail
     }
 
     /**
-     * The client's wording for one entry: theirs when it was written for them,
-     * the generic label otherwise, and never the internal description.
+     * What a client reads for one time entry: its `client_visible_description`
+     * when it is visible to them and has one, and the neutral label otherwise;
+     * never the internal description. The appendix and every invoice line built from a single entry
+     * (`InvoiceFromTimeService`) use this one rule.
      */
-    private static function clientWording(ClientTimeEntry $entry): string
+    public static function clientWording(ClientTimeEntry $entry): string
     {
         $written = $entry->client_visible_description;
 
         return $entry->is_visible_to_client === true && is_string($written) && trim($written) !== ''
-            ? $written
+            ? trim($written)
             : self::CLIENT_GENERIC_LABEL;
+    }
+
+    /**
+     * The first line of an ad-hoc draft that still prints the internal note
+     * of the one time entry it bills, or null.
+     *
+     * Drafts built before lines took the client's wording (#347) carry the
+     * note, and nothing rebuilds them until one of their entries changes, so
+     * issuing is where one would reach the client. A line whose note is also
+     * what the client would read (no client wording differs from it) is not
+     * a leak and is not reported.
+     *
+     * @infection-ignore-all The line and pivot reads need the feature database and are covered by InvoiceFromTimeServiceTest; the mutation lane runs unit tests only, and ClientWordingTest covers the rule it applies.
+     */
+    public static function lineCarryingAnInternalNote(ClientInvoice $invoice): ?ClientInvoiceLine
+    {
+        $lines = $invoice->lines()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->with(['timeEntries' => fn ($relation) => $relation->where('client_time_entries.workspace_id', $invoice->workspace_id)])
+            ->get();
+
+        foreach ($lines as $line) {
+            $entry = $line->timeEntries->count() === 1 ? $line->timeEntries->first() : null;
+            if ($entry instanceof ClientTimeEntry
+                && trim((string) $line->description) === trim((string) $entry->description)
+                && self::clientWording($entry) !== trim((string) $entry->description)) {
+                return $line;
+            }
+        }
+
+        return null;
     }
 }
