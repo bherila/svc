@@ -110,13 +110,14 @@ deleted draft charged nothing and is not counted, and a draft whose
 refused rather than read as zero.
 
 The later invoice then relies on a charge nobody has made yet, so
-`DraftCatchUpDependencies` makes the lifecycle keep the order. A monthly cadence
-invoice cannot be issued while an earlier cadence draft of its agreement still
-bills catch-up. That draft cannot be discarded or voided while a later live
-invoice of the agreement exists: discard the later one first, then regenerate
-it. Whether an invoice was sized this way is read from the cadence its stored
-hours statement was generated under, so changing the agreement's cadence
-afterwards does not lift either guard.
+`DraftCatchUpDependencies` makes the lifecycle keep the order. A cadence invoice
+cannot be issued while an earlier cadence draft of its agreement still bills
+catch-up. That draft cannot be discarded or voided while a later live invoice of
+the agreement exists: discard the later one first, then regenerate it. Both
+guards cover every cadence, not only monthly, because an agreement's cadence can
+change after its monthly drafts exist. Discarding and voiding take the agreement
+lock that generation holds while it reads the overlay, and read later invoices
+with a locking read, so neither can pass under a generation in progress.
 
 What the guards do not cover, accepted rather than fixed here:
 

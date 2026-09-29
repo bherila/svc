@@ -4,10 +4,10 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
-use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,8 +26,8 @@ use Illuminate\Database\Eloquent\Builder;
  * while a later invoice relies on it: the lifecycle refuses both
  * (`EarlierDraftCatchUpTest`).
  *
- * Only monthly agreements read billed overage (see InvoiceLedgerBuilder), so
- * only they have this dependency.
+ * Only monthly generation overlays earlier drafts, but the ordering guards
+ * cover every cadence invoice: see agreementOf().
  */
 final class DraftCatchUpDependencies
 {
@@ -82,14 +82,14 @@ final class DraftCatchUpDependencies
     }
 
     /**
-     * Refuse to issue a monthly cadence invoice while an earlier draft whose
+     * Refuse to issue a cadence invoice while an earlier draft whose
      * catch-up it was sized against has not been issued.
      *
      * @infection-ignore-all The predicates need the feature database and are covered by EarlierDraftCatchUpTest; the mutation lane runs unit tests only.
      */
     public function assertIssuable(ClientInvoice $invoice): void
     {
-        $agreement = $this->monthlyAgreementOf($invoice);
+        $agreement = $this->agreementOf($invoice);
         if (! $agreement instanceof ClientAgreement || $invoice->service_period_start === null) {
             return;
         }
@@ -112,14 +112,14 @@ final class DraftCatchUpDependencies
     }
 
     /**
-     * Refuse to discard or void a monthly cadence draft that bills catch-up
+     * Refuse to discard or void a cadence draft that bills catch-up
      * while a later live invoice was sized against that charge.
      *
      * @infection-ignore-all The predicates need the feature database and are covered by EarlierDraftCatchUpTest; the mutation lane runs unit tests only.
      */
     public function assertDiscardable(ClientInvoice $draft): void
     {
-        $agreement = $this->monthlyAgreementOf($draft);
+        $agreement = $this->agreementOf($draft);
         if (! $agreement instanceof ClientAgreement
             || $draft->service_period_end === null
             || ! $this->billingCatchUp(
@@ -133,6 +133,11 @@ final class DraftCatchUpDependencies
             ->whereKeyNot($draft->getKey())
             ->whereDate('service_period_start', '>', $draft->service_period_end->toDateString())
             ->orderBy('service_period_start')
+            // A locking read, which reads the current row rather than the
+            // transaction's snapshot: a caller that read something before the
+            // agreement lock (the agent API's authorisation does) would
+            // otherwise miss a later invoice committed while it waited for it.
+            ->tap(Locks::forUpdate())
             ->value('invoice_number');
 
         if (is_string($later)) {
@@ -165,36 +170,27 @@ final class DraftCatchUpDependencies
     }
 
     /**
-     * The agreement of a cadence invoice sized by the monthly generator.
+     * The agreement of a generated cadence invoice.
      *
-     * Asked of the invoice's own stored statement first: that records the
-     * cadence it was generated under, which an operator changing the
-     * agreement's cadence afterwards does not change. Only an invoice with no
-     * readable statement (hand-edited, or generated before statements existed)
-     * falls back to the agreement's current cadence.
+     * Deliberately not narrowed to monthly agreements. Only monthly generation
+     * overlays earlier drafts, but an agreement's cadence can be changed after
+     * its monthly drafts exist, and a hand-edited draft keeps no record of the
+     * cadence it was generated under. Keeping cadence invoices in order costs
+     * a non-monthly agreement nothing it relies on, while guessing from the
+     * current cadence could lift the guard from a draft a later one relies on.
      */
-    private function monthlyAgreementOf(ClientInvoice $invoice): ?ClientAgreement
+    private function agreementOf(ClientInvoice $invoice): ?ClientAgreement
     {
         if ($invoice->client_agreement_id === null
             || ! in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value], true)) {
             return null;
         }
 
-        $agreement = ClientAgreement::query()
+        return ClientAgreement::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_company_id', $invoice->client_company_id)
             ->whereKey($invoice->client_agreement_id)
             ->first();
-        if (! $agreement instanceof ClientAgreement) {
-            return null;
-        }
-
-        $generatedUnder = $invoice->hoursStatement()?->cadence;
-        $monthly = $generatedUnder === null
-            ? $agreement->effectiveBillingCadence() === BillingCadence::Monthly
-            : $generatedUnder === BillingCadence::Monthly->value;
-
-        return $monthly ? $agreement : null;
     }
 
     /**

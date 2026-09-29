@@ -199,8 +199,8 @@ final class EarlierDraftCatchUpTest extends TestCase
     }
 
     /**
-     * The dependency is a fact of how the invoices were generated, so changing
-     * the agreement's cadence afterwards does not lift either guard.
+     * Changing the agreement's cadence after its monthly drafts exist does not
+     * lift either guard: the later draft was still sized against the earlier.
      */
     public function test_changing_the_agreement_cadence_keeps_the_dependency(): void
     {
@@ -231,15 +231,23 @@ final class EarlierDraftCatchUpTest extends TestCase
         foreach (['discardDraft', 'void'] as $operation) {
             [$january] = $this->month('2026-01-01', '2026-01-31');
             $tables = [];
-            DB::listen(function (QueryExecuted $query) use (&$tables): void {
+            $agreementReads = [];
+            DB::listen(function (QueryExecuted $query) use (&$tables, &$agreementReads): void {
                 if (preg_match('/^select .* from ["`]?(client_agreements|client_invoices)["`]?/i', $query->sql, $match) === 1) {
                     $tables[] = $match[1];
+                    if ($match[1] === 'client_agreements' && $agreementReads === []) {
+                        $agreementReads[] = $query;
+                    }
                 }
             });
 
             app(InvoiceLifecycleService::class)->{$operation}($january, $this->workspace, 'Synthetic discard');
 
             $this->assertSame('client_agreements', $tables[0] ?? null, $operation.' reads the invoice before locking the agreement');
+            // Tenant-scoped: a legacy invoice naming another workspace's
+            // agreement cannot take that tenant's lock.
+            $this->assertMatchesRegularExpression('/["`]?workspace_id["`]? = \\?/', $agreementReads[0]->sql);
+            $this->assertContains($this->workspace->id, $agreementReads[0]->bindings);
             $this->assertSame('void', $january->fresh()?->status);
             DB::getEventDispatcher()->forget(QueryExecuted::class);
         }
