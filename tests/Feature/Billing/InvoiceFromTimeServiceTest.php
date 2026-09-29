@@ -3,11 +3,15 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientCompany;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceFromTimeService;
+use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -364,6 +368,94 @@ final class InvoiceFromTimeServiceTest extends TestCase
             [],
             [['type' => 'service', 'description' => 'Elsewhere', 'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0, 'project_id' => 'not-a-real-project']],
         );
+    }
+
+    /**
+     * A line built from time is read by the client, so it carries the wording
+     * written for them, never the internal note: an entry's
+     * `client_visible_description` when it is visible to the client, and the
+     * appendix's neutral label otherwise. Rebuilding the draft keeps the rule.
+     */
+    public function test_a_line_built_from_time_prints_the_client_wording_not_the_internal_note(): void
+    {
+        [$workspace, $company, $project, $user] = $this->context('client-wording');
+        $entry = static fn (array $attributes): ClientTimeEntry => ClientTimeEntry::query()->create($attributes + [
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'user_id' => $user->id, 'worked_on' => '2026-08-23', 'minutes' => 60, 'is_billable' => true,
+            'status' => 'approved', 'billing_rate_amount' => 12000, 'currency' => 'USD',
+        ]);
+        $visible = $entry(['description' => 'Internal: debugging the vendor mess', 'is_visible_to_client' => true, 'client_visible_description' => 'Integration support']);
+        $hidden = $entry(['description' => 'Internal: rework after our own mistake', 'is_visible_to_client' => false, 'client_visible_description' => 'Never shown']);
+        $unworded = $entry(['description' => 'Internal: call notes', 'is_visible_to_client' => true, 'client_visible_description' => '  ']);
+
+        $service = app(InvoiceFromTimeService::class);
+        $invoice = $service->create($workspace, $company, ['invoice_number' => 'SVC-WORDING-1', 'currency' => 'USD'], [
+            $visible->public_id, $hidden->public_id, $unworded->public_id,
+        ]);
+
+        $expected = ['Integration support', InvoiceLineDetail::CLIENT_GENERIC_LABEL, InvoiceLineDetail::CLIENT_GENERIC_LABEL];
+        $this->assertSame($expected, $invoice->lines->sortBy('sort_order')->pluck('description')->values()->all());
+
+        $visible->forceFill(['client_visible_description' => 'Integration support, revised'])->save();
+        $rebuilt = $service->regenerateDraftSelection($invoice, $workspace, $visible->id);
+
+        $this->assertSame(
+            ['Integration support, revised', InvoiceLineDetail::CLIENT_GENERIC_LABEL, InvoiceLineDetail::CLIENT_GENERIC_LABEL],
+            $rebuilt->lines->sortBy('sort_order')->pluck('description')->values()->all(),
+        );
+    }
+
+    /** Adding time and saving the draft build lines through the same rule. */
+    public function test_adding_time_and_saving_the_draft_print_the_client_wording(): void
+    {
+        [$workspace, $company, $project, $user] = $this->context('client-wording-paths');
+        $entry = static fn (array $attributes): ClientTimeEntry => ClientTimeEntry::query()->create($attributes + [
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'user_id' => $user->id, 'worked_on' => '2026-08-23', 'minutes' => 60, 'is_billable' => true,
+            'status' => 'approved', 'billing_rate_amount' => 12000, 'currency' => 'USD',
+        ]);
+        $first = $entry(['description' => 'Internal: first', 'is_visible_to_client' => true, 'client_visible_description' => "Design review\n\n"]);
+        $added = $entry(['description' => 'Internal: added', 'is_visible_to_client' => false]);
+        $service = app(InvoiceFromTimeService::class);
+        $invoice = $service->create($workspace, $company, ['invoice_number' => 'SVC-WORDING-2', 'currency' => 'USD'], [$first->public_id]);
+        $this->assertSame(['Design review'], $invoice->lines->pluck('description')->all(), 'Stored trimmed');
+
+        $invoice = $service->addTime($invoice, $workspace, AgentApiVersion::for($invoice), [$added->public_id]);
+        $this->assertSame(['Design review', InvoiceLineDetail::CLIENT_GENERIC_LABEL], $invoice->lines->sortBy('sort_order')->pluck('description')->values()->all());
+
+        $invoice = $service->updateDraft($invoice, $workspace, AgentApiVersion::for($invoice), ['currency' => 'USD'], [$added->public_id, $first->public_id], []);
+        $this->assertEqualsCanonicalizing(['Design review', InvoiceLineDetail::CLIENT_GENERIC_LABEL], $invoice->lines->pluck('description')->all());
+        $this->assertNotContains('Internal: added', $invoice->lines->pluck('description')->all());
+    }
+
+    /**
+     * A draft built before lines took the client's wording still carries an
+     * internal note; issuing it is refused until it is saved again.
+     */
+    public function test_a_draft_still_carrying_an_internal_note_is_refused_at_issue(): void
+    {
+        [$workspace, $company, $project, $user] = $this->context('client-wording-legacy');
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'user_id' => $user->id, 'worked_on' => '2026-08-23', 'minutes' => 60, 'is_billable' => true,
+            'status' => 'approved', 'billing_rate_amount' => 12000, 'currency' => 'USD',
+            'description' => 'Internal: legacy note', 'is_visible_to_client' => false,
+        ]);
+        $service = app(InvoiceFromTimeService::class);
+        $invoice = $service->create($workspace, $company, ['invoice_number' => 'SVC-WORDING-3', 'currency' => 'USD'], [$entry->public_id]);
+        ClientInvoiceLine::query()->whereKey($invoice->lines->sole()->id)->update(['description' => 'Internal: legacy note']);
+
+        try {
+            app(InvoiceLifecycleService::class)->issue($invoice->fresh() ?? $invoice, $workspace);
+            $this->fail('A draft printing an internal note was issued');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('internal note', $refusal->getMessage());
+        }
+        $this->assertSame('draft', $invoice->fresh()?->status);
+
+        $invoice = $service->updateDraft($invoice->fresh() ?? $invoice, $workspace, AgentApiVersion::for($invoice->fresh() ?? $invoice), ['currency' => 'USD'], [$entry->public_id], []);
+        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $this->assertSame('issued', $invoice->fresh()?->status);
     }
 
     private function context(string $slug): array
