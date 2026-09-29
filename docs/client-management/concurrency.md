@@ -371,6 +371,15 @@ that would break it, through `InterimOverageGenerator::assertClaimIssuable()`.
 Cumulative excess never decreases through a cycle, so it is checked at the
 draft's month end and at the end of every charged claim that ends later.
 
+The check, the cycle's claims and the cadence reconciliation are all found by
+agreement id, so `issue()` refuses a complete `interim_overage` draft naming no
+agreement outright (#342): it would be invisible to its real agreement's cycle,
+and the closing invoice could bill its hours again. The generator never writes
+that shape; the refusal is for imports and hand edits. A charged one keeps its
+idempotent `issue()`. The same refusal covers an interim naming a missing agreement
+or another company's, before the credit and company locks. Covered by
+`InterimAgreementLinkIssueTest`.
+
 **Out-of-order issuance.** When the check fails, it is repeated at the figure a
 regeneration would target now. If that passes, the draft is stale — a claim
 before it was charged after it was generated — and the refusal
