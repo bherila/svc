@@ -131,7 +131,11 @@ final class WorkedOnDateBoundaryTest extends TestCase
     {
         $entry = $this->entry('2026-01-31');
         DB::table('client_time_entries')->where('id', $entry->id)->update(['worked_on' => '2026-01-31 00:00:00']);
-        $this->assertSame('2026-01-31 00:00:00', $this->stored($entry));
+        // Only SQLite keeps the time; MariaDB's DATE drops it on write, so
+        // there the migration has nothing to do and the row is already bare.
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->assertSame('2026-01-31 00:00:00', $this->stored($entry));
+        }
 
         (require database_path('migrations/2026_09_29_010000_store_time_entry_dates_without_a_time.php'))->up();
 
