@@ -43,12 +43,29 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Loop']);
     }
 
-    /** @return iterable<string, array{string}> */
+    /**
+     * Named here rather than read from systemOnlyValues(), so dropping a type
+     * from that list fails these tests instead of silently shrinking them.
+     *
+     * - `credit`: issuing spends a client's overpayment credit pool by the
+     *   negative credit lines on the draft, so a hand-typed one is a credit
+     *   spend nobody reconciled (#349).
+     *
+     * @return iterable<string, array{string}>
+     */
     public static function systemOnly(): iterable
     {
-        foreach (InvoiceLineType::systemOnlyValues() as $type) {
+        foreach (['carried_deferred_applied', 'carried_deferred_billed', 'credit'] as $type) {
             yield $type => [$type];
         }
+    }
+
+    public function test_every_refused_type_is_listed_as_system_only(): void
+    {
+        $this->assertEqualsCanonicalizing(
+            array_map(static fn (array $case): string => $case[0], iterator_to_array(self::systemOnly(), false)),
+            InvoiceLineType::systemOnlyValues(),
+        );
     }
 
     #[DataProvider('systemOnly')]

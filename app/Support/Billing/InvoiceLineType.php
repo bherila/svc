@@ -53,9 +53,12 @@ enum InvoiceLineType: string
     }
 
     /**
-     * Types only the generator may write, because the capacity ledger turns
-     * them into money state by type alone. A manual line of one of these would
-     * settle, or mark billed, deferred work nobody applied.
+     * Types only billing code may write, because it turns them back into
+     * money state by type alone. A manual carried-deferred line would settle,
+     * or mark billed, deferred work nobody applied; a manual credit line would
+     * spend the client's overpayment credit pool at issue with nothing
+     * reconciling it (#349). The generators write these directly, never
+     * through a manual door.
      *
      * @return list<string>
      */
@@ -64,6 +67,7 @@ enum InvoiceLineType: string
         return [
             self::CarriedDeferredApplied->value,
             self::CarriedDeferredBilled->value,
+            self::Credit->value,
         ];
     }
 
