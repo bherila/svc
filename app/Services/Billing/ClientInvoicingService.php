@@ -798,15 +798,6 @@ final class ClientInvoicingService
             $currentMonthBalance = $this->balanceForMonth($allBalances, $retainerMonthStart->format('Y-m'))
                 ?? $this->openingMonthSummary($agreement, $retainerMonthStart->format('Y-m'));
 
-            $cumulativeSnapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $allBalances);
-
-            // The chronological ledger has already settled each charged
-            // overage in the month where it happened.
-            $rawWorkPeriodNegative = $workMonthBalance?->closing->negativeBalance ?? 0.0;
-            $rawWorkPeriodUnused = $workMonthBalance?->closing->unusedHours ?? 0.0;
-            $netWorkPeriodUnused = $rawWorkPeriodUnused;
-            $netWorkPeriodNegative = $rawWorkPeriodNegative;
-
             $invoiceData = [
                 'client_agreement_id' => $agreement->id,
                 'service_period_start' => $periodStart,
@@ -818,11 +809,8 @@ final class ClientInvoicingService
                         $retainerMonthStart,
                         $retainerMonthStart->copy()->endOfMonth()->startOfDay(),
                     ),
-                'rollover_hours_used' => $workMonthBalance?->closing->hoursUsedFromRollover ?? 0,
-                'unused_hours_balance' => $netWorkPeriodUnused,
-                'negative_hours_balance' => $netWorkPeriodNegative,
-                'starting_unused_hours' => $cumulativeSnapshot['unused'],
-                'starting_negative_hours' => $cumulativeSnapshot['negative'],
+                // The balance columns are written once, from the final
+                // measurement below, after this draft's deferred work.
                 'hours_billed_at_rate' => 0,
                 'catch_up_basis' => $catchUpBasis->toArray(),
                 'status' => 'draft',
@@ -1089,8 +1077,10 @@ final class ClientInvoicingService
             // The stored balances from the same measurement, not the one before
             // this draft's deferred work drew on the pool: measured earlier,
             // they read that pool as still unused (#353).
+            // Filled here and saved with the statement below, in one write.
             $finalSnapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $finalBalances);
-            $invoice->update([
+            $invoice->forceFill([
+                'rollover_hours_used' => $finalWork?->closing->hoursUsedFromRollover ?? 0.0,
                 'unused_hours_balance' => $finalWork?->closing->unusedHours ?? 0.0,
                 'negative_hours_balance' => $finalWork?->closing->negativeBalance ?? 0.0,
                 'starting_unused_hours' => $finalSnapshot['unused'],
@@ -1446,10 +1436,13 @@ final class ClientInvoicingService
                 'retainer_hours_included' => $retainerHours,
                 'hours_worked' => $cycleLedger['hours_worked'],
                 'rollover_hours_used' => $cycleLedger['rollover_hours_used'],
-                'unused_hours_balance' => $cycleLedger['unused_hours'],
-                'negative_hours_balance' => round(max(0.0, $cycleLedger['negative_hours'] - $overageHours - $interimBilledHours), 4),
-                'starting_unused_hours' => $cycleLedger['starting_unused_hours'],
-                'starting_negative_hours' => $cycleLedger['starting_negative_hours'],
+                // Balances from the ledger re-run after this draft's deferred
+                // work was linked, as the statement is; the ledger measured
+                // before it read the pool that work drew on as unused (#353).
+                'unused_hours_balance' => $finalCycleLedger['unused_hours'],
+                'negative_hours_balance' => round(max(0.0, $finalCycleLedger['negative_hours'] - $overageHours - $interimBilledHours), 4),
+                'starting_unused_hours' => $finalCycleLedger['starting_unused_hours'],
+                'starting_negative_hours' => $finalCycleLedger['starting_negative_hours'],
                 'hours_billed_at_rate' => $overageHours,
                 // This path does not measure the billed-overage ledger, so it
                 // records no basis; a draft first generated monthly, before a
