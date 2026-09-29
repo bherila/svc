@@ -243,8 +243,17 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     #[DataProvider('periodKinds')]
     public function test_a_complete_invoice_of_each_required_kind_still_issues(?string $kind): void
     {
-        $issued = app(InvoiceLifecycleService::class)
-            ->issue($this->draft($kind, '2024-01-01', '2024-01-31'), $this->workspace);
+        $draft = $this->draft($kind, '2024-01-01', '2024-01-31');
+        // An interim claim is placed against its agreement's cycle, and one
+        // naming none is refused (#342), so the complete interim names an
+        // agreement whose term covers its period.
+        if ($kind === InvoiceKind::InterimOverage->value) {
+            $agreement = $this->agreement();
+            $agreement->forceFill(['starts_on' => '2024-01-01'])->save();
+            $draft->forceFill(['client_agreement_id' => $agreement->id])->save();
+        }
+
+        $issued = app(InvoiceLifecycleService::class)->issue($draft->refresh(), $this->workspace);
 
         $this->assertSame('issued', $issued->status);
     }
