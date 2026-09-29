@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\Billing\CatchUpBasis;
 use App\Support\Billing\InvoiceHoursStatement;
 use Carbon\Carbon;
 use DomainException;
@@ -480,9 +481,116 @@ final class EarlierDraftCatchUpTest extends TestCase
         $this->assertSame('void', $january->fresh()?->status);
     }
 
+    /**
+     * Another workspace's charged invoice naming this agreement is neither
+     * recorded in the basis nor able to move it, and another workspace's
+     * invoice recording this one's id cannot block its void.
+     */
+    public function test_another_tenants_invoices_neither_enter_the_basis_nor_block_a_void(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        $otherWorkspace = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere-catch-up-basis']);
+        $foreign = fn (array $attributes): ClientInvoice => $this->writingLegacyCrossTenantRows(
+            fn (): ClientInvoice => ClientInvoice::query()->create($attributes + [
+                'workspace_id' => $otherWorkspace->id,
+                'client_company_id' => $this->company->id,
+                'client_agreement_id' => $this->agreement->id,
+                'invoice_number' => 'X-'.uniqid(),
+                'currency' => 'USD',
+                'invoice_kind' => 'cadence_period',
+                'service_period_start' => '2026-01-01',
+                'service_period_end' => '2026-01-31',
+                'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            ]),
+        );
+        $foreignCharge = $foreign(['status' => 'issued', 'hours_billed_at_rate' => 5]);
+
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->assertSame(0.0, CatchUpBasis::fromArray($february->fresh()?->catch_up_basis)?->hoursFrom((int) $foreignCharge->id));
+
+        // Moving it afterwards does not refuse February either.
+        ClientInvoice::query()->whereKey($foreignCharge->id)->update(['hours_billed_at_rate' => 7]);
+        $this->issue($january);
+        $this->issue($february);
+        $this->assertSame('issued', $february->fresh()?->status);
+
+        [$march] = $this->monthOnApril();
+        $this->issue($march);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $lifecycle->void($march->fresh() ?? $march, $this->workspace, 'Synthetic void');
+        $lifecycle->void($february->fresh() ?? $february, $this->workspace, 'Synthetic void');
+        $foreign([
+            'status' => 'issued',
+            'service_period_start' => '2026-03-01',
+            'service_period_end' => '2026-03-31',
+            'hours_billed_at_rate' => 0,
+            'catch_up_basis' => CatchUpBasis::of('2026-02-28', [
+                ['id' => (int) $january->id, 'number' => (string) $january->invoice_number, 'hours' => 1.0],
+            ])->toArray(),
+        ]);
+
+        $lifecycle->void($january->fresh() ?? $january, $this->workspace, 'Synthetic void');
+        $this->assertSame('void', $january->fresh()?->status);
+    }
+
+    /**
+     * Issuing a draft that records a basis takes the agreement lock first -
+     * the one generation and void hold - so two issues re-reading each
+     * other's rows are serialised rather than left to deadlock, and reads
+     * the basis rows with locks before the company, whose lock must precede
+     * the transaction's first ordinary read.
+     */
+    public function test_issuing_a_draft_with_a_basis_locks_its_agreement_first(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        $this->issue($january);
+        $selects = [];
+        DB::listen(function (QueryExecuted $query) use (&$selects): void {
+            if (preg_match('/^select .* from ["`]?(client_agreements|client_invoices|client_companies)["`]?/i', $query->sql, $match) === 1) {
+                $selects[] = $match[1];
+            }
+        });
+
+        $this->issue($february);
+
+        $this->assertSame('client_agreements', $selects[0] ?? null);
+        $company = array_search('client_companies', $selects, true);
+        $this->assertIsInt($company);
+        $this->assertGreaterThanOrEqual(3, count(array_filter(
+            array_slice($selects, 0, $company),
+            static fn (string $table): bool => $table === 'client_invoices',
+        )), 'The invoice and the basis rows are read before the company');
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
+    }
+
+    /**
+     * Re-measured at issue, an earlier draft whose figure has become unknown
+     * beside the additional-hours line it bills is refused, not read as zero.
+     */
+    public function test_an_earlier_draft_with_unknown_catch_up_is_refused_at_issue(): void
+    {
+        [$january] = $this->month('2026-01-01', '2026-01-31');
+        [$february] = $this->month('2026-02-01', '2026-02-28');
+        ClientInvoice::query()->whereKey($january->id)->update(['hours_billed_at_rate' => null]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage("Draft invoice {$january->invoice_number} records no billed-overage hours");
+
+        $this->issue($february);
+    }
+
     private function issue(ClientInvoice $invoice): void
     {
         app(InvoiceLifecycleService::class)->issue($invoice, $this->workspace);
+    }
+
+    /** @return array{ClientInvoice, InvoiceHoursStatement} */
+    private function monthOnApril(): array
+    {
+        $this->travelTo(Carbon::parse('2026-04-02 12:00:00'));
+
+        return $this->month('2026-03-01', '2026-03-31');
     }
 
     /** @return array{ClientInvoice, InvoiceHoursStatement} */

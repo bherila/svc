@@ -76,15 +76,28 @@ final class BilledOverageLedger
     }
 
     /**
-     * @infection-ignore-all This tenant-scoped Eloquent predicate is exercised by feature tests; the mutation lane deliberately excludes database tests.
-     *
      * @return Builder<ClientInvoice>
      */
     private function window(ClientAgreement $agreement, Carbon $through): Builder
     {
+        return $this->windowFor((int) $agreement->workspace_id, (int) $agreement->id, $through);
+    }
+
+    /**
+     * The charged invoices this ledger reads through `$through`, by the ids
+     * alone: DraftCatchUpDependencies records and re-reads the same window
+     * with row locks, where loading the agreement first would be an ordinary
+     * read out of turn.
+     *
+     * @infection-ignore-all This tenant-scoped Eloquent predicate is exercised by feature tests; the mutation lane deliberately excludes database tests.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    public function windowFor(int $workspaceId, int $agreementId, Carbon $through): Builder
+    {
         return ClientInvoice::query()
-            ->where('workspace_id', $agreement->workspace_id)
-            ->where('client_agreement_id', $agreement->id)
+            ->where('workspace_id', $workspaceId)
+            ->where('client_agreement_id', $agreementId)
             ->whereIn('status', InvoiceStatus::charged())
             ->where(function (Builder $window) use ($through): void {
                 $window

@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Support\Billing\CatchUpBasis;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -39,74 +40,115 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class DraftCatchUpDependencies
 {
+    public function __construct(
+        private readonly BilledOverageLedger $billedOverageLedger = new BilledOverageLedger,
+    ) {}
+
     /**
-     * Catch-up hours charged by earlier cadence drafts, keyed by the YYYY-MM
-     * work month each settles: the same key the billed-overage ledger uses.
+     * What a monthly invoice generated through `$through` is sized against,
+     * from one read of each source, so that what is overlaid and what is
+     * recorded cannot disagree.
      *
-     * Issued invoices are already in the billed-overage ledger, so only drafts
+     * `overlay` is the catch-up hours charged by earlier cadence drafts, keyed
+     * by the YYYY-MM work month each settles: the same key the billed-overage
+     * ledger uses. Issued invoices are already in that ledger, so only drafts
      * are missing from it. The window is the ledger's own: an invoice whose
      * service period ends on or before `$through`, the end of the range being
      * generated (BilledOverageLedger::window()), so a draft counts here exactly
      * when its charge will count there once issued. A later draft is outside
      * it. Void and deleted invoices charged nothing and are not counted.
      *
+     * `basis` is every earlier charge the invoice relies on, by invoice: each
+     * charged invoice in the ledger's window and each draft overlaid.
+     *
      * An unknown figure on a draft that carries an additional-hours line is
      * refused rather than read as zero, as it is on every billed-overage read:
      * dropping it would bill the same debt again. With no such line (a migrated
      * draft, typically) nothing on it bills at the rate, so it charges nothing.
      *
-     * @infection-ignore-all The tenant, status, kind and date predicates need the feature database and are covered by CorrectionPoolDrawTest and EarlierDraftCatchUpTest; the mutation lane runs unit tests only.
+     * @infection-ignore-all The tenant, status, kind and date predicates need the feature database and are covered by CorrectionPoolDrawTest and EarlierDraftCatchUpTest; the mutation lane runs unit tests only, and covers CatchUpBasis.
      *
-     * @return array<string, float>
+     * @return array{overlay: array<string, float>, basis: CatchUpBasis}
      */
-    public function chargesByMonthThrough(ClientAgreement $agreement, int $companyId, Carbon $through, ?int $excludeInvoiceId): array
+    public function sizingThrough(ClientAgreement $agreement, int $companyId, Carbon $through, ?int $excludeInvoiceId): array
     {
-        $drafts = $this->earlierDrafts((int) $agreement->workspace_id, $companyId, (int) $agreement->id, $through, $excludeInvoiceId)
+        $workspaceId = (int) $agreement->workspace_id;
+        $agreementId = (int) $agreement->id;
+        $drafts = $this->earlierDrafts($workspaceId, $companyId, $agreementId, $through, $excludeInvoiceId)
+            ->where(fn (Builder $query): Builder => $this->billingCatchUp($query))
             ->orderBy('service_period_end')
             ->orderBy('id')
             ->get(['id', 'invoice_number', 'service_period_end', 'hours_billed_at_rate']);
 
-        $byMonth = [];
+        $overlay = [];
+        $charges = $this->chargedThrough($workspaceId, $agreementId, $through, $excludeInvoiceId, current: false);
         foreach ($drafts as $draft) {
             $hours = $this->draftHoursOrFail($draft);
+            $charges[] = ['id' => (int) $draft->id, 'number' => (string) $draft->invoice_number, 'hours' => $hours];
             if ($hours === 0.0 || $draft->service_period_end === null) {
                 continue;
             }
             $month = $draft->service_period_end->format('Y-m');
-            $byMonth[$month] = round(($byMonth[$month] ?? 0.0) + $hours, 4);
+            $overlay[$month] = round(($overlay[$month] ?? 0.0) + $hours, 4);
         }
 
-        return $byMonth;
+        return ['overlay' => $overlay, 'basis' => CatchUpBasis::of($through->toDateString(), $charges)];
     }
 
     /**
-     * Every earlier charge a monthly invoice generated through `$through` is
-     * sized against, by invoice: each charged invoice in the billed-overage
-     * ledger's window (BilledOverageLedger::window(), repeated here so that it
-     * can be read with a lock) and each draft the overlay counts.
+     * The same basis measured now, through row locks only.
      *
-     * `$current` reads through row locks, which return the current row rather
-     * than a transaction's snapshot and wait for a generation still writing
-     * one. `issue()` asks for it; a generation, which holds the agreement lock
-     * every other generation takes, does not need it.
+     * A row lock returns the current row rather than a transaction's snapshot
+     * and waits for a writer still holding it, so an issue whose caller read
+     * something first cannot pass on an old figure. And nothing here is an
+     * ordinary read, which would fix that snapshot before `issue()` takes the
+     * credit lock it relies on: the drafts are selected without
+     * billingCatchUp()'s line subquery, and whether a draft with no figure
+     * bills at the rate is asked of its lines with a lock of their own.
      *
-     * @infection-ignore-all The tenant, status and window predicates need the feature database and are covered by EarlierDraftCatchUpTest; the mutation lane runs unit tests only, and covers CatchUpBasis.
+     * @infection-ignore-all The tenant, status, kind and date predicates and the locks need the feature database and are covered by EarlierDraftCatchUpTest; the mutation lane runs unit tests only, and covers CatchUpBasis.
      */
-    public function basisThrough(int $workspaceId, int $companyId, int $agreementId, Carbon $through, ?int $invoiceId, bool $current = false): CatchUpBasis
+    public function currentBasisThrough(int $workspaceId, int $companyId, int $agreementId, Carbon $through, int $invoiceId): CatchUpBasis
     {
-        $charged = ClientInvoice::query()
-            ->where('workspace_id', $workspaceId)
-            ->where('client_agreement_id', $agreementId)
-            ->whereIn('status', InvoiceStatus::charged())
-            ->where(function (Builder $window) use ($through): void {
-                $window->whereDate('service_period_end', '<=', $through->toDateString())
-                    ->orWhereNull('service_period_end');
-            })
-            ->when($invoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($invoiceId))
-            ->when($current, fn (Builder $query): Builder => $query->tap(Locks::forUpdate()))
-            ->orderBy('id')
-            ->get(['id', 'invoice_number', 'hours_billed_at_rate']);
+        $charges = $this->chargedThrough($workspaceId, $agreementId, $through, $invoiceId, current: true);
         $drafts = $this->earlierDrafts($workspaceId, $companyId, $agreementId, $through, $invoiceId)
+            ->where(function (Builder $query): void {
+                $query->where('hours_billed_at_rate', '!=', 0)->orWhereNull('hours_billed_at_rate');
+            })
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get(['id', 'invoice_number', 'hours_billed_at_rate']);
+
+        $unknown = $drafts->whereNull('hours_billed_at_rate')->pluck('id')->all();
+        $billingAtRate = $unknown === [] ? [] : ClientInvoiceLine::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_id', $unknown)
+            ->where('type', InvoiceLineType::AdditionalHours->value)
+            ->tap(Locks::forUpdate())
+            ->get(['id', 'client_invoice_id'])
+            ->map(static fn (ClientInvoiceLine $line): int => (int) $line->client_invoice_id)
+            ->all();
+
+        foreach ($drafts as $draft) {
+            if ($draft->hours_billed_at_rate === null && ! in_array((int) $draft->id, $billingAtRate, true)) {
+                continue;
+            }
+            $charges[] = ['id' => (int) $draft->id, 'number' => (string) $draft->invoice_number, 'hours' => $this->draftHoursOrFail($draft)];
+        }
+
+        return CatchUpBasis::of($through->toDateString(), $charges);
+    }
+
+    /**
+     * The billed-overage ledger's charged invoices through `$through`, with
+     * the figure each charged.
+     *
+     * @return list<array{id: int, number: string, hours: float}>
+     */
+    private function chargedThrough(int $workspaceId, int $agreementId, Carbon $through, ?int $excludeInvoiceId, bool $current): array
+    {
+        $charged = $this->billedOverageLedger->windowFor($workspaceId, $agreementId, $through)
+            ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
             ->when($current, fn (Builder $query): Builder => $query->tap(Locks::forUpdate()))
             ->orderBy('id')
             ->get(['id', 'invoice_number', 'hours_billed_at_rate']);
@@ -115,11 +157,8 @@ final class DraftCatchUpDependencies
         foreach ($charged as $invoice) {
             $charges[] = ['id' => (int) $invoice->id, 'number' => (string) $invoice->invoice_number, 'hours' => $invoice->billedOverageHoursOrFail()];
         }
-        foreach ($drafts as $draft) {
-            $charges[] = ['id' => (int) $draft->id, 'number' => (string) $draft->invoice_number, 'hours' => $this->draftHoursOrFail($draft)];
-        }
 
-        return CatchUpBasis::of($through->toDateString(), $charges);
+        return $charges;
     }
 
     /**
@@ -153,13 +192,12 @@ final class DraftCatchUpDependencies
             );
         }
 
-        $current = $this->basisThrough(
+        $current = $this->currentBasisThrough(
             (int) $invoice->workspace_id,
             (int) $invoice->client_company_id,
             (int) $invoice->client_agreement_id,
             Carbon::parse($recorded->through),
             (int) $invoice->id,
-            current: true,
         );
 
         $change = $recorded->firstChangeIn($current);
@@ -197,7 +235,8 @@ final class DraftCatchUpDependencies
 
         $dependents = ClientInvoice::query()
             ->where('workspace_id', $invoice->workspace_id)
-            ->where('client_company_id', $invoice->client_company_id)
+            // Not narrowed to the company: the recorded window is the
+            // ledger's, which reads the agreement's invoices whoever they name.
             ->where('client_agreement_id', $invoice->client_agreement_id)
             ->whereIn('status', InvoiceStatus::live())
             ->whereKeyNot($invoice->getKey())
@@ -205,20 +244,24 @@ final class DraftCatchUpDependencies
             ->orderBy('service_period_end')
             ->orderBy('id')
             ->tap(Locks::forUpdate())
-            ->get(['id', 'invoice_number', 'catch_up_basis']);
+            ->get(['id', 'invoice_number', 'status', 'catch_up_basis']);
 
         foreach ($dependents as $dependent) {
             $hours = CatchUpBasis::fromArray($dependent->catch_up_basis)?->hoursFrom((int) $invoice->id) ?? 0.0;
-            if ($hours !== 0.0) {
-                throw new DomainException(sprintf(
-                    'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges; '
-                    .'voided, that debt would be billed by neither. Void or discard %s first. To change only this '
-                    .'invoice\'s wording or an operator-authored line, correct it in place instead, which keeps its charge.',
-                    $dependent->invoice_number,
-                    self::hours($hours),
-                    $dependent->invoice_number,
-                ));
+            if ($hours === 0.0) {
+                continue;
             }
+            $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value], true)
+                ? "{$dependent->invoice_number} has taken payment and cannot be voided, so neither can this while it stands."
+                : "Void or discard {$dependent->invoice_number} first.";
+            throw new DomainException(sprintf(
+                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges; '
+                .'voided, that debt would be billed by neither. %s To change only this invoice\'s wording or an '
+                .'operator-authored line, correct it in place where that is allowed, which keeps its charge.',
+                $dependent->invoice_number,
+                self::hours($hours),
+                $undo,
+            ));
         }
     }
 
@@ -306,7 +349,7 @@ final class DraftCatchUpDependencies
     }
 
     /**
-     * Earlier cadence drafts that bill catch-up, as the overlay counts them.
+     * Earlier cadence drafts, in the order the overlay and guards share.
      *
      * @return Builder<ClientInvoice>
      */
@@ -315,8 +358,7 @@ final class DraftCatchUpDependencies
         return $this->cadenceInvoices($workspaceId, $companyId, $agreementId)
             ->where('status', InvoiceStatus::Draft->value)
             ->when($excludeInvoiceId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludeInvoiceId))
-            ->where(fn (Builder $query): Builder => $this->endingBefore($query, $through, $excludeInvoiceId))
-            ->where(fn (Builder $query): Builder => $this->billingCatchUp($query));
+            ->where(fn (Builder $query): Builder => $this->endingBefore($query, $through, $excludeInvoiceId));
     }
 
     /**

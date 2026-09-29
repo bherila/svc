@@ -131,8 +131,9 @@ the billed-overage ledger's window and each draft the overlay counted - by
 invoice, with its `hours_billed_at_rate` and the date the ledger was measured
 through (`CatchUpBasis`). Two guards read it:
 
-- **Issuing** measures the same window again, reading those rows with locks so
-  that a stale snapshot cannot pass, and refuses when any charge has moved
+- **Issuing** measures the same window again under the agreement lock that
+  generation holds, reading those rows with locks so that a stale snapshot
+  cannot pass, and refuses when any charge has moved
   since: an earlier draft regenerated to a different figure, an earlier invoice
   created after this one, or one voided. The refusal names the invoice that
   moved and asks for this one to be regenerated, which re-sizes it against the
@@ -141,7 +142,8 @@ through (`CatchUpBasis`). Two guards read it:
   until it is rebuilt to match (`generateAllInvoices` rebuilds them in order).
 - **Voiding an issued invoice** is refused while a live later invoice - draft or
   issued - recorded its charge: voided, the debt it paid would be billed by
-  neither. Void or discard the later invoice first. An invoice whose wording or
+  neither. Void or discard the later invoice first; once it has taken payment
+  it cannot be voided, and neither can this one while it stands. An invoice whose wording or
   operator-authored lines are wrong can instead be corrected in place
   ([Correction boundary](invoice-delivery.md#correction-boundary)), which keeps
   its charge. Voiding takes the agreement lock generation holds for every

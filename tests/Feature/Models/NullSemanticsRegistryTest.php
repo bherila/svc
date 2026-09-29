@@ -14,6 +14,7 @@ use Tests\Feature\Billing\BillingWorkflowTest;
 use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
 use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
+use Tests\Feature\Billing\EarlierDraftCatchUpTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
 use Tests\Feature\Billing\InvoiceHoursStatementTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
@@ -197,6 +198,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
+        'client_invoices.catch_up_basis => covered_by:Tests\Feature\Billing\EarlierDraftCatchUpTest::test_an_invoice_with_no_recorded_basis_is_treated_as_before',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\ScheduleGenerationPreflightTest::test_a_halting_shape_is_predicted_and_actually_halts',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
@@ -332,6 +334,14 @@ final class NullSemanticsRegistryTest extends TestCase
             // generated before the statement existed: the document prints
             // without a statement rather than computing one from today's
             // ledger, which would rewrite what an issued invoice says.
+            // Null for every invoice generated before the basis was recorded
+            // and every kind the monthly generator does not write: it issues
+            // under the ordering guards alone and voids as it always did,
+            // rather than being refused for a record it never had.
+            'catch_up_basis' => [
+                'covered_by' => EarlierDraftCatchUpTest::class,
+                'method' => 'test_an_invoice_with_no_recorded_basis_is_treated_as_before',
+            ],
             'hours_statement' => [
                 'covered_by' => InvoiceHoursStatementTest::class,
                 'method' => 'test_an_invoice_without_a_statement_prints_without_one',

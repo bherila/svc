@@ -777,20 +777,17 @@ final class ClientInvoicingService
             // work month, exactly as this draft's own catch-up is below.
             // Issuing this invoice before that draft, or discarding the draft
             // once this relies on it, is refused: see DraftCatchUpDependencies.
-            $earlierDraftOverlay = $this->draftCatchUpDependencies->chargesByMonthThrough(
+            //
+            // Every earlier charge this invoice is sized against - the issued
+            // ones the ledger reads and the drafts overlaid - is recorded on
+            // it, so that issuing it refuses once any has moved and an issued
+            // one it relies on cannot be voided under it.
+            [
+                'overlay' => $earlierDraftOverlay,
+                'basis' => $catchUpBasis,
+            ] = $this->draftCatchUpDependencies->sizingThrough(
                 $agreement,
                 (int) $company->id,
-                $periodEnd,
-                $invoice?->id,
-            );
-            // Every earlier charge this invoice is sized against - the issued
-            // ones the ledger reads and the drafts overlaid above - recorded
-            // on it, so that issuing it can refuse once any has moved and an
-            // issued one it relies on cannot be voided under it.
-            $catchUpBasis = $this->draftCatchUpDependencies->basisThrough(
-                (int) $company->workspace_id,
-                (int) $company->id,
-                (int) $agreement->id,
                 $periodEnd,
                 $invoice?->id,
             );
