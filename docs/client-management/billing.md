@@ -184,6 +184,20 @@ compose lines; [AllocationService](../../app/Services/Billing/AllocationService.
 records the time-entry allocation. Invoice lines may summarize hours, so an
 invoice's total hours alone is not evidence that a particular entry is linked.
 
+**Types a manual line may not carry (#349).** The manual doors are the operator
+invoice form, the agent invoice API and billing-schedule templates, with
+`InvoiceLifecycleService::createLines()` behind all three.
+- The system-only types are refused on every one of them:
+  - `credit`: issuing spends the overpayment credit pool by it.
+  - `expense`: the expense-claim code's. Bill a hand-typed charge as an
+    `adjustment`, or record the expense so its claim bills it.
+  - the carried-deferred types.
+- The generator-owned types (`retainer`, `prior_month_retainer`,
+  `additional_hours`) are refused on a new invoice or template. The agent
+  update replaces every line of a draft, generated ones included, so a draft
+  that already carries one of these may be saved with it again, but none can
+  be added to a draft that did not. `SystemOnlyLineTypesTest` covers each door.
+
 ### Subcontractor billing
 
 Time entries identify the person through `user_id` and the billed client through

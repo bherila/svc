@@ -31,7 +31,7 @@ class StoreInvoiceRequest extends FormRequest
             'time_entry_ids' => ['sometimes', 'array'],
             'time_entry_ids.*' => ['uuid'],
             'lines' => ['required_without:time_entry_ids', 'array'],
-            'lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
+            'lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::manuallyRefusedValues())],
             'lines.*.project_id' => ['nullable', 'uuid'],
             'lines.*.description' => ['required', 'string', 'max:10000'],
             'lines.*.quantity' => ['required', 'regex:/^\d+(?:\.\d{1,4})?$/'],

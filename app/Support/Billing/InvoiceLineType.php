@@ -57,8 +57,10 @@ enum InvoiceLineType: string
      * money state by type alone. A manual carried-deferred line would settle,
      * or mark billed, deferred work nobody applied; a manual credit line would
      * spend the client's overpayment credit pool at issue with nothing
-     * reconciling it (#349). The generators write these directly, never
-     * through a manual door.
+     * reconciling it; a manual expense line would read as a billed expense
+     * with no claim behind it (#349). The generators write these directly,
+     * never through a manual door, and a generated expense line's claim
+     * already stops its draft's lines being replaced.
      *
      * @return list<string>
      */
@@ -68,7 +70,39 @@ enum InvoiceLineType: string
             self::CarriedDeferredApplied->value,
             self::CarriedDeferredBilled->value,
             self::Credit->value,
+            self::Expense->value,
         ];
+    }
+
+    /**
+     * Types the generator words and the capacity and overage code reads back:
+     * refused on a new manual line, but kept when a draft that already
+     * carries one is saved again (#349).
+     *
+     * The agent update replaces every line of a draft, generated ones
+     * included, so refusing these outright would stop an agent editing a
+     * generated cadence draft at all. A draft that did not carry the type
+     * cannot gain it by hand.
+     *
+     * @return list<string>
+     */
+    public static function generatorOwnedValues(): array
+    {
+        return [
+            self::Retainer->value,
+            self::PriorMonthRetainer->value,
+            self::AdditionalHours->value,
+        ];
+    }
+
+    /**
+     * Every type a manual line on a new invoice or template may not carry.
+     *
+     * @return list<string>
+     */
+    public static function manuallyRefusedValues(): array
+    {
+        return [...self::systemOnlyValues(), ...self::generatorOwnedValues()];
     }
 
     /**

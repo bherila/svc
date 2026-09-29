@@ -255,7 +255,7 @@ final class UnknownBilledOverageRefusalTest extends TestCase
                 'currency' => 'USD',
                 'client_agreement_id' => $agreement->id,
             ],
-            [['description' => 'Monthly retainer', 'type' => 'retainer', 'quantity' => '1', 'unit_amount' => 150000]],
+            [['description' => 'Monthly retainer', 'type' => 'recurring_item', 'quantity' => '1', 'unit_amount' => 150000]],
         );
 
         $this->assertSame(0.0, $draft->billedOverageHoursOrFail());
@@ -286,7 +286,7 @@ final class UnknownBilledOverageRefusalTest extends TestCase
                 'currency' => 'USD',
                 'client_agreement_id' => $agreement->id,
             ],
-            [['description' => 'Monthly retainer', 'type' => 'retainer', 'quantity' => '1', 'unit_amount' => 150000]],
+            [['description' => 'Monthly retainer', 'type' => 'recurring_item', 'quantity' => '1', 'unit_amount' => 150000]],
         );
         app(InvoiceLifecycleService::class)->issue($draft, $this->workspace);
 
