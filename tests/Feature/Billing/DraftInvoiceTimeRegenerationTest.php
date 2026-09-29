@@ -569,12 +569,15 @@ final class DraftInvoiceTimeRegenerationTest extends TestCase
             [
                 'expected_version' => AgentApiVersion::for($entry),
                 'minutes' => 30,
-                'description' => 'Corrected selected work',
+                'description' => 'Corrected internal note',
+                'is_visible_to_client' => true,
+                'client_visible_description' => 'Corrected selected work',
             ],
         );
 
         $invoice->refresh();
         $timeLine = $invoice->lines()->whereHas('timeEntries', fn ($query) => $query->whereKey($entry->id))->sole();
+        // The client's wording, never the internal note (#347).
         $this->assertSame('Corrected selected work', $timeLine->description);
         $this->assertSame(6000, $timeLine->total_amount);
         $this->assertSame(6700, $invoice->total_amount);
