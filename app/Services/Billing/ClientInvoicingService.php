@@ -985,28 +985,6 @@ final class ClientInvoicingService
                 $fragmentsToLines[$catchUpLine->id] = array_merge($plan->catchUpFragments, $plan->billableCatchupFragments);
 
                 $invoice->update(['hours_billed_at_rate' => $totalCatchupHours]);
-
-                // The balances above were computed before this charge existed.
-                // Replay it in the work month rather than adding it to the end
-                // result, so any surplus crosses (or does not cross) the month
-                // boundary under the agreement's normal rollover rule.
-                $balancesAfterCharge = $this->monthlyBalances(
-                    $company,
-                    $agreement,
-                    $periodEnd,
-                    $retainerMonthStart,
-                    $terminationMonthKey,
-                    $this->withWorkMonthCharge($earlierDraftOverlay, $workMonthKey, $totalCatchupHours),
-                );
-                $chargedWorkMonth = $this->balanceForMonth($balancesAfterCharge, $workMonthKey);
-                $snapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $balancesAfterCharge);
-
-                $invoice->update([
-                    'negative_hours_balance' => $chargedWorkMonth?->closing->negativeBalance ?? 0.0,
-                    'unused_hours_balance' => $chargedWorkMonth?->closing->unusedHours ?? 0.0,
-                    'starting_unused_hours' => $snapshot['unused'],
-                    'starting_negative_hours' => $snapshot['negative'],
-                ]);
             }
 
             $this->invoiceLineComposer->linkAllFragmentsToLines($company, $fragmentsToLines, $this->timeEntrySplitter);
@@ -1108,6 +1086,16 @@ final class ClientInvoicingService
             );
             $finalWork = $this->balanceForMonth($finalBalances, $workMonthKey);
             $finalNext = $this->balanceForMonth($finalBalances, $retainerMonthStart->format('Y-m'));
+            // The stored balances from the same measurement, not the one before
+            // this draft's deferred work drew on the pool: measured earlier,
+            // they read that pool as still unused (#353).
+            $finalSnapshot = $this->calculateCumulativeBalanceSnapshot($periodEnd, $finalBalances);
+            $invoice->update([
+                'unused_hours_balance' => $finalWork?->closing->unusedHours ?? 0.0,
+                'negative_hours_balance' => $finalWork?->closing->negativeBalance ?? 0.0,
+                'starting_unused_hours' => $finalSnapshot['unused'],
+                'starting_negative_hours' => $finalSnapshot['negative'],
+            ]);
             $this->recordHoursStatement($invoice, new InvoiceHoursStatement(
                 cadence: BillingCadence::Monthly->value,
                 workStart: $periodStart->toDateString(),

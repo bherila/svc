@@ -201,7 +201,14 @@ Monetary invoice fields such as `total_amount`, `paid_amount` and
 `balance_amount` are integer minor-unit amounts. Retainer balances such as
 `unused_hours_balance`, `negative_hours_balance`, `starting_unused_hours` and
 `starting_negative_hours` are hour quantities. The generation paths write these
-snapshots; they are not interchangeable with a payment balance.
+snapshots; they are not interchangeable with a payment balance. The monthly
+path measures them from the same ledger as the hours statement, re-run after the
+draft's own deferred work is applied: measured before it, they read the pool
+that work drew on as still unused (`StoredBalanceAfterDeferredWorkTest`, #353).
+The non-monthly path still writes them from the ledger measured before
+allocation; it offers deferred work only `covered_hours` less the hours already
+applied, which leaves it nothing to apply in the ordinary case, so the two
+measurements agree there.
 
 ### Server serialization and invoice pages
 
