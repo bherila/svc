@@ -373,7 +373,7 @@ class InvoiceLineComposer
             ->where('is_billable', true)
             ->where('is_deferred', false)
             ->flatHourlySubcontractor()
-            ->whereBetween('worked_on', [$periodStart, $periodEnd])
+            ->whereBetween('worked_on', [$periodStart->toDateString(), $periodEnd->toDateString()])
             ->with('user:id,name')
             ->orderBy('worked_on')
             ->orderBy('id')
