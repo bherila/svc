@@ -106,7 +106,7 @@ final class TimeEntryMutationService
             // A builder update skips the model's casts, so the date is
             // written in the stored form here (#354).
             if (array_key_exists('worked_on', $attributes)) {
-                $attributes['worked_on'] = DateOnly::toStored($entry, $attributes['worked_on']);
+                $attributes['worked_on'] = DateOnly::toStored($attributes['worked_on']);
             }
             abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()

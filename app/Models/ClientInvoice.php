@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -73,13 +74,13 @@ class ClientInvoice extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
-            'issue_date' => 'date',
-            'due_date' => 'date',
-            'service_period_start' => 'date',
-            'service_period_end' => 'date',
-            'cycle_start' => 'date',
-            'cycle_end' => 'date',
-            'paid_on' => 'date',
+            'issue_date' => DateOnly::class,
+            'due_date' => DateOnly::class,
+            'service_period_start' => DateOnly::class,
+            'service_period_end' => DateOnly::class,
+            'cycle_start' => DateOnly::class,
+            'cycle_end' => DateOnly::class,
+            'paid_on' => DateOnly::class,
             'retainer_hours_included' => 'decimal:4',
             'hours_worked' => 'decimal:4',
             'rollover_hours_used' => 'decimal:4',

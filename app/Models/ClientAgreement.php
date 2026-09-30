@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\RetainerAgreementTerms;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
@@ -63,8 +64,8 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
     protected function casts(): array
     {
         return [
-            'starts_on' => 'immutable_date',
-            'ends_on' => 'immutable_date',
+            'starts_on' => DateOnly::class,
+            'ends_on' => DateOnly::class,
             'is_visible_to_client' => 'boolean',
             'hourly_rate_amount' => 'integer',
             'retainer_amount' => 'integer',

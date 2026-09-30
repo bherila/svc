@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -66,7 +67,7 @@ class ClientExpense extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
-            'spent_on' => 'immutable_date',
+            'spent_on' => DateOnly::class,
             'amount' => 'integer',
             'approved_at' => 'immutable_datetime',
         ];

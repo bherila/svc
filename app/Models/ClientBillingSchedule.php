@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -29,7 +30,7 @@ class ClientBillingSchedule extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
-            'next_run_on' => 'date',
+            'next_run_on' => DateOnly::class,
             'anchor_month' => 'integer',
             'anchor_day' => 'integer',
             'due_days' => 'integer',

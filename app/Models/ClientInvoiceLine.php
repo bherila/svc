@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -49,7 +50,7 @@ class ClientInvoiceLine extends Model implements WorkspaceOwned
         return [
             'quantity' => 'decimal:4',
             'hours' => 'decimal:4',
-            'line_date' => 'date',
+            'line_date' => DateOnly::class,
             'unit_amount' => 'integer',
             'tax_amount' => 'integer',
             'total_amount' => 'integer',

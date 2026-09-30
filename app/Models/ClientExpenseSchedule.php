@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -30,7 +31,7 @@ final class ClientExpenseSchedule extends Model implements WorkspaceOwned
 
     protected function casts(): array
     {
-        return ['starts_on' => 'immutable_date', 'next_occurrence' => 'integer', 'amount' => 'integer', 'is_active' => 'boolean'];
+        return ['starts_on' => DateOnly::class, 'next_occurrence' => 'integer', 'amount' => 'integer', 'is_active' => 'boolean'];
     }
 
     protected function workspaceOwnershipIsImmutable(): bool

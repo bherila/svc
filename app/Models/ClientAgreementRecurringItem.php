@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -48,8 +49,8 @@ class ClientAgreementRecurringItem extends Model implements WorkspaceOwned
         return [
             'anchor_month' => 'integer',
             'anchor_day' => 'integer',
-            'effective_on' => 'immutable_date',
-            'expires_on' => 'immutable_date',
+            'effective_on' => DateOnly::class,
+            'expires_on' => DateOnly::class,
             'quantity' => 'decimal:3',
             'amount' => 'integer',
             'is_taxable' => 'boolean',

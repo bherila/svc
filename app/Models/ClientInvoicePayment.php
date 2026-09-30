@@ -2,21 +2,22 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InvoicePaymentStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Carbon;
 
 /**
- * @property Carbon|null $received_on
+ * @property CarbonImmutable|null $received_on
  * @property int $lock_version
  *
  * `lock_version` is maintained by {@see IncrementsAgentRevision} on every
@@ -45,7 +46,7 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
         return [
             'amount' => 'integer',
             'refunded_amount' => 'integer',
-            'received_on' => 'date',
+            'received_on' => DateOnly::class,
             'provider_event_created_at' => 'integer',
         ];
     }

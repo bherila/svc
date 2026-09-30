@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -30,7 +31,7 @@ class PaymentReconciliation extends Model implements WorkspaceOwned
     {
         return [
             'allocated_amount' => 'integer',
-            'reconciled_on' => 'immutable_date',
+            'reconciled_on' => DateOnly::class,
             'is_active' => 'boolean',
         ];
     }
