@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Models;
 
+use App\Casts\DateOnly;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use DateTimeInterface;
@@ -28,6 +29,6 @@ final class InvoiceDeliveryModelCastsTest extends TestCase
         $invoice = (new ClientInvoice)->setRawAttributes(['issue_date' => '2026-09-15']);
 
         $this->assertInstanceOf(DateTimeInterface::class, $invoice->issue_date);
-        $this->assertSame('date', $invoice->getCasts()['issue_date'] ?? null);
+        $this->assertSame(DateOnly::class, $invoice->getCasts()['issue_date'] ?? null);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -49,7 +50,7 @@ class ClientProposal extends Model implements WorkspaceOwned
     {
         return [
             'is_visible_to_client' => 'boolean',
-            'valid_until' => 'immutable_date',
+            'valid_until' => DateOnly::class,
             'sent_at' => 'immutable_datetime',
             'accepted_at' => 'immutable_datetime',
             'declined_at' => 'immutable_datetime',

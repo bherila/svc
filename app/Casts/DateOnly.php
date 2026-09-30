@@ -3,8 +3,10 @@
 namespace App\Casts;
 
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
 /**
  * A `date` column read as an immutable date and written as a bare `Y-m-d`.
@@ -52,18 +54,30 @@ final class DateOnly implements CastsAttributes
      */
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
-        return self::toStored($model, $value);
+        return self::toStored($value);
     }
 
-    /** The stored form of a date: `Y-m-d`, from whatever `immutable_date` accepts. */
-    public static function toStored(Model $model, mixed $value): ?string
+    /**
+     * The stored form of a date: `Y-m-d`, from whatever `immutable_date` accepts
+     * - an object, a Unix timestamp, a date string or a datetime string.
+     *
+     * Converted here rather than through the model's `fromDateTime()`, which
+     * asks the database connection for its date format: a model built in a
+     * unit test has none, and the date needs none (#362).
+     */
+    public static function toStored(mixed $value): ?string
     {
         if ($value === null || $value === '') {
             return null;
         }
 
-        // The model's own conversion, then only the date: the same input
-        // handling as the cast this replaces, whatever the date format is.
-        return substr((string) $model->fromDateTime($value), 0, 10);
+        $date = match (true) {
+            $value instanceof DateTimeInterface => CarbonImmutable::instance($value),
+            is_int($value), is_string($value) && is_numeric($value) => CarbonImmutable::createFromTimestamp((int) $value, date_default_timezone_get()),
+            is_string($value) => CarbonImmutable::parse($value),
+            default => throw new InvalidArgumentException('A calendar date must be a date, a timestamp or a date string.'),
+        };
+
+        return $date->format('Y-m-d');
     }
 }

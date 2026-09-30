@@ -75,7 +75,7 @@ final class AgreementSelector
             // included, so an agreement starting next month is selected now.
             // Excluding monthly here made exactly those first invoices late
             // while quarterly and annual ones arrived on time.
-            ->where('starts_on', '<=', $selectionCeiling)
+            ->where('starts_on', '<=', $selectionCeiling->toDateString())
             ->orderBy('starts_on')
             ->orderBy('id')
             ->get();

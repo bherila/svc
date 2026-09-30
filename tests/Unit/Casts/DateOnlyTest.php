@@ -24,7 +24,7 @@ final class DateOnlyTest extends TestCase
         $model = new ClientTimeEntry;
 
         $this->assertSame($stored, (new DateOnly)->set($model, 'worked_on', $given, []));
-        $this->assertSame($stored, DateOnly::toStored($model, $given));
+        $this->assertSame($stored, DateOnly::toStored($given));
     }
 
     public static function writes(): iterable

@@ -3,7 +3,9 @@
 namespace Tests\Feature\Billing;
 
 use App\Casts\DateOnly;
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -13,10 +15,12 @@ use App\Support\AgentApi\AgentApiVersion;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionClass;
 use Tests\TestCase;
 
 /**
@@ -29,7 +33,7 @@ use Tests\TestCase;
  * range bound on it in `app/` is a date string rather than a Carbon, which the
  * query builder formats with a time.
  */
-final class WorkedOnDateBoundaryTest extends TestCase
+final class DateColumnBoundaryTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -102,13 +106,12 @@ final class WorkedOnDateBoundaryTest extends TestCase
     /** Input is converted as `immutable_date` converted it, then kept to the date. */
     public function test_the_stored_form_accepts_what_immutable_date_accepted(): void
     {
-        $model = new ClientTimeEntry;
 
-        $this->assertSame('2025-01-31', DateOnly::toStored($model, CarbonImmutable::parse('2025-01-31')->getTimestamp()));
-        $this->assertSame('2025-01-31', DateOnly::toStored($model, '2025-01-31'));
-        $this->assertSame('2025-01-31', DateOnly::toStored($model, '2025-01-31 23:59:59'));
-        $this->assertSame('2025-01-31', DateOnly::toStored($model, new DateTimeImmutable('2025-01-31 08:00:00')));
-        $this->assertNull(DateOnly::toStored($model, null));
+        $this->assertSame('2025-01-31', DateOnly::toStored(CarbonImmutable::parse('2025-01-31')->getTimestamp()));
+        $this->assertSame('2025-01-31', DateOnly::toStored('2025-01-31'));
+        $this->assertSame('2025-01-31', DateOnly::toStored('2025-01-31 23:59:59'));
+        $this->assertSame('2025-01-31', DateOnly::toStored(new DateTimeImmutable('2025-01-31 08:00:00')));
+        $this->assertNull(DateOnly::toStored(null));
     }
 
     /** A builder update skips casts, so the mutation path writes the stored form itself. */
@@ -143,7 +146,68 @@ final class WorkedOnDateBoundaryTest extends TestCase
     }
 
     /**
-     * Every range bound on `worked_on` in `app/` is a date string.
+     * #362: the other calendar dates behave as `worked_on` now does. An
+     * agreement starting on a day is found by a `<=` that day, and an invoice
+     * period ending on the last day of a month is inside that month's range.
+     */
+    public function test_the_other_calendar_dates_are_stored_bare_and_found_at_their_boundary(): void
+    {
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'title' => 'Boundary',
+            'status' => 'active', 'currency' => 'USD', 'billing_cadence' => 'monthly',
+            'starts_on' => CarbonImmutable::parse('2026-01-31 00:00:00'),
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'invoice_number' => 'BND-1',
+            'currency' => 'USD', 'status' => 'draft', 'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            'service_period_start' => '2026-01-01', 'service_period_end' => Carbon::parse('2026-01-31'),
+        ]);
+
+        $this->assertSame('2026-01-31', DB::table('client_agreements')->where('id', $agreement->id)->value('starts_on'));
+        $this->assertSame('2026-01-31', DB::table('client_invoices')->where('id', $invoice->id)->value('service_period_end'));
+        $this->assertTrue(ClientAgreement::query()->whereKey($agreement->id)->where('starts_on', '<=', '2026-01-31')->exists());
+        $this->assertTrue(ClientInvoice::query()->whereKey($invoice->id)->whereBetween('service_period_end', ['2026-01-01', '2026-01-31'])->exists());
+    }
+
+    /** The migration strips the midnight from every calendar-date column SQLite stored. */
+    public function test_the_migration_strips_the_time_from_every_calendar_date(): void
+    {
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'invoice_number' => 'BND-2',
+            'currency' => 'USD', 'status' => 'draft', 'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            'cycle_start' => '2026-01-01', 'cycle_end' => '2026-01-31',
+        ]);
+        DB::table('client_invoices')->where('id', $invoice->id)->update(['cycle_start' => '2026-01-01 00:00:00', 'cycle_end' => '2026-01-31 00:00:00']);
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->assertSame('2026-01-31 00:00:00', DB::table('client_invoices')->where('id', $invoice->id)->value('cycle_end'));
+        }
+
+        (require database_path('migrations/2026_09_30_000000_store_every_calendar_date_without_a_time.php'))->up();
+
+        $row = DB::table('client_invoices')->where('id', $invoice->id)->first(['cycle_start', 'cycle_end']);
+        $this->assertSame(['2026-01-01', '2026-01-31'], [$row?->cycle_start, $row?->cycle_end]);
+    }
+
+    /**
+     * Every calendar-date column is cast with `DateOnly` (#362).
+     *
+     * A `date` or `immutable_date` cast writes a time that SQLite keeps, so a
+     * new column cast that way would bring #354 back for that column alone.
+     */
+    public function test_no_model_casts_a_calendar_date_with_a_time_writing_cast(): void
+    {
+        foreach (self::models() as $model) {
+            foreach ($model->getCasts() as $attribute => $cast) {
+                $this->assertNotContains($cast, ['date', 'immutable_date'], $model::class.'::'.$attribute.' must be cast with DateOnly');
+            }
+        }
+
+        $this->assertContains('worked_on', self::dateOnlyColumns());
+        $this->assertContains('service_period_end', self::dateOnlyColumns());
+    }
+
+    /**
+     * Every range bound on a `DateOnly` column in `app/` is a date string.
      *
      * A Carbon bound is formatted as `Y-m-d H:i:s`, and against a bare stored
      * date SQLite answers `'2026-01-01' >= '2026-01-01 00:00:00'` false - the
@@ -154,7 +218,7 @@ final class WorkedOnDateBoundaryTest extends TestCase
      *
      * Calls are read whole, across lines, with the column aliased or not.
      */
-    public function test_every_worked_on_range_bound_in_the_application_is_a_date_string(): void
+    public function test_every_date_column_range_bound_in_the_application_is_a_date_string(): void
     {
         $reviewedStringBounds = [
             // Built by `toDateString()` in `currentCycle()`.
@@ -166,6 +230,7 @@ final class WorkedOnDateBoundaryTest extends TestCase
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
         ];
 
+        $columns = implode('|', array_map(static fn (string $column): string => preg_quote($column, '/'), self::dateOnlyColumns()));
         $sites = [];
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path()));
         foreach ($iterator as $file) {
@@ -174,7 +239,7 @@ final class WorkedOnDateBoundaryTest extends TestCase
             }
             $relative = 'app/'.ltrim(substr($file->getPathname(), strlen(app_path())), '/');
             $source = (string) file_get_contents($file->getPathname());
-            preg_match_all("/->(\\w+)\\(\\s*'(?:\\w+\\.)?worked_on'\\s*,/", $source, $calls, PREG_OFFSET_CAPTURE);
+            preg_match_all("/->(\\w+)\\(\\s*'(?:\\w+\\.)?(?:{$columns})'\\s*,/", $source, $calls, PREG_OFFSET_CAPTURE);
             foreach ($calls[0] as $index => [$call, $offset]) {
                 $method = $calls[1][$index][0];
                 if (! in_array($method, ['where', 'orWhere', 'whereNot', 'orWhereNot', 'whereBetween', 'orWhereBetween', 'whereNotBetween', 'whereIn', 'whereNotIn'], true)) {
@@ -191,13 +256,42 @@ final class WorkedOnDateBoundaryTest extends TestCase
                     $safe = str_ends_with($bound, 'toDateString()')
                         || preg_match("/^'\\d{4}-\\d{2}-\\d{2}'$/", $bound) === 1
                         || in_array($bound, $reviewedStringBounds[$relative] ?? [], true);
-                    $this->assertTrue($safe, "{$site} bounds worked_on with something not known to be a date string: {$bound}");
+                    $this->assertTrue($safe, "{$site} bounds a calendar date with something not known to be a date string: {$bound}");
                 }
             }
         }
 
         // The scan found the sites it is meant to guard; an empty scan passes vacuously.
-        $this->assertGreaterThanOrEqual(15, count($sites), implode("\n", $sites));
+        $this->assertGreaterThanOrEqual(30, count($sites), implode("\n", $sites));
+    }
+
+    /** @return list<Model> */
+    private static function models(): array
+    {
+        $models = [];
+        foreach (glob(app_path('Models/*.php')) ?: [] as $path) {
+            $class = 'App\\Models\\'.basename($path, '.php');
+            if (class_exists($class) && is_subclass_of($class, Model::class) && ! (new ReflectionClass($class))->isAbstract()) {
+                $models[] = new $class;
+            }
+        }
+
+        return $models;
+    }
+
+    /** @return list<string> */
+    private static function dateOnlyColumns(): array
+    {
+        $columns = [];
+        foreach (self::models() as $model) {
+            foreach ($model->getCasts() as $attribute => $cast) {
+                if ($cast === DateOnly::class) {
+                    $columns[] = $attribute;
+                }
+            }
+        }
+
+        return array_values(array_unique($columns));
     }
 
     /**
