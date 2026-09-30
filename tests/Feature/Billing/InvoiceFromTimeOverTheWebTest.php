@@ -85,8 +85,10 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
             'invoice_number' => 'SVC-00002',
             'currency' => 'USD',
             'time_entry_ids' => [$entry->public_id],
+            // A hand-typed charge is an adjustment: an `expense` line is the
+            // expense-claim code's, and a manual door refuses it (#349).
             'lines' => [[
-                'type' => 'expense', 'description' => 'Travel',
+                'type' => 'adjustment', 'description' => 'Travel',
                 'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0, 'sort_order' => 0,
             ]],
         ])->assertCreated();

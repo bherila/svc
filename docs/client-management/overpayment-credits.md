@@ -40,7 +40,7 @@ Only credits on `issued` or `paid` invoices count as "consumed", because drafts 
 `App\Services\ClientManagement\OverpaymentCreditService` owns all credit math:
 
 - `availableCreditForCompany(ClientCompany $company): float` — number described above, clamped ≥ 0.
-- `applyCreditsToDraftInvoice(ClientInvoice $invoice): void` — called by `ClientInvoicingService` after milestones and before `recalculateTotal()`. Creates/replaces a single `credit`-typed line on the draft, capped at the invoice's pre-credit subtotal (an invoice never goes negative from a credit; leftover credit rolls to the next).
+- `applyCreditsToDraftInvoice(ClientInvoice $invoice): void` — called by `ClientInvoicingService` after milestones and before `recalculateTotal()`. Creates/replaces a single `credit`-typed line on the draft, capped at the invoice's pre-credit subtotal (an invoice never goes negative from a credit; leftover credit rolls to the next). It is the only writer of `credit` lines: every manual door (the operator invoice form, the agent invoice API and billing-schedule templates) and `InvoiceLifecycleService::createLines()` refuse the type, since issuing spends the pool by the credit lines a draft carries (`InvoiceLineType::systemOnlyValues()`, `SystemOnlyLineTypesTest`, #349).
 - `buildLedger(ClientCompany $company): OverpaymentLedger` — itemised per-invoice view for the UI (how much was overpaid on each source invoice, how much has been consumed, how much remains).
 
 ## Credit line on the invoice

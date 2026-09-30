@@ -312,12 +312,14 @@ class InvoiceLineDetailTest extends TestCase
             'issue_date' => '2026-08-15',
             'due_date' => '2026-09-14',
         ], [[
-            'type' => 'additional_hours',
+            'type' => 'adjustment',
             'description' => 'Additional hours',
             'quantity' => '2.5',
             'unit_amount' => 22500,
             'total_amount' => 56250,
         ]]);
+        // Typed as the generator types it; a manual door refuses the type (#349).
+        $invoice->lines()->sole()->forceFill(['type' => 'additional_hours'])->save();
         $service->issue($invoice, $workspace);
         $invoice->forceFill(['is_visible_to_client' => true])->save();
 

@@ -110,7 +110,7 @@ final class InterimAgreementLinkIssueTest extends TestCase
                 'service_period_start' => '2026-01-01',
                 'service_period_end' => $end,
             ],
-            [['type' => 'additional_hours', 'description' => 'Overage', 'quantity' => 1, 'unit_amount' => 10000]],
+            [['type' => 'adjustment', 'description' => 'Overage', 'quantity' => 1, 'unit_amount' => 10000]],
         );
         // `createDraft()` infers the kind from the schedule link and cannot
         // write an interim; imports and hand edits are how this shape arrives.

@@ -142,11 +142,10 @@ final class InvoiceLifecycleService
                 ...$totals,
                 'balance_amount' => $totals['total_amount'],
                 // The hours statement explains the lines the generator wrote,
-                // and these are about to be replaced by hand. Editing a
-                // generated draft stays allowed - this is the operator's one
-                // edit path for any draft - so the statement is withdrawn
-                // rather than left describing lines that no longer exist; the
-                // next regeneration measures it again.
+                // and these are about to be replaced by hand, so it is
+                // withdrawn rather than left describing lines that no longer
+                // exist. The agent door reaches here only for an ad-hoc draft
+                // (#349); a generated one is regenerated, not edited.
                 'hours_statement' => null,
             ];
             foreach (['due_date', 'notes'] as $attribute) {

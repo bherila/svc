@@ -55,6 +55,13 @@ final class InvoiceFromTimeService
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
             }
+            // Every line is replaced from the request, and a generated line's
+            // time links go with it: the work would read as unbilled while
+            // this draft still charged for it. A generated draft is
+            // regenerated, not edited, as adding time already requires (#349).
+            if ($locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
+                throw new DomainException('Only an ad-hoc draft invoice can be edited here. Regenerate a generated draft instead.');
+            }
             abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
             $attributes['currency'] = MoneyService::currency(strtoupper((string) ($attributes['currency'] ?? $locked->currency)));
             [$lines, $subtotalOverrides] = $this->prepareLines($workspace, $locked->clientCompany, $attributes['currency'], $timeEntryIds, $manualLines, $locked);

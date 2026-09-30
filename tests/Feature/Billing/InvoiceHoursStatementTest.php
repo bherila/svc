@@ -338,18 +338,20 @@ final class InvoiceHoursStatementTest extends TestCase
     }
 
     /**
-     * An operator may still rewrite a generated draft's lines by hand - that is
-     * what `invoices.update_draft` is for, on any draft - but the statement was
-     * measured against the lines the generator wrote. Replaced lines take the
-     * statement with them: the draft prints none rather than a wrong one, and
-     * the next regeneration measures it again.
+     * A generated draft's lines are not rewritten by hand (#349). The agent
+     * update replaced every line, and the generated lines' time links with
+     * them, so the work read as unbilled while the draft still charged it. It
+     * is refused, and the draft keeps its lines and the statement measured
+     * against them; the way to change it is to regenerate it.
      */
-    public function test_replacing_a_generated_drafts_lines_withdraws_its_statement(): void
+    public function test_a_generated_draft_is_not_rewritten_by_hand_and_keeps_its_statement(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $this->entry('2026-01-12', 360);
         $draft = $this->generate('2026-01');
-        $this->assertNotNull($draft->fresh()?->hours_statement);
+        $statement = $draft->fresh()?->hours_statement;
+        $this->assertNotNull($statement);
+        $lines = $draft->lines()->orderBy('id')->pluck('id')->all();
         $this->actingAsMcp($this->member, [AgentApiScopes::BILLING_WRITE]);
 
         $this->withHeader('Idempotency-Key', 'synthetic-replace-lines')->patchJson(
@@ -359,15 +361,11 @@ final class InvoiceHoursStatementTest extends TestCase
                 'time_entry_ids' => [],
                 'manual_lines' => [['type' => 'adjustment', 'description' => 'Synthetic hand-written line', 'quantity' => '1', 'unit_amount' => 50000]],
             ],
-        )->assertOk();
+        )->assertStatus(422);
 
-        $edited = $draft->fresh();
-        $this->assertNull($edited?->hours_statement);
-        $html = app(InvoiceDocumentService::class)->html($edited ?? $draft, InvoiceLineDetail::CLIENT)->render();
-        $this->assertStringNotContainsString('Hours statement', $html);
-
-        // Generated again, it is measured again.
-        $this->assertNotNull($this->generate('2026-01')->fresh()?->hours_statement);
+        $kept = $draft->fresh();
+        $this->assertSame($statement, $kept?->hours_statement);
+        $this->assertSame($lines, $draft->lines()->orderBy('id')->pluck('id')->all());
     }
 
     /**

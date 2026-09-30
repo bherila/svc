@@ -5,15 +5,18 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceLineType;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -43,12 +46,38 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Loop']);
     }
 
-    /** @return iterable<string, array{string}> */
+    /**
+     * Named here rather than read from systemOnlyValues(), so dropping a type
+     * from that list fails these tests instead of silently shrinking them.
+     *
+     * - `credit`: issuing spends a client's overpayment credit pool by the
+     *   negative credit lines on the draft, so a hand-typed one is a credit
+     *   spend nobody reconciled (#349).
+     * - `expense`: read by the expense-claim code as a billed expense, with
+     *   no claim behind a hand-typed one (#349).
+     * - `retainer`, `prior_month_retainer`, `prior_month_billable`,
+     *   `additional_hours`: the generator's wording, read back by the
+     *   cycle-sold, capacity and overage code (#349). Production held these
+     *   only on generated cadence invoices when they were refused.
+     *
+     * @return iterable<string, array{string}>
+     */
     public static function systemOnly(): iterable
     {
-        foreach (InvoiceLineType::systemOnlyValues() as $type) {
+        foreach ([
+            'carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense',
+            'retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours',
+        ] as $type) {
             yield $type => [$type];
         }
+    }
+
+    public function test_every_refused_type_is_listed_as_system_only(): void
+    {
+        $this->assertEqualsCanonicalizing(
+            array_map(static fn (array $case): string => $case[0], iterator_to_array(self::systemOnly(), false)),
+            InvoiceLineType::systemOnlyValues(),
+        );
     }
 
     #[DataProvider('systemOnly')]
@@ -103,13 +132,53 @@ final class SystemOnlyLineTypesTest extends TestCase
     public function test_the_draft_service_refuses_it(string $type): void
     {
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('written only by invoice generation');
+        $this->expectExceptionMessage('by invoice generation');
 
         try {
             app(InvoiceLifecycleService::class)->createDraft($this->workspace, $this->company, ['currency' => 'USD', 'invoice_number' => 'GRAN-SVC-1'], [$this->line($type)]);
         } finally {
             $this->assertSame(0, ClientInvoice::query()->count());
         }
+    }
+
+    /**
+     * The agent update replaces every line, and a generated line's time links
+     * with it, so a generated draft is refused whole and keeps its lines;
+     * it is regenerated instead (#349).
+     */
+    public function test_an_agent_update_refuses_a_generated_draft(): void
+    {
+        $draft = $this->draft();
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $draft->id, 'type' => 'retainer',
+            'description' => 'Generated', 'quantity' => 1, 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 2,
+        ]);
+        $draft->forceFill(['invoice_kind' => 'cadence_period'])->save();
+
+        $this->agentUpdate($draft->refresh(), [$this->line('adjustment')])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Only an ad-hoc draft invoice can be edited here. Regenerate a generated draft instead.']);
+
+        $this->assertSame(['adjustment', 'retainer'], $draft->lines()->orderBy('sort_order')->pluck('type')->all());
+    }
+
+    #[DataProvider('systemOnly')]
+    public function test_an_agent_update_of_an_ad_hoc_draft_refuses_it(string $type): void
+    {
+        $draft = $this->draft();
+
+        $this->agentUpdate($draft, [$this->line($type)])->assertStatus(422);
+
+        $this->assertSame(['adjustment'], $draft->lines()->pluck('type')->all());
+    }
+
+    public function test_an_agent_update_of_an_ad_hoc_draft_still_edits_it(): void
+    {
+        $draft = $this->draft();
+
+        $this->agentUpdate($draft, [$this->line('adjustment'), $this->line('milestone')])->assertOk();
+
+        $this->assertEqualsCanonicalizing(['adjustment', 'milestone'], $draft->lines()->pluck('type')->all());
     }
 
     public function test_an_ordinary_manual_line_is_still_accepted(): void
@@ -122,6 +191,27 @@ final class SystemOnlyLineTypesTest extends TestCase
             ->assertSuccessful();
 
         $this->assertSame(1, ClientInvoice::query()->count());
+    }
+
+    private function draft(): ClientInvoice
+    {
+        return app(InvoiceLifecycleService::class)->createDraft(
+            $this->workspace, $this->company, ['currency' => 'USD', 'invoice_number' => 'GRAN-EDIT-'.uniqid()], [$this->line('adjustment')],
+        );
+    }
+
+    /** @param  list<array<string, mixed>>  $lines */
+    private function agentUpdate(ClientInvoice $draft, array $lines): TestResponse
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
+        $this->actingAsMcp($this->owner, [AgentApiScopes::BILLING_WRITE]);
+
+        return $this->withHeader('Idempotency-Key', 'update-'.$draft->id.'-'.md5(serialize($lines)))
+            ->patchJson("/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$draft->public_id}", [
+                'expected_version' => AgentApiVersion::for($draft),
+                'time_entry_ids' => [],
+                'manual_lines' => array_map(fn (array $line): array => ['project_id' => $this->project->public_id] + $line, $lines),
+            ]);
     }
 
     /** @return array<string, mixed> */

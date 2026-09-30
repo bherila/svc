@@ -53,9 +53,20 @@ enum InvoiceLineType: string
     }
 
     /**
-     * Types only the generator may write, because the capacity ledger turns
-     * them into money state by type alone. A manual line of one of these would
-     * settle, or mark billed, deferred work nobody applied.
+     * Types only billing code may write, because it turns them back into
+     * money state by type alone, so every manual door refuses them (#349):
+     * - carried-deferred lines would settle, or mark billed, deferred work
+     *   nobody applied;
+     * - a credit line spends the client's overpayment credit pool at issue;
+     * - an expense line reads as a billed expense with no claim behind it;
+     * - the retainer, prior-month and additional-hours lines are the
+     *   generator's wording, read back by the cycle-sold, capacity and
+     *   overage code.
+     *
+     * The generators write these directly, never through a manual door, and
+     * a generated draft is not edited through one: the agent update accepts
+     * only an ad-hoc draft. Production held none of these on a manual invoice
+     * when they were refused.
      *
      * @return list<string>
      */
@@ -64,6 +75,12 @@ enum InvoiceLineType: string
         return [
             self::CarriedDeferredApplied->value,
             self::CarriedDeferredBilled->value,
+            self::Credit->value,
+            self::Expense->value,
+            self::Retainer->value,
+            self::PriorMonthRetainer->value,
+            self::PriorMonthBillable->value,
+            self::AdditionalHours->value,
         ];
     }
 
