@@ -6,6 +6,7 @@ use App\Casts\DateOnly;
 use App\Models\ClientTimeEntry;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -33,8 +34,24 @@ final class DateOnlyTest extends TestCase
         yield 'a datetime string' => ['2026-01-31 17:45:00', '2026-01-31'];
         yield 'a date object with a time' => [new DateTimeImmutable('2026-01-31 23:59:59'), '2026-01-31'];
         yield 'a timestamp, as immutable_date accepted' => [CarbonImmutable::parse('2025-01-31')->getTimestamp(), '2025-01-31'];
+        yield 'a timestamp given as a numeric string' => [(string) CarbonImmutable::parse('2025-01-31')->getTimestamp(), '2025-01-31'];
         yield 'null' => [null, null];
         yield 'an empty string' => ['', null];
+    }
+
+    #[DataProvider('notDates')]
+    public function test_it_refuses_a_value_that_is_not_a_date(mixed $given): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        DateOnly::toStored($given);
+    }
+
+    public static function notDates(): iterable
+    {
+        yield 'a boolean' => [true];
+        yield 'an array' => [['2026-01-31']];
+        yield 'a float' => [1.5];
     }
 
     #[DataProvider('reads')]
