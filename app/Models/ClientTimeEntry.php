@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -54,7 +55,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
-            'worked_on' => 'immutable_date',
+            'worked_on' => DateOnly::class,
             'minutes' => 'integer',
             'is_billable' => 'boolean',
             'is_deferred' => 'boolean',

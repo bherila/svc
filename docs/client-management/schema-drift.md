@@ -80,7 +80,7 @@ already caused a defect.
 Everything above is only findable if the tests run on the engine that ships.
 They did not. The suite ran on in-memory SQLite; production is **MariaDB 10.6**,
 reached through Laravel's `mariadb` driver with `strict => true`. SQLite hides
-schema drift in two distinct ways, and both have now cost real defects.
+schema drift in three distinct ways, and all have now cost real defects.
 
 **It stores what it is handed.** SQLite's column types are advisory, so
 `'1:30'` into `decimal(16,4)` is kept verbatim. That is why the `quantity`
@@ -95,6 +95,20 @@ the ordering silently disappears, which means a test asserting order can pass
 for the wrong reason. MySQL raises `1054` instead. The replay harness had
 exactly this bug against `workspace_invoice_counters`, which is keyed on
 `workspace_id` alone.
+
+**It compares dates as text.** A DATE column holds whatever text it was
+given, and Eloquent's `date` casts give it `2026-01-31 00:00:00`, which sorts
+after `2026-01-31`. Every `<=` or `whereBetween` bound ending on a period's last
+day therefore dropped that day's rows in the local suite only, while MariaDB
+compared dates. `ClientTimeEntry` now casts `worked_on` with `App\Casts\DateOnly`,
+which writes a bare date; a migration strips the time from rows written before
+it, and the agent update path, a builder `update()` that skips casts, writes the
+same form through `DateOnly::toStored()`. A query bounding it passes date
+strings, not Carbon values, which bind as `Y-m-d H:i:s` and would drop the
+*first* day instead; `WorkedOnDateBoundaryTest` reads every such bound in
+`app/`, and `MonthEndTimeEntryTest` shows a monthly invoice billing the last day
+(#354). The other DATE columns still store the time on SQLite (#362); a column
+moved to `DateOnly` must bound its queries the same way.
 
 A second CI job (`mariadb` in `.github/workflows/tests.yml`) now runs the whole
 suite against MariaDB 10.6, and `deploy` waits on it. SQLite stays the default

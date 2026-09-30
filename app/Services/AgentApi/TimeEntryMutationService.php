@@ -2,6 +2,7 @@
 
 namespace App\Services\AgentApi;
 
+use App\Casts\DateOnly;
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
@@ -101,6 +102,11 @@ final class TimeEntryMutationService
             // from an absent key here.
             if (array_key_exists('task_id', $data)) {
                 $attributes['client_task_id'] = $this->taskFor($workspace, $entry, $data['task_id']);
+            }
+            // A builder update skips the model's casts, so the date is
+            // written in the stored form here (#354).
+            if (array_key_exists('worked_on', $attributes)) {
+                $attributes['worked_on'] = DateOnly::toStored($entry, $attributes['worked_on']);
             }
             abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()
