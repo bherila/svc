@@ -18,22 +18,22 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * The cast tables of every model #362 moved to `DateOnly`, pinned.
+ * The calendar-date casts of every model #362 moved to `DateOnly`, pinned.
  *
  * A cast decides how a column is stored, so changing one is a storage-format
- * change: this test is where that shows up. It also gives the diff-scoped
- * mutation lane a test that covers each table line by line.
+ * change: this test is where that shows up. Only the date entries are pinned,
+ * so an unrelated cast change does not fail here.
  */
 final class CalendarDateCastTablesTest extends TestCase
 {
     /** @param  array<string, string>  $expected */
     #[DataProvider('tables')]
-    public function test_the_cast_table_is_as_pinned(string $model, array $expected): void
+    public function test_the_calendar_dates_are_cast_as_pinned(string $model, array $expected): void
     {
         /** @var Model $instance */
         $instance = new $model;
 
-        $this->assertSame($expected, $instance->getCasts());
+        $this->assertSame($expected, array_intersect_key($instance->getCasts(), $expected));
     }
 
     /** @return iterable<string, array{class-string<Model>, array<string, string>}> */
@@ -41,25 +41,10 @@ final class CalendarDateCastTablesTest extends TestCase
     {
         $tables = [
             ClientAgreement::class => [
-                'id' => 'int',
                 'starts_on' => DateOnly::class,
                 'ends_on' => DateOnly::class,
-                'is_visible_to_client' => 'boolean',
-                'hourly_rate_amount' => 'integer',
-                'retainer_amount' => 'integer',
-                'retainer_minutes' => 'integer',
-                'catch_up_threshold_minutes' => 'integer',
-                'period_retainer_minutes' => 'integer',
-                'period_retainer_amount' => 'integer',
-                'rollover_months' => 'integer',
-                'initial_rollover_minutes' => 'integer',
-                'bill_overage_interim' => 'boolean',
-                'activated_at' => 'immutable_datetime',
-                'signed_at' => 'immutable_datetime',
-                'terminated_at' => 'immutable_datetime',
             ],
             ClientInvoice::class => [
-                'id' => 'int',
                 'issue_date' => DateOnly::class,
                 'due_date' => DateOnly::class,
                 'service_period_start' => DateOnly::class,
@@ -67,95 +52,31 @@ final class CalendarDateCastTablesTest extends TestCase
                 'cycle_start' => DateOnly::class,
                 'cycle_end' => DateOnly::class,
                 'paid_on' => DateOnly::class,
-                'retainer_hours_included' => 'decimal:4',
-                'hours_worked' => 'decimal:4',
-                'rollover_hours_used' => 'decimal:4',
-                'unused_hours_balance' => 'decimal:4',
-                'negative_hours_balance' => 'decimal:4',
-                'hours_billed_at_rate' => 'decimal:4',
-                'starting_unused_hours' => 'decimal:4',
-                'starting_negative_hours' => 'decimal:4',
-                'hours_statement' => 'array',
-                'catch_up_basis' => 'array',
-                'issued_at' => 'datetime',
-                'voided_at' => 'datetime',
-                'automatic_delivery_due_at' => 'datetime',
-                'automatic_delivery_held_at' => 'datetime',
-                'document_revision' => 'integer',
-                'automatic_delivery_delay_days' => 'integer',
-                'is_visible_to_client' => 'boolean',
-                'subtotal_amount' => 'integer',
-                'tax_amount' => 'integer',
-                'total_amount' => 'integer',
-                'paid_amount' => 'integer',
-                'balance_amount' => 'integer',
             ],
             ClientProposal::class => [
-                'id' => 'int',
-                'is_visible_to_client' => 'boolean',
                 'valid_until' => DateOnly::class,
-                'sent_at' => 'immutable_datetime',
-                'accepted_at' => 'immutable_datetime',
-                'declined_at' => 'immutable_datetime',
-                'expired_at' => 'immutable_datetime',
             ],
             PaymentReconciliation::class => [
-                'id' => 'int',
-                'allocated_amount' => 'integer',
                 'reconciled_on' => DateOnly::class,
-                'is_active' => 'boolean',
             ],
             ClientInvoiceLine::class => [
-                'id' => 'int',
-                'quantity' => 'decimal:4',
-                'hours' => 'decimal:4',
                 'line_date' => DateOnly::class,
-                'unit_amount' => 'integer',
-                'tax_amount' => 'integer',
-                'total_amount' => 'integer',
-                'sort_order' => 'integer',
             ],
             ClientExpenseSchedule::class => [
-                'id' => 'int',
                 'starts_on' => DateOnly::class,
-                'next_occurrence' => 'integer',
-                'amount' => 'integer',
-                'is_active' => 'boolean',
             ],
             ClientAgreementRecurringItem::class => [
-                'id' => 'int',
-                'anchor_month' => 'integer',
-                'anchor_day' => 'integer',
                 'effective_on' => DateOnly::class,
                 'expires_on' => DateOnly::class,
-                'quantity' => 'decimal:3',
-                'amount' => 'integer',
-                'is_taxable' => 'boolean',
-                'is_active' => 'boolean',
-                'sort_order' => 'integer',
             ],
             ClientInvoicePayment::class => [
-                'id' => 'int',
-                'amount' => 'integer',
-                'refunded_amount' => 'integer',
                 'received_on' => DateOnly::class,
-                'provider_event_created_at' => 'integer',
             ],
             ClientBillingSchedule::class => [
-                'id' => 'int',
                 'next_run_on' => DateOnly::class,
-                'anchor_month' => 'integer',
-                'anchor_day' => 'integer',
-                'due_days' => 'integer',
-                'is_active' => 'boolean',
-                'line_template' => 'array',
             ],
             ClientExpense::class => [
-                'id' => 'int',
-                'deleted_at' => 'datetime',
                 'spent_on' => DateOnly::class,
-                'amount' => 'integer',
-                'approved_at' => 'immutable_datetime',
             ],
         ];
 

@@ -37,6 +37,14 @@ use InvalidArgumentException;
 final class DateOnly implements CastsAttributes
 {
     /**
+     * Read the stored date every time rather than handing back the object
+     * that was assigned. A class cast caches it otherwise, so a date given
+     * with a time and zone read back with them - 23:30 in Los Angeles
+     * serialised as the next day - until the model was reloaded (#362).
+     */
+    public bool $withoutObjectCaching = true;
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     public function get(Model $model, string $key, mixed $value, array $attributes): ?CarbonImmutable
@@ -46,7 +54,12 @@ final class DateOnly implements CastsAttributes
         }
 
         // A row written before this cast on SQLite may still carry a time.
-        return CarbonImmutable::parse(substr((string) $value, 0, 10));
+        $date = CarbonImmutable::createFromFormat('!Y-m-d', substr((string) $value, 0, 10));
+        if (! $date instanceof CarbonImmutable) {
+            throw new InvalidArgumentException('A stored calendar date must be Y-m-d.');
+        }
+
+        return $date;
     }
 
     /**
@@ -71,13 +84,14 @@ final class DateOnly implements CastsAttributes
             return null;
         }
 
-        $date = match (true) {
-            $value instanceof DateTimeInterface => CarbonImmutable::instance($value),
-            is_int($value), is_string($value) && is_numeric($value) => CarbonImmutable::createFromTimestamp((int) $value, date_default_timezone_get()),
-            is_string($value) => CarbonImmutable::parse($value),
+        // The order Laravel's own conversion uses, so every value the cast
+        // this replaces accepted is read the same way - a numeric string is a
+        // timestamp there too.
+        return match (true) {
+            $value instanceof DateTimeInterface => $value->format('Y-m-d'),
+            is_int($value), is_float($value), is_string($value) && is_numeric($value) => CarbonImmutable::createFromTimestamp((float) $value, date_default_timezone_get())->format('Y-m-d'),
+            is_string($value) => CarbonImmutable::parse($value)->format('Y-m-d'),
             default => throw new InvalidArgumentException('A calendar date must be a date, a timestamp or a date string.'),
         };
-
-        return $date->format('Y-m-d');
     }
 }

@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
+use ReflectionClassConstant;
 use Tests\TestCase;
 
 /**
@@ -198,12 +199,37 @@ final class DateColumnBoundaryTest extends TestCase
     {
         foreach (self::models() as $model) {
             foreach ($model->getCasts() as $attribute => $cast) {
-                $this->assertNotContains($cast, ['date', 'immutable_date'], $model::class.'::'.$attribute.' must be cast with DateOnly');
+                $this->assertDoesNotMatchRegularExpression('/^(immutable_)?date(:|$)/', $cast, $model::class.'::'.$attribute.' must be cast with DateOnly');
             }
         }
 
         $this->assertContains('worked_on', self::dateOnlyColumns());
         $this->assertContains('service_period_end', self::dateOnlyColumns());
+    }
+
+    /**
+     * The strip migration covers exactly the calendar-date columns: a column
+     * later moved to `DateOnly` and left out of it would keep its midnight
+     * suffix on SQLite. `worked_on` has its own migration from #354.
+     */
+    public function test_the_strip_migration_covers_every_calendar_date_column(): void
+    {
+        $migration = require database_path('migrations/2026_09_30_000000_store_every_calendar_date_without_a_time.php');
+        /** @var array<string, list<string>> $stripped */
+        $stripped = (new ReflectionClassConstant($migration, 'COLUMNS'))->getValue();
+
+        $cast = [];
+        foreach (self::models() as $model) {
+            foreach ($model->getCasts() as $attribute => $castType) {
+                if ($castType === DateOnly::class && $model->getTable() !== 'client_time_entries') {
+                    $cast[$model->getTable()][] = $attribute;
+                }
+            }
+        }
+
+        ksort($cast);
+        ksort($stripped);
+        $this->assertEquals(array_map(fn (array $columns): array => array_values(array_unique($columns)), $cast), $stripped);
     }
 
     /**
@@ -239,10 +265,10 @@ final class DateColumnBoundaryTest extends TestCase
             }
             $relative = 'app/'.ltrim(substr($file->getPathname(), strlen(app_path())), '/');
             $source = (string) file_get_contents($file->getPathname());
-            preg_match_all("/->(\\w+)\\(\\s*'(?:\\w+\\.)?(?:{$columns})'\\s*,/", $source, $calls, PREG_OFFSET_CAPTURE);
+            preg_match_all("/->(\\w+)\\(\\s*['\"](?:\\w+\\.)?(?:{$columns})['\"]\\s*,/", $source, $calls, PREG_OFFSET_CAPTURE);
             foreach ($calls[0] as $index => [$call, $offset]) {
                 $method = $calls[1][$index][0];
-                if (! in_array($method, ['where', 'orWhere', 'whereNot', 'orWhereNot', 'whereBetween', 'orWhereBetween', 'whereNotBetween', 'whereIn', 'whereNotIn'], true)) {
+                if (! in_array($method, ['where', 'orWhere', 'whereNot', 'orWhereNot', 'whereBetween', 'orWhereBetween', 'whereNotBetween', 'whereIn', 'whereNotIn', 'firstWhere'], true)) {
                     continue;
                 }
                 $site = $relative.':'.(substr_count(substr($source, 0, $offset), "\n") + 1);
@@ -269,8 +295,12 @@ final class DateColumnBoundaryTest extends TestCase
     private static function models(): array
     {
         $models = [];
-        foreach (glob(app_path('Models/*.php')) ?: [] as $path) {
-            $class = 'App\\Models\\'.basename($path, '.php');
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path('Models')));
+        foreach ($files as $file) {
+            if (! $file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
+            $class = 'App\\Models\\'.str_replace('/', '\\', substr($file->getPathname(), strlen(app_path('Models')) + 1, -4));
             if (class_exists($class) && is_subclass_of($class, Model::class) && ! (new ReflectionClass($class))->isAbstract()) {
                 $models[] = new $class;
             }

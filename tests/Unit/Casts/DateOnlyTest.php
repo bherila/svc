@@ -3,6 +3,7 @@
 namespace Tests\Unit\Casts;
 
 use App\Casts\DateOnly;
+use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
@@ -34,6 +35,7 @@ final class DateOnlyTest extends TestCase
         yield 'a datetime string' => ['2026-01-31 17:45:00', '2026-01-31'];
         yield 'a date object with a time' => [new DateTimeImmutable('2026-01-31 23:59:59'), '2026-01-31'];
         yield 'a timestamp, as immutable_date accepted' => [CarbonImmutable::parse('2025-01-31')->getTimestamp(), '2025-01-31'];
+        yield 'a float timestamp, as immutable_date accepted' => [(float) CarbonImmutable::parse('2025-01-31 12:00')->getTimestamp() + 0.5, '2025-01-31'];
         yield 'a timestamp given as a numeric string' => [(string) CarbonImmutable::parse('2025-01-31')->getTimestamp(), '2025-01-31'];
         yield 'null' => [null, null];
         yield 'an empty string' => ['', null];
@@ -51,7 +53,6 @@ final class DateOnlyTest extends TestCase
     {
         yield 'a boolean' => [true];
         yield 'an array' => [['2026-01-31']];
-        yield 'a float' => [1.5];
     }
 
     #[DataProvider('reads')]
@@ -77,6 +78,21 @@ final class DateOnlyTest extends TestCase
         yield 'a legacy value with a non-midnight time' => ['2026-01-31 13:14:15', '2026-01-31 00:00:00'];
         yield 'null' => [null, null];
         yield 'an empty string' => ['', null];
+    }
+
+    /**
+     * A date assigned with a time and zone reads back as that calendar day at
+     * midnight, before and after a reload, as the `date` casts it replaced
+     * did. Cached, the assigned object came back - 23:30 in Los Angeles
+     * serialised as the next day (#362).
+     */
+    public function test_an_assigned_date_reads_back_as_its_day_at_midnight(): void
+    {
+        $invoice = new ClientInvoice;
+        $invoice->due_date = CarbonImmutable::parse('2026-01-31 23:30', 'America/Los_Angeles');
+
+        $this->assertSame('2026-01-31 00:00:00', $invoice->due_date?->toDateTimeString());
+        $this->assertSame(CarbonImmutable::parse('2026-01-31')->toJSON(), $invoice->toArray()['due_date']);
     }
 
     public function test_the_model_casts_worked_on_with_it(): void
