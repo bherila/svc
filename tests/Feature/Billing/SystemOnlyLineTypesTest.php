@@ -55,36 +55,21 @@ final class SystemOnlyLineTypesTest extends TestCase
      *   spend nobody reconciled (#349).
      * - `expense`: read by the expense-claim code as a billed expense, with
      *   no claim behind a hand-typed one (#349).
+     * - `retainer`, `prior_month_retainer`, `prior_month_billable`,
+     *   `additional_hours`: the generator's wording, read back by the
+     *   cycle-sold, capacity and overage code (#349). Production held these
+     *   only on generated cadence invoices when they were refused.
      *
      * @return iterable<string, array{string}>
      */
     public static function systemOnly(): iterable
     {
-        foreach (['carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense'] as $type) {
+        foreach ([
+            'carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense',
+            'retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours',
+        ] as $type) {
             yield $type => [$type];
         }
-    }
-
-    /**
-     * Generator-worded types the capacity and overage code reads back (#349).
-     * Refused on a new manual line; a draft that already carries one keeps it.
-     * Production held these only on generated cadence invoices when they were
-     * refused.
-     *
-     * @return iterable<string, array{string}>
-     */
-    public static function generatorOwned(): iterable
-    {
-        foreach (['retainer', 'prior_month_retainer', 'additional_hours'] as $type) {
-            yield $type => [$type];
-        }
-    }
-
-    /** @return iterable<string, array{string}> */
-    public static function manuallyRefused(): iterable
-    {
-        yield from self::systemOnly();
-        yield from self::generatorOwned();
     }
 
     public function test_every_refused_type_is_listed_as_system_only(): void
@@ -93,13 +78,9 @@ final class SystemOnlyLineTypesTest extends TestCase
             array_map(static fn (array $case): string => $case[0], iterator_to_array(self::systemOnly(), false)),
             InvoiceLineType::systemOnlyValues(),
         );
-        $this->assertEqualsCanonicalizing(
-            array_map(static fn (array $case): string => $case[0], iterator_to_array(self::generatorOwned(), false)),
-            InvoiceLineType::generatorOwnedValues(),
-        );
     }
 
-    #[DataProvider('manuallyRefused')]
+    #[DataProvider('systemOnly')]
     public function test_the_operator_invoice_form_refuses_it(string $type): void
     {
         $this->actingAs($this->owner)
@@ -113,7 +94,7 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->assertSame(0, ClientInvoice::query()->count());
     }
 
-    #[DataProvider('manuallyRefused')]
+    #[DataProvider('systemOnly')]
     public function test_the_agent_invoice_api_refuses_it(string $type): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
@@ -129,7 +110,7 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->assertSame(0, ClientInvoice::query()->count());
     }
 
-    #[DataProvider('manuallyRefused')]
+    #[DataProvider('systemOnly')]
     public function test_a_billing_schedule_template_refuses_it(string $type): void
     {
         $agreement = ClientAgreement::query()->create([
@@ -147,7 +128,7 @@ final class SystemOnlyLineTypesTest extends TestCase
     }
 
     /** Behind the doors, the service refuses it too - whatever calls it. */
-    #[DataProvider('manuallyRefused')]
+    #[DataProvider('systemOnly')]
     public function test_the_draft_service_refuses_it(string $type): void
     {
         $this->expectException(DomainException::class);
@@ -160,39 +141,44 @@ final class SystemOnlyLineTypesTest extends TestCase
         }
     }
 
-    /** An agent editing a generated draft keeps the generator's lines. */
-    #[DataProvider('generatorOwned')]
-    public function test_an_agent_update_keeps_a_type_the_draft_already_carries(string $type): void
+    /**
+     * The agent update replaces every line, and a generated line's time links
+     * with it, so a generated draft is refused whole and keeps its lines;
+     * it is regenerated instead (#349).
+     */
+    public function test_an_agent_update_refuses_a_generated_draft(): void
     {
-        $draft = $this->draftCarrying($type);
+        $draft = $this->draft();
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $draft->id, 'type' => 'retainer',
+            'description' => 'Generated', 'quantity' => 1, 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 2,
+        ]);
+        $draft->forceFill(['invoice_kind' => 'cadence_period'])->save();
 
-        $this->agentUpdate($draft, [$this->line($type), $this->line('adjustment')])->assertOk();
+        $this->agentUpdate($draft->refresh(), [$this->line('adjustment')])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Only an ad-hoc draft invoice can be edited here. Regenerate a generated draft instead.']);
 
-        $this->assertSame(1, $draft->lines()->where('type', $type)->count());
-        $this->assertSame(1, $draft->lines()->where('type', 'adjustment')->count());
+        $this->assertSame(['adjustment', 'retainer'], $draft->lines()->orderBy('sort_order')->pluck('type')->all());
     }
 
-    /** But a draft that did not carry the type cannot gain it by hand. */
-    #[DataProvider('generatorOwned')]
-    public function test_an_agent_update_cannot_add_a_type_the_draft_did_not_carry(string $type): void
-    {
-        $draft = $this->draftCarrying(null);
-
-        $this->agentUpdate($draft, [$this->line($type)])->assertStatus(422);
-
-        $this->assertSame(0, $draft->lines()->where('type', $type)->count());
-        $this->assertSame(1, $draft->lines()->where('type', 'adjustment')->count());
-    }
-
-    /** The system-only types stay refused on update, carried or not. */
     #[DataProvider('systemOnly')]
-    public function test_an_agent_update_refuses_a_system_only_type(string $type): void
+    public function test_an_agent_update_of_an_ad_hoc_draft_refuses_it(string $type): void
     {
-        $draft = $this->draftCarrying(null);
+        $draft = $this->draft();
 
         $this->agentUpdate($draft, [$this->line($type)])->assertStatus(422);
 
-        $this->assertSame(0, $draft->lines()->where('type', $type)->count());
+        $this->assertSame(['adjustment'], $draft->lines()->pluck('type')->all());
+    }
+
+    public function test_an_agent_update_of_an_ad_hoc_draft_still_edits_it(): void
+    {
+        $draft = $this->draft();
+
+        $this->agentUpdate($draft, [$this->line('adjustment'), $this->line('milestone')])->assertOk();
+
+        $this->assertEqualsCanonicalizing(['adjustment', 'milestone'], $draft->lines()->pluck('type')->all());
     }
 
     public function test_an_ordinary_manual_line_is_still_accepted(): void
@@ -207,21 +193,11 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->assertSame(1, ClientInvoice::query()->count());
     }
 
-    /** An ad-hoc draft with an ordinary line, plus a generator-written line of `$type`. */
-    private function draftCarrying(?string $type): ClientInvoice
+    private function draft(): ClientInvoice
     {
-        $draft = app(InvoiceLifecycleService::class)->createDraft(
-            $this->workspace, $this->company, ['currency' => 'USD', 'invoice_number' => 'GRAN-EDIT-'.($type ?? 'none')], [$this->line('adjustment')],
+        return app(InvoiceLifecycleService::class)->createDraft(
+            $this->workspace, $this->company, ['currency' => 'USD', 'invoice_number' => 'GRAN-EDIT-'.uniqid()], [$this->line('adjustment')],
         );
-        if ($type !== null) {
-            // As the generator writes it: directly, not through a manual door.
-            ClientInvoiceLine::query()->create([
-                'workspace_id' => $this->workspace->id, 'client_invoice_id' => $draft->id, 'type' => $type,
-                'description' => 'Generated', 'quantity' => 1, 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'sort_order' => 2,
-            ]);
-        }
-
-        return $draft->refresh();
     }
 
     /** @param  list<array<string, mixed>>  $lines */

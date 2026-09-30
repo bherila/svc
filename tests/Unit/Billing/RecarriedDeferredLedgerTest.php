@@ -120,7 +120,7 @@ final class RecarriedDeferredLedgerTest extends TestCase
         // The wording is display text: an ordinary type with the same words is not one.
         $this->assertNull(CarriedDeferredLine::of('prior_month_retainer'));
         $this->assertNull(CarriedDeferredLine::of('additional_hours'));
-        $this->assertSame(['carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense'], InvoiceLineType::systemOnlyValues());
+        $this->assertSame(['carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense', 'retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours'], InvoiceLineType::systemOnlyValues());
         foreach (['carried_deferred_applied', 'carried_deferred_billed'] as $type) {
             $this->assertContains($type, InvoiceLineType::systemGeneratedValues(), 'Released when a draft is rebuilt');
             $this->assertContains($type, InvoiceLineType::definingTheWorkPeriod());

@@ -54,13 +54,19 @@ enum InvoiceLineType: string
 
     /**
      * Types only billing code may write, because it turns them back into
-     * money state by type alone. A manual carried-deferred line would settle,
-     * or mark billed, deferred work nobody applied; a manual credit line would
-     * spend the client's overpayment credit pool at issue with nothing
-     * reconciling it; a manual expense line would read as a billed expense
-     * with no claim behind it (#349). The generators write these directly,
-     * never through a manual door, and a generated expense line's claim
-     * already stops its draft's lines being replaced.
+     * money state by type alone, so every manual door refuses them (#349):
+     * - carried-deferred lines would settle, or mark billed, deferred work
+     *   nobody applied;
+     * - a credit line spends the client's overpayment credit pool at issue;
+     * - an expense line reads as a billed expense with no claim behind it;
+     * - the retainer, prior-month and additional-hours lines are the
+     *   generator's wording, read back by the cycle-sold, capacity and
+     *   overage code.
+     *
+     * The generators write these directly, never through a manual door, and
+     * a generated draft is not edited through one: the agent update accepts
+     * only an ad-hoc draft. Production held none of these on a manual invoice
+     * when they were refused.
      *
      * @return list<string>
      */
@@ -71,38 +77,11 @@ enum InvoiceLineType: string
             self::CarriedDeferredBilled->value,
             self::Credit->value,
             self::Expense->value,
-        ];
-    }
-
-    /**
-     * Types the generator words and the capacity and overage code reads back:
-     * refused on a new manual line, but kept when a draft that already
-     * carries one is saved again (#349).
-     *
-     * The agent update replaces every line of a draft, generated ones
-     * included, so refusing these outright would stop an agent editing a
-     * generated cadence draft at all. A draft that did not carry the type
-     * cannot gain it by hand.
-     *
-     * @return list<string>
-     */
-    public static function generatorOwnedValues(): array
-    {
-        return [
             self::Retainer->value,
             self::PriorMonthRetainer->value,
+            self::PriorMonthBillable->value,
             self::AdditionalHours->value,
         ];
-    }
-
-    /**
-     * Every type a manual line on a new invoice or template may not carry.
-     *
-     * @return list<string>
-     */
-    public static function manuallyRefusedValues(): array
-    {
-        return [...self::systemOnlyValues(), ...self::generatorOwnedValues()];
     }
 
     /**

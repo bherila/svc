@@ -142,11 +142,10 @@ final class InvoiceLifecycleService
                 ...$totals,
                 'balance_amount' => $totals['total_amount'],
                 // The hours statement explains the lines the generator wrote,
-                // and these are about to be replaced by hand. Editing a
-                // generated draft stays allowed - this is the operator's one
-                // edit path for any draft - so the statement is withdrawn
-                // rather than left describing lines that no longer exist; the
-                // next regeneration measures it again.
+                // and these are about to be replaced by hand, so it is
+                // withdrawn rather than left describing lines that no longer
+                // exist. The agent door reaches here only for an ad-hoc draft
+                // (#349); a generated one is regenerated, not edited.
                 'hours_statement' => null,
             ];
             foreach (['due_date', 'notes'] as $attribute) {
@@ -158,14 +157,9 @@ final class InvoiceLifecycleService
             // Named on the statement, not only on the invoice it hangs off.
             // A relation delete is a builder write: it never reaches
             // `setKeysForSaveQuery()`, so the workspace has to be said here.
-            // The generator-owned types this draft already carries may be
-            // saved again; read before its lines are replaced.
-            $carriedTypes = $locked->lines()->where('workspace_id', $workspace->id)
-                ->whereIn('type', InvoiceLineType::generatorOwnedValues())
-                ->distinct()->pluck('type')->all();
             $locked->lines()->where('workspace_id', $workspace->id)->delete();
             $locked->forceFill($updates)->save();
-            $this->createLines($locked, $workspace, $lines, $subtotalOverrides, $carriedTypes);
+            $this->createLines($locked, $workspace, $lines, $subtotalOverrides);
             $this->activities->record(
                 $workspace,
                 $locked->clientCompany,
@@ -1556,21 +1550,14 @@ final class InvoiceLifecycleService
     /**
      * @param  list<array<string, mixed>>  $lines
      * @param  array<int, int>  $subtotalOverrides
-     * @param  array<mixed>  $carriedTypes  generator-owned types the draft already carried
      */
-    private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides, array $carriedTypes = []): void
+    private function createLines(ClientInvoice $invoice, Workspace $workspace, array $lines, array $subtotalOverrides): void
     {
         foreach ($lines as $index => $line) {
             // Every manual door arrives here. A type the capacity ledger reads
             // as money state is the generator's alone to write.
             if (in_array($line['type'] ?? null, InvoiceLineType::systemOnlyValues(), true)) {
                 throw new DomainException('That line type is written only by invoice generation and cannot be added by hand.');
-            }
-            // A generator-worded type stays on a draft that carried it, and
-            // cannot be added to one that did not (#349).
-            if (in_array($line['type'] ?? null, InvoiceLineType::generatorOwnedValues(), true)
-                && ! in_array($line['type'], $carriedTypes, true)) {
-                throw new DomainException('That line type is written by invoice generation: a draft that already carries it keeps it, but it cannot be added by hand.');
             }
             $lineTotal = self::lineTotal($line, $subtotalOverrides[$index] ?? null);
             $invoice->lines()->create([

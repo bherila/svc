@@ -184,9 +184,7 @@ final class AgentInvoiceMutationController extends Controller
             'manual_lines' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
             'manual_lines.*' => ['array:project_id,type,description,quantity,unit_amount,tax_amount'],
             'manual_lines.*.project_id' => ['nullable', 'uuid'],
-            // An update may keep a generator-owned type the draft already
-            // carries; the service decides that against the locked draft.
-            'manual_lines.*.type' => ['required', 'string', 'max:40', Rule::notIn($updating ? InvoiceLineType::systemOnlyValues() : InvoiceLineType::manuallyRefusedValues())],
+            'manual_lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
             'manual_lines.*.description' => ['required', 'string', 'max:10000'],
             'manual_lines.*.quantity' => ['required'],
             'manual_lines.*.unit_amount' => ['required', 'integer', 'min:0'],
