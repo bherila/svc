@@ -150,18 +150,21 @@ final class InvoiceLineDetail
     }
 
     /**
-     * The first line of an ad-hoc draft that still prints the internal note
-     * of the one time entry it bills, or null.
+     * Rewrite every line of an ad-hoc draft that still prints the internal
+     * note of the one time entry it bills to that entry's client wording, and
+     * return how many were rewritten.
      *
      * Drafts built before lines took the client's wording (#347) carry the
      * note, and nothing rebuilds them until one of their entries changes, so
-     * issuing is where one would reach the client. A line whose note is also
+     * issuing is where one would reach the client. The browser offers no way
+     * to save a draft again, so issuing repairs the line instead of refusing:
+     * it writes exactly what any rebuild would. A line whose note is also
      * what the client would read (no client wording differs from it) is not
-     * a leak and is not reported.
+     * a leak and is left alone.
      *
      * @infection-ignore-all The line and pivot reads need the feature database and are covered by InvoiceFromTimeServiceTest; the mutation lane runs unit tests only, and ClientWordingTest covers the rule it applies.
      */
-    public static function lineCarryingAnInternalNote(ClientInvoice $invoice): ?ClientInvoiceLine
+    public static function rewordLinesCarryingAnInternalNote(ClientInvoice $invoice): int
     {
         $lines = $invoice->lines()
             ->where('workspace_id', $invoice->workspace_id)
@@ -170,15 +173,17 @@ final class InvoiceLineDetail
             ->with(['timeEntries' => fn ($relation) => $relation->where('client_time_entries.workspace_id', $invoice->workspace_id)])
             ->get();
 
+        $rewritten = 0;
         foreach ($lines as $line) {
             $entry = $line->timeEntries->count() === 1 ? $line->timeEntries->first() : null;
             if ($entry instanceof ClientTimeEntry
                 && trim((string) $line->description) === trim((string) $entry->description)
                 && self::clientWording($entry) !== trim((string) $entry->description)) {
-                return $line;
+                $line->forceFill(['description' => self::clientWording($entry)])->save();
+                $rewritten++;
             }
         }
 
-        return null;
+        return $rewritten;
     }
 }

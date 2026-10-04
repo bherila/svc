@@ -432,14 +432,11 @@ final class InvoiceLifecycleService
             $this->draftCatchUpDependencies->assertIssuable($locked);
 
             // An ad-hoc draft built from time before its lines took the
-            // client's wording still prints an internal note (#347).
+            // client's wording still prints an internal note (#347). Issuing
+            // writes the wording any rebuild would, under the invoice lock.
             if ($locked->invoice_kind === InvoiceKind::AdHoc->value
-                && ($leaking = InvoiceLineDetail::lineCarryingAnInternalNote($locked)) instanceof ClientInvoiceLine) {
-                throw new DomainException(sprintf(
-                    'Line %d of this draft prints the internal note of the time it bills, which the client must not read. '
-                    .'Save the draft again to rebuild its time lines with the client\'s wording, then issue it.',
-                    (int) $leaking->sort_order + 1,
-                ));
+                && InvoiceLineDetail::rewordLinesCarryingAnInternalNote($locked) > 0) {
+                $locked->unsetRelation('lines');
             }
 
             $issueDate = $locked->issue_date ?? $today;

@@ -5,6 +5,7 @@ namespace App\Support\AgentApi\Presenters;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceKind;
 
 final class AgentInvoicePresenter
 {
@@ -16,6 +17,10 @@ final class AgentInvoicePresenter
             'company_id' => $invoice->clientCompany->public_id,
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
+            'invoice_kind' => $invoice->invoiceKindValue(),
+            // What `invoices.update_draft` accepts (#349): a generated draft
+            // is regenerated, never edited by hand.
+            'editable' => $invoice->status === 'draft' && $invoice->invoiceKindValue() === InvoiceKind::AdHoc->value,
             'linked_time_state' => $this->linkedTimeState($invoice),
             'currency' => $invoice->currency,
             'total_amount' => $invoice->total_amount,

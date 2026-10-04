@@ -432,30 +432,36 @@ final class InvoiceFromTimeServiceTest extends TestCase
      * A draft built before lines took the client's wording still carries an
      * internal note; issuing it is refused until it is saved again.
      */
-    public function test_a_draft_still_carrying_an_internal_note_is_refused_at_issue(): void
+    public function test_issuing_a_draft_still_carrying_an_internal_note_rewrites_it_to_the_client_wording(): void
     {
         [$workspace, $company, $project, $user] = $this->context('client-wording-legacy');
-        $entry = ClientTimeEntry::query()->create([
+        $entry = fn (string $note, bool $visible, ?string $wording) => ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
             'user_id' => $user->id, 'worked_on' => '2026-08-23', 'minutes' => 60, 'is_billable' => true,
             'status' => 'approved', 'billing_rate_amount' => 12000, 'currency' => 'USD',
-            'description' => 'Internal: legacy note', 'is_visible_to_client' => false,
+            'description' => $note, 'is_visible_to_client' => $visible, 'client_visible_description' => $wording,
         ]);
+        $hidden = $entry('Internal: legacy note', false, null);
+        $worded = $entry('Internal: ticket 4411', true, 'Reporting fixes');
+        $same = $entry('Quarterly review', true, 'Quarterly review');
         $service = app(InvoiceFromTimeService::class);
-        $invoice = $service->create($workspace, $company, ['invoice_number' => 'SVC-WORDING-3', 'currency' => 'USD'], [$entry->public_id]);
-        ClientInvoiceLine::query()->whereKey($invoice->lines->sole()->id)->update(['description' => 'Internal: legacy note']);
+        $invoice = $service->create($workspace, $company, ['invoice_number' => 'SVC-WORDING-3', 'currency' => 'USD'], [$hidden->public_id, $worded->public_id, $same->public_id]);
 
-        try {
-            app(InvoiceLifecycleService::class)->issue($invoice->fresh() ?? $invoice, $workspace);
-            $this->fail('A draft printing an internal note was issued');
-        } catch (DomainException $refusal) {
-            $this->assertStringContainsString('internal note', $refusal->getMessage());
+        // Written as a draft built before #347 stored them: each line prints its entry's internal note.
+        foreach ($invoice->lines as $line) {
+            ClientInvoiceLine::query()->whereKey($line->id)->update(['description' => $line->timeEntries->sole()->description]);
         }
-        $this->assertSame('draft', $invoice->fresh()?->status);
 
-        $invoice = $service->updateDraft($invoice->fresh() ?? $invoice, $workspace, AgentApiVersion::for($invoice->fresh() ?? $invoice), ['currency' => 'USD'], [$entry->public_id], []);
-        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
-        $this->assertSame('issued', $invoice->fresh()?->status);
+        // The browser has no save action for a draft, so issuing repairs the lines rather than refusing.
+        app(InvoiceLifecycleService::class)->issue($invoice->fresh() ?? $invoice, $workspace);
+
+        $issued = $invoice->fresh();
+        $this->assertSame('issued', $issued?->status);
+        $printed = $issued->lines()->with('timeEntries')->get()
+            ->mapWithKeys(fn (ClientInvoiceLine $line) => [$line->timeEntries->sole()->id => $line->description]);
+        $this->assertSame(InvoiceLineDetail::CLIENT_GENERIC_LABEL, $printed[$hidden->id]);
+        $this->assertSame('Reporting fixes', $printed[$worded->id]);
+        $this->assertSame('Quarterly review', $printed[$same->id]);
     }
 
     private function context(string $slug): array

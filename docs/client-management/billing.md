@@ -316,10 +316,11 @@ time for a closed month, a correction, an agreement edit - silently rewrite an
 invoice a client already holds (`InvoiceHoursStatementTest::test_an_issued_invoices_statement_does_not_move_when_the_ledger_does`).
 Invoices generated before the column existed, ad-hoc and interim invoices carry
 none and print without one; nothing backfills them from today's ledger.
-An operator may still replace a generated draft's lines by hand
-(`invoices.update_draft`, which accepts any draft); that withdraws the
-statement, so the edited draft prints none rather than one describing lines it
-no longer has, and the next regeneration measures it again.
+A generated draft's lines are never replaced by hand: `invoices.update_draft`
+accepts only an ad-hoc draft (the agent invoice payload reports it as
+`editable`), so a statement always describes the lines it was measured with.
+Should a hand edit ever replace a draft's lines, `updateDraft` still withdraws
+the statement rather than keep one describing lines the draft no longer has.
 
 ### Appendix and client wording
 
@@ -344,8 +345,8 @@ which a document sent to the client must not carry. The wording belongs to the
 entry: time-linked lines are derived and every rebuild writes them again, so
 different wording is written as the entry's client description. The operator's
 screens keep the internal notes in the line's appendix. A draft built before
-this rule that still prints an entry's internal note is refused at issue until
-it is saved again, which rebuilds its time lines.
+this rule that still prints an entry's internal note has those lines rewritten
+to the client wording when it is issued, exactly as a rebuild would write them.
 
 ## Billing Validation and Automation
 

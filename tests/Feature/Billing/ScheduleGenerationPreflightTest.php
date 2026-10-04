@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
@@ -709,6 +710,37 @@ final class ScheduleGenerationPreflightTest extends TestCase
 
         $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'no invoice for nothing');
         $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /**
+     * A template stored before #364 refused the generator's line types still
+     * carries one. `createDraft()` refuses it, so the schedule halts; the
+     * preflight must say so rather than clear it.
+     */
+    #[DataProvider('systemOnlyLineTypes')]
+    public function test_a_line_template_using_a_system_only_type_halts_the_schedule(string $type): void
+    {
+        [$workspace, , , $schedule] = $this->scheduled('system-type-'.str_replace('_', '-', $type));
+        $schedule->forceFill(['line_template' => [
+            ['type' => $type, 'description' => 'Retainer', 'quantity' => '1',
+                'unit_amount' => 100000, 'tax_amount' => 0, 'sort_order' => 1],
+        ]])->save();
+
+        $report = app(ScheduleGenerationPreflight::class)->run($workspace, $this->through());
+
+        $this->assertSame(1, $report->wouldHalt);
+        $this->assertSame(1, $report->defectsByKind[ScheduleDefect::UnreadableLineTemplate->value]);
+        $this->assertPredictionMatchesTheRun($workspace, $schedule);
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertSame('2026-08-01', $schedule->fresh()?->next_run_on?->toDateString());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function systemOnlyLineTypes(): iterable
+    {
+        foreach (InvoiceLineType::systemOnlyValues() as $type) {
+            yield $type => [$type];
+        }
     }
 
     /**
