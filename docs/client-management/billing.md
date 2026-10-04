@@ -344,8 +344,8 @@ which a document sent to the client must not carry. The wording belongs to the
 entry: time-linked lines are derived and every rebuild writes them again, so
 different wording is written as the entry's client description. The operator's
 screens keep the internal notes in the line's appendix. A draft built before
-this rule that still prints an entry's internal note is refused at issue until
-it is saved again, which rebuilds its time lines.
+this rule that still prints an entry's internal note has those lines rewritten
+to the client wording when it is issued, exactly as a rebuild would write them.
 
 ## Billing Validation and Automation
 
