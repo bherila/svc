@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
 
 log() {
   printf '\n==> %s\n' "$*"
@@ -14,8 +13,8 @@ cleanup() {
       rm -f "$path"
     fi
   done
+  return 0
 }
-trap cleanup EXIT
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -33,42 +32,46 @@ run_as_root() {
   fi
 }
 
-# The Codex image ships third-party apt sources (apt.llvm.org, for example) that
-# the sandbox egress proxy answers with "403 Forbidden". A single unreachable
-# repository makes the whole `apt-get update` exit non-zero, which under
-# `set -e` aborts setup even though the Ubuntu archives refreshed fine. Disable
-# only the offending files under sources.list.d and retry once.
+is_optional_apt_uri() {
+  local uri="$1" host
+  [[ "$uri" == http://* || "$uri" == https://* ]] || return 1
+  host="${uri#*://}"
+  host="${host%%/*}"
+  case "$host" in
+    packages.microsoft.com|download.docker.com|deb.nodesource.com|dl.google.com|dl.yarnpkg.com|apt.llvm.org) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Disable a failed optional feed only when every URI in its source file is an
+# explicitly known optional feed. Ubuntu archives, the PHP PPA, and mixed files
+# must survive a transient apt failure.
 disable_unreachable_apt_sources() {
   local output="$1"
-  local disabled=0
-  local uri host file
+  local sources_dir="${2:-/etc/apt/sources.list.d}"
+  local disabled=0 uri host file sources source source_host optional matches
 
-  if [[ ! -d /etc/apt/sources.list.d ]]; then
-    return 1
-  fi
-
-  while read -r uri; do
-    [[ -n "$uri" ]] || continue
-
-    local matches
-    matches="$(grep -rlF "$uri" /etc/apt/sources.list.d 2>/dev/null || true)"
-
-    if [[ -z "$matches" ]]; then
-      host="$(printf '%s' "$uri" | sed -n 's#^\(https\?://[^/]*\).*#\1#p')"
-
-      if [[ -n "$host" ]]; then
-        matches="$(grep -rlF "$host" /etc/apt/sources.list.d 2>/dev/null || true)"
-      fi
-    fi
-
-    while read -r file; do
-      [[ -n "$file" ]] || continue
-      [[ "$file" == *.disabled ]] && continue
-
-      log "Disabling unreachable apt source: $file ($uri)"
-      run_as_root mv -f "$file" "$file.disabled"
+  while IFS= read -r uri; do
+    is_optional_apt_uri "$uri" || continue
+    host="${uri#*://}"
+    host="${host%%/*}"
+    for file in "$sources_dir"/*.list "$sources_dir"/*.sources; do
+      [[ -f "$file" && ! -e "$file.disabled" ]] || continue
+      sources="$(sed '/^[[:space:]]*#/d' "$file" | grep -oE '[[:alpha:]][[:alnum:]+.-]*:[^[:space:]]+' || true)"
+      [[ -n "$sources" ]] || continue
+      optional=1
+      matches=0
+      while IFS= read -r source; do
+        is_optional_apt_uri "$source" || optional=0
+        source_host="${source#*://}"
+        source_host="${source_host%%/*}"
+        [[ "$source_host" != "$host" ]] || matches=1
+      done <<< "$sources"
+      [[ "$optional" == 1 && "$matches" == 1 ]] || continue
+      log "Disabling unavailable optional apt feed: $host"
+      run_as_root mv -- "$file" "$file.disabled" || return "$?"
       disabled=1
-    done <<< "$matches"
+    done
   done <<< "$(printf '%s\n' "$output" | sed -n 's/^Err:[0-9]* \([^ ]*\).*/\1/p' | sort -u)"
 
   [[ "$disabled" == "1" ]]
@@ -80,16 +83,13 @@ apt_update() {
   local output status attempt
 
   for attempt in 1 2; do
-    set +e
-    output="$(run_as_root apt-get update -q 2>&1)"
-    status=$?
-    set -e
-
-    printf '%s\n' "$output"
-
-    if [[ "$status" -eq 0 ]]; then
+    if output="$(run_as_root apt-get -o APT::Update::Error-Mode=any update -q 2>&1)"; then
+      printf '%s\n' "$output"
       return 0
+    else
+      status=$?
     fi
+    printf '%s\n' "$output"
 
     if [[ "$attempt" -eq 2 ]] || ! disable_unreachable_apt_sources "$output"; then
       break
@@ -101,20 +101,8 @@ apt_update() {
   return "$status"
 }
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-export CI="${CI:-1}"
-export COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_INTERACTION=1
-export PATH="$HOME/.local/bin:$PATH"
-exec </dev/null
-cd "$REPO_ROOT"
-
-need_cmd curl
-need_cmd node
-need_cmd php
-
 php_runtime_is_ready() {
+  command -v php >/dev/null 2>&1 || return 1
   php -r '
     $required = ["bcmath", "curl", "gd", "intl", "mbstring", "pdo_mysql", "pdo_sqlite", "sodium", "sqlite3", "xml", "zip"];
     $missing = array_filter($required, fn (string $extension): bool => !extension_loaded($extension));
@@ -239,6 +227,20 @@ install_dependencies() {
 
   log "Installing Node dependencies"
   pnpm install --frozen-lockfile --prefer-offline
+  pnpm run hooks:install
+}
+
+app_key_is_configured() {
+  php -r '
+    try {
+      require "vendor/autoload.php";
+      $values = Dotenv\Dotenv::createArrayBacked(getcwd())->load();
+      exit(isset($values["APP_KEY"]) && $values["APP_KEY"] !== "" ? 0 : 1);
+    } catch (Throwable) {
+      fwrite(STDERR, "Unable to parse local environment configuration.\n");
+      exit(2);
+    }
+  '
 }
 
 prepare_laravel_environment() {
@@ -246,17 +248,44 @@ prepare_laravel_environment() {
     log "Creating local .env from .env.example"
     cp .env.example .env
   fi
-  if [[ -f artisan && -f .env ]] && ! grep -Eq '^APP_KEY=base64:.+' .env; then
+  if [[ -f artisan && -f .env ]]; then
+    if app_key_is_configured; then
+      return 0
+    else
+      local status=$?
+      [[ "$status" == 1 ]] || return "$status"
+    fi
     log "Generating Laravel application key"
     php artisan key:generate --no-interaction --force
   fi
 }
 
-ensure_system_dependencies
-ensure_composer
-ensure_pnpm
-configure_github_auth
-install_dependencies
-prepare_laravel_environment
+main() {
+  local script_dir repo_root
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  repo_root="$(cd "$script_dir/.." && pwd)"
 
-log "Codex environment setup complete"
+  trap cleanup EXIT
+  export CI="${CI:-1}"
+  export COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_INTERACTION=1
+  export PATH="$HOME/.local/bin:$PATH"
+  exec </dev/null
+  cd "$repo_root"
+
+  need_cmd curl
+  need_cmd node
+  ensure_system_dependencies
+  need_cmd php
+  ensure_composer
+  ensure_pnpm
+  configure_github_auth
+  install_dependencies
+  prepare_laravel_environment
+
+  log "Codex environment setup complete"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -Eeuo pipefail
+  main "$@"
+fi
