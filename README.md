@@ -43,6 +43,13 @@ composer dev
 
 The generated SQLite database and `.env` are local-only. Do not import production data into this checkout.
 
+For a Codex environment, run `bash codex/setup.sh`. It installs PHP 8.5 and
+required extensions through apt when needed, installs the locked Composer and
+pnpm dependencies, and creates `.env` and an application key if absent. It keeps
+an existing environment and key and does not run database migrations. Set
+`CODEX_SKIP_SYSTEM_DEPENDENCIES=1` when the system packages are already managed
+by the environment.
+
 The integrated workspace screen is available at
 `/workspaces/{workspace-public-id}/operations`.
 
