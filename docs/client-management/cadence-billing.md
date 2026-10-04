@@ -393,7 +393,10 @@ That includes an **empty** template. Both readers used to accept `[]`, and
 template had been imported or hand-edited empty got a clean preflight and then
 created, issued and advanced past a $0 invoice with no lines, one per due
 period. The public contract has always required `min:1`; the reader is now no
-looser than it. It reports how many schedules would halt, split by refusal, pending
+looser than it. So does a template line using one of the types only
+generation writes (`InvoiceLineType::systemOnlyValues()`): new templates refuse
+them, `createDraft()` refuses them, and a template stored before that is
+reported here rather than cleared and then refused mid-run. It reports how many schedules would halt, split by refusal, pending
 draft and defect of the schedule itself, and which reason fired. It exits
 non-zero when it finds any, so a deployment can gate on it, and prints counts
 only, so a run against real client billing records is safe to paste into a

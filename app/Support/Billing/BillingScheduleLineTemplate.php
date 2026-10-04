@@ -32,7 +32,7 @@ use DomainException;
  * refactor away from performing the run.
  *
  * This says little about what is *inside* a line beyond its being an object
- * with named fields. `createDraft()` prices each one through `MoneyService`
+ * with named fields and not one of the line types only generation writes. `createDraft()` prices each one through `MoneyService`
  * and refuses a missing amount or type there, and the preflight documents that
  * it rehearses what generation reads rather than what it writes. What it does
  * establish is that there is at least one line to price, which is the
@@ -79,6 +79,18 @@ final class BillingScheduleLineTemplate
                     throw new DomainException('A billing schedule line template entry must be an object.');
                 }
                 $fields[$name] = $field;
+            }
+
+            // `createDraft()` refuses these on every manual door (#364), and a
+            // template is one. Asked here so a template stored before they
+            // were refused is reported by the preflight instead of predicted
+            // clean and then refused mid-run.
+            if (in_array($fields['type'] ?? null, InvoiceLineType::systemOnlyValues(), true)) {
+                throw new DomainException(sprintf(
+                    'A billing schedule line template cannot use the %s line type, which only invoice generation writes; '
+                    .'change that line to an ordinary type.',
+                    $fields['type'],
+                ));
             }
             $lines[] = $fields;
         }
