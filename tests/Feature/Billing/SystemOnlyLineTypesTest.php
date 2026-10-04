@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -179,6 +180,36 @@ final class SystemOnlyLineTypesTest extends TestCase
         $this->agentUpdate($draft, [$this->line('adjustment'), $this->line('milestone')])->assertOk();
 
         $this->assertEqualsCanonicalizing(['adjustment', 'milestone'], $draft->lines()->pluck('type')->all());
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function kindsAndStatuses(): iterable
+    {
+        foreach (InvoiceKind::cases() as $kind) {
+            foreach (['draft', 'issued'] as $status) {
+                yield "{$kind->value} {$status}" => [$kind->value, $status];
+            }
+        }
+        yield 'unrecognised kind draft' => ['legacy_kind', 'draft'];
+    }
+
+    /**
+     * An agent reads `editable` before choosing `invoices.update_draft` over
+     * regeneration, so it must say exactly what the update accepts (#364).
+     */
+    #[DataProvider('kindsAndStatuses')]
+    public function test_the_agent_read_reports_editable_exactly_when_the_update_accepts_it(string $kind, string $status): void
+    {
+        $invoice = $this->draft();
+        $invoice->forceFill(['invoice_kind' => $kind, 'status' => $status])->save();
+
+        $this->actingAsMcp($this->owner, [AgentApiScopes::BILLING_READ]);
+        $read = $this->getJson("/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}")->assertOk();
+        $accepted = $this->agentUpdate($invoice->refresh(), [$this->line('adjustment')])->isOk();
+
+        $this->assertSame($accepted, $read->json('data.editable'));
+        $this->assertSame($invoice->invoiceKindValue(), $read->json('data.invoice_kind'));
+        $this->assertSame($status === 'draft' && $kind === InvoiceKind::AdHoc->value, $accepted);
     }
 
     public function test_an_ordinary_manual_line_is_still_accepted(): void
