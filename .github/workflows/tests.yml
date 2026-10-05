@@ -52,6 +52,9 @@ jobs:
       - name: Setup Application
         run: composer setup
 
+      - name: Test Codex setup decisions
+        run: bash codex/setup.test.sh
+
       - name: Test deployment hooks
         run: |
           for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
