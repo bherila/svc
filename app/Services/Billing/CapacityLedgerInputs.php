@@ -42,11 +42,12 @@ final class CapacityLedgerInputs
             ->get(['type', 'hours', 'line_date']);
 
         return self::fold(
-            $entries->map(fn (ClientTimeEntry $entry): array => [
-                'month' => $entry->capacityDate()->format('Y-m'),
-                'hours' => ((int) $entry->minutes) / 60,
-                'deferred' => $entry->drawsAsDeferred(),
-            ]),
+            $entries->filter(fn (ClientTimeEntry $entry): bool => $entry->countsTowardsRetainerCapacity())
+                ->map(fn (ClientTimeEntry $entry): array => [
+                    'month' => $entry->capacityDate()->format('Y-m'),
+                    'hours' => ((int) $entry->minutes) / 60,
+                    'deferred' => $entry->drawsAsDeferred(),
+                ]),
             $lines->map(fn (ClientInvoiceLine $line): array => [
                 'month' => $line->line_date?->format('Y-m') ?? '',
                 'hours' => (float) $line->hours,

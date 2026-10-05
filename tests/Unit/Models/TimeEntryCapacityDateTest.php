@@ -5,6 +5,7 @@ namespace Tests\Unit\Models;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
+use App\Support\Billing\DeferredWorkDisposition;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use LogicException;
 use Tests\TestCase;
@@ -128,5 +129,28 @@ final class TimeEntryCapacityDateTest extends TestCase
     private function entry(bool $deferred): ClientTimeEntry
     {
         return (new ClientTimeEntry)->setRawAttributes(['worked_on' => '2026-01-20', 'is_deferred' => $deferred ? 1 : 0]);
+    }
+
+    public function test_waiting_applied_and_settled_deferred_work_have_distinct_capacity_dispositions(): void
+    {
+        $waiting = $this->entry(deferred: true)->setRelation('invoiceLines', collect());
+        $retainer = $this->entry(deferred: true)->setRelation('invoiceLines', collect([
+            (new ClientInvoiceLine)->setRawAttributes(['type' => 'prior_month_retainer']),
+        ]));
+        $settled = $this->entry(deferred: true)->setRelation('invoiceLines', collect([
+            (new ClientInvoiceLine)->setRawAttributes(['type' => 'deferred_buydown', 'line_date' => '2026-03-31']),
+        ]));
+
+        $this->assertSame(DeferredWorkDisposition::Waiting, $waiting->deferredDisposition());
+        $this->assertSame(DeferredWorkDisposition::RetainerApplied, $retainer->deferredDisposition());
+        $this->assertSame(DeferredWorkDisposition::SettledOutsideRetainer, $settled->deferredDisposition());
+        $this->assertFalse($waiting->countsTowardsRetainerCapacity());
+        $this->assertTrue($retainer->countsTowardsRetainerCapacity());
+        $this->assertTrue($this->entry(deferred: false)->countsTowardsRetainerCapacity());
+        $this->assertFalse($settled->countsTowardsRetainerCapacity());
+        $this->assertFalse($settled->drawsAsDeferred());
+
+        $this->expectException(LogicException::class);
+        $settled->capacityDate();
     }
 }

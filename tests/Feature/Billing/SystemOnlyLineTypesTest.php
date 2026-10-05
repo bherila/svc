@@ -67,7 +67,7 @@ final class SystemOnlyLineTypesTest extends TestCase
     {
         foreach ([
             'carried_deferred_applied', 'carried_deferred_billed', 'credit', 'expense',
-            'retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours',
+            'retainer', 'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'deferred_buydown',
         ] as $type) {
             yield $type => [$type];
         }
