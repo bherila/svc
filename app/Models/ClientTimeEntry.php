@@ -370,7 +370,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
 
         $line = $this->invoiceLines->first();
 
-        return DeferredWorkDisposition::fromAllocation($line instanceof ClientInvoiceLine ? (string) $line->type : null);
+        return DeferredWorkDisposition::fromAllocation($line instanceof ClientInvoiceLine ? $line->type : null);
     }
 
     /** The in-memory counterpart of scopeDeferredOnlyOnceAllocated(). */
