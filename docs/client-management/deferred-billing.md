@@ -1,5 +1,28 @@
 # Deferred Billing
 
+## Capacity disposition
+
+`DeferredWorkDisposition` classifies deferred work from its allocation line:
+
+| Disposition | Allocation | Capacity accounting |
+| --- | --- | --- |
+| Waiting | No allocation in the entry's workspace | No usage |
+| Retainer applied | Existing retainer allocation | Deferred draw against free capacity |
+| Billed on termination | `additional_hours` | Existing ordinary-work accounting |
+| Settled outside retainer | `deferred_buydown` | No usage and no catch-up/overage credit |
+
+The capacity query and loaded-entry classification use the same disposition.
+Allocation ownership requires the line, pivot and invoice to belong to the
+entry's workspace. A settlement has no capacity date: its hourly price pays for
+the work independently of every retainer pool.
+
+`deferred_buydown` is reserved for the forthcoming buy-down writer (#366).
+Manual invoice, agent and billing-template inputs refuse it. It is excluded
+from the cadence generator's replaceable line types, so a cadence rebuild
+cannot release its reservation. This first slice establishes the accounting
+rule using synthetic test allocations; backlog reporting, settlement creation
+and its void/delete lifecycle are subsequent slices of #366.
+
 ## What it does
 
 Admins can flag any billable time entry as **deferred**. A deferred entry is completed work that should **not** be billed on the usual next invoice — it waits on the shelf until there is free retainer capacity in a future period: capacity the month being reconciled did not use for its own work.

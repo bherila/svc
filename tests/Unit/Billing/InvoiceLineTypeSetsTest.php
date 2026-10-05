@@ -20,7 +20,7 @@ final class InvoiceLineTypeSetsTest extends TestCase
     {
         $this->assertSame([
             'prior_month_retainer', 'prior_month_billable', 'additional_hours', 'milestone', 'expense', 'subcontractor',
-            'reconciliation', 'adjustment', 'carried_deferred_applied', 'carried_deferred_billed',
+            'reconciliation', 'adjustment', 'carried_deferred_applied', 'carried_deferred_billed', 'deferred_buydown',
         ], InvoiceLineType::definingTheWorkPeriod());
         $this->assertSame(['retainer', 'credit', 'recurring_item'], InvoiceLineType::billedInAdvance());
     }

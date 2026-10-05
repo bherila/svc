@@ -7,6 +7,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
 use Carbon\CarbonImmutable;
@@ -216,7 +217,8 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      * queries wrote `where('is_deferred', false)` by hand, so once the invoice
      * was issued those hours vanished from every later rebuild, the same pool
      * rolled forward a second time, and the overage that followed was
-     * understated. Billed is billed, whatever the flag still says.
+     * understated. A buy-down is different: it settles the work at an hourly
+     * price outside the retainer and must never consume capacity again.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -232,8 +234,18 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
                 // another workspace's row decide whether this one's deferred
                 // time counts - and the totals it feeds are read as this
                 // workspace's own.
-                ->orWhereHas('invoiceLines', self::ownWorkspaceAllocation(...)),
+                ->orWhereHas('invoiceLines', self::capacityAllocation(...)),
         );
+    }
+
+    /**
+     * @param  Builder<ClientInvoiceLine>  $lines
+     * @return Builder<ClientInvoiceLine>
+     */
+    private static function capacityAllocation(Builder $lines): Builder
+    {
+        return self::ownWorkspaceAllocation($lines)
+            ->whereNotIn('client_invoice_lines.type', InvoiceLineType::settledOutsideRetainerValues());
     }
 
     /**
@@ -280,6 +292,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         return $query->with(['invoiceLines' => fn ($lines) => $lines
             ->where('client_invoice_lines.workspace_id', $workspaceId)
             ->where('client_invoice_line_time_entries.workspace_id', $workspaceId)
+            ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice->where('client_invoices.workspace_id', $workspaceId))
             ->with(['invoice' => fn ($invoice) => $invoice->where('client_invoices.workspace_id', $workspaceId)]),
         ]);
     }
@@ -309,6 +322,10 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
 
         if (! $this->relationLoaded('invoiceLines')) {
             throw new LogicException('Load time entries withCapacityPlacement() before reading their capacity date.');
+        }
+
+        if ($this->deferredDisposition() === DeferredWorkDisposition::SettledOutsideRetainer) {
+            throw new LogicException('Deferred work settled outside the retainer has no capacity date.');
         }
 
         $line = $this->invoiceLines->first();
@@ -341,13 +358,25 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             return false;
         }
 
+        return $this->deferredDisposition()->drawsAsDeferred();
+    }
+
+    /** Database-free classification after the scoped allocation eager load. */
+    public function deferredDisposition(): DeferredWorkDisposition
+    {
         if (! $this->relationLoaded('invoiceLines')) {
-            throw new LogicException('Load time entries withCapacityPlacement() before reading how they draw.');
+            throw new LogicException('Load time entries withCapacityPlacement() before classifying deferred work.');
         }
 
         $line = $this->invoiceLines->first();
 
-        return $line instanceof ClientInvoiceLine && $line->type !== InvoiceLineType::AdditionalHours->value;
+        return DeferredWorkDisposition::fromAllocation($line instanceof ClientInvoiceLine ? $line->type : null);
+    }
+
+    /** The in-memory counterpart of scopeDeferredOnlyOnceAllocated(). */
+    public function countsTowardsRetainerCapacity(): bool
+    {
+        return ! $this->is_deferred || $this->deferredDisposition()->usesCapacity();
     }
 
     /**
