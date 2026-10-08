@@ -9,13 +9,14 @@ use App\Models\ClientCompanyActivity;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
 final class AgentMcpClientWriteToolsTest extends TestCase
 {
-    use CallsMcp;
+    use CallsMcp { callTool as private callRawTool; }
     use RefreshDatabase;
 
     private const array WRITE_SCOPES = [
@@ -257,6 +258,24 @@ final class AgentMcpClientWriteToolsTest extends TestCase
 
         $this->assertTrue($response['result']['isError'] ?? isset($response['error']));
         $this->assertSame(0, ClientCompany::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /** Existing behavior cases use the current revision; stale/refusal coverage is in AgentClientRestParityTest.
+     * @param array<string, mixed> $arguments
+     * @return array<string, mixed> */
+    protected function callTool(string $session, string $name, array $arguments): array
+    {
+        if ($name !== 'clients.create') {
+            $model = isset($arguments['agreement_id'])
+                ? ClientAgreement::query()->where('public_id', $arguments['agreement_id'])->first()
+                : ClientCompany::query()->where('public_id', $arguments['client_id'] ?? null)->first();
+            $arguments['expected_version'] = $model === null ? str_repeat('0', 64) : AgentApiVersion::for($model);
+        }
+        if (in_array($name, ['agreements.activate', 'agreements.terminate'], true)) {
+            $arguments['confirm'] = true;
+        }
+
+        return $this->callRawTool($session, $name, $arguments);
     }
 
     /** @param array<string, mixed> $body

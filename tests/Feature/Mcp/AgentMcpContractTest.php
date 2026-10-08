@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Mcp;
 
+use App\Http\Middleware\EnsureAgentClientWritesEnabled;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -28,7 +29,9 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
+use Laravel\Passport\Http\Middleware\CheckToken;
 use Mcp\Capability\Discovery\SchemaValidator;
 use stdClass;
 use Symfony\Component\HttpFoundation\Response;
@@ -53,6 +56,48 @@ final class AgentMcpContractTest extends TestCase
             preg_match_all('~"\$ref":"#/\$defs/([A-Za-z0-9_]+)"~', $encoded, $matches);
             foreach ($matches[1] as $target) {
                 $this->assertArrayHasKey($target, $schema['$defs'] ?? [], $definition->name);
+            }
+        }
+    }
+
+    public function test_client_and_agreement_openapi_paths_scopes_and_flags_match_the_router(): void
+    {
+        $names = [
+            'clients.list' => 'clients.index', 'clients.get' => 'clients.show', 'clients.create' => 'clients.store',
+            'clients.update' => 'clients.update', 'clients.archive' => 'clients.archive', 'clients.restore' => 'clients.restore',
+            'agreements.list' => 'agreements.index', 'agreements.get' => 'agreements.show', 'agreements.create' => 'agreements.store',
+            'agreements.update' => 'agreements.update', 'agreements.activate' => 'agreements.activate', 'agreements.terminate' => 'agreements.terminate',
+        ];
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        foreach ($document['paths'] as $path => $operations) {
+            foreach ($operations as $method => $operation) {
+                if (! isset($names[$operation['operationId']])) {
+                    continue;
+                }
+                $route = Route::getRoutes()->getByName('agent-api.v1.'.$names[$operation['operationId']]);
+                $this->assertNotNull($route, $operation['operationId']);
+                $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{client_id}', '{agreement_id}'], ['{workspace}', '{client}', '{agreement}'], $path), $route->uri());
+                $this->assertContains(strtoupper($method), $route->methods());
+                $this->assertContains(CheckToken::using(...$operation['security'][0]['oauth2']), $route->gatherMiddleware());
+                $this->assertSame($method !== 'get', in_array(EnsureAgentClientWritesEnabled::class, $route->gatherMiddleware(), true));
+            }
+        }
+    }
+
+    public function test_client_and_agreement_rest_operations_match_the_manager_registry_contract(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        foreach (app(AgentMcpToolCatalog::class)->clientDefinitions(app(AgentMcpClientTools::class), app(AgentMcpClientWriteTools::class)) as $definition) {
+            $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($definition->name), $definition->outputSchema);
+            $this->assertSame(AgentApiResponseSchemaCatalog::scopesForOperation($definition->name), $definition->requiredScopes);
+            if (! $definition->readOnly) {
+                $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->name);
+                foreach ($body['properties'] as $name => $property) {
+                    $this->assertSame($property, $definition->inputSchema['properties'][$name]);
+                }
+                foreach ($body['required'] as $name) {
+                    $this->assertContains($name, $definition->inputSchema['required']);
+                }
             }
         }
     }
@@ -109,7 +154,30 @@ final class AgentMcpContractTest extends TestCase
         }
         ksort($actual);
 
+        foreach ($document['paths'] as $path) {
+            foreach ($path as $method => $operation) {
+                if (! str_starts_with($operation['operationId'], 'clients.') && ! str_starts_with($operation['operationId'], 'agreements.')) {
+                    continue;
+                }
+                $this->assertSame($operation['operationId'], $operation['x-mcp-tool']);
+                $this->assertSame($method === 'get' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'], $operation['x-svc-flags']);
+                $this->assertSame([['oauth2' => $actual[$operation['operationId']]], ['apiToken' => []]], $operation['security']);
+            }
+        }
+
         $this->assertSame([
+            'agreements.activate' => ['clients:write', 'billing:read'],
+            'agreements.create' => ['clients:write', 'clients:read'],
+            'agreements.get' => ['billing:read'],
+            'agreements.list' => ['billing:read'],
+            'agreements.terminate' => ['clients:write', 'billing:read'],
+            'agreements.update' => ['clients:write', 'billing:read'],
+            'clients.archive' => ['clients:write', 'clients:read'],
+            'clients.create' => ['clients:write'],
+            'clients.get' => ['clients:read'],
+            'clients.list' => ['clients:read'],
+            'clients.restore' => ['clients:write', 'clients:read'],
+            'clients.update' => ['clients:write', 'clients:read'],
             'connections.revoke' => ['mcp:use'],
             'context.get' => ['identity:read'],
             'expenses.delete' => ['expenses:write'],

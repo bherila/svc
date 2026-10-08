@@ -11,8 +11,11 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Services\Engagement\EngagementException;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ClientMutationRules;
+use App\Support\Concurrency\Locks;
 use Closure;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -55,25 +58,28 @@ final class AgentClientMutationAction
     public function updateClient(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, array $payload): string
     {
         return $this->execute('clients.update', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId, ...$payload], function () use ($workspace, $clientId, $payload): string {
-            $data = Validator::make($payload, ClientMutationRules::clientUpdate())->validate();
+            $data = Validator::make($payload, ClientMutationRules::clientUpdate() + self::versionRules())->validate();
 
-            return $this->updateClient->handle($workspace, $this->client($workspace, $clientId), $data)->public_id;
+            return $this->updateClient->handle($workspace, $this->client($workspace, $clientId), $data, $data['expected_version'])->public_id;
         });
     }
 
     /** Archive or restore: the reversible half of "delete", through the same edit the Manage form makes. */
-    public function setClientActive(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, bool $active): string
+    public function setClientActive(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, bool $active, string $expectedVersion): string
     {
-        return $this->execute($active ? 'clients.restore' : 'clients.archive', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId], fn (): string => $this->updateClient->handle($workspace, $this->client($workspace, $clientId), ['is_active' => $active])->public_id);
+        return $this->execute($active ? 'clients.restore' : 'clients.archive', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId, 'expected_version' => $expectedVersion], fn (): string => $this->updateClient->handle($workspace, $this->client($workspace, $clientId), ['is_active' => $active], $expectedVersion)->public_id);
     }
 
     /** @param array<string, mixed> $payload */
     public function createAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, array $payload): string
     {
         return $this->execute('agreements.create', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId, ...$payload], function () use ($workspace, $clientId, $payload): string {
-            $data = Validator::make($payload, ClientMutationRules::agreementCreate())->validate();
+            $data = Validator::make($payload, ClientMutationRules::agreementCreate() + self::versionRules())->validate();
 
-            return $this->agreements->create($workspace, $this->client($workspace, $clientId), null, null, $data)->public_id;
+            $client = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $clientId)->tap(Locks::forUpdate())->firstOrFail();
+            abort_unless(AgentApiVersion::matches($client, $data['expected_version']), 409, 'The client has changed; read it and retry.');
+
+            return $this->agreements->create($workspace, $client, null, null, $data)->public_id;
         });
     }
 
@@ -81,27 +87,28 @@ final class AgentClientMutationAction
     public function updateAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $agreementId, array $payload): string
     {
         return $this->execute('agreements.update', $user, $workspace, $oauthClientId, $key, ['agreement_id' => $agreementId, ...$payload], function () use ($workspace, $agreementId, $payload): string {
-            $data = Validator::make($payload, ClientMutationRules::agreementUpdate())->validate();
-            $agreement = $this->agreement($workspace, $agreementId);
+            $data = Validator::make($payload, ClientMutationRules::agreementUpdate() + self::versionRules())->validate();
+            $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->where('public_id', $agreementId)->tap(Locks::forUpdate())->firstOrFail();
+            abort_unless(AgentApiVersion::matches($agreement, $data['expected_version']), 409, 'The agreement has changed; read it and retry.');
             if (UpdateAgreementRequest::datesRunBackwards($data, $agreement)) {
                 throw ValidationException::withMessages(['ends_on' => 'The agreement cannot end before it starts.']);
             }
 
-            return $this->agreements->update($workspace, $agreement, $data)->public_id;
+            return $this->agreements->update($workspace, $agreement, $data, $data['expected_version'])->public_id;
         });
     }
 
-    public function activateAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $agreementId): string
+    public function activateAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $agreementId, string $expectedVersion): string
     {
-        return $this->execute('agreements.activate', $user, $workspace, $oauthClientId, $key, ['agreement_id' => $agreementId], fn (): string => $this->agreements->activate($this->agreement($workspace, $agreementId))->public_id);
+        return $this->execute('agreements.activate', $user, $workspace, $oauthClientId, $key, ['agreement_id' => $agreementId, 'expected_version' => $expectedVersion], fn (): string => $this->agreements->activate($this->agreement($workspace, $agreementId), $expectedVersion)->public_id);
     }
 
-    public function terminateAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $agreementId, ?string $endsOn): string
+    public function terminateAgreement(User $user, Workspace $workspace, string $oauthClientId, string $key, string $agreementId, ?string $endsOn, string $expectedVersion): string
     {
-        return $this->execute('agreements.terminate', $user, $workspace, $oauthClientId, $key, ['agreement_id' => $agreementId, 'ends_on' => $endsOn], function () use ($workspace, $agreementId, $endsOn): string {
+        return $this->execute('agreements.terminate', $user, $workspace, $oauthClientId, $key, ['agreement_id' => $agreementId, 'ends_on' => $endsOn, 'expected_version' => $expectedVersion], function () use ($workspace, $agreementId, $endsOn, $expectedVersion): string {
             Validator::make(['ends_on' => $endsOn], ['ends_on' => ['nullable', 'date_format:Y-m-d']])->validate();
 
-            return $this->agreements->terminate($this->agreement($workspace, $agreementId), $endsOn)->public_id;
+            return $this->agreements->terminate($this->agreement($workspace, $agreementId), $endsOn, $expectedVersion)->public_id;
         });
     }
 
@@ -119,16 +126,26 @@ final class AgentClientMutationAction
         $this->authorize($user, $workspace);
         Validator::make(['key' => $key], ['key' => ['required', 'string', 'max:255']])->validate();
 
-        return $this->mutations->run(
-            $user,
-            $workspace,
-            $oauthClientId,
-            $operation,
-            $key,
-            $digested,
-            fn (): array => [$work()],
-            fn (array $ids) => $this->authorize($user, $workspace),
-        )[0];
+        try {
+            return $this->mutations->run(
+                $user,
+                $workspace,
+                $oauthClientId,
+                $operation,
+                $key,
+                $digested,
+                fn (): array => [$work()],
+                fn (array $ids) => $this->authorize($user, $workspace),
+            )[0];
+        } catch (EngagementException $exception) {
+            throw ValidationException::withMessages(['agreement' => $exception->getMessage()]);
+        }
+    }
+
+    /** @return array<string, list<string>> */
+    private static function versionRules(): array
+    {
+        return ['expected_version' => ['required', 'string', 'size:64']];
     }
 
     private function authorize(User $user, Workspace $workspace): void

@@ -6,7 +6,6 @@ use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
-use App\Services\AgentApi\AgentClientMutationAction;
 use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
@@ -15,6 +14,7 @@ use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use App\Services\Mcp\Registry\McpCapabilityKind;
+use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
@@ -58,7 +58,6 @@ final class AgentMcpServerFactory
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
         private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly AgentClientReadService $clientReadService,
-        private readonly AgentClientMutationAction $clientMutations,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpAuthorizer $authorizer,
         private readonly McpPrincipalResolverInterface $principals,
@@ -85,7 +84,7 @@ final class AgentMcpServerFactory
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
         $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $clients = new AgentMcpClientTools($this->clientReadService, $this->accounts, $context);
-        $clientWrites = new AgentMcpClientWriteTools($this->clientMutations, $this->clientReadService, $this->agreementReadService, $this->accounts, $this->requestArguments, $context);
+        $clientWrites = new AgentMcpClientWriteTools(app(InternalAgentApiTransport::class), $this->requestArguments);
         $writes = $this->writes->forContext($context);
         $resultLimiter = new McpCapabilityResultLimiter;
         $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
@@ -379,8 +378,8 @@ final class AgentMcpServerFactory
         if ($this->hasTools($available, ['time_entries.log', 'time_entries.approve'])) {
             $mode .= ' When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape.';
         }
-        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct'], array_keys($available)) !== []) {
-            $mode .= ' Obtain explicit user confirmation before issue, send, void, or correct.';
+        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct', 'agreements.activate', 'agreements.terminate'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, or terminating an agreement.';
         }
         if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
             $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';

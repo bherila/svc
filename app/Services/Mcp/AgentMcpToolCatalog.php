@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 
 /**
@@ -20,6 +21,12 @@ use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
  */
 final class AgentMcpToolCatalog
 {
+    /** @return list<McpCapabilityDefinition> */
+    public function clientDefinitions(AgentMcpClientTools $clients, AgentMcpClientWriteTools $writes): array
+    {
+        return (new AgentMcpClientCapabilities)->definitions($clients, $writes);
+    }
+
     /** @return list<ToolDefinition> */
     public function definitions(AgentMcpReadTools $tools, AgentMcpWriteTools $writes): array
     {
