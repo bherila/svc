@@ -12,6 +12,7 @@ use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
@@ -24,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 final class AgentInvoiceMutationController extends Controller
 {
@@ -78,6 +80,67 @@ final class AgentInvoiceMutationController extends Controller
                 Arr::only($data, ['currency', 'due_date', 'notes']),
                 $data['time_entry_ids'],
                 $data['manual_lines'],
+            );
+
+            return [$record->public_id];
+        }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
+        $record = $this->findInvoice($workspace, $ids[0] ?? null);
+
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
+    }
+
+    public function updateDetails(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
+    {
+        $context = $contexts->from($request);
+        $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.update_details', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
+            $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
+            $data = $request->validate([
+                'expected_version' => ['required', 'string', 'size:64'],
+                'due_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+                'notes' => ['sometimes', 'nullable', 'string', 'max:10000'],
+            ]);
+            $attributes = Arr::only($data, ['due_date', 'notes']);
+            if ($attributes === []) {
+                throw ValidationException::withMessages(['due_date' => 'Supply due_date, notes, or both.']);
+            }
+            $record = $lifecycle->updateDraftDetails($record, $workspace, $data['expected_version'], $attributes);
+
+            return [$record->public_id];
+        }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
+        $record = $this->findInvoice($workspace, $ids[0] ?? null);
+
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
+    }
+
+    public function correct(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceCorrectionService $corrections, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
+    {
+        $context = $contexts->from($request);
+        $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.correct', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $corrections): array {
+            $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
+            $data = $request->validate([
+                'expected_version' => ['required', 'string', 'size:64'],
+                'reason' => ['required', 'string', 'max:500'],
+                'confirm' => ['accepted'],
+                'due_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+                'lines' => ['sometimes', 'array', 'min:1', 'max:100'],
+                'lines.*' => ['array:id,description,quantity,unit_amount,tax_amount'],
+                'lines.*.id' => ['required', 'uuid', 'distinct'],
+                'lines.*.description' => ['required', 'string', 'max:10000'],
+                'lines.*.quantity' => ['required', 'regex:/^\d+(?:\.\d{1,4})?$/'],
+                'lines.*.unit_amount' => ['required', 'integer'],
+                'lines.*.tax_amount' => ['required', 'integer', 'min:0'],
+            ]);
+            $record = $corrections->correct(
+                $record,
+                $workspace,
+                null,
+                array_key_exists('due_date', $data),
+                isset($data['due_date']) ? (string) $data['due_date'] : null,
+                (string) $data['reason'],
+                $data['lines'] ?? null,
+                static function (ClientInvoice $locked) use ($data): void {
+                    abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
+                },
             );
 
             return [$record->public_id];

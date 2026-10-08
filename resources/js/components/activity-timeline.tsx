@@ -28,6 +28,7 @@ const actionTitles: Record<string, string> = {
     'agreement.transitioned': 'Agreement transitioned',
     'invoice.generated': 'Invoice generated',
     'invoice.updated': 'Invoice updated',
+    'invoice.details_updated': 'Invoice details updated',
     'invoice.issued': 'Invoice issued',
     'invoice.corrected': 'Invoice corrected',
     'invoice.automatic_delivery_held': 'Automatic delivery held',
@@ -55,6 +56,8 @@ const meaningfulActions = new Set([
     'agreement.signed',
     'agreement.transitioned',
     'invoice.issued',
+    // A draft's due date moves what the client is told they owe and when.
+    'invoice.details_updated',
     'invoice.corrected',
     'invoice.automatic_delivery_held',
     'invoice.automatic_delivery_released',

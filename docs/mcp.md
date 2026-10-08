@@ -116,7 +116,7 @@ checks before tenant and object lookup. `AGENT_API_WRITES_ENABLED` defaults to
 false; the independent `AGENT_API_TIME_ENTRY_WRITES_ENABLED` defaults to
 true and is an emergency cutoff for the three time-entry write tools.
 `AGENT_API_INVOICE_WRITES_ENABLED` also defaults to false and is nested inside
-the workflow cutover rather than independent of it: the six invoice write tools
+the workflow cutover rather than independent of it: the eight invoice write tools
 require both, as do their REST routes, the `billing:write` and
 `billing:deliver` capabilities, and the `prepare-invoice-safely` prompt, which
 names two of those tools in its required capabilities. Approving time and
@@ -156,13 +156,14 @@ actions directly. For `time_entries.log`, supplying `client_visible_description`
 without `is_visible_to_client` makes the entry client-visible by default; set
 `is_visible_to_client: false` to stage the client text privately. The broader
 write flag also retains a legacy compatibility
-registration for `time_entries.approve`. The six invoice registrations -
-`invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
-`invoices.issue`, `invoices.send`, and `invoices.void` - require *both* that
+registration for `time_entries.approve`. The eight invoice registrations -
+`invoices.create_draft`, `invoices.update_draft`, `invoices.update_details`,
+`invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`
+and `invoices.void` - require *both* that
 flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
 registers `time_entries.approve` and no invoice tool. `invoices.issue` now runs
 through the tenant-scoped `IssueInvoiceAction` (see
-[Issuing an invoice](#issuing-an-invoice)); the other six still enter the
+[Issuing an invoice](#issuing-an-invoice)); the others still enter the
 versioned Agent API through `InternalAgentApiTransport`. They are disabled by
 default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
@@ -444,6 +445,33 @@ An option left out is left alone; one given empty (`--reference=`) clears it.
 `--dry-run` runs every check inside a transaction that is always rolled back.
 The output carries the payment's version for a following `--expected-version`.
 
+
+### Changing a due date
+
+A draft and an issued invoice take different doors, because changing one is
+editing a working document and changing the other is altering something the
+client may already have.
+
+`invoices.update_details` (`PATCH .../invoices/{id}/details`, `billing:write`)
+changes a draft's `due_date` and/or `notes` and nothing else. It accepts every
+draft kind, which `invoices.update_draft` cannot: that tool replaces lines, so
+it refuses generated drafts, which are regenerated instead. Regeneration
+rewrites a generated draft's period facts and lines but never these two
+columns, so the change survives it. A due date may not precede the draft's
+issue date. A draft without one is issued today, so a draft whose due date has
+already passed cannot be issued until its due date is moved; this tool is how.
+The change is recorded as `invoice.details_updated` in the client history.
+
+`invoices.correct` (`POST .../invoices/{id}/correct`, `billing:deliver`,
+`confirm: true`, a `reason`) is the website's audited correction of an unpaid
+issued invoice that has not been emailed to the client, through
+`InvoiceCorrectionService`. It changes the due date and/or line wording, and
+money only on operator-authored lines. Omitted `lines` are kept as they are, so
+a due-date correction need not restate them; supplied lines must name every
+existing line. The opaque version is compared on the locked row. The document
+revision advances, any automatic client delivery is held for explicit release,
+and the change is recorded as `invoice.corrected`. Paid, partially paid, sent
+and void invoices are refused: void and reissue those.
 
 ### Issuing an invoice
 

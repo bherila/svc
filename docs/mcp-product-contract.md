@@ -35,9 +35,10 @@ The core read catalog includes `context.get`, `operations.summary`, `projects.li
 `invoices.get`, and `payments.list`. When the explicit write cutover flag is
 enabled, the additional tools
 are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
-`time_entries.delete`, and `time_entries.approve`. The six invoice write tools —
-`invoices.create_draft`, `invoices.update_draft`, `invoices.discard_draft`,
-`invoices.issue`, `invoices.send`, and `invoices.void` — additionally require
+`time_entries.delete`, and `time_entries.approve`. The eight invoice write tools —
+`invoices.create_draft`, `invoices.update_draft`, `invoices.update_details`,
+`invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`,
+and `invoices.void` — additionally require
 `AGENT_API_INVOICE_WRITES_ENABLED`, a second cutover nested inside the first, so
 that agent-assisted time approval does not arrive with agent-initiated invoice
 delivery attached. `payments.record` requires `payments:record`, workspace owner/admin
@@ -72,7 +73,7 @@ amount and currency; nonbillable time needs no rate. A draft invoice may include
 manual lines and explicitly selected time-entry IDs only. Selected entries must be
 approved, billable, non-deferred, currency-compatible, and unallocated. Time-derived
 line totals are rounded from integer minutes and hourly minor units; their four-place
-hour quantity is display-only. Invoice issue, send, and void are distinct
+hour quantity is display-only. Invoice issue, send, correct, and void are distinct
 confirmation-gated actions. Draft update is replace-all for the explicit time selection
 and manual lines. Removing time, discarding a draft, or voiding an unpaid invoice
 releases its allocation; issued linked time returns from `invoiced` to `approved`.

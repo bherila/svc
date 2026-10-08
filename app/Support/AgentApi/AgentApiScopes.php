@@ -51,7 +51,7 @@ final class AgentApiScopes
             self::TIME_APPROVE => 'Set billing rates and approve authorized project time',
             self::BILLING_READ => 'Read authorized invoices',
             self::BILLING_WRITE => 'Create and update authorized invoice drafts',
-            self::BILLING_DELIVER => 'Issue, send, and void authorized invoices',
+            self::BILLING_DELIVER => 'Issue, send, correct, and void authorized invoices',
             self::EXPENSES_READ => 'Read authorized expenses',
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
