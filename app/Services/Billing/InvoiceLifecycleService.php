@@ -27,6 +27,7 @@ use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -175,6 +176,71 @@ final class InvoiceLifecycleService
             );
 
             return $locked->fresh(['lines', 'clientCompany']);
+        });
+    }
+
+    /**
+     * Change a draft's due date or notes and nothing else.
+     *
+     * Any draft, generated or ad hoc: lines, time allocations and the hours
+     * statement are untouched, which is what makes this safe on a generated
+     * draft where {@see self::updateDraft()} is not. Regeneration rewrites a
+     * generated draft's period facts and lines but never these two columns, so
+     * the change survives it.
+     *
+     * The version is compared on the locked row, so a write that landed after
+     * the caller's read is refused rather than overwritten.
+     *
+     * @param  array{due_date?: string|null, notes?: string|null}  $attributes
+     */
+    public function updateDraftDetails(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $attributes): ClientInvoice
+    {
+        return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $attributes): ClientInvoice {
+            $locked = $this->lockInvoice($invoice, $workspace);
+            if ($locked->status !== InvoiceStatus::Draft->value) {
+                throw new DomainException('Only a draft invoice\'s details can be changed here. Correct an issued invoice instead.');
+            }
+            abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
+
+            $before = ['due_date' => $locked->due_date?->toDateString(), 'notes' => $locked->notes];
+            $updates = [];
+            if (array_key_exists('due_date', $attributes)) {
+                $updates['due_date'] = $attributes['due_date'] === null
+                    ? null
+                    : CarbonImmutable::parse($attributes['due_date'])->toDateString();
+            }
+            if (array_key_exists('notes', $attributes)) {
+                $updates['notes'] = $attributes['notes'];
+            }
+            if (isset($updates['due_date']) && $locked->issue_date !== null && $updates['due_date'] < $locked->issue_date->toDateString()) {
+                throw new DomainException('The due date cannot precede the issue date.');
+            }
+            $after = [...$before, ...$updates];
+            if ($after === $before) {
+                throw new DomainException('The update does not change the invoice.');
+            }
+
+            $locked->forceFill($updates)->save();
+            $this->activities->record(
+                $workspace,
+                ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($locked->client_company_id)->firstOrFail(),
+                'invoice.details_updated',
+                $locked,
+                [
+                    'invoice_kind' => $locked->invoiceKindValue(),
+                    'due_date' => ['old' => $before['due_date'], 'new' => $after['due_date']],
+                    'notes_changed' => $before['notes'] !== $after['notes'],
+                ],
+                occurrence: (string) Str::uuid(),
+            );
+
+            // Both relations are tenant-owned and keyed by the child alone, so
+            // each is bounded by the workspace explicitly: a legacy row stamped
+            // to another tenant is not loaded through this invoice.
+            return $locked->refresh()->load([
+                'lines' => fn ($query) => $query->where('workspace_id', $workspace->id),
+                'clientCompany' => fn ($query) => $query->where('workspace_id', $workspace->id),
+            ]);
         });
     }
 

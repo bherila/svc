@@ -28,6 +28,7 @@ const actionTitles: Record<string, string> = {
     'agreement.transitioned': 'Agreement transitioned',
     'invoice.generated': 'Invoice generated',
     'invoice.updated': 'Invoice updated',
+    'invoice.details_updated': 'Invoice details updated',
     'invoice.issued': 'Invoice issued',
     'invoice.corrected': 'Invoice corrected',
     'invoice.automatic_delivery_held': 'Automatic delivery held',
@@ -55,6 +56,8 @@ const meaningfulActions = new Set([
     'agreement.signed',
     'agreement.transitioned',
     'invoice.issued',
+    // A draft's due date moves what the client is told they owe and when.
+    'invoice.details_updated',
     'invoice.corrected',
     'invoice.automatic_delivery_held',
     'invoice.automatic_delivery_released',
@@ -151,12 +154,42 @@ function paymentCorrectionSubtitle(
     return text === '' ? undefined : text;
 }
 
+/** What a draft-details update changed: the due date's old and new day, and whether the notes moved. */
+function invoiceDetailsSubtitle(
+    payload: Record<string, unknown>,
+): string | undefined {
+    const day = (value: unknown): string =>
+        typeof value === 'string' && value !== '' ? formatDay(value) : 'none';
+    const due = payload.due_date;
+    const parts: string[] = [];
+
+    if (
+        due &&
+        typeof due === 'object' &&
+        'old' in due &&
+        'new' in due &&
+        due.old !== due.new
+    ) {
+        parts.push(`due date ${day(due.old)} → ${day(due.new)}`);
+    }
+
+    if (payload.notes_changed === true) {
+        parts.push('notes changed');
+    }
+
+    return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
 function subtitleFor(
     payload: Record<string, unknown>,
     action: string,
 ): string | undefined {
     if (action === 'invoice.payment_corrected') {
         return paymentCorrectionSubtitle(payload);
+    }
+
+    if (action === 'invoice.details_updated') {
+        return invoiceDetailsSubtitle(payload);
     }
 
     const imported = payload.external_payload;

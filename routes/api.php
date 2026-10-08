@@ -124,6 +124,10 @@ Route::prefix('v1')
             ->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.store');
         Route::patch('/workspaces/{workspace}/invoices/{invoice}', [AgentInvoiceMutationController::class, 'updateDraft'])
             ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.update');
+        Route::patch('/workspaces/{workspace}/invoices/{invoice}/details', [AgentInvoiceMutationController::class, 'updateDetails'])
+            ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.update_details');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/correct', [AgentInvoiceMutationController::class, 'correct'])
+            ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_DELIVER), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.correct');
         Route::post('/workspaces/{workspace}/invoices/{invoice}/discard', [AgentInvoiceMutationController::class, 'discardDraft'])
             ->whereUuid('invoice')->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.discard');
         Route::post('/workspaces/{workspace}/invoices/{invoice}/issue', [AgentInvoiceMutationController::class, 'issue'])

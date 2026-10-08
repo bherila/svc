@@ -15,6 +15,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
+use Closure;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -33,18 +34,25 @@ final class InvoiceCorrectionService
      * changed only on operator-authored lines; generated/allocated lines may
      * receive a wording correction but retain their accounting facts.
      *
-     * @param  list<array{id:string,description:string,quantity:string,unit_amount:int,tax_amount:int}>  $lines
+     * `$lines` null keeps every line as it is, so a due-date-only correction
+     * need not restate them. `$expectedRevision` is the browser form's guard;
+     * an API caller passes null and checks its opaque version in
+     * `$assertLocked`, which runs against the locked row.
+     *
+     * @param  list<array{id:string,description:string,quantity:string,unit_amount:int,tax_amount:int}>|null  $lines
+     * @param  (Closure(ClientInvoice): void)|null  $assertLocked
      */
     public function correct(
         ClientInvoice $invoice,
         Workspace $workspace,
-        int $expectedRevision,
+        ?int $expectedRevision,
         bool $dueDateProvided,
         ?string $dueDate,
         string $reason,
-        array $lines,
+        ?array $lines,
+        ?Closure $assertLocked = null,
     ): ClientInvoice {
-        return DB::transaction(function () use ($invoice, $workspace, $expectedRevision, $dueDateProvided, $dueDate, $reason, $lines): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $expectedRevision, $dueDateProvided, $dueDate, $reason, $lines, $assertLocked): ClientInvoice {
             $locked = ClientInvoice::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereKey($invoice->id)
@@ -57,9 +65,13 @@ final class InvoiceCorrectionService
             if ($locked->status !== InvoiceStatus::Issued->value || $locked->paid_amount > 0) {
                 throw new DomainException('Only an unpaid issued invoice can be corrected. Paid, partially paid, draft, and void invoices are unchanged.');
             }
-            if ($locked->document_revision !== $expectedRevision) {
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
+            }
+            if ($expectedRevision !== null && $locked->document_revision !== $expectedRevision) {
                 throw new DomainException('The invoice changed after this correction form was opened. Reload it and try again.');
             }
+            $fromRevision = $locked->document_revision;
             if ($locked->payments()->where('workspace_id', $workspace->id)->exists()) {
                 throw new DomainException('Resolve or remove the recorded payment attempt before correcting this invoice.');
             }
@@ -87,6 +99,13 @@ final class InvoiceCorrectionService
                 ->tap(Locks::forUpdate())
                 ->get()
                 ->keyBy('public_id');
+            $lines ??= $existing->values()->map(static fn (ClientInvoiceLine $line): array => [
+                'id' => $line->public_id,
+                'description' => $line->description,
+                'quantity' => (string) $line->quantity,
+                'unit_amount' => (int) $line->unit_amount,
+                'tax_amount' => (int) $line->tax_amount,
+            ])->all();
             $submittedIds = collect($lines)->pluck('id')->sort()->values()->all();
             $existingIds = $existing->keys()->sort()->values()->all();
             if ($submittedIds !== $existingIds) {
@@ -198,7 +217,7 @@ final class InvoiceCorrectionService
                 'invoice.corrected',
                 $locked,
                 [
-                    'from_revision' => $expectedRevision,
+                    'from_revision' => $fromRevision,
                     'to_revision' => $locked->document_revision,
                     'reason' => trim($reason),
                     'due_date_changed' => $dueChanged,

@@ -334,6 +334,50 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string, mixed> */
+    public function invoicesUpdateDetails(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $context,
+        ?string $due_date = null,
+        ?string $notes = null,
+    ): array {
+        $body = compact('expected_version');
+        foreach (compact('due_date', 'notes') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('PATCH', "workspaces/{$workspace_id}/invoices/{$invoice_id}/details", $body, $idempotency_key);
+    }
+
+    /** @param list<array<string, mixed>>|null $lines
+     * @return array<string, mixed> */
+    public function invoicesCorrect(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $context,
+        ?string $due_date = null,
+        ?array $lines = null,
+    ): array {
+        $body = compact('expected_version', 'reason', 'confirm');
+        if ($this->requestArguments->has($context, 'due_date')) {
+            $body['due_date'] = $due_date;
+        }
+        if ($lines !== null) {
+            $body['lines'] = $lines;
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/correct", $body, $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
     public function invoicesDiscardDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/discard", compact('expected_version', 'reason', 'confirm'), $idempotency_key);

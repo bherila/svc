@@ -48,10 +48,12 @@ final class AgentInvoiceWriteFlagTest extends TestCase
     private const INVOICE_TOOLS = [
         'invoices.create_draft',
         'invoices.update_draft',
+        'invoices.update_details',
         'invoices.discard_draft',
         'invoices.issue',
         'invoices.send',
         'invoices.void',
+        'invoices.correct',
     ];
 
     private const WORKFLOW_TOOLS = [
@@ -130,13 +132,16 @@ final class AgentInvoiceWriteFlagTest extends TestCase
         $this->withHeader('Idempotency-Key', 'gated-create')
             ->postJson($base.'/invoices', ['company_id' => $company->public_id])
             ->assertNotFound();
-        foreach (['issue', 'send', 'void', 'discard'] as $action) {
+        foreach (['issue', 'send', 'void', 'discard', 'correct'] as $action) {
             $this->withHeader('Idempotency-Key', 'gated-'.$action)
                 ->postJson($base.'/invoices/'.Str::uuid()->toString().'/'.$action)
                 ->assertNotFound();
         }
         $this->withHeader('Idempotency-Key', 'gated-update')
             ->patchJson($base.'/invoices/'.Str::uuid()->toString(), [])
+            ->assertNotFound();
+        $this->withHeader('Idempotency-Key', 'gated-details')
+            ->patchJson($base.'/invoices/'.Str::uuid()->toString().'/details', [])
             ->assertNotFound();
 
         // The task route shares the outer cutover and is deliberately untouched:
