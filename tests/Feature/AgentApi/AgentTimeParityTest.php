@@ -60,7 +60,13 @@ final class AgentTimeParityTest extends TestCase
         $manager = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'member']);
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $manager->id, 'role' => 'manager']);
-        $this->actingAsMcp($manager, [AgentApiScopes::TIME_APPROVE, AgentApiScopes::TIME_READ]);
+        $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_APPROVE, AgentApiScopes::TIME_READ]);
+        $names = array_column($this->mcpCall('tools/list', [])['tools'], 'name');
+        $this->assertNotContains('time_entries.unapprove', $names);
+        $this->assertContains('time_entries.approve', $names);
+        $workspace->memberships()->where('user_id', $manager->id)->update(['role' => 'admin']);
+        $this->assertContains('time_entries.unapprove', array_column($this->mcpCall('tools/list', [])['tools'], 'name'));
+        $workspace->memberships()->where('user_id', $manager->id)->update(['role' => 'member']);
         $this->withHeader('Idempotency-Key', 'project-manager')->postJson($this->unapprovePath($workspace, $entry), $body)->assertForbidden();
         [$otherOwner, $otherWorkspace, $otherCompany, $otherProject] = $this->tenant();
         $foreign = $this->entry($otherOwner, $otherWorkspace, $otherCompany, $otherProject);
