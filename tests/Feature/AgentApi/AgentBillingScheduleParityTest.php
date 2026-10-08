@@ -11,9 +11,13 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiVersion;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -109,6 +113,64 @@ final class AgentBillingScheduleParityTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'billing_schedules.create', 'outcome' => 'replay']);
         $this->withHeader('Idempotency-Key', 'synthetic-create')->postJson($this->base(), [...$body, 'due_days' => 31])->assertConflict();
         $this->withHeader('Idempotency-Key', 'another-create')->postJson($this->base(), $body)->assertConflict()->assertJsonPath('message', 'This agreement already has a billing schedule; read it before generating invoices.');
+    }
+
+    public function test_a_real_agreement_unique_collision_is_a_conflict_and_rolls_back_the_receipt(): void
+    {
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use (&$armed): void {
+            if (! $armed || ! str_starts_with($query->sql, 'select exists(') || ! str_contains($query->sql, 'client_billing_schedules')) {
+                return;
+            }
+            // The probe has already returned false. Force a real database
+            // constraint failure at insertion, rather than mocking an exception.
+            $armed = false;
+            $this->schedule();
+        });
+        $this->postJson($this->base(), $this->body(), ['Idempotency-Key' => 'synthetic-colliding-create'])
+            ->assertConflict()->assertJsonPath('message', 'This agreement already has a billing schedule; read it before generating invoices.');
+        $this->assertFalse($armed);
+        $this->assertDatabaseCount('client_billing_schedules', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'billing_schedules.create', 'outcome' => 'failed', 'error_category' => 'conflict']);
+        $this->postJson($this->base(), $this->body(), ['Idempotency-Key' => 'synthetic-colliding-create'])->assertCreated();
+        $this->assertDatabaseCount('client_billing_schedules', 1);
+        $this->assertDatabaseCount('agent_mutation_receipts', 1);
+    }
+
+    public function test_an_unrelated_public_id_unique_collision_is_not_misclassified_as_an_agreement_conflict(): void
+    {
+        config(['app.debug' => false]);
+        $otherAgreement = $this->agreement->replicate(['public_id']);
+        $otherAgreement->save();
+        $existing = $this->schedule(['client_agreement_id' => $otherAgreement->id]);
+        ClientBillingSchedule::creating(function (ClientBillingSchedule $schedule) use ($existing): void {
+            $schedule->setAttribute('public_id', $existing->public_id);
+        });
+        $this->postJson($this->base(), $this->body(), ['Idempotency-Key' => 'synthetic-unrelated-collision'])->assertInternalServerError();
+        $this->assertDatabaseCount('client_billing_schedules', 1);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'billing_schedules.create', 'outcome' => 'failed', 'error_category' => 'internal']);
+    }
+
+    public static function named_create_constraints(): iterable
+    {
+        yield 'MariaDB named agreement key' => ['billing_schedule_agreement_unique', [], 409, 'conflict'];
+        yield 'PostgreSQL named agreement key' => ['billing_schedule_agreement_unique', ['workspace_id', 'client_agreement_id'], 409, 'conflict'];
+        yield 'another named key must not fall back to columns' => ['synthetic_unrelated_unique', ['workspace_id', 'client_agreement_id'], 500, 'internal'];
+    }
+
+    #[DataProvider('named_create_constraints')]
+    public function test_named_create_constraint_metadata_is_classified_narrowly(string $index, array $columns, int $status, string $category): void
+    {
+        config(['app.debug' => false]);
+        $collision = (new UniqueConstraintViolationException(DB::getDefaultConnection(), 'insert into client_billing_schedules', [], new \PDOException('Synthetic named constraint failure')))
+            ->setIndex($index)->setColumns($columns);
+        ClientBillingSchedule::creating(static fn () => throw $collision);
+        $this->postJson($this->base(), $this->body(), ['Idempotency-Key' => 'synthetic-named-collision'])->assertStatus($status);
+        $this->assertDatabaseCount('client_billing_schedules', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'billing_schedules.create', 'outcome' => 'failed', 'error_category' => $category]);
     }
 
     public function test_generate_issues_due_invoices_and_replays_across_transports(): void

@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -31,12 +32,26 @@ final class CreateBillingScheduleAction
             }
             abort_if(ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)->exists(), 409, 'This agreement already has a billing schedule; read it before generating invoices.');
 
-            return ClientBillingSchedule::query()->create([
-                ...Arr::only($data, ['cadence', 'anchor_month', 'anchor_day', 'next_run_on', 'due_days', 'currency', 'is_active', 'line_template']),
-                'workspace_id' => $workspace->id,
-                'client_company_id' => $company->id,
-                'client_agreement_id' => $agreement->id,
-            ]);
+            try {
+                // An earlier consistent read can retain a stale REPEATABLE READ
+                // snapshot even after the agreement lock. Let the unique key
+                // arbitrate competing creates, and roll back the insert's
+                // savepoint before handling a PostgreSQL constraint failure.
+                return DB::transaction(fn (): ClientBillingSchedule => ClientBillingSchedule::query()->create([
+                    ...Arr::only($data, ['cadence', 'anchor_month', 'anchor_day', 'next_run_on', 'due_days', 'currency', 'is_active', 'line_template']),
+                    'workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id,
+                    'client_agreement_id' => $agreement->id,
+                ]));
+            } catch (UniqueConstraintViolationException $collision) {
+                // SQLite reports columns; MariaDB and PostgreSQL name the key.
+                $constraint = $collision->index ?? $collision->columns;
+                if ($constraint !== 'billing_schedule_agreement_unique' && $constraint !== ['workspace_id', 'client_agreement_id']) {
+                    throw $collision;
+                }
+
+                abort(409, 'This agreement already has a billing schedule; read it before generating invoices.');
+            }
         });
     }
 }
