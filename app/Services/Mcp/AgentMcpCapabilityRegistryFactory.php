@@ -15,7 +15,6 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpToolCatalog $catalog,
         private readonly AgentMcpInputSchemaFactory $inputs,
         private readonly AgentMcpOutputSchemaFactory $outputs,
-        private readonly AgentMcpClientCapabilities $clientCapabilities,
     ) {}
 
     public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes, AgentMcpClientTools $clients, AgentMcpClientWriteTools $clientWrites): McpCapabilityRegistry
@@ -28,7 +27,7 @@ final class AgentMcpCapabilityRegistryFactory
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->agreementResource($agreementResource));
-        foreach ($this->clientCapabilities->definitions($clients, $clientWrites) as $definition) {
+        foreach ($this->catalog->clientDefinitions($clients, $clientWrites) as $definition) {
             $registry->register($definition);
         }
         $registry->register($this->billingScheduleList($schedules));

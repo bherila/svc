@@ -7,6 +7,7 @@ use App\Contracts\RetainerAgreementTerms;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Billing\AgreementBillingRateResolver;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\FirstCycleProration;
@@ -56,10 +57,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim',
     'first_cycle_proration', 'agreement_link',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
 class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected function casts(): array
     {

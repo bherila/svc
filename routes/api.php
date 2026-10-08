@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
@@ -11,10 +12,12 @@ use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
+use App\Http\Middleware\EnsureAgentClientWritesEnabled;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
+use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Models\Workspace;
@@ -65,6 +68,63 @@ Route::prefix('v1')
         Route::get('/workspaces/{workspace}/summary', [AgentReadController::class, 'summary'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))
             ->name('workspaces.summary');
+        Route::get('/workspaces/{workspace}/clients', [AgentClientController::class, 'index'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_READ)])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.index');
+        Route::get('/workspaces/{workspace}/clients/{client}', [AgentClientController::class, 'show'])
+            ->whereUuid('client')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_READ)])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.show');
+        Route::post('/workspaces/{workspace}/clients', [AgentClientController::class, 'store'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.store');
+        Route::patch('/workspaces/{workspace}/clients/{client}', [AgentClientController::class, 'update'])
+            ->whereUuid('client')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.update');
+        Route::post('/workspaces/{workspace}/clients/{client}/archive', [AgentClientController::class, 'archive'])
+            ->whereUuid('client')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.archive');
+        Route::post('/workspaces/{workspace}/clients/{client}/restore', [AgentClientController::class, 'restore'])
+            ->whereUuid('client')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('clients.restore');
+        Route::get('/workspaces/{workspace}/agreements', [AgentClientController::class, 'agreements'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::BILLING_READ)])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.index');
+        Route::get('/workspaces/{workspace}/agreements/{agreement}', [AgentClientController::class, 'agreement'])
+            ->whereUuid('agreement')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::BILLING_READ)])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.show');
+        Route::post('/workspaces/{workspace}/clients/{client}/agreements', [AgentClientController::class, 'storeAgreement'])
+            ->whereUuid('client')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.store');
+        Route::patch('/workspaces/{workspace}/agreements/{agreement}', [AgentClientController::class, 'updateAgreement'])
+            ->whereUuid('agreement')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.update');
+        Route::post('/workspaces/{workspace}/agreements/{agreement}/activate', [AgentClientController::class, 'activate'])
+            ->whereUuid('agreement')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.activate');
+        Route::post('/workspaces/{workspace}/agreements/{agreement}/terminate', [AgentClientController::class, 'terminate'])
+            ->whereUuid('agreement')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentClientWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('agreements.terminate');
         Route::get('/workspaces/{workspace}/projects', [AgentReadController::class, 'projects'])
             ->middleware(CheckToken::using(AgentApiScopes::PROJECTS_READ))
             ->name('projects.index');

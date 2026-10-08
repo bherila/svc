@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\CursorPage;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -58,6 +59,7 @@ final class AgentClientReadService
     {
         return [
             'id' => $company->public_id,
+            'version' => AgentApiVersion::for($company),
             'name' => $company->name,
             'billing_email' => $company->billing_email,
             'is_active' => $company->is_active,

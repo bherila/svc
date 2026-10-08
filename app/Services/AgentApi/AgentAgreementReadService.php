@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\CursorPage;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use Illuminate\Database\Eloquent\Collection;
@@ -26,7 +27,8 @@ final class AgentAgreementReadService
         $this->requireManager($user, $workspace);
         $query = ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
-            ->with(['project', 'clientCompany'])
+            ->whereHas('clientCompany', fn ($company) => $company->where('workspace_id', $workspace->id))
+            ->with(['project' => fn ($project) => $project->where('workspace_id', $workspace->id), 'clientCompany' => fn ($company) => $company->where('workspace_id', $workspace->id)])
             ->orderBy('id');
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
@@ -49,7 +51,8 @@ final class AgentAgreementReadService
         $agreement = ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', $agreementId)
-            ->with(['project', 'clientCompany'])
+            ->whereHas('clientCompany', fn ($company) => $company->where('workspace_id', $workspace->id))
+            ->with(['project' => fn ($project) => $project->where('workspace_id', $workspace->id), 'clientCompany' => fn ($company) => $company->where('workspace_id', $workspace->id)])
             ->firstOrFail();
 
         return $this->present($agreement);
@@ -76,6 +79,7 @@ final class AgentAgreementReadService
     {
         return [
             ...$this->presenter->present($agreement, $agreement->project?->name),
+            'version' => AgentApiVersion::for($agreement),
             'client_id' => $agreement->clientCompany->public_id,
             'client_name' => $agreement->clientCompany->name,
             'project_id' => $agreement->project?->public_id,

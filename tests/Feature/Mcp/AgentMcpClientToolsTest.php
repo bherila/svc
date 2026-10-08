@@ -8,6 +8,7 @@ use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
@@ -45,6 +46,7 @@ final class AgentMcpClientToolsTest extends TestCase
         $one = $this->callTool($session, 'clients.get', ['workspace_id' => $workspace->public_id, 'client_id' => $active->public_id]);
         $this->assertSame([
             'id' => $active->public_id,
+            'version' => AgentApiVersion::for($active),
             'name' => 'Synthetic Active Client',
             'billing_email' => 'billing@synthetic.example.test',
             'is_active' => true,

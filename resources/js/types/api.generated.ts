@@ -4,6 +4,158 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/agreements/{agreement_id}/terminate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.terminate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/agreements/{agreement_id}/activate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.activate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/clients/{client_id}/agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/agreements/{agreement_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['agreements.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        patch: operations['agreements.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['agreements.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/clients/{client_id}/restore': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['clients.restore'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/clients/{client_id}/archive': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['clients.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/clients/{client_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['clients.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        patch: operations['clients.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/clients': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['clients.list'];
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['clients.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/expenses': {
         parameters: {
             query?: never;
@@ -390,6 +542,138 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        agreements_terminateRequest: {
+            /** @constant */
+            confirm: true;
+            expected_version: string;
+            /** Format: date */
+            ends_on?: string | null;
+        };
+        agreements_activateRequest: {
+            /** @constant */
+            confirm: true;
+            expected_version: string;
+        };
+        agreements_updateRequest: {
+            expected_version: string;
+            title?: string;
+            /** Format: date */
+            starts_on?: string;
+            /** Format: date */
+            ends_on?: string | null;
+            currency?: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            agreement_text?: string | null;
+            is_visible_to_client?: boolean;
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+            period_retainer_amount?: number | null;
+            period_retainer_minutes?: number | null;
+            catch_up_threshold_minutes?: number | null;
+            rollover_months?: number | null;
+            rollover_policy?: string | null;
+            /** @enum {string|null} */
+            first_cycle_proration?:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            bill_overage_interim?: boolean | null;
+        };
+        agreements_createRequest: {
+            expected_version: string;
+            title: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on?: string | null;
+            currency: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            agreement_text?: string | null;
+            is_visible_to_client?: boolean;
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+        };
+        clients_restoreRequest: {
+            expected_version: string;
+        };
+        clients_archiveRequest: {
+            expected_version: string;
+        };
+        clients_updateRequest: {
+            expected_version: string;
+            name?: string;
+            /** Format: email */
+            billing_email?: string | null;
+            automatic_invoice_email_enabled?: boolean;
+            automatic_invoice_email_delay_days?: number | null;
+            is_active?: boolean;
+        } & unknown;
+        clients_createRequest: {
+            name: string;
+            /** Format: email */
+            billing_email?: string | null;
+        };
+        AgreementListResponse: {
+            data: components['schemas']['Agreement'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        AgreementResponse: {
+            data: components['schemas']['Agreement'];
+        };
+        ClientCompanyListResponse: {
+            data: components['schemas']['ClientCompany'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        ClientCompanyResponse: {
+            data: components['schemas']['ClientCompany'];
+        };
+        Agreement: {
+            version: string;
+            /** Format: uuid */
+            id: string;
+            title: string;
+            status: string;
+            currency: string;
+            billing_cadence: string | null;
+            /** @enum {string|null} */
+            effective_billing_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | null;
+            /** @enum {string|null} */
+            effective_first_cycle_proration:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            is_recurring: boolean;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string | null;
+            /** Format: date-time */
+            signed_at: string | null;
+            retainer_minutes_per_period: number | null;
+            retainer_minutes_per_month: number | null;
+            retainer_amount_per_period: number | null;
+            hourly_rate_amount: number | null;
+            rollover_months: number | null;
+            project: string | null;
+            /** Format: uuid */
+            client_id: string;
+            client_name: string;
+            /** Format: uuid */
+            project_id: string | null;
+        };
+        ClientCompany: {
+            version: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            billing_email: string | null;
+            is_active: boolean;
+            automatic_invoice_email_enabled: boolean;
+            automatic_invoice_email_delay_days: number | null;
+        };
         Expense: {
             /** Format: uuid */
             id: string;
@@ -924,6 +1208,348 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'agreements.terminate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                agreement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['agreements_terminateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.activate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                agreement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['agreements_activateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['agreements_createRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                agreement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                agreement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['agreements_updateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.list': {
+        parameters: {
+            query?: {
+                status?:
+                    'draft' | 'active' | 'terminated' | 'expired' | 'paused';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.restore': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_restoreRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_archiveRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_updateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.list': {
+        parameters: {
+            query?: {
+                status?: 'active' | 'archived';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_createRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'expenses.list': {
         parameters: {
             query?: {

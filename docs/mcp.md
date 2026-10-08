@@ -350,10 +350,31 @@ receipt upload, recurrence or invoice claim/release integration.
 `agreements.terminate` require `clients:write` and workspace owner/admin
 permission. They are available only when both `AGENT_API_WRITES_ENABLED` and
 `AGENT_API_CLIENT_WRITES_ENABLED` are true; the client flag defaults to false and
-nothing enables it at deployment. Like the expense tools they exist only in MCP
+nothing enables it at deployment. REST and MCP share these workflows
 and take an idempotency key with the same actor/workspace/OAuth-client/operation
 contract: a retry returns the first result and reusing a key for a different
 request is a conflict.
+
+Equivalent REST routes live under `/api/v1/workspaces/{workspace}`:
+
+| Tool | Method and path |
+| --- | --- |
+| `clients.list`, `clients.create` | GET/POST `/clients` |
+| `clients.get`, `clients.update` | GET/PATCH `/clients/{client}` |
+| `clients.archive`, `clients.restore` | POST `/clients/{client}/archive`, POST `/clients/{client}/restore` |
+| `agreements.list` | GET `/agreements` |
+| `agreements.get`, `agreements.update` | GET/PATCH `/agreements/{agreement}` |
+| `agreements.create` | POST `/clients/{client}/agreements` |
+| `agreements.activate`, `agreements.terminate` | POST `/agreements/{agreement}/activate`, POST `/agreements/{agreement}/terminate` |
+
+Reads require `clients:read` for clients and `billing:read` for agreements.
+Every existing-record write requires `expected_version` from its latest read;
+agreement creation uses the parent client's version. Client creation has no
+existing record to version. Versions advance for web edits too, and are checked
+under the row lock. REST writes require an `Idempotency-Key` header; MCP uses
+`idempotency_key`. Receipts are shared across transports. Activation changes the
+billing terms in force and termination is irreversible, so both require
+`confirm: true` after explicit user confirmation. Signing remains web-only.
 
 Nothing is deleted. "Delete" is **archive**: `clients.archive` deactivates a
 company and `clients.restore` reverses it; `agreements.terminate` ends an

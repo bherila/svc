@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -116,7 +117,7 @@ class AgreementWorkflow
      *
      * @throws EngagementException when the agreement is not this workspace's
      */
-    public function update(Workspace $workspace, ClientAgreement $agreement, array $attributes): ClientAgreement
+    public function update(Workspace $workspace, ClientAgreement $agreement, array $attributes, ?string $expectedVersion = null): ClientAgreement
     {
         if (! $this->workspaceAuthorization->isOwnedBy($workspace, $agreement)) {
             throw new EngagementException('The agreement does not belong to this workspace.');
@@ -124,7 +125,7 @@ class AgreementWorkflow
 
         $editable = array_intersect_key($attributes, array_flip(self::EDITABLE));
 
-        return DB::transaction(function () use ($workspace, $agreement, $editable): ClientAgreement {
+        return DB::transaction(function () use ($workspace, $agreement, $editable, $expectedVersion): ClientAgreement {
             $locked = ClientAgreement::query()
                 ->whereKey($agreement->getKey())
                 ->where('workspace_id', $workspace->id)
@@ -135,6 +136,7 @@ class AgreementWorkflow
                 throw new EngagementException('The agreement does not belong to this workspace.');
             }
 
+            $this->assertVersion($locked, $expectedVersion);
             if ($editable === []) {
                 return $locked;
             }
@@ -182,11 +184,12 @@ class AgreementWorkflow
         });
     }
 
-    public function activate(ClientAgreement $agreement): ClientAgreement
+    public function activate(ClientAgreement $agreement, ?string $expectedVersion = null): ClientAgreement
     {
-        return DB::transaction(function () use ($agreement): ClientAgreement {
-            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
+        return DB::transaction(function () use ($agreement, $expectedVersion): ClientAgreement {
+            $locked = ClientAgreement::query()->where('workspace_id', $agreement->workspace_id)->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
+            $this->assertVersion($locked, $expectedVersion);
             if ($locked->status === 'active') {
                 return $locked;
             }
@@ -231,11 +234,12 @@ class AgreementWorkflow
      * One-way: nothing reactivates a terminated agreement, and `activate()`
      * refuses it, so a mistaken termination is corrected by a new agreement.
      */
-    public function terminate(ClientAgreement $agreement, ?string $endsOn = null): ClientAgreement
+    public function terminate(ClientAgreement $agreement, ?string $endsOn = null, ?string $expectedVersion = null): ClientAgreement
     {
-        return DB::transaction(function () use ($agreement, $endsOn): ClientAgreement {
-            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
+        return DB::transaction(function () use ($agreement, $endsOn, $expectedVersion): ClientAgreement {
+            $locked = ClientAgreement::query()->where('workspace_id', $agreement->workspace_id)->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
+            $this->assertVersion($locked, $expectedVersion);
             if ($locked->status === 'terminated') {
                 return $locked;
             }
@@ -272,6 +276,13 @@ class AgreementWorkflow
         });
     }
 
+    private function assertVersion(ClientAgreement $agreement, ?string $expectedVersion): void
+    {
+        if ($expectedVersion !== null) {
+            abort_unless(AgentApiVersion::matches($agreement, $expectedVersion), 409, 'The agreement has changed; read it and retry.');
+        }
+    }
+
     private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement): void
     {
         $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);
@@ -284,7 +295,7 @@ class AgreementWorkflow
     public function sign(ClientAgreement $agreement, ?User $signingUser, string $signerName, ?string $signerTitle): ClientAgreement
     {
         return DB::transaction(function () use ($agreement, $signingUser, $signerName, $signerTitle): ClientAgreement {
-            $locked = ClientAgreement::query()->tap(Locks::forUpdate())->findOrFail($agreement->id);
+            $locked = ClientAgreement::query()->where('workspace_id', $agreement->workspace_id)->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
             if ($locked->signed_at !== null) {
                 return $locked;

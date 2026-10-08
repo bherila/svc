@@ -112,11 +112,8 @@ final class ApiCredentialTest extends TestCase
 
         $this->assertContains('billing:read', $offered);
         $this->assertNotContains(AgentApiScopes::MCP_USE, $offered);
-        // Client management exists only as MCP tools until its REST routes land.
-        $this->assertNotContains(AgentApiScopes::CLIENTS_WRITE, $offered);
-        $this->actingAs($this->user)
-            ->post('/account/api-tokens', ['name' => 'Clients', 'scopes' => [AgentApiScopes::CLIENTS_WRITE], 'days' => 30])
-            ->assertSessionHasErrors('scopes.0');
+        $this->assertContains(AgentApiScopes::CLIENTS_WRITE, $offered);
+        $this->issueToken([AgentApiScopes::CLIENTS_WRITE], 30);
     }
 
     /** A connector importing the document reaches the installation it came from. */

@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\InvoiceEmailService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -42,9 +43,9 @@ class UpdateClientCompany
      *
      * @throws ValidationException when automatic delivery is enabled with nobody to send to
      */
-    public function handle(Workspace $workspace, ClientCompany $company, array $attributes): ClientCompany
+    public function handle(Workspace $workspace, ClientCompany $company, array $attributes, ?string $expectedVersion = null): ClientCompany
     {
-        return DB::transaction(function () use ($workspace, $company, $attributes): ClientCompany {
+        return DB::transaction(function () use ($workspace, $company, $attributes, $expectedVersion): ClientCompany {
             $disablingAutomaticDelivery = array_key_exists('automatic_invoice_email_enabled', $attributes)
                 && ! (bool) $attributes['automatic_invoice_email_enabled'];
             // An update acquires row locks too. Lock every delivery this
@@ -71,6 +72,9 @@ class UpdateClientCompany
             // same reason every other miss here does: a tenant learns nothing
             // about a record it cannot reach, including that it exists.
             abort_if($locked === null, 404);
+            if ($expectedVersion !== null) {
+                abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The client has changed; read it and retry.');
+            }
 
             $billingEmail = array_key_exists('billing_email', $attributes)
                 ? (is_string($attributes['billing_email']) ? $attributes['billing_email'] : null)

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -29,10 +30,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
     'automatic_invoice_email_delay_days', 'is_active',
 ])]
-#[Hidden(['id', 'workspace_id', 'credit_revision'])]
+#[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision'])]
 class ClientCompany extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected function casts(): array
     {
