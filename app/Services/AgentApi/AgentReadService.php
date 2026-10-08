@@ -43,6 +43,7 @@ final class AgentReadService
         private readonly PortalAccess $portalAccess,
         private readonly PortalInvoiceQuery $portalInvoices,
         private readonly AgentTimeEntryQuery $timeQueries,
+        private readonly AgentTimeEntryAllocationQuery $allocations,
         private readonly AgentCapabilities $capabilities,
         private readonly AgentProjectPresenter $projectPresenter,
         private readonly AgentTaskPresenter $taskPresenter,
@@ -102,16 +103,8 @@ final class AgentReadService
             $time = $this->timeQueries->visibleTo($user, $workspace);
             $data['time'] = [
                 'draft_minutes' => (int) (clone $time)->where('status', 'draft')->sum('minutes'),
-                'approved_billable_unallocated_minutes' => (int) (clone $time)
-                    ->pricedForInvoicing()
-                    ->where('is_billable', true)
-                    ->where('is_deferred', false)
-                    ->whereDoesntHave('invoiceLines')
-                    ->sum('minutes'),
-                'allocated_to_draft_minutes' => (int) (clone $time)
-                    ->where('status', 'approved')
-                    ->whereHas('invoiceLines.invoice', fn (Builder $invoices) => $invoices->where('status', 'draft'))
-                    ->sum('minutes'),
+                'approved_billable_unallocated_minutes' => (int) $this->allocations->invoiceReady(clone $time)->sum('minutes'),
+                'allocated_to_draft_minutes' => (int) $this->allocations->filter((clone $time)->where('status', 'approved'), 'reserved')->sum('minutes'),
             ];
         }
         if ($allowsScope(AgentApiScopes::BILLING_READ)) {
@@ -207,10 +200,10 @@ final class AgentReadService
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor): array
+    public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task', 'user'])->orderBy('id');
+        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task', 'user'])->withCapacityPlacement($workspace->id)->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
@@ -223,9 +216,18 @@ final class AgentReadService
         if ($to !== null && $to !== '') {
             $query->whereDate('worked_on', '<=', $to);
         }
+        if ($allocationState !== null && $allocationState !== '') {
+            $this->allocations->filter($query, $allocationState);
+        }
+        if ($isBillable !== null) {
+            $query->where('is_billable', $isBillable);
+        }
+        if ($unallocated) {
+            $this->allocations->invoiceReady($query);
+        }
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
 
-        $page = $this->page($query, $workspace, 'time_entries|project_id='.($projectId ?? '').'|status='.($status ?? '').'|from='.($from ?? '').'|to='.($to ?? ''), $limit, $cursor);
+        $page = $this->page($query, $workspace, 'time_entries|project_id='.($projectId ?? '').'|status='.($status ?? '').'|from='.($from ?? '').'|to='.($to ?? '').'|allocation_state='.($allocationState ?? '').'|is_billable='.($isBillable === null ? '' : (int) $isBillable).'|unallocated='.(int) $unallocated, $limit, $cursor);
         $entries = array_values(array_filter($page['records'], static fn (Model $record): bool => $record instanceof ClientTimeEntry));
         $canReadInternalNotes = $this->access->canReadInternalTimeNotes($user, $workspace, $entries, $includeFinancials);
         $data = [];
@@ -255,6 +257,7 @@ final class AgentReadService
         $this->requireWorkspace($user, $workspace);
         $entries = $this->timeQueries->visibleTo($user, $workspace)
             ->with(['project', 'clientCompany', 'task', 'user'])
+            ->withCapacityPlacement($workspace->id)
             ->whereIn('public_id', $ids)
             ->get()
             ->keyBy('public_id');

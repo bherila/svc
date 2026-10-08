@@ -192,3 +192,5 @@ grant and gates, requires the payment's version and a reason, and cannot touch
 amount, currency, status or refunds.
 Reference remains optional. Read responses follow invoice visibility and omit
 private finance reconciliation and processor identifiers.
+
+Withdrawing time approval requires both `time:approve` and `time:read`, so the caller can obtain the current opaque revision from the public time read response.

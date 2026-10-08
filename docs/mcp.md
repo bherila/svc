@@ -587,3 +587,36 @@ and rollout protocol. This cutover supports coexistence with the immediately pri
 workspace-scoped writer; it does not authorize deploying older code that creates
 null-workspace receipts. No production data or environment flags are changed by
 this migration.
+
+### Withdrawing time approval and reading allocations
+
+`time_entries.unapprove` calls
+`POST /api/v1/workspaces/{workspace_id}/time-entries/{entry_id}/unapprove`.
+It requires `time:approve`, a workspace owner/admin, the current
+`expected_version`, and an idempotency key. Both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_TIME_ENTRY_WRITES_ENABLED` must be enabled for agent callers. Project
+managers can approve time but cannot withdraw approval. The operation shares the
+web time workflow: it locks the entry and any draft invoice, checks the version,
+clears the approver and approval time, and returns the entry to draft. Explicit
+rates remain; rates inferred at approval are cleared. Draft-invoice time is
+released and the invoice regenerated atomically. Time already invoiced or linked
+to an issued, paid, void, or unknown-status invoice is refused. Replays recheck
+current authorization and are audited without repeating the mutation.
+
+Every time-entry row includes `invoice_id` (a public UUID or `null`) and
+`allocation_state`: `unallocated`, `reserved` on a draft invoice, or `consumed`
+on a non-draft invoice. This classification follows the allocation, even when a
+legacy entry still has status `approved`. Only allocations whose pivot, line,
+and invoice belong to the entry's workspace and client company affect these
+fields. Allocation reads are eager loaded for a page.
+
+`time_entries.list` and its REST route accept `allocation_state` and
+`is_billable` filters. `allocation_state: unallocated` includes draft and deferred
+rows that have no allocation. To find the exact work behind
+`operations.summary.time.approved_billable_unallocated_minutes`, pass
+`unallocated: true`: it selects approved, priced, billable, non-deferred entries
+with no tenant-owned allocation. The summary and this filter use the same
+selector, including flat-hourly subcontractor pricing. Combine it with existing
+project/date filters to narrow the result. Pagination cursors are bound to all
+filters; fetch a new first page when changing them. Pages default to 25 rows and
+are capped at 100; descriptions are preserved.

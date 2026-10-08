@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/time-entries/{entry_id}/unapprove': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Return approved time to draft as a workspace owner/admin. Draft-invoice allocations are released and the invoice regenerated atomically; issued/paid/void allocations are refused. */
+        post: operations['time_entries.unapprove'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/agreements/{agreement_id}/terminate': {
         parameters: {
             query?: never;
@@ -916,6 +933,16 @@ export interface components {
             is_visible_to_client?: boolean;
         };
         TimeEntry: {
+            /**
+             * Format: uuid
+             * @description Public id of the tenant-owned invoice allocating this time; null when unallocated.
+             */
+            invoice_id: string | null;
+            /**
+             * @description No allocation, a draft-invoice reservation, or an allocation to a non-draft invoice. Legacy approved status does not imply unallocated.
+             * @enum {string}
+             */
+            allocation_state: 'unallocated' | 'reserved' | 'consumed';
             id: components['schemas']['Uuid'];
             author_id: components['schemas']['Uuid'];
             project_id: components['schemas']['Uuid'];
@@ -1208,6 +1235,36 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'time_entries.unapprove': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                entry_id: components['parameters']['TimeEntryId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpectedVersionRequest'];
+            };
+        };
+        responses: {
+            /** @description Time approval withdrawn or replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'agreements.terminate': {
         parameters: {
             query?: never;
@@ -1988,6 +2045,10 @@ export interface operations {
             query?: {
                 project_id?: string;
                 status?: components['schemas']['TimeStatus'];
+                allocation_state?: 'unallocated' | 'reserved' | 'consumed';
+                is_billable?: boolean;
+                /** @description When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state alone classifies all rows, including drafts and deferred work. */
+                unallocated?: boolean;
                 from?: string;
                 to?: string;
                 limit?: components['parameters']['Limit'];

@@ -179,6 +179,10 @@ Route::prefix('v1')
             ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentTimeEntryWritesEnabled::class])->name('time-entries.update');
         Route::delete('/workspaces/{workspace}/time-entries/{entry}', [AgentTimeEntryMutationController::class, 'destroy'])
             ->whereUuid('entry')->middleware([CheckToken::using(AgentApiScopes::TIME_WRITE), EnsureAgentTimeEntryWritesEnabled::class])->name('time-entries.destroy');
+        Route::post('/workspaces/{workspace}/time-entries/{entry}/unapprove', [AgentTimeEntryMutationController::class, 'unapprove'])
+            ->whereUuid('entry')->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::TIME_APPROVE, AgentApiScopes::TIME_READ), EnsureAgentWritesEnabled::class, EnsureAgentTimeEntryWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('time-entries.unapprove');
         Route::post('/workspaces/{workspace}/time-entries/approve', [AgentTimeEntryMutationController::class, 'approve'])
             ->middleware([CheckToken::using(AgentApiScopes::TIME_APPROVE), EnsureAgentWritesEnabled::class])->name('time-entries.approve');
         Route::post('/workspaces/{workspace}/invoices', [AgentInvoiceMutationController::class, 'createDraft'])

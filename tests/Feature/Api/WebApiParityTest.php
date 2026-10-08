@@ -65,7 +65,7 @@ final class WebApiParityTest extends TestCase
         'svc.engagement.time-entries.approve' => 'operation:time_entries.approve',
         'svc.engagement.time-entries.destroy' => 'operation:time_entries.delete',
         'svc.engagement.time-entries.store' => 'operation:time_entries.log',
-        'svc.engagement.time-entries.unapprove' => 'missing',
+        'svc.engagement.time-entries.unapprove' => 'operation:time_entries.unapprove',
         'svc.engagement.time-entries.update' => 'operation:time_entries.update',
         'svc.expense-schedules.generate' => 'missing',
         'svc.expense-schedules.store' => 'missing',

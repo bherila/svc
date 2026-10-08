@@ -5,6 +5,7 @@ namespace App\Support\AgentApi\Presenters;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\TimeEntryAllocation;
 
 final class AgentTimeEntryPresenter
 {
@@ -15,7 +16,17 @@ final class AgentTimeEntryPresenter
         bool $includeFinancials = false,
         bool $useClientDescription = false,
     ): array {
+        if (! $entry->relationLoaded('invoiceLines')) {
+            $entry->load(['invoiceLines' => fn ($lines) => $lines
+                ->where('client_invoice_lines.workspace_id', $workspace->id)
+                ->wherePivot('workspace_id', $workspace->id)
+                ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)]),
+            ]);
+        }
+        $allocation = TimeEntryAllocation::fromEntry($entry);
         $payload = [
+            'invoice_id' => $allocation->invoiceId,
+            'allocation_state' => $allocation->state,
             'id' => $entry->public_id,
             'author_id' => $entry->user->public_id,
             'project_id' => $entry->project->public_id,

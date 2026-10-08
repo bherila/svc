@@ -200,6 +200,7 @@ final class AgentMcpWriteTools
         $entriesById = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('public_id', $ids)
+            ->withCapacityPlacement($workspace->id)
             ->with('project')
             ->get()
             ->keyBy('public_id');
@@ -253,6 +254,12 @@ final class AgentMcpWriteTools
         $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, ['expected_version' => $expected_version]);
 
         return ['data' => ['deleted_id' => $id]];
+    }
+
+    /** @return array<string, mixed> */
+    public function timeEntriesUnapprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/time-entries/{$entry_id}/unapprove", compact('expected_version'), $idempotency_key);
     }
 
     /** @param list<array{id: string, expected_version: string}> $entries

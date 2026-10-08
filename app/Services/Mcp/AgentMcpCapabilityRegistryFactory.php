@@ -81,6 +81,7 @@ final class AgentMcpCapabilityRegistryFactory
             $name === 'context.get', $name === 'operations.summary' => 'AgentAccess::canViewWorkspace',
             str_starts_with($name, 'projects.') => 'AgentAccess::canViewProject',
             str_starts_with($name, 'tasks.') => 'AgentAccess::canViewTask',
+            $name === 'time_entries.unapprove' => 'AgentAccess::isWorkspaceManager',
             str_starts_with($name, 'time_entries.') => 'AgentAccess::canViewTime',
             $name === 'payments.record', $name === 'payments.correct' => 'AgentAccess::isWorkspaceManager',
             $name === 'payments.list' => 'AgentAccess::canViewInvoice',
