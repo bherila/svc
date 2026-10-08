@@ -13,7 +13,9 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
 use App\Support\Concurrency\Locks;
 use App\Support\RepositoryReference;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -27,7 +29,7 @@ final class WorkspaceProjectMutationAction
     {
         $this->requireManager($actor, $workspace);
 
-        return DB::transaction(function () use ($workspace, $company, $attributes, $expectedVersion): ClientProject {
+        return $this->writeProject(function () use ($workspace, $company, $attributes, $expectedVersion): ClientProject {
             $lockedCompany = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($company->id)->tap(Locks::forUpdate())->firstOrFail();
             if ($expectedVersion !== null) {
                 abort_unless(AgentApiVersion::matches($lockedCompany, $expectedVersion), 409, 'The client company has changed; read it and retry.');
@@ -48,7 +50,7 @@ final class WorkspaceProjectMutationAction
     {
         $this->requireManager($actor, $workspace);
 
-        return DB::transaction(function () use ($workspace, $project, $attributes, $expectedVersion, $companyId): ClientProject {
+        return $this->writeProject(function () use ($workspace, $project, $attributes, $expectedVersion, $companyId): ClientProject {
             $locked = $this->lockedProject($workspace, $project, $companyId);
             $this->checkVersion($locked, $expectedVersion);
             $changes = array_intersect_key($attributes, array_flip(['name', 'description', 'repository', 'status', 'is_visible_to_client']));
@@ -92,6 +94,23 @@ final class WorkspaceProjectMutationAction
     public function requireManager(User $actor, Workspace $workspace): void
     {
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403);
+    }
+
+    /** @param Closure(): ClientProject $callback */
+    private function writeProject(Closure $callback): ClientProject
+    {
+        try {
+            // Roll back this boundary's savepoint before translating a failed
+            // statement, so an enclosing receipt or caller transaction remains usable.
+            return DB::transaction($callback);
+        } catch (UniqueConstraintViolationException $collision) {
+            $constraint = $collision->index ?? $collision->columns;
+            if ($constraint !== 'client_projects_client_company_id_name_unique' && $constraint !== ['client_company_id', 'name']) {
+                throw $collision;
+            }
+
+            throw ValidationException::withMessages(['name' => 'This client already has a project with this name.']);
+        }
     }
 
     private function lockedProject(Workspace $workspace, ClientProject $project, ?int $companyId): ClientProject
