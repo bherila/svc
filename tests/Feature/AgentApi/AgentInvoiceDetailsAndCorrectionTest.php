@@ -265,6 +265,20 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->assertSame(2, $invoice->fresh()->document_revision);
     }
 
+    /** MCP advertises the same "at least one field" rule REST enforces, so a client can validate before calling. */
+    public function test_the_mcp_schema_requires_a_due_date_or_notes(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE]);
+        $session = $this->initialize();
+        $tools = $this->postJson('/api/v1/mcp', [
+            'jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => [],
+        ], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $session])->assertOk()->json('result.tools');
+        $schema = collect($tools)->firstWhere('name', 'invoices.update_details')['inputSchema'] ?? null;
+
+        $this->assertIsArray($schema);
+        $this->assertSame([['required' => ['due_date']], ['required' => ['notes']]], $schema['anyOf'] ?? null);
+    }
+
     /** An invoice in another workspace is not found through this one, and is not changed. */
     public function test_both_operations_refuse_another_workspaces_invoice(): void
     {
