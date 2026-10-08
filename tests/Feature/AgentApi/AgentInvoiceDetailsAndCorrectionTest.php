@@ -265,6 +265,42 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->assertSame(2, $invoice->fresh()->document_revision);
     }
 
+    /** An invoice in another workspace is not found through this one, and is not changed. */
+    public function test_both_operations_refuse_another_workspaces_invoice(): void
+    {
+        $foreignOwner = User::factory()->create(['email' => 'foreign-'.Str::random(8).'@synthetic.test']);
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Synthetic Foreign', 'slug' => 'synthetic-foreign-'.Str::random(8)]);
+        $foreignWorkspace->memberships()->create(['user_id' => $foreignOwner->id, 'role' => 'owner']);
+        $foreignCompany = ClientCompany::query()->create([
+            'workspace_id' => $foreignWorkspace->id,
+            'name' => 'Synthetic Foreign Client',
+            'slug' => 'synthetic-foreign-client-'.Str::random(8),
+        ]);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $foreignDraft = $lifecycle->createDraft($foreignWorkspace, $foreignCompany, [
+            'invoice_number' => 'INV-FOREIGN-DRAFT', 'currency' => 'USD', 'issue_date' => '2026-09-15', 'due_date' => '2026-10-15',
+        ], [['type' => 'fee', 'description' => 'Foreign service', 'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0]]);
+        $foreignIssued = $lifecycle->issue($lifecycle->createDraft($foreignWorkspace, $foreignCompany, [
+            'invoice_number' => 'INV-FOREIGN-ISSUED', 'currency' => 'USD', 'issue_date' => '2026-09-15', 'due_date' => '2026-10-15',
+        ], [['type' => 'fee', 'description' => 'Foreign service', 'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0]]), $foreignWorkspace);
+
+        $this->actingAsMcp($this->owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
+        $this->details($foreignDraft, [
+            'expected_version' => AgentApiVersion::for($foreignDraft->fresh()),
+            'due_date' => '2026-10-30',
+        ], 'foreign-details')->assertNotFound();
+        $this->correct($foreignIssued, [
+            'expected_version' => AgentApiVersion::for($foreignIssued->fresh()),
+            'reason' => 'Synthetic cross-tenant attempt.',
+            'confirm' => true,
+            'due_date' => '2026-10-30',
+        ], 'foreign-correct')->assertNotFound();
+
+        $this->assertSame('2026-10-15', $foreignDraft->fresh()->due_date?->toDateString());
+        $this->assertSame('2026-10-15', $foreignIssued->fresh()->due_date?->toDateString());
+        $this->assertSame(1, $foreignIssued->fresh()->document_revision);
+    }
+
     /** A legacy line stamped to another workspace is not loaded through this invoice. */
     public function test_the_updated_draft_is_returned_without_another_workspaces_rows(): void
     {
