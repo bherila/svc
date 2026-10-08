@@ -864,7 +864,7 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
             notes?: string | null;
-        };
+        } & (unknown | unknown);
         InvoiceCorrectionLine: {
             id: components['schemas']['Uuid'];
             description: string;
