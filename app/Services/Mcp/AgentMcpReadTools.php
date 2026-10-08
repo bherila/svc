@@ -119,11 +119,14 @@ final class AgentMcpReadTools
         #[Schema(format: 'date')] ?string $to = null,
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
+        #[Schema(enum: ['unallocated', 'reserved', 'consumed'])] ?string $allocation_state = null,
+        ?bool $is_billable = null,
+        bool $unallocated = false,
     ): array {
         $context = $this->workspace($workspace_id, 'time:read');
 
         try {
-            return $this->reads->timeEntries($context->principal->subject, $context->workspace, $project_id, $status, $from, $to, $limit, $cursor);
+            return $this->reads->timeEntries($context->principal->subject, $context->workspace, $project_id, $status, $from, $to, $limit, $cursor, $allocation_state, $is_billable, $unallocated);
         } catch (InvalidAgentApiCursor) {
             throw new ToolCallException('The pagination cursor is not valid for this request.');
         }

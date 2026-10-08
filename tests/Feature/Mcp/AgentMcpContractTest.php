@@ -208,6 +208,7 @@ final class AgentMcpContractTest extends TestCase
             'time_entries.delete' => ['time:write'],
             'time_entries.list' => ['time:read'],
             'time_entries.log' => ['time:write'],
+            'time_entries.unapprove' => ['time:approve', 'time:read'],
             'time_entries.update' => ['time:write'],
         ], $actual);
     }

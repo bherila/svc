@@ -37,7 +37,7 @@ final class AgentTimeEntryMutationController extends Controller
             $request->all(),
             $scopes->allows($request, AgentApiScopes::TIME_APPROVE),
         );
-        $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get()->keyBy('public_id');
+        $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->withCapacityPlacement($workspace->id)->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
             $entry = $entriesById->get($id);
             abort_unless($entry instanceof ClientTimeEntry, 404);
@@ -87,6 +87,46 @@ final class AgentTimeEntryMutationController extends Controller
         );
 
         return response()->json(['data' => ['deleted_id' => $id]]);
+    }
+
+    public function unapprove(
+        Request $request,
+        Workspace $workspace,
+        string $entry,
+        TimeEntryMutationService $time,
+        ProjectAccess $access,
+        AgentTimeEntryPresenter $presenter,
+        AgentMutationContextFactory $contexts,
+        AgentMutationExecutor $mutations,
+    ): JsonResponse {
+        $context = $contexts->from($request);
+        $ids = $mutations->run(
+            $context->user,
+            $workspace,
+            $context->oauthClientId,
+            'time_entries.unapprove',
+            $context->idempotencyKey,
+            ['entry_id' => $entry, 'body' => $request->all()],
+            function () use ($request, $workspace, $entry, $time, $context): array {
+                $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']]);
+                $record = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $entry)->firstOrFail();
+
+                return [$time->unapprove($workspace, $record, $context->user, $data['expected_version'])->public_id];
+            },
+            function (array $ids) use ($workspace, $access, $context): void {
+                abort_unless($access->isWorkspaceManager($context->user, $workspace), 403);
+                $count = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)
+                    ->whereHas('project', fn ($projects) => $projects
+                        ->where('workspace_id', $workspace->id)
+                        ->whereColumn('client_projects.client_company_id', 'client_time_entries.client_company_id')
+                        ->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id)))
+                    ->count();
+                abort_unless($count === count($ids), 404);
+            },
+        );
+        $record = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0] ?? null)->firstOrFail();
+
+        return response()->json(['data' => $presenter->present($workspace, $record)]);
     }
 
     public function approve(

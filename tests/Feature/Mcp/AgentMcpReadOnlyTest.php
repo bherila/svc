@@ -1122,6 +1122,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         );
         $this->assertNotContains('tasks.create', $names);
         $this->assertNotContains('time_entries.approve', $names);
+        $this->assertNotContains('time_entries.unapprove', $names);
         $this->assertNotContains('invoices.create_draft', $names);
     }
 

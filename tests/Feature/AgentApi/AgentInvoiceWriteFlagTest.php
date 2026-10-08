@@ -58,6 +58,7 @@ final class AgentInvoiceWriteFlagTest extends TestCase
 
     private const WORKFLOW_TOOLS = [
         'time_entries.approve',
+        'time_entries.unapprove',
         'tasks.create',
         'tasks.update',
     ];

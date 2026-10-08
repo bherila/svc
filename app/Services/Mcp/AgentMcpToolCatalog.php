@@ -37,7 +37,7 @@ final class AgentMcpToolCatalog
             $this->tool('projects.get', 'Get project', 'Get one authorized project and its visible tasks.', $tools, 'project'),
             $this->tool('tasks.list', 'List tasks', 'List authorized tasks with bounded cursor pagination.', $tools, 'tasks'),
             $this->tool('tasks.get', 'Get task', 'Get one authorized task.', $tools, 'task'),
-            $this->tool('time_entries.list', 'List time entries', 'List authorized time entries with bounded cursor pagination.', $tools, 'timeEntries'),
+            $this->tool('time_entries.list', 'List time entries', 'List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary; allocation_state filters all rows by allocation, including draft and deferred work.', $tools, 'timeEntries'),
             $this->tool('expenses.list', 'List expenses', 'List authorized expenses with bounded cursor pagination. Unattributed expenses are visible only to workspace managers.', $tools, 'expensesList'),
             $this->tool('payments.list', 'List received payments', 'List payments for an explicit invoice or client company, following invoice visibility with bounded pagination. No private reconciliation or processor identifiers are returned.', $tools, 'paymentsList'),
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
@@ -56,6 +56,9 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('time_entries.update', 'Update editable time', 'Update authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesUpdate'], 'time_entries.update', false, false, true),
                 new ToolDefinition('time_entries.delete', 'Delete editable time', 'Soft-delete authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
             ];
+        }
+        if ($this->writesEnabled() && $this->timeEntryWritesEnabled()) {
+            $definitions[] = new ToolDefinition('time_entries.unapprove', 'Withdraw time approval', 'Return approved time to draft as a workspace owner or admin using its current version. Time on a draft invoice is released and that invoice regenerated in the same transaction. Billed time and time on issued, paid or void invoices are refused.', [$writes, 'timeEntriesUnapprove'], 'time_entries.unapprove', false, false, true);
         }
         if ($this->writesEnabled()) {
             $definitions = [...$definitions,
