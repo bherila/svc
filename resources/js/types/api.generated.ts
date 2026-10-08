@@ -880,7 +880,7 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
             lines?: components['schemas']['InvoiceCorrectionLine'][];
-        };
+        } & (unknown | unknown);
         InvoiceVoidRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */

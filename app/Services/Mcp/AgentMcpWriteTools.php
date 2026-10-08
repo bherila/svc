@@ -453,7 +453,7 @@ final class AgentMcpWriteTools
         if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
             return $response->json;
         }
-        throw new ToolCallException($response->status === 403 ? 'This connection lacks the required permission.' : 'The SVC API request could not be completed.');
+        throw new ToolCallException(AgentMcpApiFailure::message($response->status, $response->json));
     }
 
     private function context(string $scope): McpRequestContext

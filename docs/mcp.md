@@ -5,6 +5,16 @@ general-availability work tracked by
 [#202](https://github.com/bherila/svc/issues/202). The feature tests in
 `tests/Feature/Mcp` are the executable compatibility contract.
 
+## Refused writes
+
+MCP tools that call REST writes preserve the API's user-facing message for
+409 conflicts and 422 validation or domain refusals, followed by the first
+field validation error when it differs. Read the current record before
+retrying a stale version, and correct the named input for a validation refusal.
+Permission failures and server failures retain generic messages; internal
+exception details are not returned. `invoices.correct` advertises that at
+least one of `due_date` or `lines` must be supplied.
+
 ## Pinned implementation and transport
 
 - `mcp/sdk` is locked to `v0.7.1` (`785fc3b9b7006ecc8a73322c939d96a4a7154345`).

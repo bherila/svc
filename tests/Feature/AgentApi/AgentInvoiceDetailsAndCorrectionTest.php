@@ -265,6 +265,62 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->assertSame(2, $invoice->fresh()->document_revision);
     }
 
+    public function test_mcp_passes_through_stale_versions_and_domain_refusals(): void
+    {
+        $draft = $this->generatedDraft();
+        $originalDueDate = $draft->due_date?->toDateString();
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE]);
+        $session = $this->initialize();
+        $arguments = [
+            'workspace_id' => $this->workspace->public_id,
+            'invoice_id' => $draft->public_id,
+            'expected_version' => str_repeat('0', 64),
+            'idempotency_key' => 'synthetic-stale-details',
+            'due_date' => '2026-10-20',
+        ];
+
+        $stale = $this->callTool($session, 'invoices.update_details', $arguments);
+        $this->assertTrue($stale['isError'] ?? false);
+        $this->assertStringContainsString('The invoice has changed; read it and retry.', json_encode($stale, JSON_THROW_ON_ERROR));
+
+        $refused = $this->callTool($session, 'invoices.update_details', [
+            ...$arguments,
+            'expected_version' => AgentApiVersion::for($draft->fresh()),
+            'idempotency_key' => 'synthetic-invalid-due-date',
+            'due_date' => '2026-09-01',
+        ]);
+        $this->assertTrue($refused['isError'] ?? false);
+        $this->assertStringContainsString('due date cannot precede the issue date', json_encode($refused, JSON_THROW_ON_ERROR));
+        $this->assertSame($originalDueDate, $draft->fresh()->due_date?->toDateString());
+    }
+
+    public function test_mcp_correction_schema_requires_a_due_date_or_lines(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_DELIVER]);
+        $session = $this->initialize();
+        $tools = $this->postJson('/api/v1/mcp', [
+            'jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => [],
+        ], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $session])->assertOk()->json('result.tools');
+        $schema = collect($tools)->firstWhere('name', 'invoices.correct')['inputSchema'] ?? null;
+        $this->assertIsArray($schema);
+        $this->assertSame([['anyOf' => [['required' => ['due_date']], ['required' => ['lines']]]]], $schema['allOf'] ?? null);
+
+        $arguments = [
+            'workspace_id' => $this->workspace->public_id,
+            'invoice_id' => (string) Str::uuid(),
+            'expected_version' => str_repeat('0', 64),
+            'idempotency_key' => 'synthetic-empty-correction',
+            'confirm' => true,
+            'reason' => 'Synthetic correction reason.',
+        ];
+        $this->postJson('/api/v1/mcp', [
+            'jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call',
+            'params' => ['name' => 'invoices.correct', 'arguments' => $arguments],
+        ], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $session])
+            ->assertOk()->assertJsonPath('error.code', -32602);
+        $this->assertDatabaseCount('agent_mutation_audits', 0);
+    }
+
     /** MCP advertises the same "at least one field" rule REST enforces, so a client can validate before calling. */
     public function test_the_mcp_schema_requires_a_due_date_or_notes(): void
     {
