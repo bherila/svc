@@ -61,17 +61,20 @@ the majority order won and the minority is named as an inversion below.
 | 8 | `workspaces` | Reached only to serialise the number counter, which is reached only once there is an invoice to number |
 | 9 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
 | 10 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
-| 11 | `client_tasks` | Milestone claims, composed after time in every path but one |
-| 12 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
-| 13 | `client_companies` | Last, and this is the surprise — see below |
-| 14 | `client_projects` | Never co-acquired with anything above |
-| 15 | `users` | Never co-acquired with anything above |
-| 16 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
-| 17 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
-| 18 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 19 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 20 | `client_stripe_customers` | |
-| 21 | `client_stripe_payment_methods` | |
+| 11 | `client_invoice_line_time_entries` | Invoice time membership is checked after locking its entry |
+| 12 | `client_tasks` | Milestone claims, composed after time in every path but one |
+| 13 | `client_expense_schedules` | Recurrence generation locks its schedule before expense rows |
+| 14 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
+| 15 | `client_companies` | Last, and this is the surprise — see below |
+| 16 | `client_projects` | Never co-acquired with anything above |
+| 17 | `users` | Never co-acquired with anything above |
+| 18 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
+| 19 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
+| 20 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
+| 21 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 22 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 23 | `client_stripe_customers` |  |
+| 24 | `client_stripe_payment_methods` |  |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -449,3 +452,8 @@ fact: `for update` locks the rows the statement selects, so a builder repointed
 at another table locks that table, and filing it under the model would record a
 lock on rows nobody held. So a lock on a table with no case is refused even when
 the model in the chain has one.
+
+
+## Prepared attachment publication
+
+Agent receipt uploads prepare and verify bytes before reserving a mutation receipt or locking an expense. A staged recovery row records both keys outside that mutation transaction. The recorded publication order is `AgentMutationReceipt`, `ClientExpense`, `ClientAttachment`; only database state changes in the locked section. Rollback leaves the durable row staged, so repair can remove either object after a terminated request. Failed cleanup retains that row.

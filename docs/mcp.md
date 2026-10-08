@@ -620,3 +620,52 @@ selector, including flat-hourly subcontractor pricing. Combine it with existing
 project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
+
+## Expense approvals, receipts, and recurrence
+
+Workspace owners and administrators can use `expenses.approve` and
+`expenses.unapprove` with `expenses:read` and `expenses:write`, a stable `idempotency_key`, and the
+current expense `expected_version` from `expenses.list`. Approval stamps the
+actor and time. Unapproval clears those stamps. Invoiced expenses and unknown
+statuses refuse both transitions. Web and API calls share `ExpenseAction` and
+the workspace-scoped lifecycle boundary.
+
+`expense_schedules.list` requires `expenses:read` and manager access. It accepts
+an optional `company_id`, `limit` (1–100), and workspace/filter-bound `cursor`.
+`expense_schedules.create` requires `clients:read` and `expenses:write`; `.update`
+and `.generate` require `expenses:read` and `expenses:write`. All three require
+both expense write cutovers. Creation checks `expected_version` against the
+locked client company; update and generation check the locked schedule. Read
+client versions with `clients.get`. Schedules expose their own opaque `version`.
+Editable facts are amount (minor units), currency, description, project, and
+active status. Omitted or null project on schedule update clears attribution;
+calendar anchor, cadence, and generation cursor cannot be edited.
+
+Generation requires explicit user confirmation and `confirm: true`. It creates
+at most 24 due draft expenses using the workspace calendar, preserves the
+original anchor through short months, and never approves or invoices them. A
+retry with the same key and request returns the original `generated_count`;
+subsequent batches need the newly returned schedule version and a new key.
+
+Receipt tools require manager access:
+
+- `expenses.receipts.list` (`expenses:read`) lists at most the 100 newest
+  available receipts and returns the current `expense_version`.
+- `expenses.receipts.download` (`expenses:read`) returns a ten-minute signed
+  `download_url` for one receipt belonging to that expense.
+- `expenses.receipts.upload_url` (`expenses:read` and `expenses:write`, both write cutovers) prepares
+  a ten-minute signed `upload_url` and returns the current `expected_version`.
+  Preparing the URL does not write a receipt. POST multipart form fields `file`
+  and `expected_version` to that URL with an `Idempotency-Key` header. Direct
+  REST callers may POST to `/workspaces/{workspace_id}/expenses/{expense_id}/receipts`
+  without preparing a URL first.
+
+Both URL types require the caller's authorized API credential on use; the URL
+alone grants no access. Each use rechecks manager access and the live expense.
+Uploads accept at most 50 MiB, check the expense version under its lock, and
+advance that version. The file digest, length, filename, and version bind the
+idempotency key, so retries cannot replace the receipt bytes. Uploads use the
+same private attachment storage adapter as the web receipt screen and record
+success, replay, and refusal in the mutation audit.
+
+Receipt upload bytes are staged, promoted and verified before the expense lock. A durable staged recovery row records both object keys before promotion. The locked mutation only checks the current expense version, publishes the prepared row and advances the expense revision. A process termination or rollback leaves recoverable staged state; failed cleanup preserves that state for `svc:attachments:repair`. Replays return the original receipt and discard their unused preparation.

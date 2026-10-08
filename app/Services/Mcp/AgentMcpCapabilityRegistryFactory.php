@@ -76,7 +76,8 @@ final class AgentMcpCapabilityRegistryFactory
     private function policyAbility(string $name): string
     {
         return match (true) {
-            in_array($name, ['expenses.log', 'expenses.update', 'expenses.delete'], true) => 'AgentAccess::isWorkspaceManager',
+            in_array($name, ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove'], true)
+                || str_starts_with($name, 'expense_schedules.') || str_starts_with($name, 'expenses.receipts.') => 'AgentAccess::isWorkspaceManager',
             $name === 'expenses.list' => 'ProjectAccess::viewableProjectIds',
             $name === 'context.get', $name === 'operations.summary' => 'AgentAccess::canViewWorkspace',
             str_starts_with($name, 'projects.') => 'AgentAccess::canViewProject',

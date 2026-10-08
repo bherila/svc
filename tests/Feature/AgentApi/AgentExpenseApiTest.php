@@ -169,7 +169,7 @@ final class AgentExpenseApiTest extends TestCase
         $this->agent($owner, ['identity:read', 'expenses:read', 'expenses:write']);
         $names = array_column(app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)), 'name');
         $this->assertContains('expenses.list', $names);
-        foreach (['expenses.log', 'expenses.update', 'expenses.delete'] as $name) {
+        foreach (['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expenses.receipts.upload_url', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate'] as $name) {
             $this->assertSame($outer && $inner, in_array($name, $names, true));
         }
         $summary = $this->getJson('/api/v1/context')->assertOk();

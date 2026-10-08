@@ -378,8 +378,8 @@ final class AgentMcpServerFactory
         if ($this->hasTools($available, ['time_entries.log', 'time_entries.approve'])) {
             $mode .= ' When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape.';
         }
-        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct', 'agreements.activate', 'agreements.terminate'], array_keys($available)) !== []) {
-            $mode .= ' Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, or terminating an agreement.';
+        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct', 'agreements.activate', 'agreements.terminate', 'expense_schedules.generate'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, or expense_schedules.generate.';
         }
         if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
             $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';
