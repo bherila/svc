@@ -213,6 +213,33 @@ final class ApiCredentialTest extends TestCase
         $this->assertTrue((bool) Passport::client()->newQuery()->findOrFail($clientId)->revoked);
     }
 
+    /**
+     * An app is held to the permissions it was registered with: asking for
+     * more at the consent screen is refused outright, before anyone is shown a
+     * consent page listing permissions the app was never meant to have.
+     */
+    public function test_an_app_cannot_request_more_than_its_registered_permissions(): void
+    {
+        $clientId = $this->actingAs($this->user)->postJson('/account/oauth-apps', [
+            'name' => 'Narrow', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
+        ])->assertCreated()->json('data.client_id');
+        $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
+        $query = [
+            'client_id' => $clientId,
+            'redirect_uri' => self::REDIRECT,
+            'response_type' => 'code',
+            'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
+            'code_challenge_method' => 'S256',
+        ];
+
+        foreach (['identity:read mcp:use', 'identity:read billing:write', 'billing:read'] as $scope) {
+            $this->get('/oauth/authorize?'.http_build_query($query + ['scope' => $scope]))
+                ->assertStatus(400)
+                ->assertJsonPath('error', 'invalid_scope');
+        }
+        $this->get('/oauth/authorize?'.http_build_query($query + ['scope' => 'identity:read']))->assertOk();
+    }
+
     public function test_app_registration_refuses_unsafe_redirects_and_unoffered_permissions(): void
     {
         $this->actingAs($this->user);
