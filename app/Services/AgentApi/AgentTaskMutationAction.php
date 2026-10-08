@@ -2,14 +2,11 @@
 
 namespace App\Services\AgentApi;
 
-use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
-use App\Support\AgentApi\AgentApiVersion;
-use App\Support\WorkspaceClock;
-use Illuminate\Support\Facades\DB;
+use App\Services\WorkspaceTaskMutationAction;
 
 /** The tenant-scoped task mutation workflow shared by REST and MCP. */
 final class AgentTaskMutationAction
@@ -17,7 +14,7 @@ final class AgentTaskMutationAction
     public function __construct(
         private readonly AgentMutationExecutor $mutations,
         private readonly ProjectAccess $access,
-        private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly WorkspaceTaskMutationAction $tasks,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -27,9 +24,7 @@ final class AgentTaskMutationAction
             $user, $workspace, $clientId, 'tasks.create', $idempotencyKey,
             ['project_id' => $projectId, 'body' => $data],
             function () use ($workspace, $projectId, $user, $data): array {
-                $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $projectId)->firstOrFail();
-                abort_unless($this->access->canManageTasks($user, $project), 403);
-                $task = $project->tasks()->create(['workspace_id' => $workspace->id] + $data + ['is_visible_to_client' => $data['is_visible_to_client'] ?? false]);
+                $task = $this->tasks->create($user, $workspace, $projectId, $data);
 
                 return [$task->public_id];
             },
@@ -46,22 +41,7 @@ final class AgentTaskMutationAction
             $user, $workspace, $clientId, 'tasks.update', $idempotencyKey,
             ['task_id' => $taskId, 'body' => $data],
             function () use ($workspace, $taskId, $user, $data): array {
-                $task = $this->task($workspace, $taskId);
-                abort_unless($this->access->canManageTasks($user, $task->project), 403);
-                $attributes = $data;
-                if (($attributes['status'] ?? null) === 'completed') {
-                    $attributes['completed_at'] = $this->clock->now($workspace);
-                } elseif (array_key_exists('status', $attributes)) {
-                    $attributes['completed_at'] = null;
-                }
-                unset($attributes['expected_version']);
-                abort_unless(AgentApiVersion::matches($task, $data['expected_version']), 409, 'The task has changed; read it and retry.');
-                $updated = ClientTask::query()
-                    ->whereKey($task->id)
-                    ->where('workspace_id', $workspace->id)
-                    ->where('lock_version', $task->lock_version)
-                    ->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
-                abort_unless($updated === 1, 409, 'The task has changed; read it and retry.');
+                $task = $this->tasks->update($user, $workspace, $taskId, $data, $data['expected_version']);
 
                 return [$task->public_id];
             },
@@ -74,15 +54,15 @@ final class AgentTaskMutationAction
     /** @param list<string> $ids */
     private function assertReplayAllowed(Workspace $workspace, User $user, array $ids): void
     {
-        $tasks = ClientTask::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get();
-        abort_unless($tasks->count() === count($ids), 404);
-        foreach ($tasks as $task) {
-            abort_unless($this->access->canManageTasks($user, $task->project), 403);
-        }
+        // Both task operations produce exactly one task; refuse malformed receipts.
+        abort_unless(count($ids) === 1, 404);
+        $task = $this->tasks->find($workspace, $ids[0]);
+        $task->project->setRelation('workspace', $workspace);
+        abort_unless($this->access->canManageTasks($user, $task->project), 403);
     }
 
     private function task(Workspace $workspace, ?string $id): ClientTask
     {
-        return ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->with('project')->firstOrFail();
+        return $this->tasks->find($workspace, $id);
     }
 }

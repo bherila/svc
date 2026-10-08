@@ -457,3 +457,20 @@ the model in the chain has one.
 ## Prepared attachment publication
 
 Agent receipt uploads prepare and verify bytes before reserving a mutation receipt or locking an expense. A staged recovery row records both keys outside that mutation transaction. The recorded publication order is `AgentMutationReceipt`, `ClientExpense`, `ClientAttachment`; only database state changes in the locked section. Rollback leaves the durable row staged, so repair can remove either object after a terminated request. Failed cleanup retains that row.
+### Project administration
+
+Project creation locks its tenant-owned client company before inserting a child.
+Project edits and member access changes lock the tenant-owned project, constrained
+to its company, before checking the expected revision. Access changes then lock
+the target's `workspace_memberships` row and refuse workspace owners/admins.
+`WorkspaceMembership` therefore follows `ClientProject` in the lock registry.
+Every access change advances the project revision in the same transaction, so a
+concurrent access decision or project edit requires a fresh read. API receipt
+locks still precede these domain locks. These order assertions cover one
+connection; they do not claim a multi-connection race test.
+
+Task web and agent mutations share `WorkspaceTaskMutationAction`. Agent updates
+now lock the tenant-owned task before checking `expected_version` and applying
+title, description, status or visibility changes. Both task → project → company
+ownership links are checked against the workspace, including replay reads. The
+existing `ClientTask` lock rank applies; no new resource rank is introduced.

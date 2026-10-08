@@ -384,6 +384,9 @@ final class AgentMcpServerFactory
         if (isset($available['billing_schedules.generate'])) {
             $mode .= ' Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery.';
         }
+        if (array_intersect(['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access.';
+        }
         if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
             $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';
         }
@@ -407,8 +410,8 @@ final class AgentMcpServerFactory
             : ' Use the '.implode(' and ', $promptGuidance).' prompts for complete guided workflows when the client exposes MCP prompts.';
 
         $payments = isset($available['payments.record'])
-            ? 'Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data, project mutations, or file uploads through MCP.'
-            : 'Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data, project mutations, or file uploads through MCP.';
+            ? 'Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.'
+            : 'Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.';
 
         return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. '.$payments.$prompts;
     }

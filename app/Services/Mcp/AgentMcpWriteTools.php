@@ -217,6 +217,37 @@ final class AgentMcpWriteTools
         return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts/upload-url", []);
     }
 
+    /** @return array<string, mixed> */
+    public function projectsCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, string $name, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm, ?string $description = null, ?string $repository = null, bool $is_visible_to_client = true): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/projects", compact('company_id', 'name', 'expected_version', 'confirm', 'description', 'repository', 'is_visible_to_client'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function projectsUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm, RequestContext $context, ?string $name = null, ?string $description = null, ?string $repository = null, ?string $status = null, ?bool $is_visible_to_client = null): array
+    {
+        $body = compact('expected_version', 'confirm');
+        foreach (compact('name', 'description', 'repository', 'status', 'is_visible_to_client') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('PATCH', "workspaces/{$workspace_id}/projects/{$project_id}", $body, $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function projectsArchive(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/projects/{$project_id}/archive", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function projectMembersUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(format: 'uuid')] string $user_id, string $role, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm): array
+    {
+        return $this->send('PUT', "workspaces/{$workspace_id}/projects/{$project_id}/members", compact('user_id', 'role', 'expected_version', 'confirm'), $idempotency_key);
+    }
+
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
     public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $approve = false): array

@@ -14,7 +14,7 @@ use Closure;
 final class AgentCapabilities
 {
     private const array ORDER = [
-        'projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
+        'projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
         'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
         'clients:read', 'clients:write',
     ];
@@ -119,6 +119,10 @@ final class AgentCapabilities
             AgentApiScopes::EXPENSES_READ => 'expenses:read',
             AgentApiScopes::CLIENTS_READ => 'clients:read',
         ];
+        if (AgentWriteCutover::projects()
+            && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROJECTS_READ))) {
+            $mapping[AgentApiScopes::PROJECTS_WRITE] = 'projects:write';
+        }
         if (AgentWriteCutover::expenses()) {
             $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';
         }

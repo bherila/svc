@@ -8,6 +8,8 @@ final class AgentApiScopes
 
     public const string PROJECTS_READ = 'projects:read';
 
+    public const string PROJECTS_WRITE = 'projects:write';
+
     public const string TASKS_READ = 'tasks:read';
 
     public const string TASKS_WRITE = 'tasks:write';
@@ -44,6 +46,7 @@ final class AgentApiScopes
         return [
             self::IDENTITY_READ => 'Read your SVC identity and available workspaces',
             self::PROJECTS_READ => 'Read authorized projects',
+            self::PROJECTS_WRITE => 'Create, edit and archive projects and manage project member access as a workspace owner or admin',
             self::TASKS_READ => 'Read authorized tasks',
             self::TASKS_WRITE => 'Create and update authorized tasks',
             self::TIME_READ => 'Read authorized time entries',
