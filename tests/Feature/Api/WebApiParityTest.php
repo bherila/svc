@@ -124,7 +124,9 @@ final class WebApiParityTest extends TestCase
 
     /**
      * A connector that was handed an API token instead of running OAuth must be
-     * able to call every operation (#384), so each declares both schemes.
+     * able to call every REST operation (#384), so each declares both schemes.
+     * The one exception is an operation that needs `mcp:use`: an API token can
+     * never carry it, so offering the alternative would only ever earn a 403.
      */
     public function test_every_operation_accepts_oauth_or_an_api_token(): void
     {
@@ -134,8 +136,10 @@ final class WebApiParityTest extends TestCase
         foreach ($document['paths'] as $path) {
             foreach ($path as $operation) {
                 $schemes = array_map(static fn (array $requirement): array => array_keys($requirement), $operation['security'] ?? []);
-                $this->assertSame([['oauth2'], ['apiToken']], $schemes, $operation['operationId']);
-                $this->assertSame([], $operation['security'][1]['apiToken'], $operation['operationId']);
+                $expected = in_array('mcp:use', $operation['security'][0]['oauth2'] ?? [], true)
+                    ? [['oauth2']]
+                    : [['oauth2'], ['apiToken']];
+                $this->assertSame($expected, $schemes, $operation['operationId']);
             }
         }
     }

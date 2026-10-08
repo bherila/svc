@@ -16,7 +16,7 @@
       "responses": {"200": {"description": "Authorized context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContextResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/connections/{token}": {"delete": {
-      "operationId": "connections.revoke", "security": [{"oauth2": ["mcp:use"]}, {"apiToken": []}],
+      "operationId": "connections.revoke", "security": [{"oauth2": ["mcp:use"]}],
       "parameters": [{"$ref": "#/components/parameters/TokenId"}],
       "responses": {"204": {"description": "Connection revoked"}, "default": {"$ref": "#/components/responses/Error"}}
     }},
