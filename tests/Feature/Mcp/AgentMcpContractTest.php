@@ -206,6 +206,13 @@ final class AgentMcpContractTest extends TestCase
             'agreements.list' => ['billing:read'],
             'agreements.terminate' => ['clients:write', 'billing:read'],
             'agreements.update' => ['clients:write', 'billing:read'],
+            'attachments.delete' => ['files:write', 'files:read'],
+            'attachments.download' => ['files:read'],
+            'attachments.download_url' => ['files:read'],
+            'attachments.get' => ['files:read'],
+            'attachments.list' => ['files:read'],
+            'attachments.upload' => ['files:write'],
+            'attachments.upload_url' => ['files:write'],
             'billing_audit.stale_and_missing' => ['billing:read'],
             'billing_schedules.create' => ['billing:write', 'billing:read'],
             'billing_schedules.generate' => ['billing:deliver', 'billing:read'],
@@ -261,12 +268,12 @@ final class AgentMcpContractTest extends TestCase
             'projects.members.list' => ['projects:read'],
             'projects.members.update' => ['projects:write', 'projects:read'],
             'projects.update' => ['projects:write', 'projects:read'],
-
             'proposals.accept' => ['proposals:accept', 'proposals:read'],
             'proposals.create' => ['proposals:write', 'clients:read'],
             'proposals.get' => ['proposals:read'],
             'proposals.list' => ['proposals:read'],
             'proposals.send' => ['proposals:write', 'proposals:read'],
+            'search' => ['identity:read'],
             'tasks.create' => ['tasks:write'],
             'tasks.get' => ['tasks:read'],
             'tasks.list' => ['tasks:read'],
@@ -277,6 +284,7 @@ final class AgentMcpContractTest extends TestCase
             'time_entries.log' => ['time:write'],
             'time_entries.unapprove' => ['time:approve', 'time:read'],
             'time_entries.update' => ['time:write'],
+            'workspaces.create' => ['workspaces:create'],
         ], $actual);
     }
 

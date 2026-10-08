@@ -839,3 +839,27 @@ retries reuse the result and recheck current authorization. A changed body with
 an old key or a stale version returns a conflict. Send and accept lock the
 proposal before checking its version; acceptance then locks its company before
 visibility reads or agreement decisions can establish a database snapshot.
+### Workspace and generic file parity (#386, #382)
+
+| Capability | Shared website action/query | Scope and deployment gate |
+| --- | --- | --- |
+| `workspaces.create` | `CreateWorkspace`; actor/client/key reservation before tenant-owned mutation receipt | `workspaces:create`; workflow + workspace write flags |
+| `search` | `WorkspaceSearch::forWorkspace` | `identity:read` plus each result kind's read scope; explicit workspace |
+| `attachments.list`, `attachments.get`, `attachments.download_url` | `AttachmentRecordResolver`, `AttachmentStorageService` | `files:read`; owner/admin; generic records only |
+| `attachments.upload_url`, REST multipart `attachments.upload` | `AttachmentAction::store`, `AttachmentStorageService` | `files:write`; workflow + file write flags; owner/admin; locked parent version |
+| `attachments.delete` | `AttachmentAction::delete`, existing retention lifecycle | `files:write`; same flags/role; file version + explicit confirmation |
+
+MCP prepares the upload URL; it never accepts file bytes as a tool argument.
+The caller posts multipart bytes with the same bearer credential and an
+`Idempotency-Key` header. Download and upload URLs expire in ten minutes and
+require current scopes and membership when followed. Expense receipt routes
+remain separate. The focused `AgentWorkspaceMiscTest` covers both transports,
+replay/digest conflicts, rollback compensation, versions, tenant isolation,
+scope/role/flag refusals, URL expiry and lock ordering.
+
+`context.get` includes `withheld_tools`, generated from the full registry,
+with `deployment_disabled`, `scope_not_granted` (and its missing `scope`), or
+`role`. Use this metadata to explain absent capabilities before suggesting
+website work. Invoice descriptions never promise payment recording unless the
+connection actually exposes the tool. New cutover groups must participate in
+`AgentMcpToolCatalog::inventoryDefinitions` as well as normal definitions.

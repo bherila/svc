@@ -44,6 +44,12 @@ final class AgentApiScopes
 
     public const string PROPOSALS_ACCEPT = 'proposals:accept';
 
+    public const string WORKSPACES_CREATE = 'workspaces:create';
+
+    public const string FILES_READ = 'files:read';
+
+    public const string FILES_WRITE = 'files:write';
+
     public const string MCP_USE = 'mcp:use';
 
     /** @return array<string, string> */
@@ -70,6 +76,9 @@ final class AgentApiScopes
             self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',
             self::PROPOSALS_WRITE => 'Create and send proposals as a workspace manager',
             self::PROPOSALS_ACCEPT => 'Accept authorized proposals and sign their resulting agreement',
+            self::WORKSPACES_CREATE => 'Create new workspaces you own',
+            self::FILES_READ => 'Read private attachments as a workspace manager',
+            self::FILES_WRITE => 'Upload and delete private attachments as a workspace manager',
             self::MCP_USE => 'Connect to SVC through MCP',
         ];
     }

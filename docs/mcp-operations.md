@@ -18,10 +18,11 @@ customer data. Preserve those constraints in incident tickets and logs.
    configuration cache. Those issuance routes return non-cacheable 404 responses.
    This is not credential revocation and does not replace the MCP kill switch.
 3. For a single capability, set its named entry in
-   `agent_api.mcp_feature_flags` to `false` (the stable feature-flag name in
-   `docs/mcp.md` is preferred; the public capability name is a compatibility
-   fallback). Deploy and clear configuration cache. Do not remove a route or
-   rename a capability during an incident.
+   `agent_api.mcp_feature_flags` to `false`. The stable feature-flag name in
+   `docs/mcp.md` disables its group; the public capability name disables only
+   that capability. Both switches must allow execution: an explicit `true`
+   never overrides a `false` on the other switch. Deploy and clear configuration
+   cache. Do not remove a route or rename a capability during an incident.
 4. Preserve only metadata needed for investigation: request ID, UTC timestamp,
    public workspace ID when already known, OAuth client ID, capability name,
    and safe error category. Never copy authorization headers, MCP arguments,

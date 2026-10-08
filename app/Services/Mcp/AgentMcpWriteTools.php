@@ -70,6 +70,56 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
+    public function workspacesCreate(#[Schema(minLength: 1, maxLength: 120)] string $name,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', 'workspaces', compact('name'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function search(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minLength: 1, maxLength: 200)] string $q): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/search", compact('q'));
+    }
+
+    /** @return array<string,mixed> */
+    public function attachmentsList(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
+        #[Schema(format: 'uuid')] string $record_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/records/{$record_type}/{$record_id}/attachments", []);
+    }
+
+    /** @return array<string,mixed> */
+    public function attachmentsGet(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $attachment_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/attachments/{$attachment_id}", []);
+    }
+
+    /** @return array<string,mixed> */
+    public function attachmentsDownloadUrl(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $attachment_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/attachments/{$attachment_id}/download-url", []);
+    }
+
+    /** Read-only preparation; upload the bytes to the returned URL with the same bearer credential.
+     * @return array<string,mixed> */
+    public function attachmentsUploadUrl(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
+        #[Schema(format: 'uuid')] string $record_id): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/records/{$record_type}/{$record_id}/attachments/upload-url", []);
+    }
+
+    /** @return array<string,mixed> */
+    public function attachmentsDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $attachment_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('DELETE', "workspaces/{$workspace_id}/attachments/{$attachment_id}", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
     public function paymentsRecord(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $invoice_id,

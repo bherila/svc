@@ -482,3 +482,25 @@ revision. Acceptance takes the existing company serialization lock before portal
 visibility reads, item snapshots or agreement decisions. This preserves the
 proposal → company order and the current-read agreement guard. Proposal status and
 terms changes advance `lock_version`; accepted business facts remain immutable.
+### Workspace creation and attachment API locks (#386)
+
+Fresh workspace creation locks its actor/client/idempotency-key reservation in
+`agent_workspace_creations` before entering `AgentMutationExecutor`. This is the
+only resource before `AgentMutationReceipt`: a tenant must exist before a
+workspace-owned receipt can be reserved. The reservation's unique actor/client/key
+constraint serializes competing creates, and its nullable workspace reference is
+filled in the same outer transaction as workspace and owner membership creation.
+The creation replay holds this same reservation and checks current membership.
+
+Generic attachment upload first prepares verified bytes and commits a staged
+recovery row recording both keys. It then takes the receipt lock and the explicit
+tenant-scoped parent lock, checks its opaque version, and publishes only database
+state under the attachment lock. A terminated request leaves its staged recovery
+row available to repair. It appends a file
+without changing the parent's business revision. Generic deletion takes its
+receipt then the attachment row (`ClientAttachment`, after the supported parents),
+checks the attachment version and changes lifecycle state. The existing web
+attachment action shares storage/deletion behavior; staged web uploads retain the
+storage adapter's repair contract. Signed URL preparation takes no mutation lock
+and does not reserve a receipt. These order assertions are also covered by the
+focused workspace/misc API fixture; SQLite checks ordering, not contention.

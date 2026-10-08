@@ -4,6 +4,143 @@
  */
 
 export interface paths {
+    '/workspaces': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
+        post: operations['workspaces.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/search': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+        get: operations['search'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+        get: operations['attachments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/attachments/{attachment_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+        get: operations['attachments.get'];
+        put?: never;
+        post?: never;
+        /** @description Manager-only deletion, requiring current attachment version and confirm true. Same key replays without deleting twice. Both workflow and file write flags required. */
+        delete: operations['attachments.delete'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/attachments/{attachment_id}/download-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
+        get: operations['attachments.download_url'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/attachments/{attachment_id}/content': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Stream the private file using the signed URL, same bearer credential and current manager permission. */
+        get: operations['attachments.download'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments/upload-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+        post: operations['attachments.upload_url'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments/upload': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        post: operations['attachments.upload'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/proposals/{proposal_id}/accept': {
         parameters: {
             query?: never;
@@ -979,6 +1116,107 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        WorkspaceCreateRequest: {
+            name: string;
+        };
+        WorkspaceCreated: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uri */
+            web_url: string;
+        };
+        WorkspaceCreateResponse: {
+            data: components['schemas']['WorkspaceCreated'];
+        };
+        SearchResult: {
+            /** @enum {string} */
+            kind: 'client' | 'project' | 'invoice' | 'task';
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string | null;
+            href: string;
+            workspace: string;
+        };
+        SearchResponse: {
+            data: components['schemas']['SearchResult'][];
+        };
+        Attachment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            record_type:
+                | 'company'
+                | 'project'
+                | 'task'
+                | 'proposal'
+                | 'agreement'
+                | 'invoice';
+            /** Format: uuid */
+            record_id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** @enum {string} */
+            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
+            version: string;
+        };
+        AttachmentResponse: {
+            data: components['schemas']['Attachment'];
+        };
+        AttachmentListResponse: {
+            data: components['schemas']['Attachment'][];
+            parent_version: string;
+        };
+        AttachmentDownloadUrl: {
+            /** Format: uri */
+            url: string;
+            /** @constant */
+            expires_in: 600;
+            /** @constant */
+            method: 'GET';
+        };
+        AttachmentDownloadUrlResponse: {
+            data: components['schemas']['AttachmentDownloadUrl'];
+        };
+        AttachmentUploadUrl: {
+            /** Format: uri */
+            url: string;
+            /** @constant */
+            expires_in: 600;
+            /** @constant */
+            method: 'POST';
+            expected_version: string;
+            /** @constant */
+            max_bytes: 52428800;
+            /** @constant */
+            file_field: 'file';
+            /** @constant */
+            version_field: 'expected_version';
+            /** @constant */
+            idempotency_header: 'Idempotency-Key';
+        };
+        AttachmentUploadUrlResponse: {
+            data: components['schemas']['AttachmentUploadUrl'];
+        };
+        AttachmentUploadRequest: {
+            /** Format: binary */
+            file: string;
+            expected_version: string;
+        };
+        AttachmentDeleteRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        WithheldTool: {
+            name: string;
+            /** @enum {string} */
+            reason: 'deployment_disabled' | 'scope_not_granted' | 'role';
+            scope?: string;
+        };
         ProposalAcceptRequest: {
             expected_version: string;
             /** @constant */
@@ -1609,6 +1847,8 @@ export interface components {
             id: components['schemas']['Uuid'];
             name: string;
             workspaces: components['schemas']['WorkspaceContext'][];
+            capabilities: 'workspaces:create'[];
+            withheld_tools: components['schemas']['WithheldTool'][];
         };
         ContextResponse: {
             data: components['schemas']['Context'];
@@ -2035,6 +2275,265 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'workspaces.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['WorkspaceCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['WorkspaceCreateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    search: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SearchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                record_type:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AttachmentDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Manager-only deletion, requiring current attachment version and confirm true. Same key replays without deleting twice. Both workflow and file write flags required. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.download_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentDownloadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.download': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream the private file using the signed URL, same bearer credential and current manager permission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/octet-stream': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.upload_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                record_type:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.upload': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                record_type:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'multipart/form-data': components['schemas']['AttachmentUploadRequest'];
+            };
+        };
+        responses: {
+            /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'proposals.accept': {
         parameters: {
             query?: never;

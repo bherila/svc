@@ -88,6 +88,19 @@ final class WorkspaceSearch
         return $results;
     }
 
+    /** @param list<SearchResultKind> $kinds
+     * @return list<SearchResult> */
+    public function forWorkspace(User $user, Workspace $workspace, string $term, array $kinds): array
+    {
+        if (trim($term) === '' || $kinds === []) {
+            return [];
+        }
+        $results = $this->searchOneWorkspace($user, $workspace, trim($term), $kinds);
+        usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->title] <=> [$b->kind->rank(), $b->title]);
+
+        return $results;
+    }
+
     /** @return Collection<int, Workspace> */
     private function workspacesFor(User $user): Collection
     {
@@ -100,8 +113,9 @@ final class WorkspaceSearch
         return $workspaces;
     }
 
-    /** @return list<SearchResult> */
-    private function searchOneWorkspace(User $user, Workspace $workspace, string $term): array
+    /** @param list<SearchResultKind> $kinds Empty means all kinds for the web palette.
+     * @return list<SearchResult> */
+    private function searchOneWorkspace(User $user, Workspace $workspace, string $term, array $kinds = []): array
     {
         // Null means a manager, who reaches everything here including a client
         // with no projects at all. An empty list means a member added to
@@ -114,12 +128,14 @@ final class WorkspaceSearch
         }
 
         $companies = ClientCompany::query()
+            ->when($kinds !== [] && ! in_array(SearchResultKind::Client, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($reachableCompanyIds !== null, fn (Builder $q) => $q->whereIn('id', $reachableCompanyIds ?? []))
             ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Name, $term))
             ->orderBy('name')->limit(self::PER_KIND)->get();
 
         $projects = ClientProject::query()
+            ->when($kinds !== [] && ! in_array(SearchResultKind::Project, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('id', $viewableProjectIds ?? []))
             ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Name, $term))
@@ -130,7 +146,8 @@ final class WorkspaceSearch
         // company-wide or other-project invoices, and `constrainInvoices` is
         // where that distinction is already drawn.
         $invoices = $this->records->constrainInvoices(
-            ClientInvoice::query()->where('workspace_id', $workspace->id),
+            ClientInvoice::query()->where('workspace_id', $workspace->id)
+                ->when($kinds !== [] && ! in_array(SearchResultKind::Invoice, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0')),
             $user,
             $workspace,
         )
@@ -138,9 +155,11 @@ final class WorkspaceSearch
             ->orderByDesc('issue_date')->limit(self::PER_KIND)->get();
 
         $tasks = ClientTask::query()
+            ->when($kinds !== [] && ! in_array(SearchResultKind::Task, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('client_project_id', $viewableProjectIds ?? []))
-            ->with('project')
+            ->whereHas('project', fn (Builder $q) => $q->where('workspace_id', $workspace->id))
+            ->with(['project' => fn ($q) => $q->where('workspace_id', $workspace->id)])
             ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Title, $term))
             ->orderByDesc('updated_at')->limit(self::PER_KIND)->get();
 

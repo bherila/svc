@@ -15,17 +15,20 @@ use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
+use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentClientWritesEnabled;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
+use App\Http\Middleware\EnsureAgentFileWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
 use App\Http\Middleware\EnsureAgentProjectWritesEnabled;
 use App\Http\Middleware\EnsureAgentProposalWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
+use App\Http\Middleware\EnsureAgentWorkspaceWritesEnabled;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Models\Workspace;
@@ -70,6 +73,24 @@ Route::prefix('v1')
         Route::get('/context', [AgentReadController::class, 'context'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))
             ->name('context');
+        Route::post('/workspaces', [AgentWorkspaceMiscController::class, 'create'])
+            ->middleware([CheckToken::using(AgentApiScopes::WORKSPACES_CREATE), EnsureAgentWorkspaceWritesEnabled::class])->name('workspaces.store');
+        Route::get('/workspaces/{workspace}/search', [AgentWorkspaceMiscController::class, 'search'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('search');
+        Route::get('/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments', [AgentWorkspaceMiscController::class, 'index'])
+            ->whereUuid('recordPublicId')->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::FILES_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.index');
+        Route::get('/workspaces/{workspace}/attachments/{attachment}', [AgentWorkspaceMiscController::class, 'show'])
+            ->whereUuid('attachment')->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::FILES_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.show');
+        Route::get('/workspaces/{workspace}/attachments/{attachment}/download-url', [AgentWorkspaceMiscController::class, 'downloadUrl'])
+            ->whereUuid('attachment')->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::FILES_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.download-url');
+        Route::get('/workspaces/{workspace}/attachments/{attachment}/content', [AgentWorkspaceMiscController::class, 'download'])
+            ->whereUuid('attachment')->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::FILES_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.content');
+        Route::post('/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url', [AgentWorkspaceMiscController::class, 'uploadUrl'])
+            ->whereUuid('recordPublicId')->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::FILES_WRITE), EnsureAgentFileWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.upload-url');
+        Route::post('/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload', [AgentWorkspaceMiscController::class, 'upload'])
+            ->whereUuid('recordPublicId')->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::FILES_WRITE), EnsureAgentFileWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.upload');
+        Route::delete('/workspaces/{workspace}/attachments/{attachment}', [AgentWorkspaceMiscController::class, 'delete'])
+            ->whereUuid('attachment')->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::FILES_WRITE, AgentApiScopes::FILES_READ), EnsureAgentFileWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('attachments.destroy');
         Route::delete('/connections/{token}', [AgentConnectionController::class, 'destroy'])
             ->middleware(CheckToken::using(AgentApiScopes::MCP_USE))
             ->name('connections.destroy');

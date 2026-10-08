@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Files\StoreAttachmentRequest;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentAction;
 use App\Services\Files\AttachmentRecordResolver;
 use App\Services\Files\AttachmentStorageService;
 use Illuminate\Http\JsonResponse;
@@ -22,18 +23,16 @@ class AttachmentController extends Controller
         Workspace $workspace,
         string $recordType,
         string $recordPublicId,
-        AttachmentRecordResolver $recordResolver,
-        AttachmentStorageService $storage,
+        AttachmentAction $action,
     ): RedirectResponse|JsonResponse {
         Gate::authorize('manage', $workspace);
 
-        $record = $recordResolver->resolve($workspace, $recordType, $recordPublicId);
         $file = $request->file('file');
         $user = $request->user();
         abort_unless($file instanceof UploadedFile, 422);
         abort_unless($user instanceof User, 401);
 
-        $attachment = $storage->store($workspace, $record, $file, $user);
+        $attachment = $action->store($workspace, $recordType, $recordPublicId, $file, $user);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -79,17 +78,12 @@ class AttachmentController extends Controller
     public function destroy(
         Workspace $workspace,
         string $clientAttachment,
-        AttachmentStorageService $storage,
+        AttachmentAction $action,
         Request $request,
-        AttachmentRecordResolver $recordResolver,
     ): RedirectResponse|JsonResponse {
         Gate::authorize('manage', $workspace);
 
-        $attachment = $storage->findForWorkspace($workspace, $clientAttachment);
-        if ($attachment->record_type === 'expense') {
-            $recordResolver->resolve($workspace, 'expense', $attachment->record_public_id);
-        }
-        $storage->requestDeletion($attachment);
+        $attachment = $action->delete($workspace, $clientAttachment);
 
         if ($request->expectsJson()) {
             return response()->json([

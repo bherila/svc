@@ -390,6 +390,9 @@ final class AgentMcpServerFactory
         if (array_intersect(['proposals.send', 'proposals.accept'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal.';
         }
+        if (isset($available['attachments.delete'])) {
+            $mode .= ' Obtain explicit user confirmation before deleting an attachment.';
+        }
         if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
             $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';
         }

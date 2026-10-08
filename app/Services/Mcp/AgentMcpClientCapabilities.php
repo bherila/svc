@@ -5,13 +5,12 @@ namespace App\Services\Mcp;
 use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use App\Services\Mcp\Registry\McpCapabilityKind;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
-use App\Support\AgentApi\AgentWriteCutover;
 
 /** Manager-only metadata; the REST contract supplies mutation bodies and every response. */
 final class AgentMcpClientCapabilities
 {
     /** @return list<McpCapabilityDefinition> */
-    public function definitions(AgentMcpClientTools $clients, AgentMcpClientWriteTools $writes): array
+    public function definitions(AgentMcpClientTools $clients, AgentMcpClientWriteTools $writes, bool $includeDisabled = false): array
     {
         $uuid = ['type' => 'string', 'format' => 'uuid'];
         $definitions = [
@@ -22,7 +21,9 @@ final class AgentMcpClientCapabilities
             ]),
             $this->tool('clients.get', 'Get client', 'Get one client company, its current version and invoice-delivery settings.', [$clients, 'get'], 'clients:read', properties: ['client_id' => $uuid], required: ['client_id']),
         ];
-        if (! AgentWriteCutover::clients()) {
+        // This describes agent availability even when context.get is read on
+        // a browser session; the website's mutation bypass does not apply.
+        if (! $includeDisabled && ! ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.client_writes_enabled'))) {
             return $definitions;
         }
 

@@ -15,8 +15,10 @@ use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -75,6 +77,9 @@ final class AgentReadService
         return [
             'id' => $user->public_id,
             'name' => $user->name,
+            'capabilities' => AgentWriteCutover::workspaces() && $allowsScope('workspaces:create') ? ['workspaces:create'] : [],
+            'withheld_tools' => app(AgentWithheldTools::class)->for($allowsScope,
+                $workspaces->contains(fn (Workspace $workspace): bool => $this->access->isWorkspaceManager($user, $workspace))),
             'workspaces' => $workspaces->map(function (Workspace $workspace) use ($user, $allowsScope): array {
                 return [
                     'id' => $workspace->public_id,
