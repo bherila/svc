@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentWriteCutover;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -67,7 +68,7 @@ final class CorrectPaymentAction
 
     private function authorize(User $user, Workspace $workspace): void
     {
-        abort_unless((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.payment_writes_enabled'), 404);
+        abort_unless(AgentWriteCutover::payments(), 404);
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
     }
 }
