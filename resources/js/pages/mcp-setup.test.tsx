@@ -198,4 +198,30 @@ describe('MCP setup guide', () => {
         expect(screen.queryByText(/will not be shown again/)).toBeNull();
         expect(screen.getByLabelText('App name')).toHaveValue('Synthetic app');
     });
+
+    it('lists each app with the permissions it may request', () => {
+        render(
+            <McpSetup
+                serverUrl={serverUrl}
+                available
+                rest={rest({
+                    apps: [
+                        {
+                            id: 'client-1',
+                            name: 'Synthetic app',
+                            confidential: false,
+                            redirect_uris: ['https://app.example.test/cb'],
+                            scopes: ['billing:read', 'time:read'],
+                            created_at: null,
+                            delete_href: '/account/oauth-apps/client-1',
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText('May request: billing:read, time:read'),
+        ).toBeInTheDocument();
+    });
 });

@@ -481,6 +481,9 @@ function AppSection({
                             <span className="text-xs wrap-anywhere text-muted-foreground">
                                 {app.redirect_uris.join(', ')}
                             </span>
+                            <span className="text-xs wrap-anywhere text-muted-foreground">
+                                May request: {app.scopes.join(', ')}
+                            </span>
                         </li>
                     ))}
                 </ul>
