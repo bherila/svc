@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Api;
 
-use App\Http\Controllers\ApiCredentialController;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
@@ -69,17 +68,31 @@ final class ApiCredentialTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/context')->assertUnauthorized();
     }
 
-    public function test_the_secret_is_shown_once_on_the_page_that_follows_creation(): void
+    /**
+     * The secret travels once, in a no-store response body: never in the
+     * session store, never in page props that browser history keeps.
+     */
+    public function test_the_secret_travels_only_in_the_no_store_creation_response(): void
     {
-        $this->actingAs($this->user)
-            ->from("/workspaces/{$this->workspace->public_id}/mcp")
-            ->post('/account/api-tokens', ['name' => 'Once', 'scopes' => ['identity:read'], 'days' => 30])
-            ->assertRedirect("/workspaces/{$this->workspace->public_id}/mcp");
+        $response = $this->actingAs($this->user)
+            ->postJson('/account/api-tokens', ['name' => 'Once', 'scopes' => ['identity:read'], 'days' => 30])
+            ->assertCreated();
+        $token = $response->json('data.token');
+        $this->assertIsString($token);
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
 
-        $first = $this->setupProps()['rest']['issued'];
-        $this->assertSame('token', $first['kind']);
-        $this->assertIsString($first['token']);
-        $this->assertNull($this->setupProps()['rest']['issued'], 'The secret is not shown a second time');
+        $this->assertStringNotContainsString($token, json_encode(session()->all(), JSON_THROW_ON_ERROR));
+        $props = $this->setupProps();
+        $this->assertArrayNotHasKey('issued', $props['rest']);
+        $this->assertStringNotContainsString($token, json_encode($props, JSON_THROW_ON_ERROR));
+
+        $app = $this->postJson('/account/oauth-apps', [
+            'name' => 'Once app', 'redirect_uris' => [self::REDIRECT], 'confidential' => true, 'scopes' => ['identity:read'],
+        ])->assertCreated();
+        $secret = $app->json('data.client_secret');
+        $this->assertIsString($secret);
+        $this->assertStringNotContainsString($secret, json_encode(session()->all(), JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString($secret, json_encode($this->setupProps(), JSON_THROW_ON_ERROR));
     }
 
     public function test_tokens_are_refused_outside_the_offered_permissions_and_lifetimes(): void
@@ -146,14 +159,13 @@ final class ApiCredentialTest extends TestCase
      */
     public function test_a_confidential_app_completes_the_code_flow_without_a_resource_parameter(): void
     {
-        $this->actingAs($this->user)
-            ->post('/account/oauth-apps', [
+        $issued = $this->actingAs($this->user)
+            ->postJson('/account/oauth-apps', [
                 'name' => 'Synthetic connector app',
                 'redirect_uris' => [self::REDIRECT],
                 'confidential' => true,
                 'scopes' => ['identity:read', 'projects:read'],
-            ])->assertRedirect();
-        $issued = session(ApiCredentialController::FLASH);
+            ])->assertCreated()->json('data');
         $this->assertSame('app', $issued['kind']);
         $this->assertIsString($issued['client_secret']);
         $clientId = $issued['client_id'];
@@ -214,18 +226,17 @@ final class ApiCredentialTest extends TestCase
         ])->assertSessionHasErrors('scopes.0');
         $this->assertSame(0, Passport::client()->newQuery()->where('name', 'Unsafe')->count());
 
-        $this->post('/account/oauth-apps', [
+        $public = $this->postJson('/account/oauth-apps', [
             'name' => 'Loopback', 'redirect_uris' => ['http://localhost:8080/cb', 'https://app.example.test/cb'], 'confidential' => false, 'scopes' => ['identity:read'],
-        ])->assertSessionHasNoErrors();
-        $this->assertNull(session(ApiCredentialController::FLASH)['client_secret'], 'A public app has no secret');
+        ])->assertCreated();
+        $this->assertNull($public->json('data.client_secret'), 'A public app has no secret');
     }
 
     public function test_another_person_cannot_delete_an_app(): void
     {
-        $this->actingAs($this->user)->post('/account/oauth-apps', [
+        $clientId = $this->actingAs($this->user)->postJson('/account/oauth-apps', [
             'name' => 'Mine', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
-        ]);
-        $clientId = session(ApiCredentialController::FLASH)['client_id'];
+        ])->assertCreated()->json('data.client_id');
         $other = User::factory()->create(['email' => 'other-'.Str::random(8).'@synthetic.test']);
 
         $this->actingAs($other)->delete("/account/oauth-apps/{$clientId}")->assertNotFound();
@@ -256,14 +267,14 @@ final class ApiCredentialTest extends TestCase
      */
     private function issueToken(array $scopes, int $days): string
     {
-        $this->actingAs($this->user)
-            ->post('/account/api-tokens', ['name' => 'Synthetic connector', 'scopes' => $scopes, 'days' => $days])
-            ->assertSessionHasNoErrors();
-        $issued = session(ApiCredentialController::FLASH);
-        $this->assertIsString($issued['token'] ?? null);
+        $token = $this->actingAs($this->user)
+            ->postJson('/account/api-tokens', ['name' => 'Synthetic connector', 'scopes' => $scopes, 'days' => $days])
+            ->assertCreated()
+            ->json('data.token');
+        $this->assertIsString($token);
         $this->app['auth']->forgetGuards();
 
-        return $issued['token'];
+        return $token;
     }
 
     /** @return array<string, mixed> */

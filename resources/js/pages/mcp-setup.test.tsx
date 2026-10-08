@@ -1,11 +1,15 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RestAccess } from '@/components/api-credentials';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import McpSetup from './mcp-setup';
 
-const inertia = vi.hoisted(() => ({ post: vi.fn(), delete: vi.fn() }));
+const inertia = vi.hoisted(() => ({
+    post: vi.fn(),
+    delete: vi.fn(),
+    reload: vi.fn(),
+}));
 vi.mock('@inertiajs/react', () => ({ Head: () => null, router: inertia }));
 vi.mock('@/layouts/workspace-shell', () => ({
     default: ({ children }: { children: React.ReactNode }) => children,
@@ -28,7 +32,6 @@ function rest(overrides: Partial<RestAccess> = {}): RestAccess {
         register_app_href: '/account/oauth-apps',
         tokens: [],
         apps: [],
-        issued: null,
         ...overrides,
     };
 }
@@ -41,11 +44,6 @@ describe('MCP setup guide', () => {
                 available
                 rest={rest({
                     openapi_url: `https://${'synthetic'.repeat(50)}.example.test/openapi.json`,
-                    issued: {
-                        kind: 'token',
-                        name: 'n'.repeat(200),
-                        token: 'eyJ'.repeat(400),
-                    },
                     tokens: [
                         {
                             id: 't-1',
@@ -113,9 +111,30 @@ describe('MCP setup guide', () => {
         );
     });
 
-    it('creates an API token with the chosen permissions and lifetime', async () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    /**
+     * The secret arrives in the creation response and is shown from memory:
+     * only the lists are reloaded, so it never becomes a page prop.
+     */
+    it('creates an API token, shows its secret once and reloads only the lists', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: {
+                        kind: 'token',
+                        name: 'Synthetic connector',
+                        token: 'eyJ'.repeat(400),
+                    },
+                }),
+                { status: 201 },
+            ),
+        );
+        vi.stubGlobal('fetch', fetchMock);
         const user = userEvent.setup();
-        render(<McpSetup serverUrl={serverUrl} available rest={rest()} />);
+        const { container } = render(
+            <McpSetup serverUrl={serverUrl} available rest={rest()} />,
+        );
 
         const create = screen.getByRole('button', { name: 'Create API token' });
         expect(create).toBeDisabled();
@@ -127,33 +146,56 @@ describe('MCP setup guide', () => {
         await user.click(screen.getByLabelText('90 days'));
         await user.click(create);
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/account/api-tokens',
-            { name: 'Synthetic connector', scopes: ['billing:read'], days: 90 },
-            expect.objectContaining({ preserveScroll: true }),
-        );
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('/account/api-tokens');
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(String(init.body))).toEqual({
+            name: 'Synthetic connector',
+            scopes: ['billing:read'],
+            days: 90,
+        });
+        expect(
+            await screen.findByText(/will not be shown again/),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('button', { name: 'Copy API token' }),
+        ).toBeInTheDocument();
+        expect(inertia.reload).toHaveBeenCalledWith({ only: ['rest'] });
+        expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
-    it('shows a newly issued secret once, with a way to copy it', () => {
-        render(
-            <McpSetup
-                serverUrl={serverUrl}
-                available
-                rest={rest({
-                    issued: {
-                        kind: 'app',
-                        name: 'Synthetic app',
-                        client_id: 'client-1',
-                        client_secret: 'synthetic-secret',
-                    },
-                })}
-            />,
+    it('shows a refusal and keeps the form', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        message: 'Invalid.',
+                        errors: {
+                            redirect_uris: ['Redirect URIs must be https.'],
+                        },
+                    }),
+                    { status: 422 },
+                ),
+            ),
+        );
+        const user = userEvent.setup();
+        render(<McpSetup serverUrl={serverUrl} available rest={rest()} />);
+
+        await user.type(screen.getByLabelText('App name'), 'Synthetic app');
+        await user.type(
+            screen.getByLabelText('Redirect URIs (one per line)'),
+            'http://app.example.test/cb',
+        );
+        await user.click(screen.getAllByLabelText(/billing:read/)[1]);
+        await user.click(
+            screen.getByRole('button', { name: 'Register OAuth app' }),
         );
 
-        expect(screen.getByText(/will not be shown again/)).toBeInTheDocument();
-        expect(
-            screen.getByRole('button', { name: 'Copy Client secret' }),
-        ).toBeInTheDocument();
-        expect(screen.getByText('synthetic-secret')).toBeInTheDocument();
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Redirect URIs must be https.',
+        );
+        expect(screen.queryByText(/will not be shown again/)).toBeNull();
+        expect(screen.getByLabelText('App name')).toHaveValue('Synthetic app');
     });
 });

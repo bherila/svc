@@ -21,7 +21,7 @@ class McpSetupController extends Controller
         abort_unless($user instanceof User, 401);
         abort_unless($accessible->for($user)->contains(fn (Workspace $option): bool => $option->id === $workspace->id), 404);
 
-        return $this->guide($request, $user);
+        return $this->guide($user);
     }
 
     public function portal(Request $request, ClientCompany $clientCompany): Response
@@ -30,10 +30,10 @@ class McpSetupController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 401);
 
-        return $this->guide($request, $user);
+        return $this->guide($user);
     }
 
-    private function guide(Request $request, User $user): Response
+    private function guide(User $user): Response
     {
         $base = rtrim((string) config('app.url'), '/');
         $credentials = app(ApiCredentialService::class);
@@ -64,8 +64,6 @@ class McpSetupController extends Controller
                     ...$app,
                     'delete_href' => route('account.oauth-apps.destroy', ['client' => $app['id']], absolute: false),
                 ], $credentials->apps($user)),
-                // Shown once, on the response that created it.
-                'issued' => $request->session()->get(ApiCredentialController::FLASH),
             ],
         ]);
     }

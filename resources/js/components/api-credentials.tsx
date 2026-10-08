@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
 
 export type ApiScope = { id: string; description: string };
@@ -47,7 +48,6 @@ export type RestAccess = {
     register_app_href: string;
     tokens: ApiToken[];
     apps: OAuthApp[];
-    issued: IssuedCredential | null;
 };
 
 /**
@@ -56,7 +56,9 @@ export type RestAccess = {
  * Two ways in, because connectors differ: some run the OAuth authorization-code
  * flow and need a registered app; others ask for "an API key" and take a
  * personal token. Both carry only the permissions chosen here, both stop at
- * the person's own role, and every secret is shown exactly once.
+ * the person's own role, and every secret is shown exactly once: it arrives in
+ * the creation response and lives only in this component's memory, never in
+ * page props or browser history.
  */
 export function ApiCredentials({
     rest,
@@ -65,6 +67,8 @@ export function ApiCredentials({
     rest: RestAccess;
     copy: (label: string, text: string) => React.ReactNode;
 }) {
+    const [issued, setIssued] = useState<IssuedCredential | null>(null);
+
     return (
         <section className="grid min-w-0 grid-cols-1 gap-6">
             <div className="grid grid-cols-1 gap-3">
@@ -86,13 +90,11 @@ export function ApiCredentials({
                 </div>
             </div>
 
-            {rest.issued !== null && (
-                <IssuedNotice issued={rest.issued} copy={copy} />
-            )}
+            {issued !== null && <IssuedNotice issued={issued} copy={copy} />}
 
             <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
-                <TokenSection rest={rest} />
-                <AppSection rest={rest} />
+                <TokenSection rest={rest} onIssued={setIssued} />
+                <AppSection rest={rest} onIssued={setIssued} />
             </div>
         </section>
     );
@@ -180,7 +182,31 @@ function ScopePicker({
     );
 }
 
-function TokenSection({ rest }: { rest: RestAccess }) {
+/** Create a credential, hand its secret to the notice, and refresh only the lists. */
+async function create(
+    href: string,
+    body: object,
+    onIssued: (issued: IssuedCredential) => void,
+): Promise<string | null> {
+    const result = await apiRequest<IssuedCredential>('POST', href, body);
+
+    if (!result.ok) {
+        return result.message;
+    }
+
+    onIssued(result.data);
+    router.reload({ only: ['rest'] });
+
+    return null;
+}
+
+function TokenSection({
+    rest,
+    onIssued,
+}: {
+    rest: RestAccess;
+    onIssued: (issued: IssuedCredential) => void;
+}) {
     const [name, setName] = useState('');
     const [scopes, setScopes] = useState<string[]>([]);
     const [days, setDays] = useState(rest.token_lifetimes[0] ?? 30);
@@ -195,24 +221,20 @@ function TokenSection({ rest }: { rest: RestAccess }) {
                 onSubmit={(event) => {
                     event.preventDefault();
                     setBusy(true);
-                    router.post(
+                    void create(
                         rest.issue_token_href,
                         { name, scopes, days },
-                        {
-                            preserveScroll: true,
-                            onSuccess: () => {
-                                setName('');
-                                setScopes([]);
-                                setError(null);
-                            },
-                            onError: (errors) =>
-                                setError(
-                                    Object.values(errors)[0] ??
-                                        'The token could not be created.',
-                                ),
-                            onFinish: () => setBusy(false),
-                        },
-                    );
+                        onIssued,
+                    ).then((refused) => {
+                        setError(refused);
+
+                        if (refused === null) {
+                            setName('');
+                            setScopes([]);
+                        }
+
+                        setBusy(false);
+                    });
                 }}
             >
                 <div className="grid grid-cols-1 gap-1.5">
@@ -308,7 +330,13 @@ function TokenSection({ rest }: { rest: RestAccess }) {
     );
 }
 
-function AppSection({ rest }: { rest: RestAccess }) {
+function AppSection({
+    rest,
+    onIssued,
+}: {
+    rest: RestAccess;
+    onIssued: (issued: IssuedCredential) => void;
+}) {
     const [name, setName] = useState('');
     const [redirects, setRedirects] = useState('');
     const [confidential, setConfidential] = useState(true);
@@ -328,7 +356,7 @@ function AppSection({ rest }: { rest: RestAccess }) {
                 onSubmit={(event) => {
                     event.preventDefault();
                     setBusy(true);
-                    router.post(
+                    void create(
                         rest.register_app_href,
                         {
                             name,
@@ -336,22 +364,18 @@ function AppSection({ rest }: { rest: RestAccess }) {
                             confidential,
                             scopes,
                         },
-                        {
-                            preserveScroll: true,
-                            onSuccess: () => {
-                                setName('');
-                                setRedirects('');
-                                setScopes([]);
-                                setError(null);
-                            },
-                            onError: (errors) =>
-                                setError(
-                                    Object.values(errors)[0] ??
-                                        'The app could not be registered.',
-                                ),
-                            onFinish: () => setBusy(false),
-                        },
-                    );
+                        onIssued,
+                    ).then((refused) => {
+                        setError(refused);
+
+                        if (refused === null) {
+                            setName('');
+                            setRedirects('');
+                            setScopes([]);
+                        }
+
+                        setBusy(false);
+                    });
                 }}
             >
                 <div className="grid grid-cols-1 gap-1.5">
