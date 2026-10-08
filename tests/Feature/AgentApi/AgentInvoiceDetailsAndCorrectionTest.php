@@ -276,7 +276,7 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $schema = collect($tools)->firstWhere('name', 'invoices.update_details')['inputSchema'] ?? null;
 
         $this->assertIsArray($schema);
-        $this->assertSame([['required' => ['due_date']], ['required' => ['notes']]], $schema['anyOf'] ?? null);
+        $this->assertSame([['anyOf' => [['required' => ['due_date']], ['required' => ['notes']]]]], $schema['allOf'] ?? null);
     }
 
     /** An invoice in another workspace is not found through this one, and is not changed. */
