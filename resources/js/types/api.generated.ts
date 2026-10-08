@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/billing-schedules': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only bounded billing schedules with opaque current revisions. */
+        get: operations['billing_schedules.list'];
+        put?: never;
+        /** @description Create a schedule without issuing. expected_version is the parent agreement revision. Workspace managers only. */
+        post: operations['billing_schedules.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/billing-schedules/{schedule_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one workspace-scoped billing schedule as a manager. */
+        get: operations['billing_schedules.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/billing-schedules/{schedule_id}/generate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. */
+        post: operations['billing_schedules.generate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/hold': {
         parameters: {
             query?: never;
@@ -828,6 +880,72 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BillingSchedule: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agreement_id: string;
+            version: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            /** Format: date */
+            next_run_on: string;
+            is_active: boolean;
+        };
+        BillingScheduleResponse: {
+            data: components['schemas']['BillingSchedule'];
+        };
+        BillingScheduleListResponse: {
+            data: components['schemas']['BillingSchedule'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        BillingScheduleMutation: {
+            /** Format: uuid */
+            id: string;
+            version: string;
+            /** Format: date */
+            next_run_on: string;
+        };
+        BillingScheduleMutationResponse: {
+            data: components['schemas']['BillingScheduleMutation'];
+        };
+        BillingScheduleGenerateResponse: {
+            data: {
+                schedule: components['schemas']['BillingScheduleMutation'];
+                invoices: components['schemas']['InvoiceMutation'][];
+            };
+        };
+        BillingScheduleCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            client_agreement: string;
+            expected_version: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            anchor_month?: number | null;
+            anchor_day?: number | null;
+            /** Format: date */
+            next_run_on: string;
+            due_days: number;
+            currency: string;
+            is_active?: boolean;
+            line_template: {
+                type: string;
+                description: string;
+                quantity: string;
+                unit_amount: number;
+                tax_amount?: number | null;
+                sort_order?: number | null;
+            }[];
+        };
+        BillingScheduleGenerateRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
         InvoiceDeliveryHoldRequest: {
             expected_version: components['schemas']['Version'];
         };
@@ -1682,6 +1800,116 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'billing_schedules.list': {
+        parameters: {
+            query?: {
+                is_active?: boolean | null;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['BillingScheduleCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.generate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['BillingScheduleGenerateRequest'];
+            };
+        };
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleGenerateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.hold_delivery': {
         parameters: {
             query?: never;
