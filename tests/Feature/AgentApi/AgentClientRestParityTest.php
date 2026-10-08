@@ -13,6 +13,7 @@ use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -190,6 +191,7 @@ final class AgentClientRestParityTest extends TestCase
 
     public function test_missing_and_inaccessible_workspaces_have_identical_refusals(): void
     {
+        $this->withoutMiddleware(ThrottleRequests::class);
         config(['app.debug' => false]);
         [, $owner] = $this->fixture();
         [$foreign, , $client, $agreement] = $this->fixture();
@@ -200,12 +202,16 @@ final class AgentClientRestParityTest extends TestCase
             [$method, $path, $body] = $this->requestFor($operation, $client, $agreement);
             $requests[] = [$method, $path, $body];
         }
-        foreach ($requests as [$method, $path, $body]) {
-            $existing = $this->json($method, '/api/v1/workspaces/'.$foreign->public_id.'/'.$path, $body, ['Idempotency-Key' => 'synthetic-foreign'])->assertNotFound();
-            $unknown = $this->json($method, '/api/v1/workspaces/'.$missing.'/'.$path, $body, ['Idempotency-Key' => 'synthetic-missing'])->assertNotFound();
-            $this->assertSame($existing->json(), $unknown->json());
-            $this->assertSame($existing->headers->get('Cache-Control'), $unknown->headers->get('Cache-Control'));
-            $this->assertStringContainsString('no-store', $unknown->headers->get('Cache-Control'));
+        foreach ([[self::SCOPES, true], [['mcp:use'], true], [self::SCOPES, false]] as [$scopes, $writes]) {
+            $this->actingAsMcp($owner, $scopes);
+            config(['agent_api.writes_enabled' => $writes, 'agent_api.client_writes_enabled' => $writes]);
+            foreach ($requests as [$method, $path, $body]) {
+                $existing = $this->json($method, '/api/v1/workspaces/'.$foreign->public_id.'/'.$path, $body, ['Idempotency-Key' => 'synthetic-foreign'])->assertNotFound();
+                $unknown = $this->json($method, '/api/v1/workspaces/'.$missing.'/'.$path, $body, ['Idempotency-Key' => 'synthetic-missing'])->assertNotFound();
+                $this->assertSame($existing->json(), $unknown->json());
+                $this->assertSame($existing->headers->get('Cache-Control'), $unknown->headers->get('Cache-Control'));
+                $this->assertStringContainsString('no-store', $unknown->headers->get('Cache-Control'));
+            }
         }
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
