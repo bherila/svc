@@ -39,6 +39,8 @@ final class AgentMcpToolCatalog
             $this->tool('tasks.list', 'List tasks', 'List authorized tasks with bounded cursor pagination.', $tools, 'tasks'),
             $this->tool('tasks.get', 'Get task', 'Get one authorized task.', $tools, 'task'),
             $this->tool('time_entries.list', 'List time entries', 'List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary; allocation_state filters all rows by allocation, including draft and deferred work.', $tools, 'timeEntries'),
+            $this->tool('proposals.list', 'List proposals', 'List authorized proposals with their current version and commercial terms. Portal members see only sent or accepted proposals within their company and project grants.', $tools, 'proposalsList'),
+            $this->tool('proposals.get', 'Get proposal', 'Read an authorized proposal and current version before sending or accepting.', $tools, 'proposalsGet'),
             $this->tool('expenses.list', 'List expenses', 'List authorized expenses with bounded cursor pagination. Unattributed expenses are visible only to workspace managers.', $tools, 'expensesList'),
             $this->tool('payments.list', 'List received payments', 'List payments for an explicit invoice or client company, following invoice visibility with bounded pagination. No private reconciliation or processor identifiers are returned.', $tools, 'paymentsList'),
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
@@ -70,6 +72,13 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('expenses.log', 'Record expenses', 'Idempotently record up to 20 draft expenses as a workspace manager. Amounts use minor units; no receipt attachment or approval.', [$writes, 'expensesLog'], 'expenses.log', false, false, true),
                 new ToolDefinition('expenses.update', 'Update draft expense', 'Replace draft expense facts using the current version. Only workspace managers may write.', [$writes, 'expensesUpdate'], 'expenses.update', false, false, true),
                 new ToolDefinition('expenses.delete', 'Delete draft expense', 'Soft-delete a draft expense using its current version. Approved, invoiced and unknown statuses are refused.', [$writes, 'expensesDelete'], 'expenses.delete', false, true, true),
+            ];
+        }
+        if ($this->writesEnabled() && (bool) config('agent_api.proposal_writes_enabled')) {
+            $definitions = [...$definitions,
+                new ToolDefinition('proposals.create', 'Create proposal', 'Create a draft proposal as a workspace manager, using the current client company version. Items use minor-unit amounts. Creating does not send it.', [$writes, 'proposalsCreate'], 'proposals.create', false, false, true),
+                new ToolDefinition('proposals.send', 'Send proposal', 'Only after explicit user confirmation, mark a draft proposal sent and make it available in the client portal. Does not email a recipient. Workspace managers only; current proposal version required.', [$writes, 'proposalsSend'], 'proposals.send', false, false, true),
+                new ToolDefinition('proposals.accept', 'Accept proposal', 'Only after explicit user confirmation, accept a sent proposal using the current version and explicit signer identity. Signs and activates its agreement. Authorized portal recipients within their project grants, or workspace managers recording offline acceptance, only.', [$writes, 'proposalsAccept'], 'proposals.accept', false, false, true),
             ];
         }
         if ($this->timeEntryWritesEnabled()) {

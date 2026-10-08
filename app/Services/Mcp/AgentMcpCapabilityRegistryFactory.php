@@ -78,6 +78,8 @@ final class AgentMcpCapabilityRegistryFactory
         return match (true) {
             in_array($name, ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'billing_audit.stale_and_missing'], true)
                 || str_starts_with($name, 'expense_schedules.') || str_starts_with($name, 'expenses.receipts.') => 'AgentAccess::isWorkspaceManager',
+            $name === 'proposals.create', $name === 'proposals.send' => 'AgentAccess::isWorkspaceManager',
+            str_starts_with($name, 'proposals.') => 'ProposalAccess::visible',
             $name === 'expenses.list' => 'ProjectAccess::viewableProjectIds',
             $name === 'context.get', $name === 'operations.summary' => 'AgentAccess::canViewWorkspace',
             in_array($name, ['projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update'], true) => 'AgentAccess::isWorkspaceManager',

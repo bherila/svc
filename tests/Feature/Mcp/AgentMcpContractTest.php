@@ -261,6 +261,12 @@ final class AgentMcpContractTest extends TestCase
             'projects.members.list' => ['projects:read'],
             'projects.members.update' => ['projects:write', 'projects:read'],
             'projects.update' => ['projects:write', 'projects:read'],
+
+            'proposals.accept' => ['proposals:accept', 'proposals:read'],
+            'proposals.create' => ['proposals:write', 'clients:read'],
+            'proposals.get' => ['proposals:read'],
+            'proposals.list' => ['proposals:read'],
+            'proposals.send' => ['proposals:write', 'proposals:read'],
             'tasks.create' => ['tasks:write'],
             'tasks.get' => ['tasks:read'],
             'tasks.list' => ['tasks:read'],

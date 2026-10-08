@@ -17,6 +17,7 @@ return [
     'expense_writes_enabled' => (bool) env('AGENT_API_EXPENSE_WRITES_ENABLED', false),
     // Client company and agreement writes require this switch and the outer workflow
     // switch. Nothing is ever deleted through them: "delete" is archive/terminate.
+    'proposal_writes_enabled' => (bool) env('AGENT_API_PROPOSAL_WRITES_ENABLED', false),
     'client_writes_enabled' => (bool) env('AGENT_API_CLIENT_WRITES_ENABLED', false),
     // Project administration and membership changes require this nested cutover.
     'project_writes_enabled' => (bool) env('AGENT_API_PROJECT_WRITES_ENABLED', false),
