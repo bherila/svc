@@ -8,7 +8,6 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\WorkspaceClock;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use DomainException;
-use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Client;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
@@ -156,7 +155,8 @@ final class ApiCredentialService
             }
         }
 
-        return DB::transaction(function () use ($user, $name, $redirectUris, $confidential, $scopes): array {
+        // On Passport's own connection, which may not be the default one.
+        return Passport::client()->getConnection()->transaction(function () use ($user, $name, $redirectUris, $confidential, $scopes): array {
             $client = $this->clients->createAuthorizationCodeGrantClient(
                 trim($name),
                 array_values(array_unique($redirectUris)),
@@ -195,7 +195,7 @@ final class ApiCredentialService
     {
         $client = $this->principal($user)->oauthApps()->where('revoked', false)->whereKey($clientId)->first();
         abort_unless($client instanceof Client, 404);
-        DB::transaction(function () use ($client): void {
+        Passport::token()->getConnection()->transaction(function () use ($client): void {
             $tokenIds = Passport::token()->newQuery()->where('client_id', $client->getKey())->pluck('id');
             Passport::refreshToken()->newQuery()->whereIn('access_token_id', $tokenIds)->update(['revoked' => true]);
             Passport::token()->newQuery()->where('client_id', $client->getKey())->update(['revoked' => true, 'updated_at' => $this->clock->now('UTC')]);
