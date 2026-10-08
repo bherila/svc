@@ -79,6 +79,9 @@ enum LockResource: string
     // resource acquired at the end.
     case ClientCompany = 'client_companies';
     case ClientProject = 'client_projects';
+    // Project access serialises on the project before checking the target's
+    // workspace membership, so a concurrent workspace removal cannot admit a grant.
+    case WorkspaceMembership = 'workspace_memberships';
     case User = 'users';
 
     // Prepared bytes publish only after the tenant parent and receipt are locked.

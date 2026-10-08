@@ -80,6 +80,7 @@ final class AgentMcpCapabilityRegistryFactory
                 || str_starts_with($name, 'expense_schedules.') || str_starts_with($name, 'expenses.receipts.') => 'AgentAccess::isWorkspaceManager',
             $name === 'expenses.list' => 'ProjectAccess::viewableProjectIds',
             $name === 'context.get', $name === 'operations.summary' => 'AgentAccess::canViewWorkspace',
+            in_array($name, ['projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update'], true) => 'AgentAccess::isWorkspaceManager',
             str_starts_with($name, 'projects.') => 'AgentAccess::canViewProject',
             str_starts_with($name, 'tasks.') => 'AgentAccess::canViewTask',
             $name === 'time_entries.unapprove' => 'AgentAccess::isWorkspaceManager',

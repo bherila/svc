@@ -113,7 +113,7 @@ session-selected workspace contract must use an explicit versioned
 selection/rotation protocol and migration window rather than silently
 changing v1.
 
-Current token scopes are `identity:read`, `projects:read`, `tasks:read`,
+Current token scopes are `identity:read`, `projects:read`, `projects:write`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
 `billing:write`, `billing:deliver`, and `mcp:use`. Discovery filters tools by
 their declared scopes and omits manager-only capabilities when the principal
@@ -763,3 +763,49 @@ require an `Idempotency-Key` (MCP `idempotency_key`), current manager access on
 replay, and both `AGENT_API_WRITES_ENABLED` and `AGENT_API_INVOICE_WRITES_ENABLED`.
 Changed retry payloads and stale versions return 409; the original key replays the
 original operation without generating additional invoices.
+
+### Project administration and member access
+
+Workspace owners/admins can administer projects through REST and MCP:
+
+| Tool | REST route | Version to read first |
+| --- | --- | --- |
+| `projects.create` | `POST /api/v1/workspaces/{workspace_id}/projects` | Client company version from `clients.get` |
+| `projects.update` | `PATCH /api/v1/workspaces/{workspace_id}/projects/{project_id}` | Project version from `projects.get` |
+| `projects.archive` | `POST /api/v1/workspaces/{workspace_id}/projects/{project_id}/archive` | Project version |
+| `projects.members.list` | `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Returns the project version |
+| `projects.members.update` | `PUT /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Project version from the member listing |
+
+Writes require `projects:write` and the scope that exposes the current revision:
+`clients:read` for create, or `projects:read` for update, archive and member access.
+Both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PROJECT_WRITES_ENABLED` must be enabled. An idempotency key, the current
+`expected_version`, and literal user confirmation (`confirm: true`) are required. Project
+changes affect portal descriptions, visibility, and access, so the MCP server
+instructs the caller to confirm these decisions. Task/project roles alone do
+not grant project administration. `tasks:write` and `clients:write` do not
+substitute for `projects:write`; the new consent text names project and member
+administration explicitly. Read listings require `projects:read`; member
+listings additionally require a workspace owner/admin.
+
+Create takes a client `company_id`, `name`, and optional `description`,
+`repository`, and `is_visible_to_client` (default `true`). Repository references
+are normalized to the same canonical form as the browser form. Update is a
+patch: omitted facts remain unchanged, while explicit `null` clears description
+or repository. Status is `active` or `archived`; archiving preserves tasks, time,
+and financial history. A project cannot be moved between clients or workspaces.
+
+The member listing shows existing workspace members who can receive a grant,
+including members with role `none`. It returns public `user_id`, name, and
+project role; it does not expose email or account search. Pages default to 25
+and cap at 100, with cursors bound to workspace and project. Set `role` to
+`owner`, `manager`, `contributor`, or `viewer`, or `none` to remove access.
+Workspace owners/admins already have workspace-wide access and cannot receive
+explicit project grants. A nonmember or foreign user is refused.
+
+Browser and API mutations share `WorkspaceProjectMutationAction`, including
+tenant-scoped locking, repository normalization, and access checks. API writes
+use `AgentMutationExecutor` for receipts and audit; retries recheck current
+manager authorization. Every access change advances the project's revision, so
+a stale grant or stale project edit is refused. The browser retains its existing
+redirects and numeric form revision error.

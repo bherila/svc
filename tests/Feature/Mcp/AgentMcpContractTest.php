@@ -77,7 +77,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_every_tool_uses_a_closed_standalone_openapi_response_component(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
 
         foreach ($this->definitions() as $definition) {
             $component = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
@@ -254,8 +254,13 @@ final class AgentMcpContractTest extends TestCase
             'payments.correct' => ['payments:record'],
             'payments.list' => ['payments:read'],
             'payments.record' => ['payments:record'],
+            'projects.archive' => ['projects:write', 'projects:read'],
+            'projects.create' => ['projects:write', 'clients:read'],
             'projects.get' => ['projects:read'],
             'projects.list' => ['projects:read'],
+            'projects.members.list' => ['projects:read'],
+            'projects.members.update' => ['projects:write', 'projects:read'],
+            'projects.update' => ['projects:write', 'projects:read'],
             'tasks.create' => ['tasks:write'],
             'tasks.get' => ['tasks:read'],
             'tasks.list' => ['tasks:read'],
@@ -271,7 +276,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_nested_mutation_input_schemas_advertise_the_rest_constraints(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
+        config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $definitions = collect($this->definitions())->keyBy('name');
         $factory = app(AgentMcpInputSchemaFactory::class);
 
@@ -310,7 +315,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_every_write_tool_inherits_its_body_contract_from_openapi(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $factory = app(AgentMcpInputSchemaFactory::class);
 
         foreach ($this->definitions() as $definition) {
@@ -338,7 +343,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_every_write_operation_requires_an_idempotency_header_and_tool_argument(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $factory = app(AgentMcpInputSchemaFactory::class);
 
@@ -392,7 +397,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_mcp_patch_distinguishes_omitted_fields_from_explicit_null(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         [$user, $workspace, $project] = $this->workspace();
         $task = ClientTask::query()->create([
             'workspace_id' => $workspace->id,

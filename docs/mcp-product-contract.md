@@ -196,3 +196,20 @@ private finance reconciliation and processor identifiers.
 Withdrawing time approval requires both `time:approve` and `time:read`, so the caller can obtain the current opaque revision from the public time read response.
 
 Billing schedule creation and generation require `billing:read` alongside their write or delivery scope, so callers can read the parent agreement or schedule revision first.
+
+Task creation and updates now share `WorkspaceTaskMutationAction` across the
+website, REST and MCP. The web form retains its manager-only gate, validation
+limits, redirects and client-visible default; agents retain authorized project
+owner/manager access, their existing validation limits and private default.
+Partial agent updates preserve completion time unless status is supplied;
+completing records the current UTC instant and reopening clears it. Agent updates
+lock the workspace-owned task before checking the opaque version. Identical
+replays still recheck access, and no-op agent updates still advance the revision.
+
+Project administration requires a workspace owner/admin and `projects:write`.
+Create additionally requires `clients:read` to obtain the client company revision;
+update, archive and member access require `projects:read` to obtain the project
+revision. REST and MCP use the same scope requirements. Inaccessible and absent
+workspaces have identical JSON refusals and private no-store cache headers on all
+new project routes. The context advertises project writes only when at least one
+project operation can read its revision under the granted scopes.

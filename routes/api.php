@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
+use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
@@ -20,6 +21,7 @@ use App\Http\Middleware\EnsureAgentClientWritesEnabled;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
+use App\Http\Middleware\EnsureAgentProjectWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
@@ -238,6 +240,21 @@ Route::prefix('v1')
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
             ->name('expense-schedules.generate');
 
+        Route::get('/workspaces/{workspace}/projects/{project}/members', [AgentProjectController::class, 'members'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->whereUuid('project')->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::PROJECTS_READ)])->name('projects.members.index');
+        Route::post('/workspaces/{workspace}/projects', [AgentProjectController::class, 'store'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::PROJECTS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentProjectWritesEnabled::class])->name('projects.store');
+        Route::patch('/workspaces/{workspace}/projects/{project}', [AgentProjectController::class, 'update'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->whereUuid('project')->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::PROJECTS_WRITE, AgentApiScopes::PROJECTS_READ), EnsureAgentProjectWritesEnabled::class])->name('projects.update');
+        Route::post('/workspaces/{workspace}/projects/{project}/archive', [AgentProjectController::class, 'archive'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->whereUuid('project')->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::PROJECTS_WRITE, AgentApiScopes::PROJECTS_READ), EnsureAgentProjectWritesEnabled::class])->name('projects.archive');
+        Route::put('/workspaces/{workspace}/projects/{project}/members', [AgentProjectController::class, 'updateMember'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->whereUuid('project')->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::PROJECTS_WRITE, AgentApiScopes::PROJECTS_READ), EnsureAgentProjectWritesEnabled::class])->name('projects.members.update');
         Route::post('/workspaces/{workspace}/projects/{project}/tasks', [AgentTaskMutationController::class, 'store'])
             ->whereUuid('project')->middleware([CheckToken::using(AgentApiScopes::TASKS_WRITE), EnsureAgentWritesEnabled::class])->name('tasks.store');
         Route::patch('/workspaces/{workspace}/tasks/{task}', [AgentTaskMutationController::class, 'update'])

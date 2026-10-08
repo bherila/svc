@@ -494,6 +494,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace_id}/projects/{project_id}/members': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['projects.members.list'];
+        put: operations['projects.members.update'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/projects/{project_id}/archive': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['projects.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/expenses': {
         parameters: {
             query?: never;
@@ -623,7 +655,7 @@ export interface paths {
         };
         get: operations['projects.list'];
         put?: never;
-        post?: never;
+        post: operations['projects.create'];
         delete?: never;
         options?: never;
         head?: never;
@@ -644,7 +676,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations['projects.update'];
         trace?: never;
     };
     '/workspaces/{workspace_id}/projects/{project_id}/tasks': {
@@ -1231,6 +1263,57 @@ export interface components {
             is_active: boolean;
             automatic_invoice_email_enabled: boolean;
             automatic_invoice_email_delay_days: number | null;
+        };
+        ProjectMembersResponse: {
+            data: components['schemas']['ProjectMember'][];
+            meta: components['schemas']['PaginationMeta'];
+            project_id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+        };
+        ProjectMember: {
+            user_id: components['schemas']['Uuid'];
+            name: string;
+            /** @enum {string} */
+            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
+        };
+        ProjectMemberUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            user_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
+        };
+        ProjectConfirmRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        ProjectUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            name?: string;
+            description?: string | null;
+            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
+            repository?: string | null;
+            is_visible_to_client?: boolean;
+            /** @enum {string} */
+            status?: 'active' | 'archived';
+        };
+        ProjectCreateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            company_id: components['schemas']['Uuid'];
+            name: string;
+            description?: string | null;
+            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
+            repository?: string | null;
+            is_visible_to_client?: boolean;
+        };
+        ProjectResponse: {
+            data: components['schemas']['Project'];
         };
         Expense: {
             /** Format: uuid */
@@ -2780,6 +2863,93 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'projects.members.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                project_id: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectMembersResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.members.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                project_id: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectMemberUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                project_id: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'expenses.list': {
         parameters: {
             query?: {
@@ -3078,6 +3248,35 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'projects.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'projects.get': {
         parameters: {
             query?: never;
@@ -3097,6 +3296,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ProjectDetailResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                project_id: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
                 };
             };
             default: components['responses']['Error'];

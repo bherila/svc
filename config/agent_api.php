@@ -18,6 +18,8 @@ return [
     // Client company and agreement writes require this switch and the outer workflow
     // switch. Nothing is ever deleted through them: "delete" is archive/terminate.
     'client_writes_enabled' => (bool) env('AGENT_API_CLIENT_WRITES_ENABLED', false),
+    // Project administration and membership changes require this nested cutover.
+    'project_writes_enabled' => (bool) env('AGENT_API_PROJECT_WRITES_ENABLED', false),
     // Global MCP emergency stop and optional reviewed capability kill switches.
     'mcp_enabled' => (bool) env('AGENT_API_MCP_ENABLED', true),
     'mcp_feature_flags' => [],

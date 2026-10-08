@@ -34,6 +34,7 @@ final class AgentMcpToolCatalog
             $this->tool('context.get', 'Get context', 'Get the authorized identity, workspaces, roles, and capabilities. Call this before selecting a workspace.', $tools, 'context'),
             $this->tool('operations.summary', 'Get workspace summary', 'Get the role- and scope-filtered operational summary for one workspace.', $tools, 'summary'),
             $this->tool('projects.list', 'List projects', 'List authorized projects with bounded cursor pagination.', $tools, 'projects'),
+            $this->tool('projects.members.list', 'List project access', 'List eligible workspace members and their current project roles as a workspace owner/admin, with bounded pagination. Includes none for members without project access; returns the current project version.', $tools, 'projectMembers'),
             $this->tool('projects.get', 'Get project', 'Get one authorized project and its visible tasks.', $tools, 'project'),
             $this->tool('tasks.list', 'List tasks', 'List authorized tasks with bounded cursor pagination.', $tools, 'tasks'),
             $this->tool('tasks.get', 'Get task', 'Get one authorized task.', $tools, 'task'),
@@ -50,6 +51,14 @@ final class AgentMcpToolCatalog
             new ToolDefinition('expenses.receipts.list', 'List expense receipts', 'List available receipts for an expense as a workspace manager; at most 100 newest receipts.', [$writes, 'expenseReceiptsList'], 'expenses.receipts.list'),
             new ToolDefinition('expenses.receipts.download', 'Download expense receipt', 'Get a ten-minute receipt download URL. The URL still requires the same expenses:read bearer credential and manager access.', [$writes, 'expenseReceiptsDownload'], 'expenses.receipts.download'),
         ];
+        if ($this->writesEnabled() && (bool) config('agent_api.project_writes_enabled')) {
+            $definitions = [...$definitions,
+                new ToolDefinition('projects.create', 'Create project', 'Create a project for a client as a workspace owner/admin only after explicit user confirmation. Read the client company first and supply its current version.', [$writes, 'projectsCreate'], 'projects.create', false, false, true),
+                new ToolDefinition('projects.update', 'Update project', 'Update project facts or client visibility as a workspace owner/admin only after explicit user confirmation, using the current project version. Omitted fields remain unchanged; null clears description or repository.', [$writes, 'projectsUpdate'], 'projects.update', false, false, true),
+                new ToolDefinition('projects.archive', 'Archive project', 'Archive a project as a workspace owner/admin only after explicit user confirmation, using its current version. No tasks, time, or financial history are deleted.', [$writes, 'projectsArchive'], 'projects.archive', false, false, true),
+                new ToolDefinition('projects.members.update', 'Set project access', 'Set an existing workspace member project role, or remove it with none, as a workspace owner/admin only after explicit user confirmation. Read projects.members.list for public member IDs and the project version. Workspace owners/admins cannot receive explicit project grants.', [$writes, 'projectMembersUpdate'], 'projects.members.update', false, true, true),
+            ];
+        }
         if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
             $definitions = [...$definitions,
                 new ToolDefinition('expenses.approve', 'Approve expense', 'Approve one draft expense using its current version as a workspace manager.', [$writes, 'expensesApprove'], 'expenses.approve', false, false, true),

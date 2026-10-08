@@ -43,6 +43,12 @@ final class AgentWriteCutover
             || ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.client_writes_enabled'));
     }
 
+    public static function projects(): bool
+    {
+        return FirstPartySession::current()
+            || ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.project_writes_enabled'));
+    }
+
     public static function timeEntries(): bool
     {
         return FirstPartySession::current() || (bool) config('agent_api.time_entry_writes_enabled');
