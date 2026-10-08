@@ -361,6 +361,31 @@ final class AgentMcpWriteTools
         return ['data' => $this->taskPresenter->present($workspace, $task)];
     }
 
+    /** @return array<string, mixed> */
+    public function invoicesHoldDelivery(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/automatic-delivery/hold", compact('expected_version'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesReleaseDelivery(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/automatic-delivery/release", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @param list<string> $time_entry_ids
+     * @return array<string, mixed> */
+    public function invoicesAddTime(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 100, uniqueItems: true)] array $time_entry_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/time", compact('expected_version', 'time_entry_ids'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesGeneratePeriod(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id, #[Schema(format: 'date')] string $period_start, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/agreements/{$agreement_id}/invoices", compact('period_start', 'expected_version', 'confirm'), $idempotency_key);
+    }
+
     /** @param list<string> $time_entry_ids
      * @param list<array<string, mixed>> $manual_lines
      * @return array<string, mixed> */

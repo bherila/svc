@@ -15,6 +15,9 @@ final class AgentInvoicePresenter
         $payload = [
             'id' => $invoice->public_id,
             'company_id' => $invoice->clientCompany->public_id,
+            'company_name' => $invoice->clientCompany->name,
+            'service_period_start' => $invoice->service_period_start?->toDateString(),
+            'service_period_end' => $invoice->service_period_end?->toDateString(),
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
             'invoice_kind' => $invoice->invoiceKindValue(),
@@ -28,9 +31,11 @@ final class AgentInvoicePresenter
             'balance_amount' => $invoice->balance_amount,
             'issue_date' => $invoice->issue_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
+            'automatic_delivery_status' => $includeNotes ? $invoice->automatic_delivery_status : null,
+            'automatic_delivery_due_at' => $includeNotes ? $invoice->automatic_delivery_due_at?->toISOString() : null,
             'version' => AgentApiVersion::for($invoice),
-            'web_url' => route('svc.billing.invoices.show', [$workspace, $invoice]),
-            'pdf_url' => route('svc.billing.invoices.pdf', [$workspace, $invoice]),
+            'web_url' => rtrim((string) config('app.url'), '/').route('svc.billing.invoices.show', [$workspace, $invoice], absolute: false),
+            'pdf_url' => rtrim((string) config('app.url'), '/').route('svc.billing.invoices.pdf', [$workspace, $invoice], absolute: false),
         ];
 
         if ($includeNotes) {
@@ -49,7 +54,7 @@ final class AgentInvoicePresenter
             'linked_time_state' => $this->linkedTimeState($invoice),
             'invoice_number' => $invoice->invoice_number,
             'version' => AgentApiVersion::for($invoice),
-            'web_url' => route('svc.billing.invoices.show', [$workspace, $invoice]),
+            'web_url' => rtrim((string) config('app.url'), '/').route('svc.billing.invoices.show', [$workspace, $invoice], absolute: false),
         ];
     }
 

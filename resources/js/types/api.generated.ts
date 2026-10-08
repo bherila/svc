@@ -4,6 +4,120 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/hold': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.hold_delivery'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/release': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.release_delivery'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/invoices/{invoice_id}/time': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.add_time'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/agreements/{agreement_id}/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version. */
+        post: operations['invoices.generate_period'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf-link': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Five-minute signed URL. Download still requires current API or browser authentication and current invoice visibility. */
+        get: operations['invoices.pdf'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['invoices.download_pdf'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/billing-audits/stale-and-missing': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['billing_audit.stale_and_missing'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/expenses/{expense_id}/approve': {
         parameters: {
             query?: never;
@@ -714,6 +828,59 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        InvoiceDeliveryHoldRequest: {
+            expected_version: components['schemas']['Version'];
+        };
+        InvoiceDeliveryReleaseRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        InvoiceAddTimeRequest: {
+            expected_version: components['schemas']['Version'];
+            time_entry_ids: components['schemas']['Uuid'][];
+        };
+        InvoiceGeneratePeriodRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: date */
+            period_start: string;
+            /** @constant */
+            confirm: true;
+        };
+        InvoicePdfLink: {
+            /** Format: uri */
+            url: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        InvoicePdfLinkResponse: {
+            data: components['schemas']['InvoicePdfLink'];
+        };
+        InvoiceMissingPeriod: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: date */
+            period_start: string;
+            /** Format: date */
+            period_end: string;
+        };
+        StaleInvoiceBalance: {
+            currency: components['schemas']['Currency'];
+            balance_amount: number;
+        };
+        StaleAndMissingInvoiceAudit: {
+            /** Format: date */
+            as_of: string;
+            stale_draft_count: number;
+            stale_draft_balances: components['schemas']['StaleInvoiceBalance'][];
+            stale_draft_ids: components['schemas']['Uuid'][];
+            stale_draft_ids_truncated: boolean;
+            missing_period_count: number;
+            missing_periods: components['schemas']['InvoiceMissingPeriod'][];
+            missing_periods_truncated: boolean;
+        };
+        StaleAndMissingInvoiceAuditResponse: {
+            data: components['schemas']['StaleAndMissingInvoiceAudit'];
+        };
         ExpenseApprovalRequest: {
             expected_version: components['schemas']['Version'];
         };
@@ -1316,6 +1483,18 @@ export interface components {
             /** Format: uri */
             pdf_url: string;
             notes?: string | null;
+            company_name: string;
+            /** Format: date */
+            service_period_start: string | null;
+            /** Format: date */
+            service_period_end: string | null;
+            /** @description Workspace managers only; null for other viewers. */
+            automatic_delivery_status: string | null;
+            /**
+             * Format: date-time
+             * @description Workspace managers only; null for other viewers.
+             */
+            automatic_delivery_due_at: string | null;
         };
         InvoiceLine: {
             id: components['schemas']['Uuid'];
@@ -1352,6 +1531,18 @@ export interface components {
             pdf_url: string;
             notes?: string | null;
             lines: components['schemas']['InvoiceLine'][];
+            company_name: string;
+            /** Format: date */
+            service_period_start: string | null;
+            /** Format: date */
+            service_period_end: string | null;
+            /** @description Workspace managers only; null for other viewers. */
+            automatic_delivery_status: string | null;
+            /**
+             * Format: date-time
+             * @description Workspace managers only; null for other viewers.
+             */
+            automatic_delivery_due_at: string | null;
         };
         InvoiceListResponse: {
             data: components['schemas']['Invoice'][];
@@ -1491,6 +1682,197 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'invoices.hold_delivery': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceDeliveryHoldRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.release_delivery': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceDeliveryReleaseRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.add_time': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceAddTimeRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.generate_period': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                agreement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceGeneratePeriodRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoicePdfLinkResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.download_pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/pdf': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_audit.stale_and_missing': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['StaleAndMissingInvoiceAuditResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'expenses.approve': {
         parameters: {
             query?: never;
@@ -2761,6 +3143,20 @@ export interface operations {
                 status?: components['schemas']['InvoiceStatus'];
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
+                company_id?: string;
+                invoice_kind?: components['schemas']['InvoiceKind'];
+                issue_date_from?: string;
+                issue_date_to?: string;
+                due_date_from?: string;
+                due_date_to?: string;
+                service_period_overlaps?: {
+                    /** Format: date */
+                    from: string;
+                    /** Format: date */
+                    to: string;
+                };
+                collectible?: boolean;
+                overdue?: boolean;
             };
             header?: never;
             path: {

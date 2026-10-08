@@ -18,6 +18,7 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceLineType;
@@ -120,7 +121,7 @@ final class AgentInvoiceMutationController extends Controller
             $data = $request->validate([
                 'expected_version' => ['required', 'string', 'size:64'],
                 'reason' => ['required', 'string', 'max:500'],
-                'confirm' => ['accepted'],
+                'confirm' => ['required', new ExplicitConfirmation],
                 'due_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
                 'lines' => ['sometimes', 'array', 'min:1', 'max:100'],
                 'lines.*' => ['array:id,description,quantity,unit_amount,tax_amount'],
@@ -155,7 +156,7 @@ final class AgentInvoiceMutationController extends Controller
         $context = $contexts->from($request);
         $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.discard_draft', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['accepted']]);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['required', new ExplicitConfirmation]]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
             $record = $lifecycle->discardDraft($record, $workspace, $data['reason']);
 
@@ -188,7 +189,7 @@ final class AgentInvoiceMutationController extends Controller
         $context = $contexts->from($request);
         $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.void', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['accepted']]);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['required', new ExplicitConfirmation]]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
             $record = $lifecycle->void($record, $workspace, $data['reason']);
 
@@ -204,7 +205,7 @@ final class AgentInvoiceMutationController extends Controller
         $context = $contexts->from($request);
         $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.send', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $email): array {
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'recipients' => ['required', 'array', 'min:1', 'max:10'], 'recipients.*' => ['email'], 'confirm' => ['accepted']]);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'recipients' => ['required', 'array', 'min:1', 'max:10'], 'recipients.*' => ['email'], 'confirm' => ['required', new ExplicitConfirmation]]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
             // Registered here and sent when this mutation's transaction
             // commits: the receipt and the effect have to land together, and an

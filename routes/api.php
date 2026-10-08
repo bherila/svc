@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentExpenseReceiptController;
 use App\Http\Controllers\Api\V1\AgentExpenseScheduleController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
+use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
 use App\Http\Controllers\Api\V1\AgentReadController;
@@ -252,6 +253,40 @@ Route::prefix('v1')
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('time-entries.unapprove');
         Route::post('/workspaces/{workspace}/time-entries/approve', [AgentTimeEntryMutationController::class, 'approve'])
             ->middleware([CheckToken::using(AgentApiScopes::TIME_APPROVE), EnsureAgentWritesEnabled::class])->name('time-entries.approve');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/hold', [AgentInvoiceOperationsController::class, 'hold'])
+            ->whereUuid('invoice')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.hold_delivery');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [AgentInvoiceOperationsController::class, 'release'])
+            ->whereUuid('invoice')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_DELIVER, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.release_delivery');
+        Route::post('/workspaces/{workspace}/invoices/{invoice}/time', [AgentInvoiceOperationsController::class, 'addTime'])
+            ->whereUuid('invoice')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.add_time');
+        Route::post('/workspaces/{workspace}/agreements/{agreement}/invoices', [AgentInvoiceOperationsController::class, 'generate'])
+            ->whereUuid('agreement')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.generate_period');
+        Route::get('/workspaces/{workspace}/invoices/{invoice}/pdf-link', [AgentInvoiceOperationsController::class, 'pdfLink'])
+            ->whereUuid('invoice')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_READ)])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.pdf');
+        Route::get('/workspaces/{workspace}/invoices/{invoice}/pdf', [AgentInvoiceOperationsController::class, 'pdf'])
+            ->whereUuid('invoice')
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_READ)])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('invoices.download_pdf');
+        Route::get('/workspaces/{workspace}/billing-audits/stale-and-missing', [AgentInvoiceOperationsController::class, 'audit'])
+            ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_READ)])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('billing_audit.stale_and_missing');
         Route::post('/workspaces/{workspace}/invoices', [AgentInvoiceMutationController::class, 'createDraft'])
             ->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.store');
         Route::patch('/workspaces/{workspace}/invoices/{invoice}', [AgentInvoiceMutationController::class, 'updateDraft'])

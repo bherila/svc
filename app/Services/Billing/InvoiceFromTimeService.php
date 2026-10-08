@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
@@ -72,17 +73,24 @@ final class InvoiceFromTimeService
         });
     }
 
-    /** Add a selection without replacing existing time, manual lines or their identities.
+    /** Add selected time: append to an ad-hoc draft, regenerate a cadence draft through its canonical engine.
      * @param list<string> $timeEntryIds */
     public function addTime(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $timeEntryIds): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $timeEntryIds): ClientInvoice {
+            // Cadence generation serializes agreement -> invoice. Match that
+            // order before taking the draft lock, then verify the relationship
+            // again on the current invoice row.
+            if ($invoice->invoiceKindValue() !== InvoiceKind::AdHoc->value && $invoice->client_agreement_id !== null) {
+                ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($invoice->client_agreement_id)->tap(Locks::forUpdate())->firstOrFail();
+            }
             $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)
                 ->tap(Locks::forUpdate())->firstOrFail();
-            if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
-                throw new DomainException('Time can only be added to an ad-hoc draft invoice.');
+            if ($locked->status !== 'draft') {
+                throw new DomainException('Time can only be added to a draft invoice.');
             }
             abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; reload it and retry.');
+            abort_unless($locked->client_agreement_id === $invoice->client_agreement_id, 409, 'The invoice agreement has changed; reload it and retry.');
             $locked->assertLineOwnership();
             $company = ClientCompany::query()->where('workspace_id', $workspace->id)
                 ->whereKey($locked->client_company_id)->firstOrFail();
@@ -97,6 +105,31 @@ final class InvoiceFromTimeService
                 ->orderBy('owned_time.id')->tap(Locks::forUpdate())->get(['client_invoice_line_time_entries.client_time_entry_id']);
             if ($allocated->isNotEmpty()) {
                 throw new DomainException('Selected time has already been allocated to an invoice.');
+            }
+            if ($locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
+                if (! in_array($locked->invoiceKindValue(), [InvoiceKind::CadencePeriod->value, InvoiceKind::InterimOverage->value], true)
+                    || $locked->service_period_start === null || $locked->service_period_end === null || $locked->client_agreement_id === null) {
+                    throw new DomainException('This generated draft cannot be regenerated from an agreement and complete service period.');
+                }
+                $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($locked->client_agreement_id)->firstOrFail();
+                $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $timeEntryIds)->get();
+                foreach ($entries as $entry) {
+                    if ($entry->worked_on->lt($locked->service_period_start) || $entry->worked_on->gt($locked->service_period_end)
+                        || ($agreement->client_project_id !== null && $entry->client_project_id !== $agreement->client_project_id)) {
+                        throw new DomainException('Selected time is outside this generated invoice service period or agreement project.');
+                    }
+                }
+                $regenerated = app(ClientInvoicingService::class)->regenerateDraftInvoice($locked);
+                if (! $regenerated instanceof ClientInvoice) {
+                    throw new DomainException('The generated draft could not be regenerated.');
+                }
+                $allocatedIds = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $timeEntryIds)
+                    ->whereHas('invoiceLines', fn ($lines) => $lines->where('client_invoice_lines.workspace_id', $workspace->id)->where('client_invoice_id', $locked->id))->pluck('public_id')->all();
+                if (count($allocatedIds) !== count($timeEntryIds)) {
+                    throw new DomainException('Selected time was not included by the generated invoice.');
+                }
+
+                return $regenerated->refresh()->load(['lines', 'clientCompany']);
             }
             $nextOrder = MoneyService::nonNegativeInteger($locked->lines()->where('workspace_id', $workspace->id)->max('sort_order') ?? 0, 'sort_order') + 1;
             foreach ($lines as $index => $attributes) {

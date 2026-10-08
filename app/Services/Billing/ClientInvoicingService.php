@@ -276,6 +276,17 @@ final class ClientInvoicingService
         return $this->generateInvoiceForPeriod($company, $agreement, $this->nextBillingCycle($agreement, $workCycle));
     }
 
+    /** Generate the invoice selling an explicit retainer cycle, using the canonical engine. */
+    public function generateCadencePeriod(ClientCompany $company, ClientAgreement $agreement, Carbon $periodStart): ClientInvoice
+    {
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+        if ($agreement->workspace_id !== $company->workspace_id || $agreement->client_company_id !== $company->id) {
+            throw new RuntimeException('That agreement belongs to a different client company.');
+        }
+
+        return $this->generateInvoiceForPeriod($company, $agreement, $this->billingCycleResolver->cycleContaining($agreement, $periodStart));
+    }
+
     /**
      * Generate or refresh an interim overage invoice for one month.
      *
