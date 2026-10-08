@@ -19,13 +19,14 @@ final class AgentBillingScheduleReadService
         private readonly BillingScheduleReadPresenter $presenter,
     ) {}
 
-    /** @return array{data:list<array{id:string,agreement_id:string,cadence:string,next_run_on:string,is_active:bool}>,meta:array{next_cursor:?string}} */
+    /** @return array{data:list<array{id:string,agreement_id:string,version:string,cadence:string,next_run_on:string,is_active:bool}>,meta:array{next_cursor:?string}} */
     public function list(User|AgentPrincipal $user, Workspace $workspace, ?bool $active, int $limit, ?string $cursor): array
     {
         $this->requireManager($user, $workspace);
         $query = ClientBillingSchedule::query()
             ->where('workspace_id', $workspace->id)
-            ->with('agreement')
+            ->whereHas('agreement', fn ($query) => $query->where('workspace_id', $workspace->id)->whereColumn('client_agreements.client_company_id', 'client_billing_schedules.client_company_id'))
+            ->with(['agreement' => fn ($query) => $query->where('workspace_id', $workspace->id)])
             ->orderBy('id');
         if ($active !== null) {
             $query->where('is_active', $active);
@@ -48,14 +49,15 @@ final class AgentBillingScheduleReadService
         ];
     }
 
-    /** @return array{id:string,agreement_id:string,cadence:string,next_run_on:string,is_active:bool} */
+    /** @return array{id:string,agreement_id:string,version:string,cadence:string,next_run_on:string,is_active:bool} */
     public function get(User|AgentPrincipal $user, Workspace $workspace, string $scheduleId): array
     {
         $this->requireManager($user, $workspace);
         $schedule = ClientBillingSchedule::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', $scheduleId)
-            ->with('agreement')
+            ->whereHas('agreement', fn ($query) => $query->where('workspace_id', $workspace->id)->whereColumn('client_agreements.client_company_id', 'client_billing_schedules.client_company_id'))
+            ->with(['agreement' => fn ($query) => $query->where('workspace_id', $workspace->id)])
             ->firstOrFail();
 
         return $this->presenter->present($schedule);

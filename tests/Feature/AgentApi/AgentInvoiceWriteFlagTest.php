@@ -46,6 +46,8 @@ final class AgentInvoiceWriteFlagTest extends TestCase
     use RefreshDatabase;
 
     private const INVOICE_TOOLS = [
+        'billing_schedules.create',
+        'billing_schedules.generate',
         'invoices.create_draft',
         'invoices.update_draft',
         'invoices.update_details',
@@ -128,6 +130,7 @@ final class AgentInvoiceWriteFlagTest extends TestCase
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => false]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->actingAsAgent($owner, [
+            AgentApiScopes::BILLING_READ,
             AgentApiScopes::BILLING_WRITE,
             AgentApiScopes::BILLING_DELIVER,
             AgentApiScopes::TASKS_WRITE,
@@ -148,6 +151,9 @@ final class AgentInvoiceWriteFlagTest extends TestCase
         $this->withHeader('Idempotency-Key', 'gated-details')
             ->patchJson($base.'/invoices/'.Str::uuid()->toString().'/details', [])
             ->assertNotFound();
+
+        $this->postJson($base.'/billing-schedules', [])->assertNotFound();
+        $this->postJson($base.'/billing-schedules/'.Str::uuid()->toString().'/generate', [])->assertNotFound();
 
         // The task route shares the outer cutover and is deliberately untouched:
         // this flag withholds invoices, not workflow writes. Not a 404, which is

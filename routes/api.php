@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
@@ -287,6 +288,28 @@ Route::prefix('v1')
             ->middleware([EnsureAgentWorkspaceVisible::class, CheckToken::using(AgentApiScopes::BILLING_READ)])
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
             ->name('billing_audit.stale_and_missing');
+        Route::get('/workspaces/{workspace}/billing-schedules', [AgentBillingScheduleController::class, 'index'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('billing-schedules.index');
+        Route::get('/workspaces/{workspace}/billing-schedules/{schedule}', [AgentBillingScheduleController::class, 'show'])
+            ->whereUuid('schedule')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('billing-schedules.show');
+        Route::post('/workspaces/{workspace}/billing-schedules', [AgentBillingScheduleController::class, 'store'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('billing-schedules.store');
+        Route::post('/workspaces/{workspace}/billing-schedules/{schedule}/generate', [AgentBillingScheduleController::class, 'generate'])
+            ->whereUuid('schedule')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::BILLING_DELIVER, AgentApiScopes::BILLING_READ), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('billing-schedules.generate');
         Route::post('/workspaces/{workspace}/invoices', [AgentInvoiceMutationController::class, 'createDraft'])
             ->middleware([CheckToken::using(AgentApiScopes::BILLING_WRITE), EnsureAgentWritesEnabled::class, EnsureAgentInvoiceWritesEnabled::class])->name('invoices.store');
         Route::patch('/workspaces/{workspace}/invoices/{invoice}', [AgentInvoiceMutationController::class, 'updateDraft'])

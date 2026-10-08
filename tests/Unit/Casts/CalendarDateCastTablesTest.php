@@ -145,6 +145,7 @@ final class CalendarDateCastTablesTest extends TestCase
             ],
             ClientBillingSchedule::class => [
                 'id' => 'int',
+                'lock_version' => 'integer',
                 'next_run_on' => DateOnly::class,
                 'anchor_month' => 'integer',
                 'anchor_day' => 'integer',

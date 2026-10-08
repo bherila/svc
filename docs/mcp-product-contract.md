@@ -194,3 +194,5 @@ Reference remains optional. Read responses follow invoice visibility and omit
 private finance reconciliation and processor identifiers.
 
 Withdrawing time approval requires both `time:approve` and `time:read`, so the caller can obtain the current opaque revision from the public time read response.
+
+Billing schedule creation and generation require `billing:read` alongside their write or delivery scope, so callers can read the parent agreement or schedule revision first.

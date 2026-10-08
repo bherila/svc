@@ -381,6 +381,9 @@ final class AgentMcpServerFactory
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct', 'agreements.activate', 'agreements.terminate', 'expense_schedules.generate', 'invoices.release_delivery', 'invoices.generate_period'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft.';
         }
+        if (isset($available['billing_schedules.generate'])) {
+            $mode .= ' Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery.';
+        }
         if ($this->hasTools($available, ['invoices.issue', 'payments.record'])) {
             $mode .= ' When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance.';
         }
