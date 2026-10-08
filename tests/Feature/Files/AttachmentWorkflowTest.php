@@ -19,23 +19,6 @@ class AttachmentWorkflowTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @return array<string, mixed> */
-    protected function migrateFreshUsing(): array
-    {
-        return [
-            '--drop-views' => true,
-            '--drop-types' => true,
-            '--path' => [
-                'database/migrations/0001_01_01_000000_create_users_table.php',
-                'database/migrations/0001_01_01_000001_create_cache_table.php',
-                'database/migrations/0001_01_01_000002_create_jobs_table.php',
-                'database/migrations/2026_08_15_000000_create_svc_foundation.php',
-                'database/migrations/2026_08_15_010000_create_engagement_workflow.php',
-                'database/migrations/2026_08_15_015000_create_client_attachments.php',
-            ],
-        ];
-    }
-
     protected function setUp(): void
     {
         parent::setUp();

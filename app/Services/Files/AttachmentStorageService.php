@@ -74,6 +74,64 @@ final class AttachmentStorageService
         }
     }
 
+    /**
+     * Prepare immutable bytes and their recovery row before an application mutation.
+     * The staged row keeps both object keys until publication commits; a terminated
+     * request is therefore recoverable even when promotion has already completed.
+     */
+    public function prepareForPublication(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader): ClientAttachment
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        $metadata = $this->stage($workspace, $record, $file);
+        $attachment = $this->recordStaged($workspace, $metadata, $uploader);
+        try {
+            $this->promoteAndVerify($metadata);
+        } catch (Throwable $exception) {
+            $this->deleteQuietly($metadata['object_key']);
+
+            throw $exception;
+        }
+
+        return $attachment;
+    }
+
+    /** Publish already verified bytes with database work only, under the caller's parent lock. */
+    public function publishPrepared(Workspace $workspace, Model&WorkspaceOwned $record, ClientAttachment $prepared): ClientAttachment
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $prepared);
+        $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)
+            ->whereKey($prepared->id)->where('public_id', $prepared->public_id)
+            ->where('record_type', $this->recordTypeFor($record))
+            ->where('record_public_id', $record->getAttribute('public_id'))
+            ->where('lifecycle_state', ClientAttachment::STATE_STAGED)
+            ->tap(Locks::forUpdate())->firstOrFail();
+        $attachment->forceFill(['staged_object_key' => null, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+            'available_at' => $this->clock->now($workspace)])->save();
+
+        return $attachment;
+    }
+
+    /** Remove only unused preparation; failed cleanup retains the recovery row for repair. */
+    public function discardPreparedUpload(Workspace $workspace, ClientAttachment $prepared): void
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $prepared);
+        $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)
+            ->whereKey($prepared->id)->where('public_id', $prepared->public_id)
+            ->where('lifecycle_state', ClientAttachment::STATE_STAGED)->first();
+        if ($attachment === null) {
+            return;
+        }
+        try {
+            $disk = $this->disk();
+            $this->deleteIfPresent($disk, $attachment->staged_object_key);
+            $this->deleteIfPresent($disk, $attachment->object_key);
+            $attachment->delete();
+        } catch (Throwable) {
+            // Repair still knows both keys if a driver or database is unavailable.
+        }
+    }
+
     /** @param array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} $metadata */
     private function recordStaged(Workspace $workspace, array $metadata, User $uploader): ClientAttachment
     {
@@ -104,16 +162,7 @@ final class AttachmentStorageService
     private function publish(Workspace $workspace, array $metadata, ClientAttachment $attachment): ClientAttachment
     {
         try {
-            $disk = $this->disk();
-            if (! $disk->move($metadata['staged_object_key'], $metadata['object_key'])) {
-                throw new RuntimeException('Attachment promotion failed.');
-            }
-
-            $this->assertObjectMatches(
-                $metadata['object_key'],
-                $metadata['bytes'],
-                $metadata['sha256'],
-            );
+            $this->promoteAndVerify($metadata);
 
             $attachment->forceFill([
                 'staged_object_key' => null,
@@ -127,6 +176,15 @@ final class AttachmentStorageService
 
             throw $exception;
         }
+    }
+
+    /** @param array{object_key:string, staged_object_key:string, bytes:int, sha256:string} $metadata */
+    private function promoteAndVerify(array $metadata): void
+    {
+        if (! $this->disk()->move($metadata['staged_object_key'], $metadata['object_key'])) {
+            throw new RuntimeException('Attachment promotion failed.');
+        }
+        $this->assertObjectMatches($metadata['object_key'], $metadata['bytes'], $metadata['sha256']);
     }
 
     public function findForWorkspace(Workspace $workspace, string $publicId): ClientAttachment
@@ -184,6 +242,15 @@ final class AttachmentStorageService
         ])->save();
 
         return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
+    }
+
+    /** Compensate an upload when its enclosing application transaction has rolled back. */
+    public function discardUncommittedUpload(Workspace $workspace, ClientAttachment $attachment): void
+    {
+        $this->workspaceAuthorization->assertOwnedBy($workspace, $attachment);
+        $disk = $this->disk();
+        $this->deleteIfPresent($disk, $attachment->staged_object_key);
+        $this->deleteIfPresent($disk, $attachment->object_key);
     }
 
     public function assertAvailableObjectMatches(ClientAttachment $attachment): void

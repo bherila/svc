@@ -43,8 +43,19 @@ final class AgentMcpToolCatalog
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
             $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL for paying. MCP can record money already received but cannot initiate a charge.', $tools, 'invoice'),
         ];
+        $definitions = [...$definitions,
+            new ToolDefinition('expense_schedules.list', 'List expense schedules', 'List expense schedules as a workspace manager with bounded cursor pagination.', [$writes, 'expenseSchedulesList'], 'expense_schedules.list'),
+            new ToolDefinition('expenses.receipts.list', 'List expense receipts', 'List available receipts for an expense as a workspace manager; at most 100 newest receipts.', [$writes, 'expenseReceiptsList'], 'expenses.receipts.list'),
+            new ToolDefinition('expenses.receipts.download', 'Download expense receipt', 'Get a ten-minute receipt download URL. The URL still requires the same expenses:read bearer credential and manager access.', [$writes, 'expenseReceiptsDownload'], 'expenses.receipts.download'),
+        ];
         if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
             $definitions = [...$definitions,
+                new ToolDefinition('expenses.approve', 'Approve expense', 'Approve one draft expense using its current version as a workspace manager.', [$writes, 'expensesApprove'], 'expenses.approve', false, false, true),
+                new ToolDefinition('expenses.unapprove', 'Unapprove expense', 'Return one approved uninvoiced expense to draft using its current version.', [$writes, 'expensesUnapprove'], 'expenses.unapprove', false, false, true),
+                new ToolDefinition('expense_schedules.create', 'Create expense schedule', 'Create a recurring draft expense schedule using the current client version.', [$writes, 'expenseSchedulesCreate'], 'expense_schedules.create', false, false, true),
+                new ToolDefinition('expense_schedules.update', 'Update expense schedule', 'Update or pause a schedule using its current version. Anchor and cadence are immutable.', [$writes, 'expenseSchedulesUpdate'], 'expense_schedules.update', false, false, true),
+                new ToolDefinition('expense_schedules.generate', 'Generate scheduled expenses', 'Materialize due draft expenses only after explicit user confirmation. Bounded to 24 occurrences; never approves or invoices them.', [$writes, 'expenseSchedulesGenerate'], 'expense_schedules.generate', false, false, true),
+                new ToolDefinition('expenses.receipts.upload_url', 'Prepare expense receipt upload', 'Get a ten-minute multipart upload URL and current expense version. Upload with the same expenses:read and expenses:write bearer credential, Idempotency-Key header, file and expected_version form fields. Preparing a URL does not upload a receipt.', [$writes, 'expenseReceiptsUploadUrl'], 'expenses.receipts.upload_url'),
                 new ToolDefinition('expenses.log', 'Record expenses', 'Idempotently record up to 20 draft expenses as a workspace manager. Amounts use minor units; no receipt attachment or approval.', [$writes, 'expensesLog'], 'expenses.log', false, false, true),
                 new ToolDefinition('expenses.update', 'Update draft expense', 'Replace draft expense facts using the current version. Only workspace managers may write.', [$writes, 'expensesUpdate'], 'expenses.update', false, false, true),
                 new ToolDefinition('expenses.delete', 'Delete draft expense', 'Soft-delete a draft expense using its current version. Approved, invoiced and unknown statuses are refused.', [$writes, 'expensesDelete'], 'expenses.delete', false, true, true),

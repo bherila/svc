@@ -4,6 +4,161 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/expenses/{expense_id}/approve': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
+        post: operations['expenses.approve'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expenses/{expense_id}/unapprove': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
+        post: operations['expenses.unapprove'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expense-schedules': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only bounded listing; cursor is bound to workspace and company filter. */
+        get: operations['expense_schedules.list'];
+        put?: never;
+        /** @description Manager-only creation. expected_version names the client company and is checked while that parent is locked. Both expense write flags required. */
+        post: operations['expense_schedules.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expense-schedules/{schedule_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Manager-only full replacement of editable facts. Omitted/null project_id clears attribution. Calendar anchor, cadence and occurrence cursor are immutable. Current schedule version required under lock; both expense write flags required. */
+        patch: operations['expense_schedules.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expense-schedules/{schedule_id}/generate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit confirmation and current schedule version required. Materializes at most 24 due draft expenses in workspace calendar. Never approves, issues or sends an invoice. Replay preserves the original generated_count. Both expense write flags required. */
+        post: operations['expense_schedules.generate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only list of the 100 newest available receipts; includes current expense_version. */
+        get: operations['expenses.receipts.list'];
+        put?: never;
+        /** @description Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        post: operations['expenses.receipts.upload'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/upload-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Prepare a ten-minute signed multipart upload URL, without mutating expense or receipt. The URL requires the same authorized bearer credential, Idempotency-Key header, expected_version and file form fields. Both expense write flags required. */
+        get: operations['expenses.receipts.upload_url'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/{receipt_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only ten-minute download URL for an available receipt on this expense. Signed URL still requires expenses:read and current manager access. */
+        get: operations['expenses.receipts.download'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/{receipt_id}/content': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Stream receipt bytes only with a valid ten-minute signed URL and current manager bearer credential. */
+        get: operations['expenses.receipts.content'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/time-entries/{entry_id}/unapprove': {
         parameters: {
             query?: never;
@@ -559,6 +714,107 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExpenseApprovalRequest: {
+            expected_version: components['schemas']['Version'];
+        };
+        ExpenseScheduleCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            expected_version: components['schemas']['Version'];
+            /** Format: uuid */
+            project_id?: string | null;
+            /** Format: date */
+            starts_on: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+        };
+        ExpenseScheduleUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: uuid */
+            project_id?: string | null;
+            active: boolean;
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+        };
+        ExpenseScheduleGenerateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        ExpenseSchedule: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id: string | null;
+            /** Format: date */
+            starts_on: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+            active: boolean;
+            /** Format: date */
+            next_on: string;
+            version: components['schemas']['Version'];
+        };
+        ExpenseScheduleResponse: {
+            data: components['schemas']['ExpenseSchedule'];
+        };
+        ExpenseScheduleGenerateResponse: {
+            data: components['schemas']['ExpenseSchedule'];
+            generated_count: number;
+        };
+        ExpenseScheduleListResponse: {
+            data: components['schemas']['ExpenseSchedule'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        ExpenseReceipt: {
+            /** Format: uuid */
+            id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** Format: date-time */
+            uploaded_at: string | null;
+        };
+        ExpenseReceiptListResponse: {
+            data: components['schemas']['ExpenseReceipt'][];
+            expense_version: components['schemas']['Version'];
+        };
+        ExpenseReceiptUploadResponse: {
+            data: components['schemas']['ExpenseReceipt'];
+            expense_version: components['schemas']['Version'];
+        };
+        ExpenseReceiptDownloadResponse: {
+            data: {
+                /** Format: uri */
+                download_url: string;
+                /** Format: date-time */
+                expires_at: string;
+            };
+        };
+        ExpenseReceiptUploadUrlResponse: {
+            data: {
+                /** Format: uri */
+                upload_url: string;
+                /** Format: date-time */
+                expires_at: string;
+                expected_version: components['schemas']['Version'];
+            };
+        };
+        ExpenseReceiptUploadRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: binary */
+            file: string;
+        };
         agreements_terminateRequest: {
             /** @constant */
             confirm: true;
@@ -1235,6 +1491,313 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'expenses.approve': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseApprovalRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.unapprove': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseApprovalRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.list': {
+        parameters: {
+            query?: {
+                company_id?: string;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseScheduleCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseScheduleUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.generate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseScheduleGenerateRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleGenerateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.upload': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'multipart/form-data': components['schemas']['ExpenseReceiptUploadRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.upload_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.download': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptDownloadResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.content': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                expense_id: components['parameters']['ExpenseId'];
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Receipt bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/octet-stream': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'time_entries.unapprove': {
         parameters: {
             query?: never;

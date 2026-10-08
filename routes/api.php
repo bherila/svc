@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
+use App\Http\Controllers\Api\V1\AgentExpenseReceiptController;
+use App\Http\Controllers\Api\V1\AgentExpenseScheduleController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
@@ -168,6 +170,71 @@ Route::prefix('v1')
             ->whereUuid('expense')->middleware([CheckToken::using(AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])->name('expenses.update');
         Route::delete('/workspaces/{workspace}/expenses/{expense}', [AgentExpenseController::class, 'destroy'])
             ->whereUuid('expense')->middleware([CheckToken::using(AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])->name('expenses.destroy');
+
+        Route::post('/workspaces/{workspace}/expenses/{expense}/approve', [AgentExpenseController::class, 'approve'])
+            ->whereUuid('expense')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expenses.approve');
+        Route::post('/workspaces/{workspace}/expenses/{expense}/unapprove', [AgentExpenseController::class, 'unapprove'])
+            ->whereUuid('expense')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expenses.unapprove');
+        Route::get('/workspaces/{workspace}/expenses/{expense}/receipts', [AgentExpenseReceiptController::class, 'index'])
+            ->whereUuid('expense')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware(CheckToken::using(AgentApiScopes::EXPENSES_READ))
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-receipts.index');
+        Route::get('/workspaces/{workspace}/expenses/{expense}/receipts/upload-url', [AgentExpenseReceiptController::class, 'uploadUrl'])
+            ->whereUuid('expense')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-receipts.upload-url');
+        Route::post('/workspaces/{workspace}/expenses/{expense}/receipts', [AgentExpenseReceiptController::class, 'store'])
+            ->whereUuid('expense')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-receipts.store');
+        Route::get('/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}', [AgentExpenseReceiptController::class, 'download'])
+            ->whereUuid(['expense', 'receipt'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware(CheckToken::using(AgentApiScopes::EXPENSES_READ))
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-receipts.download');
+        Route::get('/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}/content', [AgentExpenseReceiptController::class, 'content'])
+            ->whereUuid(['expense', 'receipt'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ), 'signed:relative'])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-receipts.content');
+        Route::get('/workspaces/{workspace}/expense-schedules', [AgentExpenseScheduleController::class, 'index'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware(CheckToken::using(AgentApiScopes::EXPENSES_READ))
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-schedules.index');
+        Route::post('/workspaces/{workspace}/expense-schedules', [AgentExpenseScheduleController::class, 'store'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::CLIENTS_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-schedules.store');
+        Route::patch('/workspaces/{workspace}/expense-schedules/{schedule}', [AgentExpenseScheduleController::class, 'update'])
+            ->whereUuid('schedule')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-schedules.update');
+        Route::post('/workspaces/{workspace}/expense-schedules/{schedule}/generate', [AgentExpenseScheduleController::class, 'generate'])
+            ->whereUuid('schedule')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->middleware([CheckToken::using(AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE), EnsureAgentExpenseWritesEnabled::class])
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+            ->name('expense-schedules.generate');
 
         Route::post('/workspaces/{workspace}/projects/{project}/tasks', [AgentTaskMutationController::class, 'store'])
             ->whereUuid('project')->middleware([CheckToken::using(AgentApiScopes::TASKS_WRITE), EnsureAgentWritesEnabled::class])->name('tasks.store');

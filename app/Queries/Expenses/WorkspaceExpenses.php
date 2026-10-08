@@ -218,7 +218,7 @@ final class WorkspaceExpenses
      * lock on it for the length of an approval would serialise every manager in
      * the workspace behind one row to answer a question nobody is asking.
      */
-    public function approve(ClientExpense $expense, User $approver): ClientExpense
+    public function approve(ClientExpense $expense, User $approver, ?string $expectedVersion = null): ClientExpense
     {
         if (! $this->workspace->memberships()->where('user_id', $approver->id)->exists()) {
             throw new CrossTenantReference('That approver is not a member of this workspace.');
@@ -227,7 +227,7 @@ final class WorkspaceExpenses
         return $this->move($expense, ExpenseStatus::Approved, fn (): array => [
             'approved_by_user_id' => $approver->id,
             'approved_at' => $this->clock->now($this->workspace),
-        ]);
+        ], $expectedVersion);
     }
 
     /**
@@ -243,12 +243,12 @@ final class WorkspaceExpenses
      * that is stated: the expense is on a client's bill, and the way back is to
      * change the bill.
      */
-    public function unapprove(ClientExpense $expense): ClientExpense
+    public function unapprove(ClientExpense $expense, ?string $expectedVersion = null): ClientExpense
     {
         return $this->move($expense, ExpenseStatus::Draft, static fn (): array => [
             'approved_by_user_id' => null,
             'approved_at' => null,
-        ]);
+        ], $expectedVersion);
     }
 
     /**
@@ -289,7 +289,7 @@ final class WorkspaceExpenses
      *
      * @param  Closure(): array<string, mixed>  $stamps
      */
-    private function move(ClientExpense $expense, ExpenseStatus $to, Closure $stamps): ClientExpense
+    private function move(ClientExpense $expense, ExpenseStatus $to, Closure $stamps, ?string $expectedVersion = null): ClientExpense
     {
         return $this->mutate($expense, static function (ClientExpense $locked) use ($to, $stamps): ClientExpense {
             $status = $locked->getAttribute('status');
@@ -301,7 +301,7 @@ final class WorkspaceExpenses
             $locked->forceFill([...$stamps(), 'status' => $to->value])->save();
 
             return $locked;
-        });
+        }, $expectedVersion);
     }
 
     /**

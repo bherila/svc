@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Expenses\ExpenseAction;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Expenses\ExpenseStatus;
 use Illuminate\Http\RedirectResponse;
@@ -42,6 +43,8 @@ use Inertia\Response;
  */
 class ExpenseController extends Controller
 {
+    public function __construct(private readonly ExpenseAction $writes) {}
+
     public function index(
         Request $request,
         Workspace $workspace,
@@ -221,7 +224,8 @@ class ExpenseController extends Controller
         $recordedBy = $request->user();
         abort_unless($recordedBy instanceof User, 401);
 
-        $this->expenses($workspace)->record(
+        $this->writes->record(
+            $workspace,
             $clientCompany,
             $this->project($request, $workspace, $clientCompany),
             $request->facts(),
@@ -245,11 +249,12 @@ class ExpenseController extends Controller
             // clear the project of any caller that edited only the money.
             $reattribute = $request->has('project_id');
 
-            $this->expenses($workspace)->update(
-                $record,
+            $this->writes->update(
+                $workspace,
+                $expense,
                 $request->facts(),
                 $reattribute
-                    ? $this->project($request, $workspace, $record->clientCompany)
+                    ? $this->project($request, $workspace, $record->clientCompany)?->public_id
                     : null,
                 $reattribute,
             );
@@ -266,7 +271,7 @@ class ExpenseController extends Controller
         abort_unless($user instanceof User, 401);
 
         return $this->refusable(function () use ($workspace, $expense, $user): void {
-            $this->expenses($workspace)->approve($this->find($workspace, $expense), $user);
+            $this->writes->approve($workspace, $expense, $user);
         }, 'Expense approved.');
     }
 
@@ -277,7 +282,7 @@ class ExpenseController extends Controller
         Gate::authorize('manage', $workspace);
 
         return $this->refusable(function () use ($workspace, $expense): void {
-            $this->expenses($workspace)->unapprove($this->find($workspace, $expense));
+            $this->writes->unapprove($workspace, $expense);
         }, 'Expense returned to draft.');
     }
 
@@ -288,7 +293,7 @@ class ExpenseController extends Controller
         Gate::authorize('manage', $workspace);
 
         return $this->refusable(function () use ($workspace, $expense): void {
-            $this->expenses($workspace)->discard($this->find($workspace, $expense));
+            $this->writes->discard($workspace, $expense);
         }, 'Expense discarded.');
     }
 

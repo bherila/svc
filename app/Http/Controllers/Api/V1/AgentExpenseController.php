@@ -45,6 +45,24 @@ final class AgentExpenseController extends Controller
         return response()->json(['data' => $this->reads->results($context->user, $workspace, $ids)[0]]);
     }
 
+    public function approve(Request $request, Workspace $workspace, string $expense): JsonResponse
+    {
+        return $this->transition($request, $workspace, $expense, true);
+    }
+
+    public function unapprove(Request $request, Workspace $workspace, string $expense): JsonResponse
+    {
+        return $this->transition($request, $workspace, $expense, false);
+    }
+
+    private function transition(Request $request, Workspace $workspace, string $expense, bool $approve): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $ids = $this->writes->transition($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $expense, $request->all(), $approve);
+
+        return response()->json(['data' => $this->reads->results($context->user, $workspace, $ids)[0]]);
+    }
+
     public function destroy(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
         $context = $this->contexts->fromAuthenticatedClient($request);

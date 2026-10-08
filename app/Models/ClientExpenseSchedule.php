@@ -6,11 +6,13 @@ use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
+ * @property int $lock_version
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
@@ -27,7 +29,7 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable(['workspace_id', 'client_company_id', 'client_project_id', 'starts_on', 'cadence', 'next_occurrence', 'amount', 'currency', 'description', 'is_active'])]
 final class ClientExpenseSchedule extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected function casts(): array
     {

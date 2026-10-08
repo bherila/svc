@@ -81,6 +81,9 @@ enum LockResource: string
     case ClientProject = 'client_projects';
     case User = 'users';
 
+    // Prepared bytes publish only after the tenant parent and receipt are locked.
+    case ClientAttachment = 'client_attachments';
+
     // Durable email claims are taken in short transactions after the billing
     // mutation commits. Client-delivery result persistence locks the invoice
     // and then its delivery so those two local facts commit atomically; the

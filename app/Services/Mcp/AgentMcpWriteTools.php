@@ -163,6 +163,60 @@ final class AgentMcpWriteTools
         return ['data' => ['deleted_id' => $id]];
     }
 
+    /** @return array<string,mixed> */
+    public function expensesApprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/expenses/{$expense_id}/approve", compact('expected_version'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function expensesUnapprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/expenses/{$expense_id}/unapprove", compact('expected_version'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseSchedulesList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] ?string $company_id = null, #[Schema(minimum: 1, maximum: 100)] int $limit = 25, #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/expense-schedules?".http_build_query(array_filter(compact('company_id', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null)), []);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/expense-schedules", compact('company_id', 'expected_version', 'starts_on', 'cadence', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    {
+        return $this->send('PATCH', "workspaces/{$workspace_id}/expense-schedules/{$schedule_id}", compact('expected_version', 'active', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseSchedulesGenerate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/expense-schedules/{$schedule_id}/generate", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseReceiptsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts", []);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseReceiptsDownload(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(format: 'uuid')] string $receipt_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts/{$receipt_id}", []);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseReceiptsUploadUrl(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
+    {
+        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts/upload-url", []);
+    }
+
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
     public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $approve = false): array
