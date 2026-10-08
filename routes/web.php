@@ -9,6 +9,7 @@ use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
+use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
@@ -33,6 +34,7 @@ Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource'])
         ->middleware(McpHttpSecurityMiddleware::class);
     Route::post('/oauth/register', OAuthDynamicClientRegistrationController::class)->middleware('throttle:10,60');
+    Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
 });
 
 Route::get('/login', [OAuthLoginController::class, 'redirect'])->name('login');

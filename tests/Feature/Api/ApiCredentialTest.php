@@ -106,6 +106,29 @@ final class ApiCredentialTest extends TestCase
             ->assertSessionHasErrors('scopes.0');
     }
 
+    /** A connector importing the document reaches the installation it came from. */
+    public function test_the_published_document_names_this_installation(): void
+    {
+        config([
+            'app.url' => 'https://svc.example.test',
+            'bherila-auth.oauth_server.authorization_endpoint' => 'https://svc.example.test/oauth/authorize',
+            'bherila-auth.oauth_server.token_endpoint' => 'https://svc.example.test/oauth/token',
+        ]);
+
+        $document = $this->getJson('/api/openapi.json')->assertOk()->json();
+
+        $this->assertSame([['url' => 'https://svc.example.test/api/v1']], $document['servers']);
+        $flow = $document['components']['securitySchemes']['oauth2']['flows']['authorizationCode'];
+        $this->assertSame('https://svc.example.test/oauth/authorize', $flow['authorizationUrl']);
+        $this->assertSame('https://svc.example.test/oauth/token', $flow['tokenUrl']);
+        $this->assertSame(
+            json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true)['paths'],
+            $document['paths'],
+            'Only the addresses change',
+        );
+        $this->assertSame(route('openapi.document'), $this->setupProps()['rest']['openapi_url']);
+    }
+
     public function test_another_person_cannot_revoke_or_see_a_token(): void
     {
         $this->issueToken(['identity:read'], 30);

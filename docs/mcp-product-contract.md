@@ -131,7 +131,7 @@ are issued only in the browser: no OAuth credential can mint another. Because
 generic OAuth clients rarely send RFC 8707 `resource`, an omitted resource is bound
 to `/api/v1` (`assume_omitted_resource`); a different explicit resource is still
 refused. The OpenAPI document declares both the `oauth2` scheme and an `apiToken`
-bearer scheme on every operation.
+bearer scheme on every operation. `/api/openapi.json` serves that document with its server and OAuth endpoints taken from this installation's configuration; connectors import it from the setup page.
 
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;

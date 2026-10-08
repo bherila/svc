@@ -46,7 +46,7 @@ class McpSetupController extends Controller
             // of MCP (#384). Every URL is finished here; the page assembles none.
             'rest' => [
                 'api_base_url' => $base.'/api/v1',
-                'openapi_url' => $base.'/openapi/svc-agent-v1.json',
+                'openapi_url' => route('openapi.document'),
                 'authorize_url' => (string) config('bherila-auth.oauth_server.authorization_endpoint', $base.'/oauth/authorize'),
                 'token_url' => (string) config('bherila-auth.oauth_server.token_endpoint', $base.'/oauth/token'),
                 'scopes' => array_map(
