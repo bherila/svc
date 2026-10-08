@@ -158,9 +158,13 @@ class ClientPortalOperationsTest extends TestCase
             'signer_title' => 'Synthetic Buyer',
         ])->assertOk();
         $this->actingAs($clientUser)->postJson($acceptPath, [
+            'signer_name' => 'Synthetic Portal Signer',
+            'signer_title' => 'Synthetic Buyer',
+        ])->assertOk();
+        $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Replay Signer',
             'signer_title' => 'Replay Title',
-        ])->assertOk();
+        ])->assertUnprocessable()->assertJsonPath('message', 'This proposal was already accepted with different signer details.');
 
         $this->assertSame('accepted', $proposal->fresh()->status);
         $this->assertSame('Synthetic Portal Signer', $proposal->fresh()->acceptance_signer_name);
