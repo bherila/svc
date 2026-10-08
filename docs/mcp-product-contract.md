@@ -13,8 +13,8 @@ The operations v1 release lets authorized users view projects, tasks, time,
 invoices, and received payments. Its feature-gated write catalog manages tasks,
 draft time, time approval, invoice draft creation/update/discard, invoice
 issue/send/void workflows, and recording money already received. Project creation,
-archival, and deletion remain website actions. Attachment metadata/download
-access and file uploads are deferred from the currently shipped catalog. Payment
+archival, and deletion remain website actions. Generic attachment metadata/download access and uploads, and workspace creation,
+have separate scopes and nested deployment cutovers described below. Payment
 collection, initiation, refunds, card data, and provider identifiers are out
 of scope. Invoice responses contain a role-authorized browser URL so a user can
 continue a payment flow in the website.
@@ -225,3 +225,49 @@ none of these actions. Portal acceptance obeys the same company and project scop
 as portal reads. Confirmed sends publish to the portal; they do not email.
 
 Proposal creation also requires `clients:read` to obtain the parent version; send and acceptance require `proposals:read` to obtain the current proposal version.
+## Workspace creation, search and generic files (#386)
+
+`workspaces.create` requires `workspaces:create`, `AGENT_API_WRITES_ENABLED`
+and `AGENT_API_WORKSPACE_WRITES_ENABLED`. It uses the website's `CreateWorkspace`
+action and creates the actor's owner membership atomically. A new tenant has no
+previous `expected_version`. An actor/client/idempotency-key reservation binds
+its name and resulting tenant; replay checks current owner/admin membership and
+cannot return another client's reservation. Failed creation rolls back the
+reservation, tenant and membership together.
+
+`search` uses `identity:read` and the website's workspace search service. It is
+bounded to five results per kind and applies current record access and each
+kind's read scope (`clients:read`, `projects:read`, `tasks:read`, `billing:read`)
+before returning results. Searches never span an implicitly selected tenant.
+
+Generic attachments use `files:read` for `attachments.list`, `attachments.get`
+and `attachments.download_url`. Workspace owners/admins can read metadata for
+company, project, task, proposal, agreement and invoice attachments. Expense
+receipts retain their dedicated expense routes. Metadata includes opaque file
+versions and excludes storage keys and uploader identifiers. Lists return the
+100 newest available files and the parent's current version.
+
+`attachments.upload_url` requires `files:write` and both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_FILE_WRITES_ENABLED`. It prepares a URL
+without persisting an upload or reserving an idempotency key. Upload multipart
+`file` and `expected_version` to that URL with the same bearer credential and
+an `Idempotency-Key` header. The upload is limited to 50 MiB and checks the
+current version while holding the tenant-scoped parent row lock. A file is an
+immutable append; it does not edit the parent's business facts or revision.
+The mutation executor binds retries to parent, version, filename, media type,
+length and SHA256 and records success/replay/failure audits. A rolled-back
+upload compensates its newly published object.
+
+`attachments.delete` requires the same file write gates, the attachment's own
+current `expected_version`, and explicit `confirm: true`. Deletion makes the
+file unavailable immediately; existing retention/repair handles physical purge.
+Both upload and download URLs expire after ten minutes and still require the
+current scope and owner/admin role. A signed URL is never a bearer credential.
+
+`context.get` reports `withheld_tools` with a stable tool name and one reason:
+`deployment_disabled`, `scope_not_granted` (with the missing scope), or `role`.
+This comes from the complete MCP registry and the same discovery gates as
+`tools/list`. The global `capabilities` array advertises `workspaces:create`
+when its scope and deployment gates permit it, including before the user owns
+a workspace. Invoice descriptions direct callers to this metadata instead of
+claiming payment recording is always available (#382).

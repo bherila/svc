@@ -28,8 +28,7 @@ final class McpFeatureFlags
             return true;
         }
 
-        $value = $flags[$featureFlag] ?? $flags[$name] ?? true;
-
-        return $value === true;
+        return ($flags[$featureFlag] ?? true) === true
+            && ($flags[$name] ?? true) === true;
     }
 }

@@ -55,6 +55,18 @@ final class AgentWriteCutover
             || ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.proposal_writes_enabled'));
     }
 
+    public static function workspaces(): bool
+    {
+        return FirstPartySession::current()
+            || ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.workspace_writes_enabled'));
+    }
+
+    public static function files(): bool
+    {
+        return FirstPartySession::current()
+            || ((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.file_writes_enabled'));
+    }
+
     public static function timeEntries(): bool
     {
         return FirstPartySession::current() || (bool) config('agent_api.time_entry_writes_enabled');

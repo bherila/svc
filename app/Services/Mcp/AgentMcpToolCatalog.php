@@ -22,13 +22,25 @@ use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 final class AgentMcpToolCatalog
 {
     /** @return list<McpCapabilityDefinition> */
-    public function clientDefinitions(AgentMcpClientTools $clients, AgentMcpClientWriteTools $writes): array
+    public function clientDefinitions(AgentMcpClientTools $clients, AgentMcpClientWriteTools $writes, bool $includeDisabled = false): array
     {
-        return (new AgentMcpClientCapabilities)->definitions($clients, $writes);
+        return (new AgentMcpClientCapabilities)->definitions($clients, $writes, $includeDisabled);
     }
 
     /** @return list<ToolDefinition> */
     public function definitions(AgentMcpReadTools $tools, AgentMcpWriteTools $writes): array
+    {
+        return $this->build($tools, $writes, false);
+    }
+
+    /** @return list<ToolDefinition> */
+    public function inventoryDefinitions(AgentMcpReadTools $tools, AgentMcpWriteTools $writes): array
+    {
+        return $this->build($tools, $writes, true);
+    }
+
+    /** @return list<ToolDefinition> */
+    private function build(AgentMcpReadTools $tools, AgentMcpWriteTools $writes, bool $includeDisabled): array
     {
         $definitions = [
             $this->tool('context.get', 'Get context', 'Get the authorized identity, workspaces, roles, and capabilities. Call this before selecting a workspace.', $tools, 'context'),
@@ -46,14 +58,18 @@ final class AgentMcpToolCatalog
             $this->tool('invoices.list', 'List invoices', 'List authorized invoices with bounded cursor pagination.', $tools, 'invoices'),
             $this->tool('invoices.pdf', 'Get invoice PDF link', 'Return a signed invoice PDF download URL valid for five minutes. The download requires the current authenticated connection or browser session and rechecks invoice visibility.', $tools, 'invoicesPdf'),
             $this->tool('billing_audit.stale_and_missing', 'Audit stale drafts and missing periods', 'Workspace managers only. Count past-due drafts and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category.', $tools, 'billingAuditStaleAndMissing'),
-            $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL for paying. MCP can record money already received but cannot initiate a charge.', $tools, 'invoice'),
+            $this->tool('invoices.get', 'Get invoice', 'Get one authorized invoice. The response includes a browser URL for paying. See context.get withheld_tools for payment-recording availability; payment recording never initiates a charge.', $tools, 'invoice'),
+            new ToolDefinition('search', 'Search workspace', 'Search up to five authorized results per kind in one workspace. Each kind also requires its read scope; missing scopes produce no results for that kind.', [$writes, 'search'], 'search'),
+            new ToolDefinition('attachments.list', 'List attachments', 'List up to 100 generic files on a tenant-owned record, with its parent version. Workspace managers only; expense receipts use separate tools.', [$writes, 'attachmentsList'], 'attachments.list'),
+            new ToolDefinition('attachments.get', 'Get attachment', 'Get generic file metadata and current version. Workspace managers only.', [$writes, 'attachmentsGet'], 'attachments.get'),
+            new ToolDefinition('attachments.download_url', 'Get attachment download URL', 'Prepare a ten-minute signed download URL. Use the same bearer credential; current files:read and manager permission remain required.', [$writes, 'attachmentsDownloadUrl'], 'attachments.download_url'),
         ];
         $definitions = [...$definitions,
             new ToolDefinition('expense_schedules.list', 'List expense schedules', 'List expense schedules as a workspace manager with bounded cursor pagination.', [$writes, 'expenseSchedulesList'], 'expense_schedules.list'),
             new ToolDefinition('expenses.receipts.list', 'List expense receipts', 'List available receipts for an expense as a workspace manager; at most 100 newest receipts.', [$writes, 'expenseReceiptsList'], 'expenses.receipts.list'),
             new ToolDefinition('expenses.receipts.download', 'Download expense receipt', 'Get a ten-minute receipt download URL. The URL still requires the same expenses:read bearer credential and manager access.', [$writes, 'expenseReceiptsDownload'], 'expenses.receipts.download'),
         ];
-        if ($this->writesEnabled() && (bool) config('agent_api.project_writes_enabled')) {
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.project_writes_enabled'))) {
             $definitions = [...$definitions,
                 new ToolDefinition('projects.create', 'Create project', 'Create a project for a client as a workspace owner/admin only after explicit user confirmation. Read the client company first and supply its current version.', [$writes, 'projectsCreate'], 'projects.create', false, false, true),
                 new ToolDefinition('projects.update', 'Update project', 'Update project facts or client visibility as a workspace owner/admin only after explicit user confirmation, using the current project version. Omitted fields remain unchanged; null clears description or repository.', [$writes, 'projectsUpdate'], 'projects.update', false, false, true),
@@ -61,7 +77,14 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('projects.members.update', 'Set project access', 'Set an existing workspace member project role, or remove it with none, as a workspace owner/admin only after explicit user confirmation. Read projects.members.list for public member IDs and the project version. Workspace owners/admins cannot receive explicit project grants.', [$writes, 'projectMembersUpdate'], 'projects.members.update', false, true, true),
             ];
         }
-        if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.workspace_writes_enabled'))) {
+            $definitions[] = new ToolDefinition('workspaces.create', 'Create workspace', 'Create a workspace owned by the authenticated user. A new tenant has no expected version; an actor/client/idempotency key reservation prevents duplicate creation.', [$writes, 'workspacesCreate'], 'workspaces.create', false, false, true);
+        }
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.file_writes_enabled'))) {
+            $definitions[] = new ToolDefinition('attachments.upload_url', 'Prepare attachment upload', 'Prepare a ten-minute signed multipart REST upload URL without uploading bytes. POST file and expected_version there with the same bearer credential and a fresh Idempotency-Key. Upload retries with the same key and identical bytes return the first attachment. Current files:write and manager permission remain required.', [$writes, 'attachmentsUploadUrl'], 'attachments.upload_url');
+            $definitions[] = new ToolDefinition('attachments.delete', 'Delete attachment', 'Delete a generic file using its current version, only after explicit user confirmation. The file becomes unavailable immediately and is purged after retention.', [$writes, 'attachmentsDelete'], 'attachments.delete', false, true, true);
+        }
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled'))) {
             $definitions = [...$definitions,
                 new ToolDefinition('expenses.approve', 'Approve expense', 'Approve one draft expense using its current version as a workspace manager.', [$writes, 'expensesApprove'], 'expenses.approve', false, false, true),
                 new ToolDefinition('expenses.unapprove', 'Unapprove expense', 'Return one approved uninvoiced expense to draft using its current version.', [$writes, 'expensesUnapprove'], 'expenses.unapprove', false, false, true),
@@ -74,31 +97,31 @@ final class AgentMcpToolCatalog
                 new ToolDefinition('expenses.delete', 'Delete draft expense', 'Soft-delete a draft expense using its current version. Approved, invoiced and unknown statuses are refused.', [$writes, 'expensesDelete'], 'expenses.delete', false, true, true),
             ];
         }
-        if ($this->writesEnabled() && (bool) config('agent_api.proposal_writes_enabled')) {
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.proposal_writes_enabled'))) {
             $definitions = [...$definitions,
                 new ToolDefinition('proposals.create', 'Create proposal', 'Create a draft proposal as a workspace manager, using the current client company version. Items use minor-unit amounts. Creating does not send it.', [$writes, 'proposalsCreate'], 'proposals.create', false, false, true),
                 new ToolDefinition('proposals.send', 'Send proposal', 'Only after explicit user confirmation, mark a draft proposal sent and make it available in the client portal. Does not email a recipient. Workspace managers only; current proposal version required.', [$writes, 'proposalsSend'], 'proposals.send', false, false, true),
                 new ToolDefinition('proposals.accept', 'Accept proposal', 'Only after explicit user confirmation, accept a sent proposal using the current version and explicit signer identity. Signs and activates its agreement. Authorized portal recipients within their project grants, or workspace managers recording offline acceptance, only.', [$writes, 'proposalsAccept'], 'proposals.accept', false, false, true),
             ];
         }
-        if ($this->timeEntryWritesEnabled()) {
+        if ($includeDisabled || $this->timeEntryWritesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('time_entries.log', 'Log time', 'Idempotently log up to 20 completed time entries. When time:read is held and time_entries.list remains enabled, the response matches time_entries.list, including its role rule for rates; if that list capability is disabled, the response uses the plain write shape. If client_visible_description is supplied and is_visible_to_client is omitted, the entry defaults to client-visible; send false to stage client text privately. Pass approve: true to approve them in the same call, only when the user asked for approval; approving and explicit billing rates require time:approve and a project approver role.', [$writes, 'timeEntriesLog'], 'time_entries.log', false, false, true),
                 new ToolDefinition('time_entries.update', 'Update editable time', 'Update authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesUpdate'], 'time_entries.update', false, false, true),
                 new ToolDefinition('time_entries.delete', 'Delete editable time', 'Soft-delete authorized draft time, or approved time on a regenerable draft invoice, using its current version.', [$writes, 'timeEntriesDelete'], 'time_entries.delete', false, true, true),
             ];
         }
-        if ($this->writesEnabled() && $this->timeEntryWritesEnabled()) {
+        if ($includeDisabled || ($this->writesEnabled() && $this->timeEntryWritesEnabled())) {
             $definitions[] = new ToolDefinition('time_entries.unapprove', 'Withdraw time approval', 'Return approved time to draft as a workspace owner or admin using its current version. Time on a draft invoice is released and that invoice regenerated in the same transaction. Billed time and time on issued, paid or void invoices are refused.', [$writes, 'timeEntriesUnapprove'], 'time_entries.unapprove', false, false, true);
         }
-        if ($this->writesEnabled()) {
+        if ($includeDisabled || $this->writesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('time_entries.approve', 'Approve time', 'Approve a bounded batch of draft time entries after version checks.', [$writes, 'timeEntriesApprove'], 'time_entries.approve', false, false, true),
                 new ToolDefinition('tasks.create', 'Create task', 'Create a task in an authorized project.', [$writes, 'tasksCreate'], 'tasks.create', false, false, true),
                 new ToolDefinition('tasks.update', 'Update task', 'Update an authorized task using its current version.', [$writes, 'tasksUpdate'], 'tasks.update', false, false, true),
             ];
         }
-        if ($this->invoiceWritesEnabled()) {
+        if ($includeDisabled || $this->invoiceWritesEnabled()) {
             $definitions = [...$definitions,
                 new ToolDefinition('invoices.hold_delivery', 'Hold invoice delivery', 'Hold scheduled or failed automatic delivery using the current invoice version.', [$writes, 'invoicesHoldDelivery'], 'invoices.hold_delivery', false, false, true),
                 new ToolDefinition('invoices.release_delivery', 'Release invoice delivery', 'Release held automatic delivery only after explicit user confirmation, using the current invoice version.', [$writes, 'invoicesReleaseDelivery'], 'invoices.release_delivery', false, false, true),
@@ -117,7 +140,7 @@ final class AgentMcpToolCatalog
             ];
         }
 
-        if ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled')) {
+        if ($includeDisabled || ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled'))) {
             $definitions[] = new ToolDefinition('payments.record', 'Record received payment', 'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.', [$writes, 'paymentsRecord'], 'payments.record', false, false, true);
             $definitions[] = new ToolDefinition('payments.correct', 'Correct received payment', 'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Idempotency key required. Owner/admin only. Never charges a customer or issues a refund.', [$writes, 'paymentsCorrect'], 'payments.correct', false, false, true);
         }

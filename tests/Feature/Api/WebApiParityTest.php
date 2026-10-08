@@ -75,11 +75,11 @@ final class WebApiParityTest extends TestCase
         'svc.expenses.store' => 'operation:expenses.log',
         'svc.expenses.unapprove' => 'operation:expenses.unapprove',
         'svc.expenses.update' => 'operation:expenses.update',
-        'svc.files.destroy' => 'missing',
-        'svc.files.store' => 'missing',
+        'svc.files.destroy' => 'operation:attachments.delete',
+        'svc.files.store' => 'operation:attachments.upload',
         'tasks.store' => 'operation:tasks.create',
         'tasks.update' => 'operation:tasks.update',
-        'workspaces.store' => 'missing',
+        'workspaces.store' => 'operation:workspaces.create',
     ];
 
     public function test_every_state_changing_web_route_is_classified(): void

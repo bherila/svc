@@ -17,17 +17,17 @@ final class AgentMcpCapabilityRegistryFactory
         private readonly AgentMcpOutputSchemaFactory $outputs,
     ) {}
 
-    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes, AgentMcpClientTools $clients, AgentMcpClientWriteTools $clientWrites): McpCapabilityRegistry
+    public function make(AgentMcpReadTools $reads, AgentMcpContextResource $contextResource, AgentMcpAgreementTools $agreements, AgentMcpAgreementResource $agreementResource, AgentMcpBillingScheduleTools $schedules, AgentMcpCapacityLedgerTools $capacityLedger, AgentMcpBillingAuditTools $billingAudits, AgentMcpPrompts $prompts, AgentMcpWriteTools $writes, AgentMcpClientTools $clients, AgentMcpClientWriteTools $clientWrites, bool $includeDisabled = false): McpCapabilityRegistry
     {
         $registry = new McpCapabilityRegistry;
-        foreach ($this->catalog->definitions($reads, $writes) as $tool) {
+        foreach (($includeDisabled ? $this->catalog->inventoryDefinitions($reads, $writes) : $this->catalog->definitions($reads, $writes)) as $tool) {
             $registry->register($this->definition($tool));
         }
         $registry->register($this->contextResource($contextResource));
         $registry->register($this->agreementList($agreements));
         $registry->register($this->agreementGet($agreements));
         $registry->register($this->agreementResource($agreementResource));
-        foreach ($this->catalog->clientDefinitions($clients, $clientWrites) as $definition) {
+        foreach ($this->catalog->clientDefinitions($clients, $clientWrites, $includeDisabled) as $definition) {
             $registry->register($definition);
         }
         $registry->register($this->billingScheduleList($schedules));
@@ -57,7 +57,7 @@ final class AgentMcpCapabilityRegistryFactory
             outputSchema: $this->outputs->for($tool),
             requiredScopes: AgentApiResponseSchemaCatalog::scopesForOperation($operationId),
             policyAbility: $this->policyAbility($tool->name),
-            requiresWorkspace: $tool->name !== 'context.get',
+            requiresWorkspace: ! in_array($tool->name, ['context.get', 'workspaces.create'], true),
             readOnly: $tool->readOnly,
             idempotent: $tool->idempotent,
             destructive: $tool->destructive,
@@ -80,6 +80,7 @@ final class AgentMcpCapabilityRegistryFactory
                 || str_starts_with($name, 'expense_schedules.') || str_starts_with($name, 'expenses.receipts.') => 'AgentAccess::isWorkspaceManager',
             $name === 'proposals.create', $name === 'proposals.send' => 'AgentAccess::isWorkspaceManager',
             str_starts_with($name, 'proposals.') => 'ProposalAccess::visible',
+            str_starts_with($name, 'attachments.') => 'AgentAccess::isWorkspaceManager',
             $name === 'expenses.list' => 'ProjectAccess::viewableProjectIds',
             $name === 'context.get', $name === 'operations.summary' => 'AgentAccess::canViewWorkspace',
             in_array($name, ['projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update'], true) => 'AgentAccess::isWorkspaceManager',

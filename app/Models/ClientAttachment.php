@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
+ * @property int $lock_version
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
@@ -48,7 +50,7 @@ use LogicException;
 #[Hidden(['id', 'workspace_id', 'object_key', 'staged_object_key', 'uploader_id'])]
 class ClientAttachment extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     public const STATE_STAGED = 'staged';
 

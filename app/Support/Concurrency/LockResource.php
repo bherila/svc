@@ -35,6 +35,9 @@ use RuntimeException;
  */
 enum LockResource: string
 {
+    // Tenant creation reserves the actor/client/key before a tenant exists.
+    case AgentWorkspaceCreation = 'agent_workspace_creations';
+
     // Agent receipt reservations precede domain callbacks and every business lock.
     case AgentMutationReceipt = 'agent_mutation_receipts';
 

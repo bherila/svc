@@ -16,7 +16,7 @@ final class AgentCapabilities
     private const array ORDER = [
         'projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
         'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
-        'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept',
+        'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept', 'files:read', 'files:write',
     ];
 
     public function __construct(
@@ -127,6 +127,7 @@ final class AgentCapabilities
             AgentApiScopes::BILLING_READ => 'billing:read',
             AgentApiScopes::EXPENSES_READ => 'expenses:read',
             AgentApiScopes::CLIENTS_READ => 'clients:read',
+            AgentApiScopes::FILES_READ => 'files:read',
         ];
         if (AgentWriteCutover::projects()
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROJECTS_READ))) {
@@ -135,6 +136,9 @@ final class AgentCapabilities
         if (AgentWriteCutover::proposals()
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROPOSALS_READ))) {
             $mapping[AgentApiScopes::PROPOSALS_WRITE] = 'proposals:write';
+        }
+        if (AgentWriteCutover::files()) {
+            $mapping[AgentApiScopes::FILES_WRITE] = 'files:write';
         }
         if (AgentWriteCutover::expenses()) {
             $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';
