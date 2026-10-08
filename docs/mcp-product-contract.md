@@ -107,6 +107,19 @@ or refresh credential. SVC configures the shared auth package's consent screen a
 the Bherila.net login. Access-token JWT issuer, audience, and resource claims agree
 with the authorization-code, access-token, and refresh-token database bindings.
 
+The signed-in website calls the same `/api/v1` routes on its own session
+(#385). A request without a bearer token that carries the session cookie runs the
+web group's session and request-forgery middleware; a signed-in user then
+authenticates as the `svc-web` client holding every API scope except `mcp:use`.
+Roles and policies apply unchanged. The agent write cutovers
+(`AGENT_API_*_WRITES_ENABLED`) gate OAuth principals only, so switching agent
+writes off never breaks the website. A bearer token is never combined with a
+session, and the MCP endpoint does not accept one. Pages receive each API
+operation as a finished URL plus the record's opaque version, call it through
+`resources/js/lib/api.ts` with a fresh idempotency key, and use request types
+generated from the OpenAPI document (`pnpm run api:types`; CI fails when the
+generated file is stale).
+
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;
 an actual disallowed-origin request is rejected. Origin-less native clients remain

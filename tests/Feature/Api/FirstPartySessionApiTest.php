@@ -152,6 +152,28 @@ final class FirstPartySessionApiTest extends TestCase
             ->assertOk();
     }
 
+    /** The page hands the browser the finished API URL and the version to send with it. */
+    public function test_the_invoice_page_offers_the_api_operation_the_session_can_use(): void
+    {
+        $draft = $this->draft();
+        $page = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/invoices/{$draft->public_id}";
+
+        $props = $this->actingAs($this->owner)->get($page)->assertOk()->viewData('page')['props'];
+        $this->assertSame($this->detailsUrl($draft), $props['actions']['update_details']);
+        $this->assertSame(AgentApiVersion::for($draft->fresh()), $props['version']);
+
+        $this->asSignedIn($this->owner)
+            ->withHeader('Idempotency-Key', 'page-details')
+            ->patchJson($props['actions']['update_details'], ['expected_version' => $props['version'], 'due_date' => '2026-11-02'])
+            ->assertOk();
+        $this->assertSame('2026-11-02', $draft->fresh()->due_date?->toDateString());
+
+        $issued = app(InvoiceLifecycleService::class)->issue($draft->fresh(), $this->workspace);
+        $props = $this->actingAs($this->owner)->get($page)->assertOk()->viewData('page')['props'];
+        $this->assertNull($props['actions']['update_details'], 'An issued invoice is corrected, not edited');
+        $this->assertSame('issued', $issued->status);
+    }
+
     /** @return $this */
     private function asSignedIn(User $user): static
     {

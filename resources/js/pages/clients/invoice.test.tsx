@@ -5,7 +5,11 @@ import ClientInvoiceDetail from '@/pages/clients/invoice';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
 
-const inertia = vi.hoisted(() => ({ post: vi.fn(), visit: vi.fn() }));
+const inertia = vi.hoisted(() => ({
+    post: vi.fn(),
+    visit: vi.fn(),
+    reload: vi.fn(),
+}));
 
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
@@ -25,6 +29,7 @@ function props(overrides: Partial<Props> = {}): Props {
         company: { id: 'company-1', name: 'Synthetic Client' },
         invoices_href: '/workspaces/w-1/clients/company-1/invoices',
         pdf_href: '/workspaces/w-1/invoices/invoice-1/pdf',
+        version: '0'.repeat(64),
         actions: {
             issue: null,
             send: null,
@@ -526,5 +531,96 @@ describe('reviewing and correcting an issued invoice', () => {
         expect(screen.getByText('Held for review.')).toBeVisible();
         expect(screen.getByText('Administrator review notice')).toBeVisible();
         expect(screen.getByText(/Automatic · revision 2/)).toBeVisible();
+    });
+});
+
+describe('changing a draft due date through the API', () => {
+    const detailsUrl = '/api/v1/workspaces/w-1/invoices/invoice-1/details';
+    const draft = (): Partial<Props> => ({
+        actions: {
+            issue: '/workspaces/w-1/invoices/invoice-1/issue',
+            send: null,
+            payment: null,
+            void: null,
+            update_details: detailsUrl,
+        },
+        invoice: {
+            ...props().invoice,
+            status: 'draft',
+            issue_date: null,
+            due_date: '2026-09-30',
+        },
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        inertia.reload.mockReset();
+        document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    });
+
+    it('patches the details operation with the version and reloads the page', async () => {
+        document.cookie = 'XSRF-TOKEN=synthetic%3Dtoken';
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
+                status: 200,
+            }),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        render(<ClientInvoiceDetail {...props(draft())} />);
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Change due date' }),
+        );
+        const input = screen.getByLabelText('Due date');
+        expect(input).toHaveValue('2026-09-30');
+        fireEvent.change(input, { target: { value: '2026-10-15' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save due date' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe(detailsUrl);
+        expect(init.method).toBe('PATCH');
+        expect(init.credentials).toBe('same-origin');
+        const headers = init.headers as Record<string, string>;
+        expect(headers['X-XSRF-TOKEN']).toBe('synthetic=token');
+        expect(headers['Idempotency-Key']).toMatch(/\S+/);
+        expect(JSON.parse(String(init.body))).toEqual({
+            expected_version: '0'.repeat(64),
+            due_date: '2026-10-15',
+        });
+    });
+
+    it('shows the server refusal and keeps the form open', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        message: 'The due date cannot precede the issue date.',
+                    }),
+                    { status: 422 },
+                ),
+            ),
+        );
+        render(<ClientInvoiceDetail {...props(draft())} />);
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Change due date' }),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save due date' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'The due date cannot precede the issue date.',
+        );
+        expect(screen.getByLabelText('Due date')).toBeInTheDocument();
+        expect(inertia.reload).not.toHaveBeenCalled();
+    });
+
+    it('is not offered without the capability', () => {
+        render(<ClientInvoiceDetail {...props()} />);
+
+        expect(
+            screen.queryByRole('button', { name: 'Change due date' }),
+        ).toBeNull();
     });
 });

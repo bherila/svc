@@ -24,6 +24,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
@@ -284,6 +285,8 @@ class ClientDirectoryController extends Controller
             ],
             'invoices_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
             'pdf_href' => $base.'/pdf',
+            // The opaque version API writes are checked against.
+            'version' => AgentApiVersion::for($clientInvoice),
             // The calendar the record-payment form dates a payment on. The
             // browser's calendar is not the workspace's, and neither is UTC's:
             // defaulting from `toISOString()` gives UTC's day, which the
@@ -295,6 +298,11 @@ class ClientDirectoryController extends Controller
                 'add_time' => $manages && $status === 'draft' && $clientInvoice->invoiceKindValue() === InvoiceKind::AdHoc->value
                     ? route('clients.time', [$workspace, $clientCompany, 'draft_invoice' => $clientInvoice->public_id], absolute: false) : null,
                 'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
+                // Through the API the website now shares with OAuth clients and
+                // MCP (#385): a draft's due date and notes, any draft kind.
+                'update_details' => $manages && $status === InvoiceStatus::Draft->value
+                    ? route('agent-api.v1.invoices.update_details', [$workspace, $clientInvoice->public_id], absolute: false)
+                    : null,
                 'send' => $manages
                     && in_array($status, InvoiceStatus::collectible(), true)
                     && $clientInvoice->automatic_delivery_status !== 'automatically_sent'

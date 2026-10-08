@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -106,6 +108,8 @@ type InvoicePayment = {
 type InvoiceActions = {
     add_time?: string | null;
     issue: string | null;
+    /** The API operation that changes a draft's due date and notes. */
+    update_details?: string | null;
     send: string | null;
     payment: string | null;
     void: string | null;
@@ -146,6 +150,7 @@ export default function ClientInvoiceDetail({
     company,
     invoices_href: invoicesHref,
     pdf_href: pdfHref,
+    version,
     actions,
     email,
     deliveries,
@@ -159,6 +164,8 @@ export default function ClientInvoiceDetail({
     company: { id: string; name: string };
     invoices_href: string;
     pdf_href: string;
+    /** The opaque version API writes are checked against. */
+    version: string;
     /** The workspace's calendar, which a payment's date is read on. */
     timezone: string;
     actions: InvoiceActions;
@@ -200,6 +207,32 @@ export default function ClientInvoiceDetail({
     const [correctedDate, setCorrectedDate] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
+    const [editingDueDate, setEditingDueDate] = useState(false);
+    const [dueDate, setDueDate] = useState('');
+
+    const saveDueDate = async (href: string) => {
+        if (busy) {
+            return;
+        }
+
+        setBusy(true);
+        const body: ApiSchema<'InvoiceDetailsUpdateRequest'> = {
+            expected_version: version,
+            due_date: dueDate === '' ? null : dueDate,
+        };
+        const result = await apiRequest('PATCH', href, body);
+
+        if (result.ok) {
+            setNotice(null);
+            setEditingDueDate(false);
+            router.reload({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setNotice(result.message);
+        setBusy(false);
+    };
 
     const post = (
         href: string,
@@ -292,6 +325,18 @@ export default function ClientInvoiceDetail({
                                 onClick={() => post(actions.issue ?? '')}
                             >
                                 Issue
+                            </Button>
+                        )}
+                        {(actions.update_details ?? null) !== null && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setDueDate(invoice.due_date ?? '');
+                                    setEditingDueDate(true);
+                                }}
+                            >
+                                Change due date
                             </Button>
                         )}
                         {actions.send !== null && email !== null && (
@@ -397,6 +442,41 @@ export default function ClientInvoiceDetail({
                         >
                             {notice}
                         </p>
+                    )}
+
+                    {editingDueDate && actions.update_details && (
+                        <form
+                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,16rem)_auto] sm:items-end"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void saveDueDate(actions.update_details ?? '');
+                            }}
+                        >
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="draft-due-date">Due date</Label>
+                                <Input
+                                    id="draft-due-date"
+                                    type="date"
+                                    value={dueDate}
+                                    onChange={(event) =>
+                                        setDueDate(event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <Button type="submit" size="sm" disabled={busy}>
+                                    Save due date
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setEditingDueDate(false)}
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </form>
                     )}
 
                     {paying && (
