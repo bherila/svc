@@ -55,6 +55,15 @@ final class TimeEntryAllocationTest extends TestCase
         $this->assertSame($state, $result->state);
     }
 
+    public function test_numeric_string_pivot_workspace_ids_are_classified_without_database_casts(): void
+    {
+        $line = $this->line();
+        $line->pivot->setRawAttributes(['workspace_id' => '42']);
+        $result = TimeEntryAllocation::fromEntry($this->entry()->setRelation('invoiceLines', collect([$line])));
+        $this->assertSame('00000000-0000-4000-8000-000000000008', $result->invoiceId);
+        $this->assertSame('reserved', $result->state);
+    }
+
     public static function foreignParts(): iterable
     {
         yield 'line workspace' => ['line'];
