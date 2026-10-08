@@ -1,0 +1,31 @@
+name: cloudflare-ranges
+
+# config/proxies.php pins Cloudflare's published ranges so the app trusts
+# X-Forwarded-For only from Cloudflare. A stale list fails quietly - callers on
+# a new edge share that edge's rate-limit budget - so check it weekly and fail
+# loudly when Cloudflare revises its ranges.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: none
+
+      - name: Compare with Cloudflare's published ranges
+        run: php scripts/check-cloudflare-ranges.php

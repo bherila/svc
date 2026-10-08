@@ -133,6 +133,13 @@ to `/api/v1` (`assume_omitted_resource`); a different explicit resource is still
 refused. The OpenAPI document declares both the `oauth2` scheme and an `apiToken`
 bearer scheme on every operation. `/api/openapi.json` serves that document with its server and OAuth endpoints taken from this installation's configuration; connectors import it from the setup page.
 
+Behind Cloudflare, per-client limits key on the real client address:
+`config/proxies.php` trusts `X-Forwarded-For` (and its scheme and port, never the
+host) only from Cloudflare's published ranges, so the client is the address
+Cloudflare appended. The origin also answers direct connections, so it never
+trusts `*`, and a direct caller's forged header is ignored. A weekly workflow fails
+when Cloudflare revises its ranges.
+
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;
 an actual disallowed-origin request is rejected. Origin-less native clients remain

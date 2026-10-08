@@ -9,11 +9,34 @@ use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+
+/** @return list<string>|string|null */
+$resolveTrustedProxies = static function (mixed $setting, array $cloudflare): array|string|null {
+    if (! is_string($setting) || trim($setting) === '') {
+        return null;
+    }
+    $setting = trim($setting);
+    if ($setting === '*' || $setting === '**') {
+        return $setting;
+    }
+    $proxies = [];
+    foreach (explode(',', $setting) as $entry) {
+        $entry = trim($entry);
+        if ($entry === 'cloudflare') {
+            array_push($proxies, ...array_values(array_map('strval', $cloudflare)));
+        } elseif ($entry !== '') {
+            $proxies[] = $entry;
+        }
+    }
+
+    return $proxies === [] ? null : array_values(array_unique($proxies));
+};
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -22,7 +45,22 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withMiddleware(function (Middleware $middleware): void {
+    ->withMiddleware(function (Middleware $middleware) use ($resolveTrustedProxies): void {
+        // Rate limits key on the client address. Behind Cloudflare that is only
+        // the real client when Cloudflare's addresses are trusted to forward it,
+        // and only X-Forwarded-For and its scheme/port are honoured - never the
+        // forwarded host. The origin answers direct connections too, so never
+        // '*' there (config/proxies.php). Configuration is not loaded yet at
+        // this point, hence the hook.
+        app()->afterBootstrapping(LoadConfiguration::class, static function () use ($middleware, $resolveTrustedProxies): void {
+            $proxies = $resolveTrustedProxies(config('proxies.trusted'), (array) config('proxies.cloudflare', []));
+            if ($proxies !== null) {
+                $middleware->trustProxies(
+                    at: $proxies,
+                    headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO | Request::HEADER_X_FORWARDED_PORT,
+                );
+            }
+        });
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
