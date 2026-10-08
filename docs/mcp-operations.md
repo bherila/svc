@@ -131,3 +131,10 @@ payload-free production observations and retain the previous threshold and
 rationale in the deployment change record. Audit and metrics sink failures are
 deliberately non-fatal to MCP callers and contain no payload fallback; monitor
 those sinks through the deployment platform.
+
+Proposal writes are nested behind `AGENT_API_PROPOSAL_WRITES_ENABLED=false` and
+`AGENT_API_WRITES_ENABLED`. Switching either off removes create/send/accept from
+MCP discovery and REST, and from advertised write/accept capabilities. Reads remain
+available with `proposals:read`. As with other shared actions, the authenticated
+website continues to operate through its established routes. Enable only after
+proposal revision migrations and the required validation gates pass.

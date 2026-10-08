@@ -4,6 +4,73 @@
  */
 
 export interface paths {
+    '/workspaces/{workspace_id}/proposals/{proposal_id}/accept': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit confirmation, signer identity and current proposal version required. Authorized company portal recipient within project grants, or workspace manager recording offline acceptance. Signs and activates the resulting agreement. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.accept'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/proposals/{proposal_id}/send': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit confirmation and current proposal version required. Manager only; marks sent and publishes to client portal, without email. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.send'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/proposals/{proposal_id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['proposals.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace_id}/proposals': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['proposals.list'];
+        put?: never;
+        /** @description Workspace managers only. Lock and check the client company version before creating a draft. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace_id}/billing-schedules': {
         parameters: {
             query?: never;
@@ -912,6 +979,91 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ProposalAcceptRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            signer_name: string;
+            signer_title?: string | null;
+        };
+        ProposalSendRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        ProposalCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id?: string | null;
+            expected_version: string;
+            title: string;
+            summary?: string | null;
+            terms?: string | null;
+            /** Format: date */
+            valid_until?: string | null;
+            currency: string;
+            is_visible_to_client?: boolean;
+            items?: components['schemas']['ProposalItemInput'][];
+        };
+        ProposalListResponse: {
+            data: components['schemas']['Proposal'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ProposalResponse: {
+            data: components['schemas']['Proposal'];
+        };
+        Proposal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspace_id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id: string | null;
+            title: string;
+            summary: string | null;
+            terms: string | null;
+            currency: string;
+            /** @enum {string} */
+            status: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+            is_visible_to_client: boolean;
+            /** Format: date */
+            valid_until: string | null;
+            /** Format: date-time */
+            sent_at: string | null;
+            /** Format: date-time */
+            accepted_at: string | null;
+            version: string;
+            total_amount: number;
+            items: components['schemas']['ProposalItem'][];
+            /** Format: uri */
+            url: string;
+        };
+        ProposalItemInput: {
+            description: string;
+            /** @description Positive quantity up to 10000 */
+            quantity: number | string;
+            unit_amount: number;
+            /** @enum {string} */
+            cadence:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            sort_order?: number;
+        };
+        ProposalItem: {
+            /** Format: uuid */
+            id: string;
+            description: string;
+            quantity: string;
+            unit_amount: number;
+            /** @enum {string} */
+            cadence:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            sort_order: number;
+        };
         BillingSchedule: {
             /** Format: uuid */
             id: string;
@@ -1883,6 +2035,147 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    'proposals.accept': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalAcceptRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.send': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalSendRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.list': {
+        parameters: {
+            query?: {
+                company_id?: string;
+                status?: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace_id: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'billing_schedules.list': {
         parameters: {
             query?: {

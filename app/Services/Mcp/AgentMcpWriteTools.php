@@ -44,7 +44,32 @@ final class AgentMcpWriteTools
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
 
-    /** @return array<string, mixed> */
+    /** @return array<string,mixed> */
+    public function proposalsCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 200)] string $title, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, RequestContext $request): array
+    {
+        $body = compact('company_id', 'expected_version', 'title', 'currency');
+        foreach (['project_id', 'summary', 'terms', 'valid_until', 'is_visible_to_client', 'items'] as $name) {
+            if ($this->requestArguments->has($request, $name)) {
+                $body[$name] = $this->requestArguments->value($request, $name, null);
+            }
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/proposals", $body, $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function proposalsSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $proposal_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/proposals/{$proposal_id}/send", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
+    public function proposalsAccept(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $proposal_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 200)] string $signer_name, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxLength: 200)] ?string $signer_title = null): array
+    {
+        return $this->send('POST', "workspaces/{$workspace_id}/proposals/{$proposal_id}/accept", compact('expected_version', 'confirm', 'signer_name', 'signer_title'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
     public function paymentsRecord(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $invoice_id,

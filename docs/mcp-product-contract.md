@@ -213,3 +213,15 @@ revision. REST and MCP use the same scope requirements. Inaccessible and absent
 workspaces have identical JSON refusals and private no-store cache headers on all
 new project routes. The context advertises project writes only when at least one
 project operation can read its revision under the granted scopes.
+
+## Proposal parity (#386)
+
+The shared `ProposalMutationAction` backs web creation/send/portal acceptance and
+REST/MCP operations `proposals.create`, `proposals.send`, `proposals.accept`.
+`proposals.list`/`proposals.get` expose authorized facts and current versions.
+The proposal scopes separate reading commercial terms, manager drafting/publishing,
+and accepting a legally effective agreement. Existing billing/client scopes grant
+none of these actions. Portal acceptance obeys the same company and project scope
+as portal reads. Confirmed sends publish to the portal; they do not email.
+
+Proposal creation also requires `clients:read` to obtain the parent version; send and acceptance require `proposals:read` to obtain the current proposal version.

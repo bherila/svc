@@ -10,7 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Engagement\EngagementAuthorization;
 use App\Services\Engagement\EngagementException;
-use App\Services\Engagement\ProposalWorkflow;
+use App\Services\Engagement\ProposalMutationAction;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -23,7 +23,7 @@ class ProposalController extends EngagementController
         Workspace $workspace,
         ClientCompany $clientCompany,
         WorkspaceAuthorization $workspaceAuthorization,
-        ProposalWorkflow $workflow,
+        ProposalMutationAction $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -31,7 +31,7 @@ class ProposalController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
         try {
-            $proposal = $workflow->create($workspace, $clientCompany, null, $user, $request->validated());
+            $proposal = $workflow->create($user, $workspace, $clientCompany, $request->validated());
 
             return $this->respond(
                 $request,
@@ -49,7 +49,7 @@ class ProposalController extends EngagementController
         Workspace $workspace,
         ClientProposal $clientProposal,
         WorkspaceAuthorization $workspaceAuthorization,
-        ProposalWorkflow $workflow,
+        ProposalMutationAction $workflow,
     ): JsonResponse|RedirectResponse {
         $request = request();
         $user = $request->user();
@@ -58,7 +58,7 @@ class ProposalController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientProposal);
 
         try {
-            $proposal = $workflow->send($clientProposal);
+            $proposal = $workflow->send($user, $workspace, $clientProposal);
 
             return $this->respond(
                 $request,
@@ -77,7 +77,7 @@ class ProposalController extends EngagementController
         ClientProposal $clientProposal,
         EngagementAuthorization $engagementAuthorization,
         WorkspaceAuthorization $workspaceAuthorization,
-        ProposalWorkflow $workflow,
+        ProposalMutationAction $workflow,
     ): JsonResponse|RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -92,8 +92,9 @@ class ProposalController extends EngagementController
 
         try {
             $proposal = $workflow->accept(
-                $clientProposal,
                 $user,
+                $workspace,
+                $clientProposal,
                 $request->string('signer_name')->toString(),
                 $request->validated('signer_title'),
             );

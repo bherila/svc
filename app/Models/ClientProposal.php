@@ -6,6 +6,7 @@ use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @property int $lock_version
  * @property string $status
  * @property CarbonImmutable|null $valid_until
  * @property CarbonImmutable|null $sent_at
@@ -27,12 +29,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'created_by_user_id', 'accepted_by_user_id'])]
 class ClientProposal extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected static function booted(): void
     {
         static::updating(function (ClientProposal $proposal): void {
-            $dirty = array_diff(array_keys($proposal->getDirty()), ['updated_at']);
+            $dirty = array_diff(array_keys($proposal->getDirty()), ['updated_at', 'lock_version']);
 
             if ($proposal->getOriginal('status') === 'accepted' && $dirty !== []) {
                 throw new \LogicException('Accepted proposals are immutable.');

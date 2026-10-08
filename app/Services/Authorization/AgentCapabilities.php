@@ -16,7 +16,7 @@ final class AgentCapabilities
     private const array ORDER = [
         'projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
         'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
-        'clients:read', 'clients:write',
+        'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept',
     ];
 
     public function __construct(
@@ -64,6 +64,15 @@ final class AgentCapabilities
         if ($allowsScope(AgentApiScopes::PAYMENTS_READ)
             && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
             $workspaceCapabilities[] = 'payments:read';
+        }
+
+        if ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace)) {
+            if ($allowsScope(AgentApiScopes::PROPOSALS_READ)) {
+                $workspaceCapabilities[] = 'proposals:read';
+            }
+            if (AgentWriteCutover::proposals() && $allowsScope(AgentApiScopes::PROPOSALS_READ) && $allowsScope(AgentApiScopes::PROPOSALS_ACCEPT)) {
+                $workspaceCapabilities[] = 'proposals:accept';
+            }
         }
 
         return [
@@ -122,6 +131,10 @@ final class AgentCapabilities
         if (AgentWriteCutover::projects()
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROJECTS_READ))) {
             $mapping[AgentApiScopes::PROJECTS_WRITE] = 'projects:write';
+        }
+        if (AgentWriteCutover::proposals()
+            && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROPOSALS_READ))) {
+            $mapping[AgentApiScopes::PROPOSALS_WRITE] = 'proposals:write';
         }
         if (AgentWriteCutover::expenses()) {
             $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';

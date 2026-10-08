@@ -62,17 +62,17 @@ class ProposalWorkflow
                 ]);
             }
 
-            return $proposal->load('items');
+            return $proposal->load(['items' => fn ($items) => $items->where('workspace_id', $proposal->workspace_id)]);
         });
     }
 
     public function send(ClientProposal $proposal): ClientProposal
     {
         return DB::transaction(function () use ($proposal): ClientProposal {
-            $locked = ClientProposal::query()->tap(Locks::forUpdate())->findOrFail($proposal->id);
+            $locked = ClientProposal::query()->where('workspace_id', $proposal->workspace_id)->where('client_company_id', $proposal->client_company_id)->tap(Locks::forUpdate())->findOrFail($proposal->id);
 
             if ($locked->status === 'sent') {
-                return $locked->load('items');
+                return $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id)]);
             }
 
             if ($locked->status !== 'draft') {
@@ -85,17 +85,21 @@ class ProposalWorkflow
                 'is_visible_to_client' => true,
             ])->save();
 
-            return $locked->load('items');
+            return $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id)]);
         });
     }
 
     public function accept(ClientProposal $proposal, ?User $acceptingUser, string $signerName, ?string $signerTitle): ClientProposal
     {
         return DB::transaction(function () use ($proposal, $acceptingUser, $signerName, $signerTitle): ClientProposal {
-            $locked = ClientProposal::query()->tap(Locks::forUpdate())->findOrFail($proposal->id);
+            $locked = ClientProposal::query()->where('workspace_id', $proposal->workspace_id)->where('client_company_id', $proposal->client_company_id)->tap(Locks::forUpdate())->findOrFail($proposal->id);
 
             if ($locked->status === 'accepted') {
-                return $locked->load(['items', 'agreements']);
+                if ($locked->acceptance_signer_name !== $signerName || $locked->acceptance_signer_title !== $signerTitle) {
+                    throw new EngagementException('This proposal was already accepted with different signer details.');
+                }
+
+                return $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id), 'agreements' => fn ($agreements) => $agreements->where('workspace_id', $locked->workspace_id)->where('client_company_id', $locked->client_company_id)]);
             }
 
             if ($locked->status !== 'sent') {
@@ -119,6 +123,7 @@ class ProposalWorkflow
                 throw new EngagementException('This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.');
             }
 
+            $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id)]);
             $acceptedAt = $this->clock->now($locked->workspace);
             $locked->forceFill([
                 'status' => 'accepted',
@@ -189,7 +194,7 @@ class ProposalWorkflow
                 ], $acceptingUser);
             }
 
-            return $locked->load(['items', 'agreements.recurringItems']);
+            return $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id), 'agreements' => fn ($agreements) => $agreements->where('workspace_id', $locked->workspace_id)->where('client_company_id', $locked->client_company_id), 'agreements.recurringItems' => fn ($items) => $items->where('workspace_id', $locked->workspace_id)]);
         });
     }
 

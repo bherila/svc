@@ -7,6 +7,7 @@ use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentInvoiceReviewReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentProjectMemberReadService;
+use App\Services\AgentApi\AgentProposalReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
@@ -31,7 +32,26 @@ final class AgentMcpReadTools
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
 
-    /** @return array<string, mixed> */
+    /** @return array<string,mixed> */
+    public function proposalsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] ?string $company_id = null, #[Schema(enum: ['draft', 'sent', 'accepted', 'declined', 'expired'])] ?string $status = null, #[Schema(minimum: 1, maximum: 100)] int $limit = 25, #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        $context = $this->workspace($workspace_id, 'proposals:read');
+        try {
+            return app(AgentProposalReadService::class)->list($context->principal->subject, $context->workspace, $company_id, $status, $limit, $cursor);
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
+    }
+
+    /** @return array<string,mixed> */
+    public function proposalsGet(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $proposal_id): array
+    {
+        $context = $this->workspace($workspace_id, 'proposals:read');
+
+        return ['data' => app(AgentProposalReadService::class)->get($context->principal->subject, $context->workspace, $proposal_id)];
+    }
+
+    /** @return array<string,mixed> */
     public function expensesList(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] ?string $company_id = null,

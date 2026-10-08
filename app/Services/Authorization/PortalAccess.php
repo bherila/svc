@@ -147,6 +147,7 @@ final class PortalAccess
                             ->whereColumn('client_portal_project_access.client_project_id', 'client_projects.id')
                             ->whereColumn('client_portal_project_access.workspace_id', 'client_projects.workspace_id')
                             ->whereColumn('client_company_memberships.workspace_id', 'client_projects.workspace_id')
+                            ->whereColumn('client_company_memberships.client_company_id', 'client_projects.client_company_id')
                             ->where('client_company_memberships.user_id', $viewerId);
                     });
             });

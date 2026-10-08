@@ -393,8 +393,9 @@ Enabling automatic invoice delivery needs `automatic_invoice_email_delay_days` a
 someone to send to; disabling it cancels deliveries still scheduled.
 
 Deliberately not exposed: signing an agreement, editing an agreement's `status`
-directly, creating one from a proposal, scoping one to a project, and any
-removal of a row. `agreements.create` makes a draft that bills nothing until
+directly, consuming a proposal through `agreements.create`, scoping one to a project,
+and any removal of a row. Proposal-derived agreements instead come from confirmed
+`proposals.accept`. `agreements.create` makes a draft that bills nothing until
 `agreements.activate`, which refuses an overlap with another active agreement for
 the same client.
 
@@ -809,3 +810,32 @@ use `AgentMutationExecutor` for receipts and audit; retries recheck current
 manager authorization. Every access change advances the project's revision, so
 a stale grant or stale project edit is refused. The browser retains its existing
 redirects and numeric form revision error.
+
+
+### Proposals
+
+`proposals.list` and `proposals.get` require `proposals:read`. Managers can read
+workspace proposals; portal recipients can read only sent or accepted proposals
+in their own company and project grants. Company-wide proposals remain visible
+to company portal members. Responses include bounded item details, minor-unit
+amounts, an opaque version and a server-generated browser URL.
+
+`proposals.create` and `proposals.send` require `proposals:write` and a workspace
+owner/admin. Create locks the company and checks its `expected_version`; optional
+project attribution must belong to that company and workspace. It creates a
+draft. Send requires the current proposal version and explicit `confirm: true`;
+it marks the proposal sent and publishes it in the portal, without sending email.
+
+`proposals.accept` requires `proposals:accept`, the current proposal version,
+`confirm: true` and an explicit `signer_name` (optional `signer_title`). Authorized
+portal recipients can accept within their project grants; owner/admins can
+record offline acceptance. Acceptance signs and activates the resulting agreement.
+Expired proposals and unsafe agreement links are refused by the same workflow
+used by the website. Direct agreement signing remains an interactive web action.
+
+All proposal writes require a stable idempotency key and both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_PROPOSAL_WRITES_ENABLED`. Identical
+retries reuse the result and recheck current authorization. A changed body with
+an old key or a stale version returns a conflict. Send and accept lock the
+proposal before checking its version; acceptance then locks its company before
+visibility reads or agreement decisions can establish a database snapshot.

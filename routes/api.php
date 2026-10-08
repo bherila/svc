@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
 use App\Http\Controllers\Api\V1\AgentProjectController;
+use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
@@ -22,6 +23,7 @@ use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
 use App\Http\Middleware\EnsureAgentProjectWritesEnabled;
+use App\Http\Middleware\EnsureAgentProposalWritesEnabled;
 use App\Http\Middleware\EnsureAgentTimeEntryWritesEnabled;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureAgentWritesEnabled;
@@ -165,6 +167,12 @@ Route::prefix('v1')
             ->whereUuid('invoice')
             ->middleware(CheckToken::using(AgentApiScopes::BILLING_READ))
             ->name('invoices.show');
+
+        Route::get('/workspaces/{workspace}/proposals', [AgentProposalController::class, 'index'])->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::PROPOSALS_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('proposals.index');
+        Route::get('/workspaces/{workspace}/proposals/{proposal}', [AgentProposalController::class, 'show'])->whereUuid('proposal')->middleware(EnsureAgentWorkspaceVisible::class)->middleware(CheckToken::using(AgentApiScopes::PROPOSALS_READ))->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('proposals.show');
+        Route::post('/workspaces/{workspace}/proposals', [AgentProposalController::class, 'store'])->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::PROPOSALS_WRITE, AgentApiScopes::CLIENTS_READ), EnsureAgentProposalWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('proposals.store');
+        Route::post('/workspaces/{workspace}/proposals/{proposal}/send', [AgentProposalController::class, 'send'])->whereUuid('proposal')->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::PROPOSALS_WRITE, AgentApiScopes::PROPOSALS_READ), EnsureAgentProposalWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('proposals.send');
+        Route::post('/workspaces/{workspace}/proposals/{proposal}/accept', [AgentProposalController::class, 'accept'])->whereUuid('proposal')->middleware(EnsureAgentWorkspaceVisible::class)->middleware([CheckToken::using(AgentApiScopes::PROPOSALS_ACCEPT, AgentApiScopes::PROPOSALS_READ), EnsureAgentProposalWritesEnabled::class])->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))->name('proposals.accept');
 
         Route::get('/workspaces/{workspace}/expenses', [AgentExpenseController::class, 'index'])
             ->middleware(CheckToken::using(AgentApiScopes::EXPENSES_READ))->name('expenses.index');

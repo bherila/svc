@@ -38,6 +38,12 @@ final class AgentApiScopes
 
     public const string CLIENTS_WRITE = 'clients:write';
 
+    public const string PROPOSALS_READ = 'proposals:read';
+
+    public const string PROPOSALS_WRITE = 'proposals:write';
+
+    public const string PROPOSALS_ACCEPT = 'proposals:accept';
+
     public const string MCP_USE = 'mcp:use';
 
     /** @return array<string, string> */
@@ -61,6 +67,9 @@ final class AgentApiScopes
             self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
+            self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',
+            self::PROPOSALS_WRITE => 'Create and send proposals as a workspace manager',
+            self::PROPOSALS_ACCEPT => 'Accept authorized proposals and sign their resulting agreement',
             self::MCP_USE => 'Connect to SVC through MCP',
         ];
     }

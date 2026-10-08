@@ -474,3 +474,11 @@ now lock the tenant-owned task before checking `expected_version` and applying
 title, description, status or visibility changes. Both task → project → company
 ownership links are checked against the workspace, including replay reads. The
 existing `ClientTask` lock rank applies; no new resource rank is introduced.
+
+
+Proposal REST/MCP create locks the tenant-owned company before checking its opaque
+revision. Send and accept lock the tenant-owned proposal before checking its opaque
+revision. Acceptance takes the existing company serialization lock before portal
+visibility reads, item snapshots or agreement decisions. This preserves the
+proposal → company order and the current-read agreement guard. Proposal status and
+terms changes advance `lock_version`; accepted business facts remain immutable.
