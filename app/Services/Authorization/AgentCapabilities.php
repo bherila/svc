@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ProjectRole;
 use Closure;
 
@@ -118,10 +119,10 @@ final class AgentCapabilities
             AgentApiScopes::EXPENSES_READ => 'expenses:read',
             AgentApiScopes::CLIENTS_READ => 'clients:read',
         ];
-        if ($this->writesEnabled() && (bool) config('agent_api.expense_writes_enabled')) {
+        if (AgentWriteCutover::expenses()) {
             $mapping[AgentApiScopes::EXPENSES_WRITE] = 'expenses:write';
         }
-        if ($this->writesEnabled() && (bool) config('agent_api.client_writes_enabled')) {
+        if (AgentWriteCutover::clients()) {
             $mapping[AgentApiScopes::CLIENTS_WRITE] = 'clients:write';
         }
         if ($this->timeEntryWritesEnabled()) {
@@ -144,7 +145,7 @@ final class AgentCapabilities
             ];
         }
 
-        if ($this->writesEnabled() && (bool) config('agent_api.payment_writes_enabled')) {
+        if (AgentWriteCutover::payments()) {
             $mapping[AgentApiScopes::PAYMENTS_RECORD] = 'payments:record';
         }
 
@@ -169,17 +170,17 @@ final class AgentCapabilities
 
     private function writesEnabled(): bool
     {
-        return (bool) config('agent_api.writes_enabled');
+        return AgentWriteCutover::writes();
     }
 
     /** Nested inside {@see self::writesEnabled()}, never independent of it. */
     private function invoiceWritesEnabled(): bool
     {
-        return $this->writesEnabled() && (bool) config('agent_api.invoice_writes_enabled');
+        return AgentWriteCutover::invoices();
     }
 
     private function timeEntryWritesEnabled(): bool
     {
-        return (bool) config('agent_api.time_entry_writes_enabled');
+        return AgentWriteCutover::timeEntries();
     }
 }

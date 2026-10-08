@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Authorization\AgentAccess;
+use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\Expenses\NewExpense;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Validator;
@@ -104,7 +105,7 @@ final class AgentExpenseMutationAction
 
     private function authorize(User $user, Workspace $workspace): void
     {
-        abort_unless((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.expense_writes_enabled'), 404);
+        abort_unless(AgentWriteCutover::expenses(), 404);
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
     }
 

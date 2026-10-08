@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
+use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentExpenseWritesEnabled;
 use App\Http\Middleware\EnsureAgentInvoiceWritesEnabled;
 use App\Http\Middleware\EnsureAgentPaymentWritesEnabled;
@@ -53,7 +54,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])
 
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class, AuthenticateFirstPartySession::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
     ->group(function (): void {
         Route::get('/context', [AgentReadController::class, 'context'])
             ->middleware(CheckToken::using(AgentApiScopes::IDENTITY_READ))

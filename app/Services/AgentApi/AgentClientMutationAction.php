@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ClientMutationRules;
 use Closure;
 use Illuminate\Support\Facades\Validator;
@@ -132,7 +133,7 @@ final class AgentClientMutationAction
 
     private function authorize(User $user, Workspace $workspace): void
     {
-        abort_unless((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.client_writes_enabled'), 404);
+        abort_unless(AgentWriteCutover::clients(), 404);
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
     }
 

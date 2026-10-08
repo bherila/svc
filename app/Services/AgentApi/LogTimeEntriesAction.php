@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentWriteCutover;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
@@ -130,7 +131,7 @@ final class LogTimeEntriesAction
         }
         // Folding approval into the log call must not route around the
         // cutover that withholds `time_entries.approve` itself.
-        abort_unless((bool) config('agent_api.writes_enabled'), 403, 'Approving time is not enabled for agents.');
+        abort_unless(AgentWriteCutover::writes(), 403, 'Approving time is not enabled for agents.');
         abort_unless($allowsApprovalScope, 403, 'Approving time requires the time:approve scope.');
     }
 

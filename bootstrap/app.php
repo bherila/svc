@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\InvalidAgentApiCursor;
+use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

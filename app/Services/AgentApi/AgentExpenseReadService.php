@@ -10,6 +10,7 @@ use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
+use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\Presenters\AgentExpensePresenter;
 use App\Support\Expenses\ExpenseStatus;
 use Illuminate\Database\Eloquent\Builder;
@@ -79,8 +80,7 @@ final class AgentExpenseReadService
 
     public function canWrite(User|AgentPrincipal $user, Workspace $workspace): bool
     {
-        return (bool) config('agent_api.writes_enabled')
-            && (bool) config('agent_api.expense_writes_enabled')
+        return AgentWriteCutover::expenses()
             && $this->access->isWorkspaceManager($user, $workspace);
     }
 

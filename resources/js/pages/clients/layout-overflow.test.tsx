@@ -296,6 +296,7 @@ describe('client screens under data that does not fit', () => {
                 company={company}
                 invoices_href="/workspaces/workspace-1/clients/company-1/invoices"
                 pdf_href="/workspaces/workspace-1/invoices/invoice-1/pdf"
+                version={'0'.repeat(64)}
                 actions={{
                     issue: null,
                     send: null,

@@ -10,6 +10,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceAdministratorNotificationService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentWriteCutover;
 use DomainException;
 use Illuminate\Support\Facades\Validator;
 
@@ -141,7 +142,7 @@ final class IssueInvoiceAction
     {
         // The REST route and the MCP catalog already withhold the operation
         // while either cutover is off; a replay rechecks it here as well.
-        abort_unless((bool) config('agent_api.writes_enabled') && (bool) config('agent_api.invoice_writes_enabled'), 404);
+        abort_unless(AgentWriteCutover::invoices(), 404);
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
     }
 
@@ -150,7 +151,7 @@ final class IssueInvoiceAction
         // Folding the payment into issue must not route around any gate that
         // withholds payments.record itself. Its outer cutover and owner/admin
         // requirement are authorizeIssue()'s, which runs first on every path.
-        abort_unless((bool) config('agent_api.payment_writes_enabled'), 403, 'Recording payments is not enabled for agents.');
+        abort_unless(AgentWriteCutover::payments(), 403, 'Recording payments is not enabled for agents.');
         abort_unless($allowsPaymentScope, 403, 'Recording a payment requires the payments:record scope.');
     }
 }
