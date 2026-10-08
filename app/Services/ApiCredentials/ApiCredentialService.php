@@ -43,14 +43,37 @@ final class ApiCredentialService
         private readonly WorkspaceClock $clock,
     ) {}
 
-    /** Every scope a REST credential may carry: the API's, without the MCP transport. */
-    /** @return list<string> */
+    /**
+     * The scopes a REST credential may carry: those some REST operation in the
+     * OpenAPI document actually requires, without the MCP transport.
+     *
+     * Read from the contract rather than the scope catalog, because a scope
+     * whose operations exist only as MCP tools (client management, until its
+     * REST routes land) would give a credential that cannot call anything. As
+     * each REST operation is added, its scope becomes grantable with it.
+     *
+     * @return list<string>
+     */
     public static function grantableScopes(): array
     {
-        return array_values(array_filter(
-            array_keys(AgentApiScopes::descriptions()),
-            static fn (string $scope): bool => $scope !== AgentApiScopes::MCP_USE,
-        ));
+        static $scopes = null;
+        if ($scopes === null) {
+            $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+            $used = [];
+            foreach ($document['paths'] as $path) {
+                foreach ($path as $operation) {
+                    foreach ($operation['security'][0]['oauth2'] ?? [] as $scope) {
+                        $used[$scope] = true;
+                    }
+                }
+            }
+            $scopes = array_values(array_filter(
+                array_keys(AgentApiScopes::descriptions()),
+                static fn (string $scope): bool => $scope !== AgentApiScopes::MCP_USE && isset($used[$scope]),
+            ));
+        }
+
+        return $scopes;
     }
 
     /**

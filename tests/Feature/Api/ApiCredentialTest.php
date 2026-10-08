@@ -92,6 +92,20 @@ final class ApiCredentialTest extends TestCase
         $this->assertSame(0, Passport::token()->newQuery()->count());
     }
 
+    /** Only scopes some REST operation needs are offered, so every credential can call something. */
+    public function test_only_scopes_backed_by_a_rest_operation_are_offered(): void
+    {
+        $offered = array_column($this->setupProps()['rest']['scopes'], 'id');
+
+        $this->assertContains('billing:read', $offered);
+        $this->assertNotContains(AgentApiScopes::MCP_USE, $offered);
+        // Client management exists only as MCP tools until its REST routes land.
+        $this->assertNotContains(AgentApiScopes::CLIENTS_WRITE, $offered);
+        $this->actingAs($this->user)
+            ->post('/account/api-tokens', ['name' => 'Clients', 'scopes' => [AgentApiScopes::CLIENTS_WRITE], 'days' => 30])
+            ->assertSessionHasErrors('scopes.0');
+    }
+
     public function test_another_person_cannot_revoke_or_see_a_token(): void
     {
         $this->issueToken(['identity:read'], 30);
