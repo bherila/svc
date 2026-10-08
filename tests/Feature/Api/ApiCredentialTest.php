@@ -195,6 +195,25 @@ final class ApiCredentialTest extends TestCase
         $this->assertFalse((bool) Passport::client()->newQuery()->findOrFail($clientId)->revoked);
     }
 
+    /** The OAuth server's kill switch stops minting here too; revoking still works. */
+    public function test_issuance_stops_while_the_oauth_server_is_switched_off(): void
+    {
+        $this->issueToken(['identity:read'], 30);
+        $row = Passport::token()->newQuery()->where('user_id', $this->user->id)->sole();
+        config(['bherila-auth.oauth_server.enabled' => false]);
+
+        $this->actingAs($this->user)
+            ->postJson('/account/api-tokens', ['name' => 'During incident', 'scopes' => ['identity:read'], 'days' => 30])
+            ->assertNotFound();
+        $this->postJson('/account/oauth-apps', [
+            'name' => 'During incident', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
+        ])->assertNotFound();
+        $this->assertSame(1, Passport::token()->newQuery()->count());
+
+        $this->delete("/account/api-tokens/{$row->getKey()}")->assertRedirect();
+        $this->assertTrue((bool) $row->fresh()->revoked);
+    }
+
     /**
      * @param  list<string>  $scopes
      */
