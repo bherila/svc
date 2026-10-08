@@ -122,6 +122,24 @@ final class WebApiParityTest extends TestCase
         }
     }
 
+    /**
+     * A connector that was handed an API token instead of running OAuth must be
+     * able to call every operation (#384), so each declares both schemes.
+     */
+    public function test_every_operation_accepts_oauth_or_an_api_token(): void
+    {
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('bearer', $document['components']['securitySchemes']['apiToken']['scheme'] ?? null);
+
+        foreach ($document['paths'] as $path) {
+            foreach ($path as $operation) {
+                $schemes = array_map(static fn (array $requirement): array => array_keys($requirement), $operation['security'] ?? []);
+                $this->assertSame([['oauth2'], ['apiToken']], $schemes, $operation['operationId']);
+                $this->assertSame([], $operation['security'][1]['apiToken'], $operation['operationId']);
+            }
+        }
+    }
+
     /** @return array<string, string|null> uri+method => route name */
     private function webMutationRoutes(): array
     {
