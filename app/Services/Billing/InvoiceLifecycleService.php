@@ -234,7 +234,13 @@ final class InvoiceLifecycleService
                 occurrence: (string) Str::uuid(),
             );
 
-            return $locked->refresh()->load(['lines', 'clientCompany']);
+            // Both relations are tenant-owned and keyed by the child alone, so
+            // each is bounded by the workspace explicitly: a legacy row stamped
+            // to another tenant is not loaded through this invoice.
+            return $locked->refresh()->load([
+                'lines' => fn ($query) => $query->where('workspace_id', $workspace->id),
+                'clientCompany' => fn ($query) => $query->where('workspace_id', $workspace->id),
+            ]);
         });
     }
 

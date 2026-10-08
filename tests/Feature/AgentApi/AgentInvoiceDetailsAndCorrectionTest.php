@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -23,6 +24,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -37,6 +39,7 @@ use Tests\TestCase;
 final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     private User $owner;
 
@@ -260,6 +263,29 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->assertFalse($correct['isError'] ?? false, json_encode($correct, JSON_THROW_ON_ERROR));
         $this->assertSame('2026-11-01', $invoice->fresh()->due_date?->toDateString());
         $this->assertSame(2, $invoice->fresh()->document_revision);
+    }
+
+    /** A legacy line stamped to another workspace is not loaded through this invoice. */
+    public function test_the_updated_draft_is_returned_without_another_workspaces_rows(): void
+    {
+        $draft = $this->generatedDraft();
+        $foreign = Workspace::query()->create(['name' => 'Synthetic Legacy', 'slug' => 'synthetic-legacy-'.Str::random(8)]);
+        $template = $draft->lines()->firstOrFail();
+        $this->writingLegacyCrossTenantRows(fn () => ClientInvoiceLine::query()->create([
+            ...collect($template->getAttributes())->except(['id', 'public_id', 'created_at', 'updated_at'])->all(),
+            'workspace_id' => $foreign->id,
+            'description' => 'Stamped to another workspace',
+        ]));
+
+        $updated = app(InvoiceLifecycleService::class)->updateDraftDetails(
+            $draft->fresh(),
+            $this->workspace,
+            AgentApiVersion::for($draft->fresh()),
+            ['due_date' => '2026-10-20'],
+        );
+
+        $this->assertNotContains('Stamped to another workspace', $updated->lines->pluck('description')->all());
+        $this->assertSame($this->company->id, $updated->clientCompany?->id);
     }
 
     private ClientAgreement $agreement;
